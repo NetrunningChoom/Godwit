@@ -20,8 +20,20 @@ jobs:
       - name: System dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang nasm libglib2.0-dev libasound2-dev \
+          sudo apt-get install -y nasm libglib2.0-dev libasound2-dev \
             libva-dev libxkbcommon-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+      # LiveKit's prebuilt libwebrtc ships a libc++ that needs clang 21 or
+      # later (see tools/build/Dockerfile); the runner's default is 18.
+      - name: LLVM 21 (apt.llvm.org)
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          codename=$(lsb_release -cs)
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/$codename/ llvm-toolchain-$codename-21 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -y clang-21 lld-21 llvm-21 libclang-21-dev
+          echo PATH=/usr/lib/llvm-21/bin:$PATH >> $GITHUB_ENV
+          echo CC=clang >> $GITHUB_ENV
+          echo CXX=clang++ >> $GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
