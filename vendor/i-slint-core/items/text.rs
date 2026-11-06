@@ -1600,16 +1600,25 @@ impl TextInput {
             }
             // Godwit patch: the step was one space's height in the first font,
             // 0 when that font has no space (a bundled emoji face first), so
-            // the cursor stayed on its line. Step half that height at a time until the line
-            // changes: each step is under a line, so none is skipped.
+            // the cursor stayed on its line. Step a fraction of the line's
+            // height at a time until the line changes: each step is under a
+            // line, so none is skipped.
             TextCursorDirection::NextLine | TextCursorDirection::PreviousLine => {
                 reset_preferred_x_pos = false;
                 let sign = if matches!(direction, TextCursorDirection::NextLine) { 1 as Coord } else { -1 as Coord };
                 let rect = self.cursor_rect(window_adapter, self_rc);
                 let here = rect.center().y;
                 // The emoji face has no space, so its height can be 0: the
-                // cursor's own height is the line's.
-                let step = (font_height.max(rect.height()) / (2 as Coord)).max(1 as Coord);
+                // cursor's own height is the line's. A step of exactly half a
+                // line lands on the boundary between two lines, where the
+                // hit-test may keep the same byte offset (with another
+                // affinity) and read as "didn't move" — as happens when no
+                // font with a space is installed, so font_height is 0. Step a
+                // bit more than half a line so the point lands strictly
+                // inside the neighbouring line; 0.71 never lands a retry step
+                // on a boundary either.
+                let line = if rect.height() > 0 as Coord { rect.height() } else { font_height };
+                let step = (line * 0.71).max(1 as Coord);
                 let mut found = visual_move(self.preferred_x_pos.get(), sign * step);
                 for k in 2..=16 {
                     if found.0 != last_cursor_pos || found.1 != self.cursor_affinity.get() {

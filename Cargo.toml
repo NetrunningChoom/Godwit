@@ -163,6 +163,6 @@ todo = "warn"
 # steam-vent without aws-lc and TLS key logging (see vendor/steam-vent/GODWIT.md).
 [patch.crates-io]
 steam-vent = { path = "vendor/steam-vent" }
-# One-line fix for Up/Down in multi-line text: see the "Godwit patch" comment
-# in vendor/i-slint-core/items/text.rs. Redo it when upgrading Slint.
+# Up/Down cursor movement between lines in multi-line text: see
+# vendor/i-slint-core/GODWIT.md. Redo it when upgrading Slint.
 i-slint-core = { path = "vendor/i-slint-core" }
