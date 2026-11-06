@@ -1,0 +1,34 @@
+[package]
+name = "godwit-steam"
+description = "Godwit's Steam network: sign-in (QR or password), friends and one-to-one chat over Steam's client protocol."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+godwit-core.workspace = true
+godwit-secrets.workspace = true
+godwit-voice.workspace = true
+base64 = "0.22"
+futures-util.workspace = true
+getrandom = "0.3"
+rsa = "0.9"
+reqwest = { workspace = true, features = ["form"] }
+serde.workspace = true
+serde_json.workspace = true
+steam-vent = "0.5"
+steam-vent-proto-common = "0.5"
+steam-vent-proto-steam = "0.5"
+steam-vent-crypto = "0.2"
+steamid-ng = "3"
+tokio.workspace = true
+tokio-stream = "0.1"
+
+[build-dependencies]
+protobuf-codegen = "=3.5.1"
+
+[dev-dependencies]
+godwit-secrets = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

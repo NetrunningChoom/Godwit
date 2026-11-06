@@ -1,0 +1,166 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Anim } from "types.slint";
+import { TextField } from "widgets.slint";
+
+// One tile: a GIF's looping preview, or a category (its picture and title).
+export struct GifTileItem {
+    // A GIF's link and picture (empty on category tiles): its star.
+    gif: string,
+    picture: string,
+    image: image,
+    has-image: bool,
+    // Its animation slot (Anim.frames), -1 when still.
+    anim: int,
+    // A category's title ("" for a GIF).
+    title: string,
+}
+
+// The GIF picker's contents (app/src/gifs.rs), as a global: the composer and
+// the panel both read it without passing it down through every view.
+export global Gifs {
+    // The room allows GIFs (the composer shows the button while empty).
+    in property <bool> available;
+    in-out property <bool> open;
+    in property <[GifTileItem]> tiles;
+    // Loading, an error, or "no GIFs found"; "" when the tiles say it all.
+    in property <string> status;
+    // What's shown: "" the categories, else a search (or trending).
+    in-out property <string> query;
+    callback opened();
+    // Typed into the search (the app waits for typing to pause).
+    callback search(string);
+    // A tile was picked: a category opens, a GIF is sent.
+    callback picked(int);
+    // The top row on screen, and whether the list's end is near.
+    callback scrolled(int, bool);
+    callback closed();
+    // Stars or unstars a GIF (its link, its looping picture).
+    callback toggle-favourite(string, string);
+    // Whether a link is starred; `version` changes with every star, so stars redraw.
+    pure callback is-favourite(string, int) -> bool;
+    in-out property <int> favourites-version;
+}
+
+// A GIF's star: filled once it's a favourite. On GIFs in the picker and in chat.
+export component GifStar inherits Rectangle {
+    in property <string> gif;
+    in property <string> picture;
+    property <bool> starred: Gifs.is-favourite(root.gif, Gifs.favourites-version);
+    width: 28px;
+    height: 28px;
+    border-radius: self.height / 2;
+    background: star-touch.has-hover ? Theme.scrim-control : Theme.scrim-control-idle;
+    Text {
+        text: root.starred ? "★" : "☆";
+        color: root.starred ? Theme.primary : Theme.on-media;
+        font-size: 16px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    star-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Gifs.toggle-favourite(root.gif, root.picture); }
+    }
+}
+
+// The official GIF picker: a search above two columns of looping previews;
+// without a search, the categories (with Trending first).
+export component GifPicker inherits Rectangle {
+    // Two 168 px columns, the padding, and the list's scrollbar.
+    width: 2 * 168px + 8px + 24px + 16px;
+    height: 440px;
+    border-radius: Theme.radius-lg;
+    background: Theme.surface-high;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: Theme.shadow;
+    TouchArea {
+        scroll-event(e) => { accept }
+    }
+    FocusScope {
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                Gifs.open = false;
+                Gifs.closed();
+                return accept;
+            }
+            reject
+        }
+    VerticalLayout {
+        padding: Theme.space-4;
+        spacing: Theme.space-3;
+        search := TextField {
+            placeholder: "Search for GIFs...";
+            autofocus: true;
+            text: Gifs.query == "trending" ? "" : Gifs.query;
+            edited(t) => { Gifs.search(t); }
+        }
+        if Gifs.status != "": Text {
+            text: Gifs.status;
+            color: Theme.on-surface-variant;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        list := ListView {
+            vertical-stretch: 1;
+            // Not `scrolled`: it doesn't fire for the mouse wheel.
+            changed content-y => {
+                root.report();
+            }
+            for row[i] in ceil(Gifs.tiles.length / 2): HorizontalLayout {
+                height: 120px;
+                spacing: Theme.space-3;
+                padding-bottom: Theme.space-3;
+                for j in 2: Rectangle {
+                    width: 168px;
+                    border-radius: Theme.radius-sm;
+                    clip: true;
+                    background: i * 2 + j < Gifs.tiles.length ? Theme.surface-highest : transparent;
+                    property <GifTileItem> tile: Gifs.tiles[i * 2 + j];
+                    if i * 2 + j < Gifs.tiles.length && tile.has-image: Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: tile.anim >= 0 ? Anim.frames[tile.anim] : tile.image;
+                        image-fit: cover;
+                    }
+                    if i * 2 + j < Gifs.tiles.length && tile.title != "": Rectangle {
+                        background: Theme.scrim-half;
+                        Text {
+                            text: tile.title;
+                            color: Theme.on-media;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                    if i * 2 + j < Gifs.tiles.length: tile-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Gifs.picked(i * 2 + j); }
+                        if tile.gif != "" && tile-touch.has-hover: GifStar {
+                            x: parent.width - self.width - 6px;
+                            y: 6px;
+                            gif: tile.gif;
+                            picture: tile.picture;
+                        }
+                    }
+                    if i * 2 + j < Gifs.tiles.length && touch-hover.has-hover: Rectangle {
+                        border-radius: Theme.radius-sm;
+                        border-width: 2px;
+                        border-color: Theme.primary;
+                    }
+                    touch-hover := TouchArea { enabled: false; }
+                }
+            }
+        }
+    }
+    }
+    function report() {
+        Gifs.scrolled(
+            floor(-list.content-y / 120px),
+            -list.content-y + list.visible-height > list.content-height - 360px);
+    }
+    init => { self.report(); }
+}

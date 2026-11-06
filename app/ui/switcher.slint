@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { SwitchItem } from "types.slint";
+import { Avatar, TextField } from "widgets.slint";
+
+// Ctrl+K: jump to any room by name. Up/Down choose, Enter opens, Escape closes.
+export component Switcher inherits Rectangle {
+    in property <[SwitchItem]> results;
+    in-out property <int> current: 0;
+    callback search(string);
+    callback picked(int);
+    callback close();
+
+    background: Theme.scrim;
+    TouchArea {
+        clicked => { root.close(); }
+        scroll-event(e) => { accept }
+    }
+    FocusScope {
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                root.close();
+                return accept;
+            }
+            if e.text == Key.DownArrow {
+                root.current = min(root.current + 1, root.results.length - 1);
+                return accept;
+            }
+            if e.text == Key.UpArrow {
+                root.current = max(root.current - 1, 0);
+                return accept;
+            }
+            if e.text == Key.Return && root.results.length > 0 {
+                root.picked(root.current);
+                return accept;
+            }
+            reject
+        }
+        Rectangle {
+            y: 96px;
+            width: min(520px, root.width - 32px);
+            height: body.preferred-height;
+            border-radius: Theme.radius-dialog;
+            background: Theme.surface-high;
+            TouchArea { }
+            body := VerticalLayout {
+                padding: Theme.space-5;
+                spacing: Theme.space-3;
+                TextField {
+                    placeholder: "Where would you like to go?";
+                    autofocus: true;
+                    edited(t) => {
+                        root.current = 0;
+                        root.search(t);
+                    }
+                    accepted => {
+                        if root.results.length > 0 {
+                            root.picked(root.current);
+                        }
+                    }
+                }
+                for r[i] in root.results: Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius-lg;
+                    background: i == root.current ? Theme.secondary-container
+                        : row.has-hover ? Theme.surface-highest : transparent;
+                    HorizontalLayout {
+                        padding-left: Theme.space-3;
+                        padding-right: Theme.space-4;
+                        spacing: Theme.space-3;
+                        if r.kind == 2: Icon { width: 32px; text: Icons.tag; color: Theme.on-surface-variant; }
+                        if r.kind != 2: Avatar {
+                            y: (parent.height - self.height) / 2;
+                            size: 32px;
+                            source: r.icon;
+                            has-image: r.has-icon;
+                            initials: r.initials;
+                        }
+                        Text {
+                            text: r.name;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                            color: i == root.current ? Theme.on-secondary-container : Theme.on-surface;
+                        }
+                        Text { text: r.detail; vertical-alignment: center; font-size: Theme.text-small; color: Theme.outline; }
+                    }
+                    row := TouchArea { mouse-cursor: pointer; clicked => { root.picked(i); } }
+                }
+            }
+        }
+    }
+}

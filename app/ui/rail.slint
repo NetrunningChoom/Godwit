@@ -1,0 +1,317 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { NetworkIcon } from "network-icon.slint";
+import { ServerItem } from "types.slint";
+import { Avatar, Badge, MenuPanel, MenuRow, MenuDivider } from "widgets.slint";
+
+// One 56 px entry: a 42 px round icon, the pill on the left edge (32 px
+// selected, 16 px hovered, 8 px unread) and the mention badge. Godwit's and
+// the official rail's measurements.
+component RailEntry inherits Rectangle {
+    in property <bool> selected;
+    in property <bool> unread;
+    in property <int> mentions;
+    in property <string> tooltip;
+    callback clicked;
+    // A right-click (accounts: their profile and status).
+    callback context;
+    // Dragging it up or down (servers and accounts): how far, when let go.
+    in property <bool> draggable;
+    callback dropped(length);
+    property <bool> dragging;
+    property <length> drag-y;
+    // The release that ended a drag isn't also a click.
+    property <bool> dropped-now;
+    out property <bool> hovered: touch.has-hover;
+    width: 56px;
+    height: 56px;
+    Rectangle {
+        x: -2px;
+        width: 6px;
+        height: root.selected ? 32px : touch.has-hover ? 16px : root.unread ? 8px : 0;
+        border-radius: self.width / 2;
+        background: Theme.on-surface;
+    }
+    @children
+    if root.mentions > 0: Badge {
+        x: (parent.width + Theme.server-icon) / 2 - self.width + 2px;
+        y: (parent.height + Theme.server-icon) / 2 - self.height + 2px;
+        count: root.mentions;
+    }
+    // While dragged, it follows the pointer (drawn on top of its neighbours).
+    if root.dragging: Rectangle {
+        y: root.drag-y;
+        width: parent.width;
+        height: parent.height;
+        border-radius: Theme.radius-lg;
+        background: Theme.surface-highest;
+        opacity: 0.6;
+    }
+    touch := TouchArea {
+        mouse-cursor: root.dragging ? MouseCursor.grabbing : MouseCursor.pointer;
+        clicked => {
+            if !root.dropped-now {
+                root.clicked();
+            }
+            root.dropped-now = false;
+        }
+        moved => {
+            // A few pixels of wobble is still a click.
+            if root.draggable && self.pressed && abs(self.mouse-y - self.pressed-y) > 8px {
+                root.dragging = true;
+                root.drag-y = self.mouse-y - self.pressed-y;
+            }
+        }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                root.context();
+            }
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                root.dropped-now = false;
+            }
+            // Released anywhere, inside the entry or not, the drag ends.
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.up && root.dragging {
+                root.dragging = false;
+                root.dropped-now = true;
+                root.dropped(root.drag-y);
+            }
+        }
+    }
+    if root.tooltip != "": Tooltip {
+        Rectangle {
+            width: tip-label.preferred-width + 16px;
+            height: tip-label.preferred-height + 8px;
+            border-radius: Theme.radius-xs;
+            background: Theme.surface-highest;
+            tip-label := Text { text: root.tooltip; color: Theme.on-surface; font-size: Theme.text-small; }
+        }
+    }
+}
+
+// A round symbol entry (Home, Settings): primary when selected.
+component SymbolEntry inherits RailEntry {
+    in property <string> glyph;
+    Rectangle {
+        width: Theme.server-icon;
+        height: Theme.server-icon;
+        border-radius: self.width / 2;
+        background: root.selected ? Theme.primary : Theme.surface-low;
+        Icon {
+            text: root.glyph;
+            font-size: Theme.text-headline;
+            color: root.selected ? Theme.on-primary : Theme.on-surface;
+        }
+    }
+}
+
+component Divider inherits Rectangle {
+    height: 13px;
+    Rectangle { x: 12px; width: parent.width - 24px; height: 1px; background: Theme.outline-variant; }
+}
+
+// Home, then a section per account: its avatar (opens its profile), then its
+// servers in the user's order; Settings at the bottom.
+export component Rail inherits Rectangle {
+    in property <[ServerItem]> servers;
+    in property <bool> home-selected;
+    // An account's row (in `servers`): a click collapses or expands its
+    // section, a right-click opens its profile (status, presence).
+    callback toggle-account(int);
+    callback open-account(int);
+    callback open-settings();
+    callback select-home();
+    // Problems were logged since Settings → Problems was last looked at.
+    in property <bool> has-problems;
+    callback select-server(int);
+    callback join-server();
+    // A server's right-click menu: move it (-1 up, 1 down, 0 to the top of
+    // its account's servers).
+    callback move-server(int, int);
+    // Dragged by this many rows (up negative).
+    callback move-server-by(int, int);
+    // An account dragged by this many rows: its section moves.
+    callback move-account-by(int, int);
+    // A server's own options in its right-click menu (it's opened first, so
+    // these say what that server allows, as its sidebar menu does).
+    in property <bool> menu-can-invite;
+    in property <bool> menu-settings;
+    in property <bool> menu-can-leave;
+    callback server-invite();
+    callback server-mark-read();
+    callback server-settings();
+    callback server-leave();
+    property <int> menu-row: -1;
+    property <length> menu-y;
+
+    width: 64px;
+    VerticalLayout {
+        padding-left: Theme.space-2;
+        padding-right: Theme.space-2;
+        // Scrolls by wheel and touch with no scrollbar, as Godwit's rail:
+        // a bar would eat into the 56 px entries.
+        list := Flickable {
+            vertical-stretch: 1;
+            // Wheel only: dragging to scroll grabbed a quick drag before the
+            // entry under it could, so moving a server or account needed a
+            // long press first.
+            interactive: false;
+            content-height: entries.preferred-height;
+            // Its own height, not the view's: otherwise entries past the
+            // bottom are squeezed out instead of scrolled to.
+            entries := VerticalLayout {
+                width: list.width;
+                height: self.preferred-height;
+                alignment: start;
+                padding-top: Theme.gap-md;
+                SymbolEntry {
+                    glyph: Icons.home;
+                    tooltip: "Home";
+                    selected: root.home-selected;
+                    clicked => { root.select-home(); }
+                }
+                for item[i] in root.servers: VerticalLayout {
+                    if item.divider-before: Divider { }
+                    // Which network the account below is on, said plainly.
+                    // The network's icon over its name, wrapped rather than cut
+                    // off: "Google Chat" is wider than the rail.
+                    if item.account: VerticalLayout {
+                        alignment: center;
+                        spacing: 1px;
+                        HorizontalLayout {
+                            alignment: center;
+                            NetworkIcon { network: item.network; width: 12px; height: 12px; }
+                        }
+                        Text {
+                            text: item.network;
+                            font-size: Theme.text-tiny;
+                            font-weight: 600;
+                            color: Theme.on-surface-variant;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                    entry := RailEntry {
+                        // Still connecting: there, but greyed out.
+                        opacity: item.pending ? 0.45 : 1;
+                        draggable: !item.pending && !item.sign-in;
+                        dropped(dy) => {
+                            if item.account {
+                                root.move-account-by(i, round(dy / self.height));
+                            } else {
+                                root.move-server-by(i, round(dy / self.height));
+                            }
+                        }
+                        selected: item.selected;
+                        unread: item.unread;
+                        mentions: item.mentions;
+                        tooltip: item.name;
+                        clicked => {
+                            if item.account {
+                                root.toggle-account(i);
+                            } else {
+                                root.select-server(i);
+                            }
+                        }
+                        context => {
+                            if item.account {
+                                root.open-account(i);
+                            } else {
+                                if !item.selected {
+                                    root.select-server(i);
+                                }
+                                root.menu-row = i;
+                                root.menu-y = self.absolute-position.y - root.absolute-position.y;
+                                server-menu.show();
+                            }
+                        }
+                        Avatar {
+                            size: Theme.server-icon;
+                            source: item.icon;
+                            has-image: item.has-icon;
+                            initials: item.initials;
+                        }
+                        // Hovering an account: it folds. An arrow on its avatar says
+                        // which way a click goes (down: its servers show again).
+                        if item.account && entry.hovered: Rectangle {
+                            x: (parent.width - Theme.server-icon) / 2 - 2px;
+                            y: (parent.height - Theme.server-icon) / 2 - 2px;
+                            width: 18px;
+                            height: 18px;
+                            border-radius: self.width / 2;
+                            background: Theme.surface-highest;
+                            Icon {
+                                text: item.collapsed ? Icons.expand : Icons.expand-less;
+                                font-size: Theme.text-title;
+                                color: Theme.on-surface;
+                            }
+                        }
+                        // As officially: an account's presence on its avatar's corner.
+                        // Signed out by its network: an "!" asking to sign in again.
+                        if item.sign-in: Rectangle {
+                            x: (parent.width + Theme.server-icon) / 2 - 16px;
+                            y: (parent.height + Theme.server-icon) / 2 - 16px;
+                            width: 18px;
+                            height: 18px;
+                            border-radius: self.width / 2;
+                            border-width: 2px;
+                            border-color: Theme.surface-high;
+                            background: Theme.error;
+                            Text { text: "!"; color: Theme.on-error; font-size: Theme.text-caption; font-weight: 700; }
+                        }
+                        if item.account && item.presence != transparent: Rectangle {
+                            x: (parent.width + Theme.server-icon) / 2 - 14px;
+                            y: (parent.height + Theme.server-icon) / 2 - 14px;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: Theme.radius-sm;
+                            border-width: 3px;
+                            border-color: Theme.surface-high;
+                            background: item.presence;
+                        }
+                    }
+                }
+            }
+        }
+        SymbolEntry {
+            glyph: Icons.group;
+            tooltip: "Join a server";
+            clicked => { root.join-server(); }
+        }
+        Divider { }
+        SymbolEntry {
+            glyph: Icons.settings;
+            tooltip: root.has-problems ? "Settings (new problems logged)" : "Settings";
+            clicked => { root.open-settings(); }
+            // A calm dot, not a pop-up (Settings → Problems).
+            if root.has-problems: Rectangle {
+                x: parent.width / 2 + 10px;
+                y: 4px;
+                width: 10px;
+                height: 10px;
+                border-radius: self.width / 2;
+                background: Theme.error;
+            }
+        }
+        Rectangle { height: Theme.gap-md; }
+    }
+    server-menu := PopupWindow {
+        x: root.width - 4px;
+        y: root.menu-y;
+        width: 200px;
+        MenuPanel {
+            width: parent.width;
+            if root.menu-can-invite: MenuRow { glyph: Icons.link; label: "Invite people"; clicked => { root.server-invite(); } }
+            MenuRow { glyph: Icons.unread; label: "Mark as read"; clicked => { root.server-mark-read(); } }
+            if root.menu-settings: MenuRow { glyph: Icons.settings; label: "Server settings"; clicked => { root.server-settings(); } }
+            MenuDivider { }
+            MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.move-server(root.menu-row, -1); } }
+            MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.move-server(root.menu-row, 1); } }
+            MenuRow { glyph: Icons.arrow-forward; label: "Move to top"; clicked => { root.move-server(root.menu-row, 0); } }
+            if root.menu-can-leave: MenuDivider { }
+            if root.menu-can-leave: MenuRow { glyph: Icons.logout; label: "Leave server"; danger: true; clicked => { root.server-leave(); } }
+        }
+    }
+}

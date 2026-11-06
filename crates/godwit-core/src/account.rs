@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+//! What every network's account offers the app, whatever the network.
+//!
+//! An account turns the core's [`Command`]s into network requests and the
+//! network's news into [`Event`]s. Signing in differs too much per network
+//! (passwords and codes on Stoat, a homeserver and maybe single sign-on on
+//! Matrix, a linked phone on Signal) to share one shape, so each network's
+//! sign-in stays on its own type; everything after it goes through here.
+
+use std::sync::Arc;
+
+use crate::application::{Command, Event};
+use crate::ids::{AccountId, MessageId, RoomId, UserId};
+use crate::network::Network;
+
+/// Downloads one of a network's own media addresses (Matrix's `mxc://`,
+/// which need a signed-in download). Blocking: picture loader threads and
+/// downloads call it, never the UI thread.
+pub type MediaFetch = Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
+
+pub trait NetworkAccount {
+    fn network(&self) -> Network;
+    /// Who we're signed in as, once we are.
+    fn id(&self) -> Option<&AccountId>;
+    /// Which account commands for this one go to. Usually [`id`](Self::id), but a
+    /// network may still take commands while it isn't ready to be shown (Steam
+    /// reconnecting): it then answers them itself, with a failure if need be,
+    /// instead of the command vanishing.
+    fn route_id(&self) -> Option<&AccountId> {
+        self.id()
+    }
+    /// Whether [`set_offline`](Self::set_offline) can take this network's
+    /// connection down.
+    fn can_go_offline(&self) -> bool {
+        false
+    }
+    /// Takes the account's connection down (`true`) or brings it back,
+    /// staying signed in: nothing comes through while it's down. The app
+    /// stops sending it commands meanwhile. Returns what changed.
+    fn set_offline(&mut self, _offline: bool) -> Vec<Event> {
+        Vec::new()
+    }
+    /// A kept sign-in that hasn't connected yet (or is retrying while its
+    /// network is unreachable): the rail shows it greyed out until it is.
+    fn connecting(&self) -> bool {
+        false
+    }
+    /// Everything the network sent since the last call. Never blocks.
+    fn poll(&mut self) -> Vec<Event>;
+    /// Carries out a command; local state changes come back as events.
+    fn run(&mut self, command: Command) -> Vec<Event>;
+    /// A message's link in the network's own app, if it has one.
+    fn message_link(&self, room: &RoomId, message: &MessageId) -> Option<String>;
+    /// Whether this network accepts pasted server invites.
+    fn supports_invites(&self) -> bool {
+        false
+    }
+    fn can_edit_profile(&self) -> bool {
+        false
+    }
+    /// Parse a pasted invite without making any network requests.
+    fn parse_invite(&self, _input: &str) -> Option<String> {
+        None
+    }
+    /// Starts (`watch`) or stops watching `user`'s screen share in our call
+    /// in `room`, on networks where watching is asked for (Discord's Go
+    /// Live); the stream shows in [`Event::CallVideos`] and
+    /// [`Event::CallStreams`]. A method rather than a [`Command`], so
+    /// networks without it needn't know.
+    fn watch_stream(&mut self, _room: &RoomId, _user: &UserId, _watch: bool) -> Vec<Event> {
+        Vec::new()
+    }
+    fn log_out(&mut self);
+    /// The address scheme this network's media uses (`"mxc://"`) and how to
+    /// fetch it, for networks whose media isn't plain web links.
+    fn media(&self) -> Option<(String, MediaFetch)> {
+        None
+    }
+}

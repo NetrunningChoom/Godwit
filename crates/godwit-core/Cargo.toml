@@ -1,0 +1,19 @@
+[package]
+name = "godwit-core"
+description = "Godwit's network-neutral core: accounts, contacts, conversations, and the action/effect/event loop. No UI dependency."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+httpdate = "1"
+ureq.workspace = true
+url = "2"
+godwit-secrets = { path = "../godwit-secrets" }
+tokio.workspace = true
+directories.workspace = true
+serde = { workspace = true, features = ["rc"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,207 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons } from "theme.slint";
+import { RoleItem, BlockItem, Select } from "types.slint";
+import { Avatar, Button, IconButton } from "widgets.slint";
+import { TextBlock } from "textblock.slint";
+
+// Someone's profile card, as Godwit draws it: a 96 px banner (primary-
+// container without one), the 80 px avatar ringed on its edge, the name,
+// presence and status, role chips and the bio.
+export component UserCard inherits Rectangle {
+    in property <string> name;
+    // Name, username, status and bio, laid out as message text (view::card_text).
+    in property <[BlockItem]> blocks;
+    in property <string> username;
+    in property <image> avatar;
+    in property <bool> has-avatar;
+    in property <string> initials;
+    in property <image> banner;
+    in property <bool> has-banner;
+    in property <color> presence;
+    in property <string> status;
+    in property <[RoleItem]> roles;
+    in property <bool> has-bio;
+    in property <bool> me;
+    // Where we stand (the official ProfileActions): 0 not friends, 1 friends
+    // (or a network without friends), 2 they asked, 3 we asked, 4 blocked,
+    // 5 unused, 6 a bot.
+    in property <int> relationship;
+    // Their other accounts, when linked ("Also on Signal").
+    in property <string> linked;
+    // Seen in a server where we outrank them (the official UserContextMenu).
+    in property <bool> can-kick;
+    in property <bool> can-ban;
+    callback kick();
+    callback ban();
+    callback close();
+    callback message();
+    callback add-friend();
+    callback remove-friend();
+    callback link();
+    // Copies text (their username) to the clipboard.
+    callback copy(string);
+
+    // A light scrim; clicking outside or Escape closes the card.
+    background: Theme.scrim-light;
+    TouchArea {
+        clicked => { root.close(); }
+        scroll-event(e) => { accept }
+    }
+    // The card sits inside, so Escape still closes it while text in it
+    // (a selected username) has the focus.
+    keys := FocusScope {
+        init => { self.focus(); }
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                root.close();
+                return accept;
+            }
+            // Ctrl+C with text selected in the card (or the chat behind it).
+            if e.modifiers.control && (e.text == "c" || e.text == "C") && Select.active {
+                Select.copy();
+                return accept;
+            }
+            reject
+        }
+    card := Rectangle {
+        width: 340px;
+        height: min(body.preferred-height, root.height - 48px);
+        border-radius: Theme.radius-lg;
+        background: Theme.surface-high;
+        clip: true;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: Theme.shadow;
+        TouchArea { }
+        // The whole card scrolls (the wheel) once it's taller than the
+        // window, so nothing below a long bio or many roles is cut off.
+        Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-height: body.preferred-height;
+        body := VerticalLayout {
+            Rectangle {
+                height: 96px;
+                // Its own corners: a clip doesn't round children here.
+                border-top-left-radius: 16px;
+                border-top-right-radius: 16px;
+                clip: true;
+                background: Theme.primary-container;
+                if root.has-banner: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: root.banner;
+                    image-fit: cover;
+                }
+            }
+            VerticalLayout {
+                padding: Theme.gap-lg;
+                padding-top: Theme.space-profile-top;
+                spacing: Theme.space-3;
+                // All of it selects as message text does (drag, double-click,
+                // Ctrl+C), its emoji the pack's pictures: the same TextBlock.
+                if root.blocks.length > 0: TextBlock {
+                    block: root.blocks[0];
+                    row-number: -2;
+                    index: 0;
+                    colour: Theme.on-surface;
+                }
+                HorizontalLayout {
+                    spacing: Theme.space-2;
+                    if root.blocks.length > 1: TextBlock {
+                        y: (parent.height - self.height) / 2;
+                        horizontal-stretch: 1;
+                        block: root.blocks[1];
+                        row-number: -2;
+                        index: 1;
+                        colour: Theme.on-surface-variant;
+                    }
+                    if root.username != "": IconButton {
+                        glyph: Icons.copy;
+                        tooltip: "Copy username";
+                        clicked => { root.copy(root.username); }
+                    }
+                }
+                if root.status != "" && root.blocks.length > 2: TextBlock {
+                    block: root.blocks[2];
+                    row-number: -2;
+                    index: 2;
+                    colour: Theme.on-surface;
+                }
+                if root.roles.length > 0: HorizontalLayout {
+                    alignment: start;
+                    spacing: Theme.space-2;
+                    for r in root.roles: Rectangle {
+                        height: 22px;
+                        width: chip.preferred-width;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.surface-highest;
+                        chip := HorizontalLayout {
+                            padding-left: Theme.space-compact;
+                            padding-right: Theme.space-compact;
+                            spacing: Theme.space-2;
+                            Rectangle {
+                                y: (parent.height - 8px) / 2;
+                                width: 8px;
+                                height: 8px;
+                                border-radius: Theme.radius-xs;
+                                background: r.has-colour ? r.colour : Theme.outline;
+                            }
+                            Text { text: r.name; font-size: Theme.text-small; color: Theme.on-surface; vertical-alignment: center; }
+                        }
+                    }
+                }
+                // Its whole height (laid out at the card's width); links open.
+                if root.has-bio && root.blocks.length > 3: TextBlock {
+                    block: root.blocks[3];
+                    row-number: -2;
+                    index: 3;
+                    colour: Theme.on-surface;
+                }
+                if root.linked != "": Text { text: root.linked; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+                if !root.me: HorizontalLayout {
+                    spacing: Theme.space-3;
+                    // Stoat only lets friends message each other (the official
+                    // SDK's UserPermission), so others get a friend request.
+                    if root.relationship == 1: Button { horizontal-stretch: 1; text: "Message"; kind: "filled"; clicked => { root.message(); } }
+                    if root.relationship == 0: Button { horizontal-stretch: 1; text: "Add friend"; kind: "filled"; clicked => { root.add-friend(); } }
+                    if root.relationship == 2: Button { horizontal-stretch: 1; text: "Accept friend request"; kind: "filled"; clicked => { root.add-friend(); } }
+                    if root.relationship == 2: Button { text: "Decline"; kind: "text"; clicked => { root.remove-friend(); } }
+                    if root.relationship == 3: Button { horizontal-stretch: 1; text: "Cancel friend request"; kind: "tonal"; clicked => { root.remove-friend(); } }
+                    // Godwit never links on its own: this is how the user says
+                    // "this is the same person as…".
+                    Button { text: "Same person as…"; kind: "tonal"; clicked => { root.link(); } }
+                }
+                if !root.me && (root.can-kick || root.can-ban): HorizontalLayout {
+                    spacing: Theme.space-3; alignment: start;
+                    if root.can-kick: Button { text: "Kick member"; kind: "text"; danger: true; clicked => { root.kick(); } }
+                    if root.can-ban: Button { text: "Ban member"; kind: "text"; danger: true; clicked => { root.ban(); } }
+                }
+            }
+        }
+        // The avatar, ringed on the banner's bottom edge (outside the banner,
+        // whose clip would cut it).
+        Rectangle {
+            x: 52px - 44px;
+            y: 96px - 44px;
+            width: 88px;
+            height: 88px;
+            border-radius: self.width / 2;
+            background: Theme.surface-high;
+            Avatar { size: 80px; source: root.avatar; has-image: root.has-avatar; initials: root.initials; }
+            if root.presence != transparent: Rectangle {
+                x: 64px;
+                y: 64px;
+                width: 18px;
+                height: 18px;
+                border-radius: self.width / 2;
+                border-width: 3px;
+                border-color: Theme.surface-high;
+                background: root.presence;
+            }
+                }
+        }
+    }
+    }
+}

@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Dialog, Button, Select, TextField } from "widgets.slint";
+
+// Uses the same invite preview and explicit Join as message invite cards.
+export component JoinServer inherits Dialog {
+    in property <[string]> accounts;
+    in property <string> status;
+    in property <string> server-name;
+    in property <bool> ready;
+    in property <bool> busy;
+    in property <bool> failed;
+    callback inspect(int, string);
+    callback join();
+    callback reset();
+    property <int> account-index: 0;
+    title: "Join a server";
+    if root.accounts.length > 1: Select {
+        model: root.accounts;
+        current-index <=> root.account-index;
+        selected => { root.reset(); }
+    }
+    address := TextField {
+        autofocus: true;
+        enabled: !root.busy && root.accounts.length > 0;
+        placeholder: "Invite link or code";
+        edited => { root.reset(); }
+        accepted => {
+            if !root.busy && self.text != "" {
+                root.inspect(root.account-index, self.text);
+            }
+        }
+    }
+    if root.server-name != "": Text {
+        text: root.server-name;
+        font-weight: 600;
+        wrap: word-wrap;
+        color: Theme.on-surface;
+    }
+    if root.status != "": Text {
+        text: root.status;
+        wrap: word-wrap;
+        color: root.failed ? Theme.error : Theme.on-surface-variant;
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: Theme.gap-sm;
+        Button { text: "Cancel"; clicked => { root.dismissed(); } }
+        Button {
+            text: "Preview";
+            enabled: !root.busy && root.accounts.length > 0 && address.text != "";
+            clicked => { root.inspect(root.account-index, address.text); }
+        }
+        Button {
+            text: root.busy && root.server-name != "" ? "Joining…" : "Join";
+            kind: "filled";
+            enabled: root.ready && !root.busy;
+            clicked => { root.join(); }
+        }
+    }
+}

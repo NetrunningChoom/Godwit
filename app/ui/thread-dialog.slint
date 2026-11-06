@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Dialog, Button, TextField, TextArea } from "widgets.slint";
+
+// The "Create thread" / "New post" dialog.
+export component ThreadDialog inherits Dialog {
+    callback thread-confirm();
+    in-out property <string> thread-name;
+    in-out property <bool> thread-open;
+    in property <bool> thread-post;
+    in-out property <string> thread-text;
+
+    title: root.thread-post ? "New post" : "Create thread";
+    card-width: 480px;
+    dismissed => { root.thread-open = false; }
+    Text { text: root.thread-post ? "Title" : "Thread name"; color: Theme.on-surface; }
+    TextField {
+        text <=> root.thread-name;
+        autofocus: true;
+        accepted => { if !root.thread-post { root.thread-confirm(); } }
+    }
+    if root.thread-post: Text { text: "Message"; color: Theme.on-surface; }
+    if root.thread-post: TextArea { height: 140px; text <=> root.thread-text; }
+    HorizontalLayout {
+        alignment: end;
+        spacing: Theme.gap-sm;
+        Button { text: "Cancel"; kind: "text"; clicked => { root.thread-open = false; } }
+        Button {
+            text: root.thread-post ? "Post" : "Create";
+            kind: "filled";
+            enabled: root.thread-name != "" && (!root.thread-post || root.thread-text != "");
+            clicked => { root.thread-confirm(); }
+        }
+    }
+}

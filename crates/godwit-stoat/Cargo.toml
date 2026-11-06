@@ -1,0 +1,29 @@
+[package]
+name = "godwit-stoat"
+description = "Godwit's Stoat network: REST API, events socket, state store, permissions, markdown and the auto-delete queue."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+godwit-core.workspace = true
+godwit-secrets.workspace = true
+godwit-voice.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+emojis.workspace = true
+futures-util.workspace = true
+indexmap.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+unicode-segmentation.workspace = true
+
+[dev-dependencies]
+godwit-secrets = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,114 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+// Settings → a Discord account → Privacy and Sessions: the network's own
+// switches and signed-in devices, as its official client's pages.
+
+import { Theme } from "theme.slint";
+import { Button, Toggle, SurfaceCard as Card, SettingsRow } from "widgets.slint";
+
+export struct PrivItem {
+    label: string,
+    detail: string,
+    on: bool,
+}
+
+export struct SessItem {
+    device: string,
+    // "Amsterdam, NL · last used Nov 4", or less when the network doesn't say.
+    detail: string,
+}
+
+// The pages' state and answers, reached from Rust as a global.
+export global AccountPages {
+    in property <[PrivItem]> privacy;
+    in property <bool> privacy-loading;
+    in property <string> privacy-error;
+    callback toggle-privacy(int);
+    in property <[SessItem]> sessions;
+    in property <bool> sessions-loading;
+    in property <string> sessions-error;
+    // A device waiting for "Sign out" to be confirmed (-1 none).
+    in-out property <int> confirm-session: -1;
+    callback log-out-session(int);
+}
+
+export component PrivacyPage inherits VerticalLayout {
+    spacing: Theme.space-5;
+    alignment: start;
+    Text {
+        text: "What Discord may do with your data, as its Data & Privacy page offers. Godwit switched the data-use ones off when you added the account, if you chose so.";
+        wrap: word-wrap;
+        color: Theme.on-surface-variant;
+    }
+    if AccountPages.privacy-loading: Text { text: "Asking Discord…"; color: Theme.on-surface-variant; }
+    if AccountPages.privacy-error != "": Text { text: AccountPages.privacy-error; wrap: word-wrap; color: Theme.error; }
+    for item[i] in AccountPages.privacy: Card {
+        SettingsRow {
+            spacing: Theme.space-4;
+            label: item.label;
+            show-empty-detail: true;
+            detail: item.detail;
+            detail-color: Theme.on-surface-variant;
+            label-weight: 600;
+            wrap-label: true;
+            label-spacing: Theme.space-1;
+            Toggle {
+                y: (parent.height - self.height) / 2;
+                checked: item.on;
+                toggled => { AccountPages.toggle-privacy(i); }
+            }
+        }
+    }
+}
+
+export component SessionsPage inherits VerticalLayout {
+    spacing: Theme.space-5;
+    alignment: start;
+    Text {
+        text: "Where this account is signed in, as Discord's Devices page lists it. Signing a device out ends its session there.";
+        wrap: word-wrap;
+        color: Theme.on-surface-variant;
+    }
+    if AccountPages.sessions-loading: Text { text: "Asking Discord…"; color: Theme.on-surface-variant; }
+    if AccountPages.sessions-error != "": Text { text: AccountPages.sessions-error; wrap: word-wrap; color: Theme.error; }
+    for s[i] in AccountPages.sessions: Card {
+        SettingsRow {
+            spacing: Theme.space-4;
+            label: s.device;
+            detail: s.detail;
+            detail-color: Theme.on-surface-variant;
+            label-weight: 600;
+            wrap-label: true;
+            label-spacing: Theme.space-1;
+            if AccountPages.confirm-session != i: Button {
+                y: (parent.height - self.height) / 2;
+                text: "Sign out";
+                kind: "text";
+                danger: true;
+                clicked => { AccountPages.confirm-session = i; }
+            }
+        }
+        // It may be this very session: say so, as signing it out ends Godwit's.
+        if AccountPages.confirm-session == i: VerticalLayout {
+            spacing: Theme.space-3;
+            Text {
+                text: "Sign this device out? If it's this one, Godwit's Discord sign-in ends too and you'll need to scan a new QR code.";
+                wrap: word-wrap;
+                color: Theme.on-surface-variant;
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: Theme.space-3;
+                Button { text: "Cancel"; clicked => { AccountPages.confirm-session = -1; } }
+                Button {
+                    text: "Sign out";
+                    danger: true;
+                    clicked => {
+                        AccountPages.confirm-session = -1;
+                        AccountPages.log-out-session(i);
+                    }
+                }
+            }
+        }
+    }
+}

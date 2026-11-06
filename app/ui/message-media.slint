@@ -1,0 +1,276 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { Anim, Players, AttachmentItem, EmbedItem, InviteItem } from "types.slint";
+import { GifStar } from "gif-picker.slint";
+import { Avatar, Button, EmojiText } from "widgets.slint";
+
+export component AttachmentView inherits Rectangle {
+    in property <AttachmentItem> item;
+    callback open();
+    // Images: the preview at its size; everything else: a file card.
+    // Godwit's file card is a fixed width; its own preferred width is 0.
+    width: item.kind == 0 ? item.width : 360px;
+    height: item.kind == 0 ? item.height : 56px;
+    border-radius: Theme.radius-md;
+    clip: true;
+    background: item.kind == 0 ? Theme.surface-high : Theme.surface-high;
+    if item.kind == 0 && item.has-image: Image {
+        width: parent.width;
+        height: parent.height;
+        source: item.anim >= 0 ? Anim.frames[item.anim] : item.image;
+        image-fit: contain;
+    }
+    if item.kind != 0: HorizontalLayout {
+        padding: Theme.gap-md;
+        spacing: Theme.gap-md;
+        Icon { text: Icons.file; font-size: Theme.text-display; color: Theme.on-surface-variant; width: 32px; }
+        VerticalLayout {
+            alignment: center;
+            Text { text: item.name; color: Theme.primary; overflow: elide; }
+            Text { text: item.detail; font-size: Theme.text-small; color: Theme.outline; }
+        }
+        if item.openable: Icon { text: Icons.open-in-new; color: Theme.on-surface-variant; width: Theme.icon-large; }
+    }
+    TouchArea {
+        enabled: item.openable;
+        mouse-cursor: item.openable ? pointer : default;
+        clicked => { root.open(); }
+    }
+}
+
+// An embed's media, as the official Embed draws it: the picture, or for a
+// player or video a dark area until it plays, with a play button over it.
+// Clicking a picture opens its page; clicking a player starts it in place.
+export component EmbedMedia inherits Rectangle {
+    in property <EmbedItem> embed;
+    callback link-clicked(string);
+    callback play-inline(string, string);
+    callback player-fullscreen(string);
+    callback player-pointer(string, int, int, bool);
+    callback player-move(string, int, int);
+    // The player is loaded at this size (view::embed_media_size), so the
+    // pointer maps straight onto its page.
+    width: embed.width;
+    height: embed.height;
+    border-radius: Theme.radius-md;
+    background: (embed.play-url != "" && !embed.has-image) || embed.inline-playing ? Theme.media : transparent;
+    if embed.has-image && !embed.has-player-frame: Image {
+        width: parent.width;
+        height: parent.height;
+        source: embed.anim >= 0 ? Anim.frames[embed.anim] : embed.image;
+        image-fit: contain;
+    }
+    // GIFs keep this even while their video loops: a click opens the page.
+    if !embed.inline-playing || embed.style == 2: gif-touch := TouchArea {
+        mouse-cursor: pointer;
+        // A GIF's star, on hover: it goes to the picker's Favourites.
+        if embed.style == 2 && embed.gif-picture != "" && gif-touch.has-hover: GifStar {
+            x: parent.width - self.width - 6px;
+            y: 6px;
+            gif: embed.url != "" ? embed.url : embed.gif-picture;
+            picture: embed.gif-picture;
+        }
+        clicked => {
+            if embed.play-url != "" && embed.style != 2 {
+                root.play-inline(embed.play-url, embed.play-kind);
+            } else if embed.url != "" && embed.has-image {
+                // The picture large, in the viewer (its page stays a link in the title).
+                root.link-clicked("godwit://view/" + embed.url);
+            } else if embed.url != "" {
+                root.link-clicked(embed.url);
+            }
+        }
+    }
+    if embed.play-url != "" && embed.style != 2 && !embed.inline-playing: Rectangle {
+        width: 44px;
+        height: 44px;
+        border-radius: self.width / 2;
+        background: Theme.scrim-play;
+        Icon { text: Icons.play; color: Theme.on-media; font-size: Theme.text-media-control; }
+    }
+    if embed.inline-playing && embed.has-player-frame: Image {
+        width: parent.width;
+        height: parent.height;
+        source: Players.frames[embed.player-slot];
+        image-fit: contain;
+        // The frame comes at the screen's pixels: copied as-is, not smoothed
+        // (smoothing blurred the player's controls and text).
+        image-rendering: pixelated;
+        if embed.style != 2: TouchArea {
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                    root.player-pointer(embed.play-url, round(self.mouse-x / 1px), round(self.mouse-y / 1px), true);
+                }
+                if e.kind == PointerEventKind.up && e.button == PointerEventButton.left {
+                    root.player-pointer(embed.play-url, round(self.mouse-x / 1px), round(self.mouse-y / 1px), false);
+                }
+            }
+            // Every move, hovering too: pages open things on hover
+            // (YouTube's volume slider only widens under the pointer) and
+            // drag them while pressed. `mouse-x/y` follow the pointer in
+            // both cases, where a move event alone didn't reach the page.
+            changed mouse-x => {
+                if self.has-hover || self.pressed {
+                    root.player-move(embed.play-url, round(self.mouse-x / 1px), round(self.mouse-y / 1px));
+                }
+            }
+            changed mouse-y => {
+                if self.has-hover || self.pressed {
+                    root.player-move(embed.play-url, round(self.mouse-x / 1px), round(self.mouse-y / 1px));
+                }
+            }
+        }
+    }
+    // Godwit's corner button on a loaded player: it moves to its own
+    // window, fullscreen.
+    if embed.inline-playing && embed.style != 2: Rectangle {
+        x: parent.width - self.width - 6px;
+        y: 6px;
+        width: 28px;
+        height: 28px;
+        border-radius: self.height / 2;
+        background: full-area.has-hover ? Theme.scrim-control : Theme.scrim-control-idle;
+        Icon { text: Icons.fullscreen; color: Theme.on-media; font-size: Theme.text-large; }
+        full-area := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.player-fullscreen(embed.play-url); }
+        }
+    }
+}
+
+// The official embed card (Godwit's port): primary-container colours, the
+// embed's own colour as the left bar, at most 432 px wide.
+export component EmbedCard inherits Rectangle {
+    in property <EmbedItem> embed;
+    callback link-clicked(string);
+    callback play-inline(string, string);
+    callback player-fullscreen(string);
+    callback player-pointer(string, int, int, bool);
+    callback player-move(string, int, int);
+    width: 432px;
+    border-radius: Theme.radius-md;
+    background: Theme.primary-container;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: 4px;
+        height: parent.height;
+        background: embed.has-accent ? embed.accent : Theme.primary;
+    }
+    VerticalLayout {
+        padding-left: Theme.space-5;
+        padding-right: Theme.space-4;
+        padding-top: Theme.space-3;
+        padding-bottom: Theme.space-3;
+        spacing: Theme.space-3;
+        HorizontalLayout {
+            spacing: Theme.space-4;
+            VerticalLayout {
+                spacing: Theme.space-2;
+                horizontal-stretch: 1;
+                if embed.site-name != "" || embed.has-icon: HorizontalLayout {
+                    spacing: Theme.space-compact;
+                    alignment: start;
+                    if embed.has-icon: Image {
+                        width: Theme.icon-small;
+                        height: Theme.icon-small;
+                        source: embed.icon;
+                    }
+                    if embed.site-name != "": Text {
+                        text: embed.site-name;
+                        color: Theme.on-primary-container;
+                        font-size: Theme.text-small;
+                        vertical-alignment: center;
+                    }
+                }
+                if embed.title != "": Text {
+                    text: embed.title;
+                    color: Theme.primary;
+                    font-size: Theme.message-size;
+                    font-weight: 600;
+                    wrap: word-wrap;
+                    TouchArea {
+                        enabled: embed.url != "";
+                        mouse-cursor: embed.url != "" ? pointer : default;
+                        clicked => { root.link-clicked(embed.url); }
+                    }
+                }
+                if embed.has-description: StyledText {
+                    // Measured at its own width, as message text (see the blocks).
+                    height: self.preferred-height;
+                    text: embed.description;
+                    default-color: Theme.on-primary-container;
+                    default-font-size: Theme.message-size;
+                    link-color: Theme.primary;
+                    link-clicked(url) => { root.link-clicked(url); }
+                }
+            }
+            if embed.image-thumbnail && embed.has-image: Image {
+                width: 80px;
+                height: 80px;
+                source: embed.anim >= 0 ? Anim.frames[embed.anim] : embed.image;
+                image-fit: contain;
+                vertical-stretch: 0;
+            }
+        }
+        if embed.has-media: HorizontalLayout {
+            alignment: start;
+            EmbedMedia {
+                embed: embed;
+                link-clicked(u) => { root.link-clicked(u); }
+                play-inline(u, k) => { root.play-inline(u, k); }
+                player-fullscreen(u) => { root.player-fullscreen(u); }
+                player-pointer(u, x, y, d) => { root.player-pointer(u, x, y, d); }
+                player-move(u, x, y) => { root.player-move(u, x, y); }
+            }
+        }
+    }
+}
+
+// An invite link's card, as the official messaging/elements/Invite: 320 ×
+// 64 px on secondary-container, the server's 42 px icon, its name and
+// member count, and Join (Joined, greyed, once in).
+export component InviteCard inherits Rectangle {
+    in property <InviteItem> item;
+    callback join();
+    width: 320px;
+    height: 64px;
+    border-radius: Theme.radius-md;
+    background: Theme.secondary-container;
+    HorizontalLayout {
+        padding: Theme.space-invite;
+        spacing: Theme.space-4;
+        if item.state == 4: Text {
+            text: "This invite isn't valid (any more).";
+            vertical-alignment: center;
+            color: Theme.on-secondary-container;
+        }
+        if item.state == 0: Text {
+            text: "Loading invite…";
+            vertical-alignment: center;
+            color: Theme.on-secondary-container;
+        }
+        if item.state >= 1 && item.state <= 3: Avatar {
+            size: 42px;
+            source: item.icon;
+            has-image: item.has-icon;
+            initials: item.initials;
+        }
+        if item.state >= 1 && item.state <= 3: VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text { text: item.name; font-size: Theme.text-label; font-weight: 600; overflow: elide; color: Theme.on-secondary-container; }
+            Text { text: item.members; font-size: Theme.text-small; color: Theme.on-secondary-container; }
+        }
+        if item.state >= 1 && item.state <= 3: Button {
+            y: (parent.height - self.height) / 2;
+            text: item.state == 3 ? "Joined" : item.state == 2 ? "Joining…" : "Join";
+            kind: "filled";
+            enabled: item.state == 1;
+            clicked => { root.join(); }
+        }
+    }
+}
+

@@ -1,0 +1,114 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { PresenceChoice } from "types.slint";
+import { Avatar, Button, IconButton, TextField } from "widgets.slint";
+import { Icons } from "theme.slint";
+
+// The card our avatar in the rail opens.
+export component ProfileCard inherits Rectangle {
+    in property <string> name;
+    in property <string> username;
+    in property <string> network;
+    in property <image> avatar;
+    in property <bool> has-avatar;
+    in property <string> initials;
+    // Our presence: whether the network has it, its dot, and which of the
+    // choices it is (0 Online, 1 Idle, 2 Focus, 3 Do Not Disturb, 4 Invisible).
+    in property <bool> has-presence;
+    in property <color> presence;
+    in property <int> presence-index;
+    // The statuses this account's network has (Steam: online, away, invisible).
+    in property <[PresenceChoice]> choices;
+    // The network has custom status text (Steam doesn't).
+    in property <bool> has-status-text: true;
+    // Our custom status text ("" for none).
+    in property <string> status;
+    callback set-presence(int);
+    // Set the custom status ("" clears it).
+    callback set-status(string);
+    property <string> draft: root.status;
+    callback open-settings();
+    callback log-out();
+    width: 300px;
+    height: layout.preferred-height;
+    border-radius: Theme.radius-dialog;
+    background: Theme.surface-high;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: Theme.shadow;
+    layout := VerticalLayout {
+        padding: Theme.space-6;
+        spacing: Theme.space-4;
+        HorizontalLayout {
+            spacing: Theme.space-4;
+            Rectangle {
+                width: Theme.avatar-profile;
+                height: Theme.avatar-profile;
+                Avatar { size: Theme.avatar-profile; source: root.avatar; has-image: root.has-avatar; initials: root.initials; }
+                if root.has-presence: Rectangle {
+                    x: 56px - 16px;
+                    y: 56px - 16px;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: self.width / 2;
+                    border-width: 3px;
+                    border-color: Theme.surface-high;
+                    background: root.presence;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Text { text: root.name; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; overflow: elide; }
+                Text { text: root.network + " · " + root.username; font-size: Theme.text-small; color: Theme.outline; overflow: elide; }
+            }
+        }
+        // The official custom status: Enter sets it (at most 128
+        // characters, as Stoat's limit), the cross clears it.
+        if root.has-presence && root.has-status-text: HorizontalLayout {
+            spacing: Theme.space-2;
+            TextField {
+                horizontal-stretch: 1;
+                text: root.status;
+                placeholder: "Set a custom status";
+                edited(t) => { root.draft = t; }
+                accepted => { root.set-status(root.draft); }
+            }
+            if root.status != "": IconButton {
+                y: (parent.height - self.height) / 2;
+                glyph: Icons.close;
+                clicked => { root.set-status(""); }
+            }
+        }
+        // The network's own status choices, with their dots (as Godwit's menu).
+        if root.has-presence: VerticalLayout {
+            for choice in root.choices: Rectangle {
+                height: 36px;
+                border-radius: Theme.radius-sm;
+                background: choice.value == root.presence-index ? Theme.secondary-container : row.has-hover ? Theme.surface-highest : transparent;
+                row := TouchArea { mouse-cursor: pointer; clicked => { root.set-presence(choice.value); } }
+                HorizontalLayout {
+                    padding-left: Theme.space-between;
+                    spacing: Theme.space-between;
+                    Rectangle {
+                        y: (parent.height - 10px) / 2;
+                        width: 10px;
+                        height: 10px;
+                        border-radius: self.width / 2;
+                        background: choice.colour;
+                    }
+                    Text {
+                        text: choice.label;
+                        vertical-alignment: center;
+                        color: choice.value == root.presence-index ? Theme.on-secondary-container : Theme.on-surface;
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: Theme.gap-md;
+            Button { horizontal-stretch: 1; kind: "tonal"; text: "Settings"; clicked => { root.open-settings(); } }
+            Button { horizontal-stretch: 1; kind: "text"; danger: true; text: "Log out"; clicked => { root.log-out(); } }
+        }
+    }
+}

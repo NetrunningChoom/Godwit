@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Dialog, Button, Select, Toggle } from "widgets.slint";
+
+export component ShareSettings inherits Dialog {
+    in property <[string]> qualities;
+    in-out property <int> quality-index;
+    in-out property <bool> remember;
+    callback confirm();
+    title: "Screen Share Settings";
+    card-width: 420px;
+    FocusScope {
+        height: content.preferred-height;
+        init => { self.focus(); }
+        key-pressed(e) => { if e.text == Key.Escape { root.dismissed(); return accept; } reject }
+        content := VerticalLayout {
+            spacing: Theme.space-5;
+            Text { text: "Quality"; color: Theme.on-surface; }
+            Select { model: root.qualities; current-index <=> root.quality-index; }
+            HorizontalLayout {
+                spacing: Theme.space-4;
+                Toggle { checked <=> root.remember; }
+                Text { text: "Don't ask me again"; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+            }
+            HorizontalLayout {
+                spacing: Theme.space-3; alignment: end;
+                Button { text: "Cancel"; clicked => { root.dismissed(); } }
+                Button { text: "Go"; kind: "filled"; enabled: root.quality-index >= 0 && root.quality-index < root.qualities.length; clicked => { root.confirm(); } }
+            }
+        }
+    }
+}

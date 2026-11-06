@@ -1,0 +1,254 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Screen } from "types.slint";
+import { Dialog, ConfirmDialog, Button, TextField } from "widgets.slint";
+
+// These stay below the fullscreen viewer, as in AppWindow's original stack.
+export component CallDialogs inherits Rectangle {
+    in property <Screen> screen;
+    in property <bool> discord-privacy-open;
+    callback discord-privacy(bool);
+    in property <bool> quiet-notice-open;
+    in property <bool> incoming-call-open;
+    in property <string> quiet-notice-account;
+    callback quiet-notice(bool);
+    in-out property <bool> camera-confirm;
+    in property <bool> in-call;
+    in property <string> call-room;
+    callback set-camera(bool);
+    in property <bool> rejoin-open;
+    in property <string> rejoin-room;
+    callback rejoin-call(bool);
+    in-out property <string> confirm-link;
+    callback open-confirmed-link();
+    // Adding Godwit to the system's apps (install.rs), asked once at start.
+    in-out property <bool> install-offer;
+    in-out property <bool> install-note;
+    in property <string> install-status;
+    callback install-app();
+    callback install-later();
+    in-out property <string> update-version;
+    in property <string> update-status;
+    callback update-now();
+
+    if root.discord-privacy-open && screen == Screen.main: ConfirmDialog {
+        title: "Turn off Discord's data use?";
+        card-width: 440px;
+        message: "Discord uses your activity to personalise what it shows you and for its usage statistics, and shares the games you play with everyone who can see you. Godwit can switch these off in your Discord account now:";
+        detail: "• Use data to improve Discord\n• Use data to personalise my Discord experience\n• Share my activity (games) in my status";
+        note: "You can turn them back on any time in Discord's own Privacy settings. Godwit asks once.";
+        cancel-text: "Keep as they are";
+        confirm-text: "Turn them off";
+        confirm-kind: "filled";
+        cancelled => { root.discord-privacy(false); }
+        confirmed => { root.discord-privacy(true); }
+    }
+    // A call takes precedence over the duplicate-notification notice.
+    if root.quiet-notice-open && !root.incoming-call-open && screen == Screen.main: ConfirmDialog {
+        title: "Steam is running";
+        card-width: 440px;
+        message: "Steam's own app is open on this computer, so Godwit stays quiet for " + root.quiet-notice-account + " on Steam: otherwise every message and call would alert twice. Messages and calls still show here.";
+        note: "You can change this any time in Settings → Notifications.";
+        cancel-text: "Notify in Godwit too";
+        confirm-text: "Keep quiet";
+        confirm-kind: "filled";
+        // Backdrop dismissal keeps the current quiet mode, as before.
+        dismiss-confirms: true;
+        cancelled => { root.quiet-notice(true); }
+        confirmed => { root.quiet-notice(false); }
+    }
+    if root.camera-confirm && root.in-call && screen == Screen.main: ConfirmDialog {
+        title: "Turn on your camera?";
+        card-width: 400px;
+        message: "Everyone in " + root.call-room + " will see you.";
+        confirm-text: "Turn on camera";
+        confirm-kind: "filled";
+        cancelled => { root.camera-confirm = false; }
+        confirmed => { root.camera-confirm = false; root.set-camera(true); }
+    }
+    if root.rejoin-open && !root.incoming-call-open && screen == Screen.main: ConfirmDialog {
+        title: "Rejoin call?";
+        card-width: 400px;
+        message: "Godwit closed while you were in a call in " + root.rejoin-room + ".";
+        cancel-text: "Not now";
+        confirm-text: "Rejoin";
+        confirm-kind: "filled";
+        cancelled => { root.rejoin-call(false); }
+        confirmed => { root.rejoin-call(true); }
+    }
+    // A newer release (update.rs): asked first, never installed unasked.
+    if root.install-offer && screen == Screen.main: ConfirmDialog {
+        title: "Add Godwit to your apps?";
+        card-width: 420px;
+        message: "Godwit can put itself in your app menu, so you can start it like any other app. It keeps itself up to date from there.";
+        note: root.install-status;
+        cancel-text: "Not now";
+        confirm-text: "Add Godwit";
+        confirm-kind: "filled";
+        cancelled => { root.install-later(); }
+        confirmed => { root.install-app(); }
+    }
+    // After "Not now": where to find it later.
+    if root.install-note && screen == Screen.main: ConfirmDialog {
+        title: "Maybe later";
+        card-width: 400px;
+        message: "You can add Godwit to your apps any time in Settings › About.";
+        single: true;
+        dismiss-confirms: true;
+        confirm-text: "OK";
+        confirm-kind: "filled";
+        confirmed => { root.install-note = false; }
+    }
+    if root.update-version != "" && !root.install-offer && !root.install-note && screen == Screen.main: ConfirmDialog {
+        title: "Update available";
+        card-width: 400px;
+        message: "Godwit " + root.update-version + " is available. Download it now and restart?";
+        note: root.update-status;
+        cancel-text: "Later";
+        confirm-text: "Update and restart";
+        confirm-kind: "filled";
+        cancelled => { root.update-version = ""; }
+        confirmed => { root.update-now(); }
+    }
+    // Before a link leaves the app: where it really goes, in full.
+    if root.confirm-link != "" && screen == Screen.main: ConfirmDialog {
+        title: "Open in browser?";
+        card-width: 440px;
+        message: "This link goes to:";
+        detail: root.confirm-link;
+        confirm-text: "Open";
+        confirm-kind: "filled";
+        cancelled => { root.confirm-link = ""; }
+        confirmed => { root.open-confirmed-link(); }
+    }
+}
+
+// Server/account/message dialogs remain above the incoming-call card.
+export component ManagementDialogs inherits Rectangle {
+    in property <bool> invite-open;
+    in property <string> invite-link;
+    callback close-invite-link();
+    callback copy-invite-link();
+    in-out property <bool> creating-channel;
+    in-out property <string> new-channel-name;
+    in-out property <bool> new-channel-voice;
+    callback server-menu-create-channel(string, bool);
+    in-out property <int> confirm-log-out: -2;
+    callback log-out();
+    callback log-out-account(int);
+    in-out property <bool> confirm-leave;
+    in property <string> sidebar-title;
+    callback server-menu-leave();
+    in-out property <int> confirm-moderate;
+    in property <string> card-name;
+    in-out property <string> ban-reason;
+    callback moderate-member(bool, string);
+    in-out property <int> confirm-delete: -1;
+    callback delete(int);
+
+    // The official CreateInvite modal: the link, to copy.
+    if root.invite-open: Dialog {
+        title: "Invite people";
+        dismissed => { root.close-invite-link(); }
+        Text {
+            text: root.invite-link == "" ? "Making an invite…" : root.invite-link;
+            wrap: word-wrap;
+            font-family: root.invite-link == "" ? "" : "monospace";
+            color: Theme.on-surface;
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.gap-sm;
+            Button { text: "Close"; clicked => { root.close-invite-link(); } }
+            Button { text: "Copy link"; kind: "filled"; enabled: root.invite-link != ""; clicked => { root.copy-invite-link(); } }
+        }
+    }
+    // The official CreateChannel modal: a name, text or voice.
+    if root.creating-channel: Dialog {
+        title: "Create channel";
+        dismissed => { root.creating-channel = false; }
+        TextField {
+            placeholder: "Channel name";
+            text <=> root.new-channel-name;
+            autofocus: true;
+            accepted => {
+                if root.new-channel-name != "" {
+                    root.server-menu-create-channel(root.new-channel-name, root.new-channel-voice);
+                    root.creating-channel = false;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: Theme.gap-sm;
+            Button { text: "Text"; kind: root.new-channel-voice ? "tonal" : "filled"; clicked => { root.new-channel-voice = false; } }
+            Button { text: "Voice"; kind: root.new-channel-voice ? "filled" : "tonal"; clicked => { root.new-channel-voice = true; } }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.gap-sm;
+            Button { text: "Cancel"; clicked => { root.creating-channel = false; } }
+            Button {
+                text: "Create";
+                kind: "filled";
+                enabled: root.new-channel-name != "";
+                clicked => {
+                    root.server-menu-create-channel(root.new-channel-name, root.new-channel-voice);
+                    root.creating-channel = false;
+                }
+            }
+        }
+    }
+    if root.confirm-log-out > -2: ConfirmDialog {
+        title: "Sign out?";
+        message: "This ends the sign-in at the network too. To use the account here again, you'll sign in again (a new QR code for Discord and Steam).";
+        confirm-text: "Sign out";
+        danger: true;
+        cancelled => { root.confirm-log-out = -2; }
+        confirmed => {
+            if root.confirm-log-out == -1 { root.log-out(); } else { root.log-out-account(root.confirm-log-out); }
+            root.confirm-log-out = -2;
+        }
+    }
+    // The official LeaveServer confirmation.
+    if root.confirm-leave: ConfirmDialog {
+        title: "Leave " + root.sidebar-title + "?";
+        message: "You won't be able to rejoin unless you are re-invited.";
+        confirm-text: "Leave";
+        danger: true;
+        cancelled => { root.confirm-leave = false; }
+        confirmed => { root.confirm-leave = false; root.server-menu-leave(); }
+    }
+    // The official KickMember / BanMember confirmations; a ban takes a reason.
+    if root.confirm-moderate > 0: Dialog {
+        title: (root.confirm-moderate == 2 ? "Ban " : "Kick ") + root.card-name + "?";
+        dismissed => { root.confirm-moderate = 0; }
+        Text {
+            text: root.confirm-moderate == 2 ? "They won't be able to rejoin unless they're unbanned." : "They can rejoin with an invite.";
+            wrap: word-wrap; color: Theme.on-surface-variant;
+        }
+        if root.confirm-moderate == 2: TextField { placeholder: "Reason (optional)"; text <=> root.ban-reason; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.gap-sm;
+            Button { text: "Cancel"; clicked => { root.confirm-moderate = 0; } }
+            Button {
+                text: root.confirm-moderate == 2 ? "Ban" : "Kick";
+                danger: true;
+                clicked => {
+                    root.moderate-member(root.confirm-moderate == 2, root.ban-reason);
+                    root.confirm-moderate = 0;
+                }
+            }
+        }
+    }
+    if root.confirm-delete >= 0: ConfirmDialog {
+        title: "Delete message";
+        message: "Are you sure you want to delete this?";
+        confirm-text: "Delete";
+        danger: true;
+        cancelled => { root.confirm-delete = -1; }
+        confirmed => { root.delete(root.confirm-delete); root.confirm-delete = -1; }
+    }
+}

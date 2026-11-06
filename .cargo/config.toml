@@ -1,0 +1,10 @@
+# Windows (MSVC) only: LiveKit's WebRTC prebuilt is built with the static C
+# runtime (/MT), so everything linking with it must be too, or link.exe stops
+# with LNK2038 "RuntimeLibrary mismatch" (LiveKit's rust-sdks sets the same).
+# It also means godwit.exe needs no separate VC++ runtime (VCRUNTIME140).
+# Linux targets are untouched.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

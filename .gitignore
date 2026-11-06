@@ -1,0 +1,24 @@
+/target
+# The maintainer's own notes: never committed or published.
+/private/
+__pycache__/
+# Docs are local-only: design notes, audits and the roadmap stay off the repo.
+/docs/
+/dist/
+# Safety net: keys, secrets, local state and editor files never go in.
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+*.log
+*.swp
+*~
+.DS_Store
+.idea/
+.vscode/
+*.zip
+*.tar.gz
+*.AppImage
+/.build-cache/

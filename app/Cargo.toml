@@ -1,0 +1,59 @@
+[package]
+name = "godwit"
+description = "Godwit: one native client for your chat networks, that makes moving to the better ones easy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme = "../README.md"
+
+[dependencies]
+arboard.workspace = true
+emojis.workspace = true
+godwit-core.workspace = true
+godwit-cache.workspace = true
+godwit-steam.workspace = true
+godwit-discord.workspace = true
+godwit-fluxer.workspace = true
+godwit-teams.workspace = true
+godwit-slack.workspace = true
+godwit-gchat.workspace = true
+godwit-media.workspace = true
+godwit-secrets.workspace = true
+godwit-stoat.workspace = true
+directories.workspace = true
+godwit-voice.workspace = true
+notify-rust.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+image.workspace = true
+material-colors.workspace = true
+# Message text layout, as Slint's own text (same version, already built for it).
+parley = "0.11.1"
+pulldown-cmark = { version = "0.13", default-features = false }
+unicode-segmentation.workspace = true
+open.workspace = true
+qrcode = { version = "0.14", default-features = false }
+reqwest.workspace = true
+ring = "0.17"
+tokio.workspace = true
+resvg.workspace = true
+rfd.workspace = true
+rustls.workspace = true
+slint.workspace = true
+syntect.workspace = true
+ureq.workspace = true
+
+# The console, and the AppUserModelID notifications go under (src/win32.rs).
+# Already in the tree through winit.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell"] }
+
+[dev-dependencies]
+godwit-secrets = { workspace = true, features = ["test-support"] }
+
+[build-dependencies]
+slint-build.workspace = true
+
+[lints]
+workspace = true

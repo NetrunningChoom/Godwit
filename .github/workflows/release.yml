@@ -1,0 +1,57 @@
+# Builds the release binaries for a pushed vX.Y.Z tag with tools/release.sh
+# (the same container the maintainer builds them in locally) and publishes a
+# draft release: dist/ is checked before it goes public.
+#
+# Needs one repository secret:
+#   GODWIT_SIGNING_KEY  the Ed25519 private key (PEM); without it the binaries
+#                       aren't signed and installed copies can't self-update.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write the signing key (GODWIT_SIGNING_KEY)
+        env:
+          GODWIT_SIGNING_KEY: ${{ secrets.GODWIT_SIGNING_KEY }}
+        run: |
+          if [ -z "$GODWIT_SIGNING_KEY" ]; then
+              echo "set the GODWIT_SIGNING_KEY repository secret (the Ed25519 private key, PEM)" >&2
+              exit 1
+          fi
+          printf '%s' "$GODWIT_SIGNING_KEY" > "$HOME/godwit-signing.pem"
+      # Cargo's downloads (LiveKit's prebuilt libwebrtc alone is a few hundred
+      # MB); the build itself runs in a fresh container each time.
+      - name: Cache downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build-cache/registry
+            .build-cache/git
+          key: godwit-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'tools/build/Dockerfile') }}
+          restore-keys: godwit-${{ runner.os }}-
+      - name: Build (tools/release.sh, in its container)
+        env:
+          GODWIT_JOBS: '4'
+        run: |
+          export GODWIT_SIGNING_KEY="$HOME/godwit-signing.pem"
+          tools/release.sh --container
+      - name: Publish a draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --draft --title "Godwit $TAG" --generate-notes dist/*

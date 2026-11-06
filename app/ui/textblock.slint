@@ -1,0 +1,104 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Anim, Select, BlockItem } from "types.slint";
+
+// A block of rich text, laid out in Rust (app/src/textlayout.rs): its
+// pieces at their places (emoji as pictures, links), the selection behind
+// them, and the pointer for selecting, which may go on over other blocks
+// (Select). The one way text with emoji is drawn: message text, and the
+// profile card (its own row, `view::CARD_ROW`).
+export component TextBlock inherits Rectangle {
+    in property <BlockItem> block;
+    in property <int> row-number;
+    in property <int> index;
+    in property <color> colour;
+    in property <bool> mono;
+    // A right-click: the message's menu, at this window position. The
+    // block's own area takes the pointer, so the row's never sees it.
+    callback context-menu(length, length);
+    height: block.text-height;
+    for r in Select.rects: Rectangle {
+        visible: r.row == root.row-number && r.block == root.index;
+        x: r.x;
+        y: r.y;
+        width: r.w;
+        height: r.h;
+        background: Theme.primary-container;
+    }
+    for p in block.pieces: Rectangle {
+        x: p.x;
+        y: p.y;
+        width: p.width;
+        height: p.emoji ? p.width : t.preferred-height;
+        // Inline code: the official faint box.
+        background: p.code ? Theme.on-surface.with-alpha(0.08) : transparent;
+        border-radius: Theme.radius-line;
+        if p.emoji && p.has-image: Image {
+            width: parent.width;
+            height: parent.height;
+            source: p.anim >= 0 ? Anim.frames[p.anim] : p.image;
+        }
+        t := Text {
+            x: 0;
+            y: 0;
+            visible: !p.emoji || !p.has-image;
+            text: p.text;
+            font-size: p.emoji ? root.block.size * 1.1 : p.size;
+            // A header's name is semibold, as officially.
+            font-weight: root.block.kind == 4 && p.bold ? 600 : p.bold || root.block.kind == 2 ? 700 : 400;
+            font-italic: p.italic;
+            font-family: root.mono || p.code ? "monospace" : "Inter";
+            color: p.faint ? Theme.outline
+                : p.has-colour ? p.colour
+                : p.link && !p.quiet ? Theme.primary : root.colour;
+            stroke-width: 0;
+        }
+        if p.strike: Rectangle {
+            y: parent.height * 0.55;
+            height: 1px;
+            background: t.color;
+        }
+        if p.link: Rectangle {
+            y: parent.height - 2px;
+            height: 1px;
+            background: t.color;
+            visible: Select.link-row == root.row-number && Select.link-block == root.index;
+        }
+    }
+    // Under the pressed pointer, wherever the drag started: report it.
+    property <bool> under: Select.dragging
+        && Select.py >= self.absolute-position.y && Select.py < self.absolute-position.y + self.height;
+    property <length> lx: Select.px - self.absolute-position.x;
+    property <length> ly: Select.py - self.absolute-position.y;
+    changed lx => { if self.under { Select.drag(root.row-number, root.index, self.lx, self.ly); } }
+    changed ly => { if self.under { Select.drag(root.row-number, root.index, self.lx, self.ly); } }
+    touch := TouchArea {
+        mouse-cursor: Select.link-row == root.row-number && Select.link-block == root.index ? pointer : text;
+        pointer-event(e) => {
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                Select.down(root.row-number, root.index, self.mouse-x, self.mouse-y, e.modifiers.shift);
+                Select.px = self.absolute-position.x + self.mouse-x;
+                Select.py = self.absolute-position.y + self.mouse-y;
+                Select.dragging = true;
+            }
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                Select.dragging = false;
+                Select.up(root.row-number, root.index, self.mouse-x, self.mouse-y);
+            }
+            // Hover: `moved` only fires while pressed, so links are found here.
+            if e.kind == PointerEventKind.move && !self.pressed {
+                Select.hover(root.row-number, root.index, self.mouse-x, self.mouse-y);
+            }
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                root.context-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+        moved => {
+            Select.px = self.absolute-position.x + self.mouse-x;
+            Select.py = self.absolute-position.y + self.mouse-y;
+        }
+        double-clicked => { Select.word(root.row-number, root.index, self.mouse-x, self.mouse-y); }
+    }
+}

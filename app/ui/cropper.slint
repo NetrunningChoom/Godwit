@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Slider } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Dialog, Button } from "widgets.slint";
+
+// The cropper: a picked avatar, icon or banner, panned and zoomed in a frame.
+export component Cropper inherits Dialog {
+    callback crop-cancel();
+    callback crop-done(bool);
+    in property <string> crop-error;
+    in property <float> crop-frame-height;
+    in property <float> crop-frame-width;
+    in property <image> crop-image;
+    in property <int> crop-image-height;
+    in property <int> crop-image-width;
+    in property <string> crop-note;
+    in-out property <float> crop-pan-x;
+    in-out property <float> crop-pan-y;
+    in property <bool> crop-round;
+    in property <string> crop-title;
+    in-out property <float> crop-zoom: 1;
+
+    title: root.crop-title;
+    card-width: max(360px, root.crop-frame-width * 1px + 48px);
+    dismissed => { root.crop-cancel(); }
+    HorizontalLayout {
+        alignment: center;
+        crop-frame := Rectangle {
+            width: root.crop-frame-width * 1px;
+            height: root.crop-frame-height * 1px;
+            clip: true;
+            background: Theme.media;
+            // Covering the frame at zoom 1 (cropper::source_rect does the same sums).
+            property <float> base: max(root.crop-frame-width / max(1, root.crop-image-width), root.crop-frame-height / max(1, root.crop-image-height));
+            property <length> shown-w: root.crop-image-width * 1px * self.base * root.crop-zoom;
+            property <length> shown-h: root.crop-image-height * 1px * self.base * root.crop-zoom;
+            property <length> room-x: max(0px, (self.shown-w - self.width) / 2);
+            property <length> room-y: max(0px, (self.shown-h - self.height) / 2);
+            Image {
+                width: crop-frame.shown-w;
+                height: crop-frame.shown-h;
+                x: (crop-frame.width - self.width) / 2 + clamp(root.crop-pan-x * 1px, -crop-frame.room-x, crop-frame.room-x);
+                y: (crop-frame.height - self.height) / 2 + clamp(root.crop-pan-y * 1px, -crop-frame.room-y, crop-frame.room-y);
+                source: root.crop-image;
+                image-fit: fill;
+            }
+            // What the round avatar keeps.
+            if root.crop-round: Rectangle {
+                border-radius: self.width / 2;
+                border-width: 2px;
+                border-color: Theme.on-media-strong;
+            }
+            if !root.crop-round: Rectangle {
+                border-width: 2px;
+                border-color: Theme.on-media-strong;
+            }
+            crop-touch := TouchArea {
+                mouse-cursor: move;
+                property <length> from-x;
+                property <length> from-y;
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down {
+                        self.from-x = root.crop-pan-x * 1px - self.mouse-x;
+                        self.from-y = root.crop-pan-y * 1px - self.mouse-y;
+                    }
+                }
+                moved => {
+                    root.crop-pan-x = clamp(self.from-x + self.mouse-x, -crop-frame.room-x, crop-frame.room-x) / 1px;
+                    root.crop-pan-y = clamp(self.from-y + self.mouse-y, -crop-frame.room-y, crop-frame.room-y) / 1px;
+                }
+                scroll-event(e) => {
+                    root.crop-zoom = clamp(root.crop-zoom + e.delta-y / 600px, 1, 4);
+                    accept
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: Theme.gap-sm;
+        Text { text: "Zoom"; color: Theme.on-surface-variant; vertical-alignment: center; }
+        Slider {
+            minimum: 1;
+            maximum: 4;
+            value <=> root.crop-zoom;
+        }
+    }
+    Text { text: root.crop-note; font-size: Theme.text-small; wrap: word-wrap; color: Theme.outline; }
+    if root.crop-error != "": Text { text: root.crop-error; wrap: word-wrap; color: Theme.error; }
+    HorizontalLayout {
+        alignment: end;
+        spacing: Theme.gap-sm;
+        Button { text: "Cancel"; kind: "text"; clicked => { root.crop-cancel(); } }
+        Button { text: "Use original"; kind: "text"; clicked => { root.crop-done(true); } }
+        Button { text: "Done"; kind: "filled"; clicked => { root.crop-done(false); } }
+    }
+}

@@ -1,0 +1,288 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { Section } from "settings.slint";
+import { AdminRoleItem, BanItem, PermissionItem, ServerInviteItem } from "types.slint";
+import { Avatar, Button, Dialog, IconButton, Select, TextArea, TextField, Toggle } from "widgets.slint";
+
+// Server settings, as the official ServerSettings: a sidebar of pages
+// (Overview, Roles, Invites, Bans), each shown only with the permission it
+// needs, and Delete Server for the owner.
+export component ServerSettings inherits Rectangle {
+    in property <string> server-name;
+    // 0 Overview, 1 Roles, 2 Invites, 3 Bans.
+    in property <int> page;
+    in property <bool> show-roles;
+    in property <bool> show-invites;
+    in property <bool> show-bans;
+    in property <bool> can-delete;
+    // A page change is on its way; its buttons wait.
+    in property <bool> admin-busy;
+    in property <string> notice;
+    in property <bool> notice-failed;
+
+    in property <bool> loaded;
+    in property <bool> busy;
+    in property <bool> allowed;
+    in property <bool> dirty;
+    in property <bool> failed;
+    in property <string> status;
+    in-out property <string> name;
+    in-out property <string> description;
+    in property <image> icon;
+    in property <bool> has-icon;
+    in property <string> icon-label;
+    in property <image> banner;
+    in property <bool> has-banner;
+    in property <string> banner-label;
+    in property <[string]> channels;
+    in-out property <int> joined;
+    in-out property <int> left;
+    in-out property <int> kicked;
+    in-out property <int> banned;
+
+    in property <[ServerInviteItem]> invites;
+    in property <bool> invites-loaded;
+    in property <[BanItem]> bans;
+    in property <bool> bans-loaded;
+    in property <[AdminRoleItem]> roles;
+    in property <bool> roles-loaded;
+    // The role being edited: 0 is Everyone, then the roles in order.
+    in property <int> role-index;
+    in-out property <string> role-name;
+    in-out property <string> role-colour;
+    in-out property <bool> role-hoist;
+    in property <[PermissionItem]> permissions;
+    in property <bool> role-dirty;
+
+    callback close(); callback save(); callback reset(); callback reload(); callback changed();
+    callback pick-image(bool); callback remove-image(bool);
+    callback select-page(int);
+    callback delete-invite(int); callback copy-invite(int);
+    callback unban(int);
+    callback select-role(int); callback create-role(string); callback role-edited();
+    callback toggle-permission(int); callback save-role(); callback delete-role();
+    callback delete-server();
+
+    property <bool> confirm-delete;
+    property <string> new-role;
+    background: Theme.surface-lowest;
+    TouchArea { scroll-event(e) => { accept } }
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(e) => { if e.text == Key.Escape { root.close(); return accept; } reject }
+        HorizontalLayout {
+            Rectangle {
+                width: 220px;
+                background: Theme.surface-low;
+                VerticalLayout {
+                    padding: Theme.space-4; spacing: Theme.space-1; alignment: start;
+                    Text { text: root.server-name; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; overflow: elide; }
+                    Section { label: "Overview"; selected: root.page == 0; clicked => { root.select-page(0); } }
+                    if root.show-roles: Section { label: "Roles"; selected: root.page == 1; clicked => { root.select-page(1); } }
+                    if root.show-invites: Section { label: "Invites"; selected: root.page == 2; clicked => { root.select-page(2); } }
+                    if root.show-bans: Section { label: "Bans"; selected: root.page == 3; clicked => { root.select-page(3); } }
+                    if root.can-delete: Rectangle { height: 12px; }
+                    if root.can-delete: Section { label: "Delete Server"; danger: true; clicked => { root.confirm-delete = true; } }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                HorizontalLayout {
+                    padding: Theme.space-5; spacing: Theme.space-4;
+                    Text {
+                        text: root.page == 1 ? "Roles" : root.page == 2 ? "Invites" : root.page == 3 ? "Bans" : "Overview";
+                        font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center;
+                    }
+                    Button { text: "Close"; kind: "text"; clicked => { root.close(); } }
+                }
+                if root.notice != "" && root.page != 0: HorizontalLayout {
+                    padding-left: Theme.space-5; padding-right: Theme.space-5;
+                    Text { text: root.notice; wrap: word-wrap; color: root.notice-failed ? Theme.error : Theme.on-surface-variant; }
+                }
+                if root.page == 0: overview := ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        width: min(overview.visible-width, 680px);
+                        padding: Theme.space-7; spacing: Theme.space-4; alignment: start;
+                        if root.status != "": Text { text: root.status; wrap: word-wrap; color: root.failed ? Theme.error : Theme.on-surface-variant; }
+                        if root.loaded && !root.allowed: Text { text: "You need Manage Server permission to change these settings."; wrap: word-wrap; color: Theme.on-surface-variant; }
+                        if root.loaded: VerticalLayout {
+                            spacing: Theme.space-4;
+                            Text { text: "Server icon"; color: Theme.on-surface; }
+                            Avatar { size: 72px; source: root.icon; has-image: root.has-icon; initials: ""; }
+                            if root.icon-label != "": Text { text: root.icon-label; wrap: word-wrap; color: Theme.on-surface-variant; }
+                            HorizontalLayout {
+                                alignment: start; spacing: Theme.space-3;
+                                Button { text: "Change icon"; enabled: root.allowed && !root.busy; clicked => { root.pick-image(true); } }
+                                Button { text: "Remove"; kind: "text"; enabled: root.allowed && !root.busy; clicked => { root.remove-image(true); } }
+                            }
+                            Text { text: "Server banner"; color: Theme.on-surface; }
+                            // Sized and clipped: an unsized Image draws at its natural size, over the form below.
+                            Rectangle { height: 120px; clip: true; background: Theme.surface-high; if root.has-banner: Image { width: parent.width; height: parent.height; source: root.banner; image-fit: cover; } }
+                            if root.banner-label != "": Text { text: root.banner-label; wrap: word-wrap; color: Theme.on-surface-variant; }
+                            HorizontalLayout {
+                                alignment: start; spacing: Theme.space-3;
+                                Button { text: "Change banner"; enabled: root.allowed && !root.busy; clicked => { root.pick-image(false); } }
+                                Button { text: "Remove"; kind: "text"; enabled: root.allowed && !root.busy; clicked => { root.remove-image(false); } }
+                            }
+                            Text { text: "Server name"; color: Theme.on-surface; }
+                            TextField { text <=> root.name; enabled: root.allowed && !root.busy; edited => { root.changed(); } accepted => { root.save(); } }
+                            Text { text: "Description"; color: Theme.on-surface; }
+                            TextArea { height: 120px; text <=> root.description; enabled: root.allowed && !root.busy; edited => { root.changed(); } }
+                            Text { text: "System message channels"; font-weight: 600; color: Theme.on-surface; }
+                            Text { text: "User joined"; color: Theme.on-surface; }
+                            Select { model: root.channels; current-index <=> root.joined; enabled: root.allowed && !root.busy; selected(i) => { root.changed(); } }
+                            Text { text: "User left"; color: Theme.on-surface; }
+                            Select { model: root.channels; current-index <=> root.left; enabled: root.allowed && !root.busy; selected(i) => { root.changed(); } }
+                            Text { text: "User kicked"; color: Theme.on-surface; }
+                            Select { model: root.channels; current-index <=> root.kicked; enabled: root.allowed && !root.busy; selected(i) => { root.changed(); } }
+                            Text { text: "User banned"; color: Theme.on-surface; }
+                            Select { model: root.channels; current-index <=> root.banned; enabled: root.allowed && !root.busy; selected(i) => { root.changed(); } }
+                        }
+                    }
+                }
+                if root.page == 0: HorizontalLayout {
+                    padding: Theme.space-5; spacing: Theme.space-3; alignment: end;
+                    Button { text: "Reload"; kind: "text"; enabled: !root.busy && !root.dirty; clicked => { root.reload(); } }
+                    Button { text: "Reset"; enabled: root.loaded && !root.busy; clicked => { root.reset(); } }
+                    Button { text: "Save"; kind: "filled"; enabled: root.loaded && root.allowed && !root.busy && root.dirty; clicked => { root.save(); } }
+                }
+
+                // Roles: the list (Everyone first) beside the selected role's editor.
+                if root.page == 1: HorizontalLayout {
+                    vertical-stretch: 1;
+                    padding: Theme.space-5; spacing: Theme.space-5;
+                    VerticalLayout {
+                        width: 220px; spacing: Theme.space-3;
+                        HorizontalLayout {
+                            spacing: Theme.space-3;
+                            TextField { placeholder: "New role"; text <=> root.new-role; enabled: !root.admin-busy; accepted => { root.create-role(root.new-role); root.new-role = ""; } }
+                            Button { y: 4px; text: "Create"; kind: "text"; enabled: !root.admin-busy && root.new-role != ""; clicked => { root.create-role(root.new-role); root.new-role = ""; } }
+                        }
+                        if !root.roles-loaded: Text { text: "Loading roles…"; color: Theme.on-surface-variant; }
+                        role-list := ScrollView {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                width: role-list.visible-width;
+                                spacing: Theme.space-1; alignment: start;
+                                for role[i] in root.roles: Rectangle {
+                                    height: 36px; border-radius: Theme.radius-sm;
+                                    background: i == root.role-index ? Theme.primary-container : role-touch.has-hover ? Theme.surface-highest : transparent;
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-between; spacing: Theme.space-3;
+                                        Rectangle { y: (parent.height - 12px) / 2; width: 12px; height: 12px; border-radius: self.width / 2; background: role.has-colour ? role.colour : Theme.outline; }
+                                        Text { text: role.name; vertical-alignment: center; overflow: elide; color: i == root.role-index ? Theme.on-primary-container : Theme.on-surface; }
+                                    }
+                                    role-touch := TouchArea { mouse-cursor: pointer; clicked => { root.select-role(i); } }
+                                }
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1; spacing: Theme.space-4;
+                        if root.roles-loaded && root.role-index > 0: VerticalLayout {
+                            vertical-stretch: 0;
+                            spacing: Theme.space-3;
+                            Text { text: "Role name"; color: Theme.on-surface; }
+                            TextField { text <=> root.role-name; enabled: !root.admin-busy; edited => { root.role-edited(); } }
+                            HorizontalLayout {
+                                spacing: Theme.space-5;
+                                VerticalLayout {
+                                    horizontal-stretch: 1; spacing: Theme.space-3; alignment: start;
+                                    Text { text: "Colour (#rrggbb, empty for none)"; color: Theme.on-surface; }
+                                    TextField { text <=> root.role-colour; enabled: !root.admin-busy; edited => { root.role-edited(); } }
+                                }
+                                VerticalLayout {
+                                    alignment: start; spacing: Theme.space-3;
+                                    Text { text: "Show separately"; color: Theme.on-surface; }
+                                    Toggle { checked <=> root.role-hoist; toggled => { root.role-edited(); } }
+                                }
+                            }
+                        }
+                        if root.roles-loaded && root.role-index == 0: Text { text: "Everyone: what every member has without a role."; wrap: word-wrap; color: Theme.on-surface-variant; }
+                        perms := ScrollView {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                width: perms.visible-width - 12px;
+                                spacing: Theme.space-2; alignment: start;
+                                for p[i] in root.permissions: VerticalLayout {
+                                    spacing: Theme.space-2;
+                                    if p.heading != "": Text { text: p.heading; font-weight: 600; color: Theme.on-surface; height: 32px; vertical-alignment: bottom; }
+                                    HorizontalLayout {
+                                        spacing: Theme.space-5; padding-top: Theme.space-2; padding-bottom: Theme.space-2;
+                                        VerticalLayout {
+                                            horizontal-stretch: 1; alignment: center;
+                                            Text { text: p.title; color: Theme.on-surface; }
+                                            Text { text: p.description; font-size: Theme.text-small; color: Theme.outline; wrap: word-wrap; }
+                                        }
+                                        Toggle { y: (parent.height - self.height) / 2; checked: p.allowed; toggled => { root.toggle-permission(i); } }
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.space-3; alignment: end;
+                            if root.role-index > 0: Button { text: "Delete role"; danger: true; enabled: !root.admin-busy; clicked => { root.delete-role(); } }
+                            Button { text: "Save"; kind: "filled"; enabled: root.role-dirty && !root.admin-busy; clicked => { root.save-role(); } }
+                        }
+                    }
+                }
+
+                // Invites: inviter and code, with copy and delete.
+                if root.page == 2: invite-list := ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        width: min(invite-list.visible-width, 680px);
+                        padding: Theme.space-5; spacing: Theme.space-2; alignment: start;
+                        if !root.invites-loaded: Text { text: "Loading invites…"; color: Theme.on-surface-variant; }
+                        if root.invites-loaded && root.invites.length == 0: Text { text: "No invites."; color: Theme.outline; }
+                        for inv[i] in root.invites: HorizontalLayout {
+                            spacing: Theme.space-4; height: 48px;
+                            Avatar { y: 8px; size: 32px; source: inv.avatar; has-image: inv.has-avatar; initials: ""; }
+                            Text { text: inv.creator; vertical-alignment: center; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; }
+                            VerticalLayout {
+                                alignment: center;
+                                Text { text: inv.code; font-family: "monospace"; color: Theme.on-surface; }
+                                Text { text: "#" + inv.channel; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+                            }
+                            IconButton { y: 6px; glyph: Icons.copy; tooltip: "Copy link"; clicked => { root.copy-invite(i); } }
+                            IconButton { y: 6px; glyph: Icons.delete; tooltip: "Delete invite"; enabled: !root.admin-busy; clicked => { root.delete-invite(i); } }
+                        }
+                    }
+                }
+
+                // Bans: user and reason, with Pardon.
+                if root.page == 3: ban-list := ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        width: min(ban-list.visible-width, 680px);
+                        padding: Theme.space-5; spacing: Theme.space-2; alignment: start;
+                        if !root.bans-loaded: Text { text: "Loading bans…"; color: Theme.on-surface-variant; }
+                        if root.bans-loaded && root.bans.length == 0: Text { text: "No bans."; color: Theme.outline; }
+                        for ban[i] in root.bans: HorizontalLayout {
+                            spacing: Theme.space-4; height: 48px;
+                            Avatar { y: 8px; size: 32px; source: ban.avatar; has-image: ban.has-avatar; initials: ""; }
+                            Text { text: ban.name; vertical-alignment: center; color: Theme.on-surface; overflow: elide; }
+                            Text { text: ban.reason; vertical-alignment: center; color: Theme.on-surface-variant; horizontal-stretch: 1; overflow: elide; }
+                            IconButton { y: 6px; glyph: Icons.delete; tooltip: "Pardon user"; enabled: !root.admin-busy; clicked => { root.unban(i); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // The official DeleteServer confirmation.
+    if root.confirm-delete: Dialog {
+        title: "Delete " + root.server-name + "?";
+        dismissed => { root.confirm-delete = false; }
+        Text { text: "Once it's deleted, there's no going back."; wrap: word-wrap; color: Theme.on-surface-variant; }
+        HorizontalLayout {
+            alignment: end; spacing: Theme.gap-sm;
+            Button { text: "Cancel"; clicked => { root.confirm-delete = false; } }
+            Button { text: "Delete"; danger: true; clicked => { root.confirm-delete = false; root.delete-server(); } }
+        }
+    }
+}

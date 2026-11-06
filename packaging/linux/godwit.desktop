@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Godwit
+GenericName=Chat client
+Comment=One client for your chat networks
+Exec=godwit
+Icon=godwit
+StartupWMClass=godwit
+Categories=Network;InstantMessaging;Chat;
+Terminal=false

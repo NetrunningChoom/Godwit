@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { ThreadItem } from "types.slint";
+import { Button, EmptyState } from "widgets.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component Threads inherits Rectangle {
+    in property <[ThreadItem]> items;
+    callback open(int);
+    callback refresh();
+    // Scrolled near the end: the network fetches the next older page.
+    callback load-more();
+    VerticalLayout {
+        padding: Theme.gap-lg;
+        spacing: Theme.gap-md;
+        HorizontalLayout {
+            spacing: Theme.gap-md;
+            Text { text: "Threads"; color: Theme.on-surface; font-size: Theme.text-xl; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+            Button { text: "Refresh"; clicked => { root.refresh(); } }
+        }
+        Text { text: "Recent followed threads across this workspace"; color: Theme.on-surface-variant; }
+        if root.items.length == 0: EmptyState {
+            text: "Your followed threads will appear here.";
+        }
+        if root.items.length > 0: ScrollView {
+            vertical-stretch: 1;
+            changed content-y => {
+                if (self.visible-height - self.content-y >= self.content-height - 400px) {
+                    root.load-more();
+                }
+            }
+            VerticalLayout {
+                alignment: start;
+                spacing: Theme.gap-sm;
+                for item[i] in root.items: Rectangle {
+                    height: 112px;
+                    border-radius: Theme.radius-sm;
+                    background: touch.has-hover ? Theme.surface-high : Theme.surface;
+                    touch := TouchArea { mouse-cursor: pointer; clicked => { root.open(i); } }
+                    VerticalLayout {
+                        padding: Theme.gap-md;
+                        spacing: Theme.gap-sm;
+                        HorizontalLayout {
+                            spacing: Theme.gap-sm;
+                            Text { text: item.unread ? "●" : ""; color: Theme.primary; width: 16px; }
+                            Text { text: item.context; color: Theme.on-surface-variant; horizontal-stretch: 1; overflow: elide; }
+                            Text { text: item.when; color: Theme.outline; }
+                        }
+                        Text { text: item.name; color: Theme.on-surface; font-weight: item.unread ? 700 : 500; overflow: elide; }
+                        Text { text: item.preview; color: Theme.on-surface-variant; overflow: elide; }
+                    }
+                }
+            }
+        }
+    }
+}

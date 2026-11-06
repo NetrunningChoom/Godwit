@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Icons } from "theme.slint";
+import { IconButton } from "widgets.slint";
+
+// A second view of the existing helper's frames: the web player never reloads.
+export component PlayerWindow inherits Window {
+    title: "Godwit player";
+    icon: @image-url("../../assets/icon/icon-256.png");
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: Theme.media;
+    in property <image> frame;
+    in property <int> media-width: 16;
+    in property <int> media-height: 9;
+    callback pointer(int, int, bool);
+    callback moved(int, int);
+    callback return-inline();
+    forward-focus: controls;
+    controls := FocusScope {
+        width: parent.width;
+        height: parent.height;
+        init => { self.focus(); }
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                root.return-inline();
+                return accept;
+            }
+            if e.text == Key.F11 {
+                root.full-screen = !root.full-screen;
+                return accept;
+            }
+            reject
+        }
+        picture := Image {
+            width: min(parent.width, parent.height * root.media-width / max(1, root.media-height));
+            height: self.width * root.media-height / max(1, root.media-width);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: root.frame;
+            image-fit: contain;
+        }
+        TouchArea {
+            x: picture.x;
+            y: picture.y;
+            width: picture.width;
+            height: picture.height;
+            property <int> px: round(self.mouse-x / max(1px, self.width) * root.media-width);
+            property <int> py: round(self.mouse-y / max(1px, self.height) * root.media-height);
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.move {
+                    root.moved(self.px, self.py);
+                }
+                if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                    root.pointer(self.px, self.py, true);
+                }
+                if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) || e.kind == PointerEventKind.cancel {
+                    root.pointer(self.px, self.py, false);
+                }
+            }
+        }
+        IconButton {
+            x: parent.width - self.width - 12px;
+            y: 12px;
+            glyph: Icons.close;
+            tint: Theme.on-media;
+            clicked => { root.return-inline(); }
+        }
+    }
+}

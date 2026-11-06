@@ -1,0 +1,372 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { Anim, Players, Select, MessageItem, ReactionItem } from "types.slint";
+import { Avatar, IconButton, Button, MenuPanel, MenuRow, MenuDivider, EmojiText } from "widgets.slint";
+import { TextBlock } from "textblock.slint";
+import { AttachmentView, EmbedMedia, EmbedCard, InviteCard } from "message-media.slint";
+
+component ReactionChip inherits Rectangle {
+    in property <ReactionItem> item;
+    callback clicked();
+    height: 26px;
+    width: row.preferred-width;
+    border-radius: Theme.radius-sm;
+    background: item.me ? Theme.primary-container : Theme.surface-high;
+    border-width: 1px;
+    border-color: item.me ? Theme.primary : transparent;
+    row := HorizontalLayout {
+        padding-left: Theme.space-compact;
+        padding-right: Theme.space-3;
+        spacing: Theme.space-2;
+        if item.has-image: Image {
+            y: (parent.height - self.height) / 2;
+            width: 18px;
+            height: 18px;
+            source: item.anim >= 0 ? Anim.frames[item.anim] : item.image;
+        }
+        if !item.has-image: Text { text: item.emoji; vertical-alignment: center; color: Theme.on-surface; }
+        Text {
+            text: item.count;
+            vertical-alignment: center;
+            font-size: Theme.text-small;
+            color: item.me ? Theme.on-primary-container : Theme.on-surface-variant;
+        }
+    }
+    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component MessageRow inherits Rectangle {
+    in property <MessageItem> message;
+    // Its place in the timeline (selection highlights name their row).
+    in property <int> row-number;
+    in property <bool> can-react;
+    // What the room allows (Capabilities): no button that does nothing.
+    in property <bool> can-reply;
+    in property <bool> can-edit;
+    in property <bool> can-delete;
+    in property <bool> can-delete-others;
+    in property <bool> can-pin;
+    in property <bool> can-thread;
+    property <bool> deletable: (message.mine && root.can-delete) || root.can-delete-others;
+    // Jumped to: Godwit's highlight, primary-container at half strength.
+    in property <bool> flash;
+    callback reply();
+    callback edit();
+    callback delete(bool);
+    callback react(int);
+    callback pin();
+    callback create-thread();
+
+    callback open-attachment(int);
+    callback link-clicked(string);
+    callback play-inline(string, string);
+    callback player-fullscreen(string);
+    callback typed(string);
+    callback join-invite(string);
+    callback player-pointer(string, int, int, bool);
+    callback player-move(string, int, int);
+    callback open-profile();
+    callback mark-unread();
+    callback copy-text();
+    callback copy-link();
+    callback open-picker();
+    callback jump-to-reply();
+
+
+
+    property <length> menu-x;
+    property <length> menu-y;
+    // The pointer is on the hover toolbar: the row counts as hovered.
+    property <bool> on-toolbar;
+    property <bool> hovered: touch.has-hover || root.on-toolbar;
+    // Godwit's hover: surface-container, 8 px corners.
+    background: root.flash ? Theme.primary-container.with-alpha(0.5) : root.hovered ? Theme.surface : transparent;
+    border-radius: Theme.radius-sm;
+    function open-menu(x: length, y: length) {
+        if !root.message.pending {
+            root.menu-x = x - root.absolute-position.x;
+            root.menu-y = y - root.absolute-position.y;
+            menu.show();
+        }
+    }
+    // A right-click anywhere on the message opens its menu, at the pointer.
+    // The row's content lives inside its hover area: Slint keeps a
+    // TouchArea hovered while the pointer is over its children (the text
+    // takes the pointer for its links, so a sibling area lost the hover).
+    touch := TouchArea {
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                root.open-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+        VerticalLayout {
+            padding-top: message.first-in-group ? Theme.space-4 : 1px;
+            // The reply, on its own line above the message as officially (and in
+            // Godwit): a corner line from the avatar column, the replied-to
+            // author's picture and name, then the text, all message-sized.
+            if message.has-reply: Rectangle {
+                height: Theme.message-size * 1.5;
+                Rectangle { x: 30px; y: parent.height / 2 - 1px; width: 2px; height: 12px; background: Theme.outline-variant; }
+                Rectangle { x: 30px; y: parent.height / 2 - 1px; width: 22px; height: 2px; background: Theme.outline-variant; }
+                TouchArea { mouse-cursor: pointer; clicked => { root.jump-to-reply(); } }
+                HorizontalLayout {
+                    x: 30px + 22px + 6px + Theme.gap-sm;
+                    width: parent.width - self.x - Theme.gap-lg;
+                    spacing: Theme.gap-sm;
+                    if message.reply-missing: Text {
+                        text: "Message not loaded, click to jump";
+                        font-size: Theme.message-size;
+                        color: Theme.on-surface;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    if !message.reply-missing: Avatar {
+                        y: (parent.height - self.height) / 2;
+                        size: 14px;
+                        source: message.reply-avatar;
+                        has-image: message.reply-has-avatar;
+                        initials: message.reply-initials;
+                    }
+                    if !message.reply-missing: EmojiText {
+                        text: message.reply-author;
+                        runs: message.reply-author-runs;
+                        font-size: Theme.message-size;
+                        font-weight: 600;
+                        color: message.reply-has-colour ? message.reply-colour : Theme.on-surface;
+                        max-width: parent.width / 2;
+                    }
+                    if !message.reply-missing && message.reply-note != "": HorizontalLayout {
+                        spacing: Theme.gap-sm;
+                        padding-left: Theme.gap-sm;
+                        Icon { text: Icons.file; font-size: Theme.text-title; color: Theme.on-surface; width: 16px; }
+                        Text { text: message.reply-note; font-size: Theme.message-size; font-italic: true; color: Theme.on-surface; vertical-alignment: center; }
+                    }
+                    if !message.reply-missing: EmojiText {
+                        text: message.reply-text;
+                        runs: message.reply-runs;
+                        font-size: Theme.message-size;
+                        color: Theme.on-surface;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: Theme.gap-lg;
+                padding-right: Theme.gap-lg;
+                padding-bottom: 1px;
+                spacing: Theme.gap-lg;
+                // The avatar column; empty for follow-up messages.
+                Rectangle {
+                    width: Theme.avatar;
+                    if message.first-in-group && !message.system: Avatar {
+                        // At the top, beside the name (not centred on tall messages).
+                        y: 0;
+                        source: message.avatar;
+                        has-image: message.has-avatar;
+                        initials: message.initials;
+                        TouchArea { mouse-cursor: pointer; clicked => { root.open-profile(); } }
+                    }
+                    if message.system: Icon {
+                        y: 0;
+                        text: Icons.arrow-forward;
+                        color: Theme.on-surface-variant;
+                        font-size: Theme.text-heading;
+                    }
+                }
+                VerticalLayout {
+                    spacing: Theme.space-1;
+                    // The name opens their profile (a click on its link).
+                    if message.first-in-group && !message.system: TextBlock {
+                        context-menu(x, y) => { root.open-menu(x, y); }
+                        block: message.header;
+                        row-number: root.row-number;
+                        index: 0;
+                        colour: Theme.on-surface;
+                    }
+                    if message.jumbo.length > 0: HorizontalLayout {
+                        alignment: start;
+                        spacing: Theme.space-2;
+                        for e in message.jumbo: Rectangle {
+                            width: message.jumbo.length == 1 ? 96px : 48px;
+                            height: self.width;
+                        if e.has-image: Image { width: parent.width; height: parent.height; source: e.anim >= 0 ? Anim.frames[e.anim] : e.image; }
+                        if !e.has-image: Text { text: e.glyph; font-size: parent.height * 0.8; color: Theme.on-surface; }
+                            Tooltip {
+                                Rectangle {
+                                    width: tip.preferred-width + 16px;
+                                    height: tip.preferred-height + 8px;
+                                    border-radius: Theme.radius-xs;
+                                    background: Theme.surface-highest;
+                                    tip := Text { text: e.name; color: Theme.on-surface; font-size: Theme.text-small; }
+                                }
+                            }
+                        }
+                    }
+                    if message.jumbo.length == 0: VerticalLayout {
+                        for block[bi] in message.blocks: VerticalLayout {
+                            padding-top: block.kind == 0 ? 0px : Theme.space-2;
+                            padding-bottom: block.kind == 0 ? 0px : Theme.space-2;
+                            if block.kind == 0 || block.kind == 2: TextBlock {
+                                context-menu(x, y) => { root.open-menu(x, y); }
+                                block: block;
+                                row-number: root.row-number;
+                                index: bi + 1;
+                                colour: message.pending ? Theme.outline
+                                    : message.system ? Theme.on-surface-variant : Theme.on-surface;
+                            }
+                            // Godwit's quote: a 4 px outline-variant bar, the text 12 px in.
+                            if block.kind == 1: HorizontalLayout {
+                                spacing: Theme.space-3;
+                                Rectangle { width: 4px; border-radius: Theme.space-1; background: Theme.outline-variant; }
+                                TextBlock {
+                                    horizontal-stretch: 1;
+                                    context-menu(x, y) => { root.open-menu(x, y); }
+                                    block: block;
+                                    row-number: root.row-number;
+                                    index: bi + 1;
+                                    colour: Theme.on-surface;
+                                }
+                            }
+                            // The official code block: GitHub's colours, dark or light with the theme.
+                            if block.kind == 3: Rectangle {
+                                height: block.text-height + 16px;
+                                border-radius: Theme.radius-md;
+                                background: Theme.code-background;
+                                TextBlock {
+                                    x: 8px;
+                                    y: 8px;
+                                    width: parent.width - 16px;
+                                    context-menu(x, y) => { root.open-menu(x, y); }
+                                    block: block;
+                                    row-number: root.row-number;
+                                    index: bi + 1;
+                                    colour: Theme.on-code;
+                                    mono: true;
+                                }
+                            }
+                        }
+                    }
+                    if message.edited || message.pinned: HorizontalLayout {
+                        alignment: start;
+                        spacing: Theme.space-3;
+                        if message.pinned: Text { text: "📌 Pinned"; font-size: Theme.text-caption; color: Theme.outline; }
+                        if message.edited: Text { text: "(edited)"; font-size: Theme.text-caption; color: Theme.outline; }
+                    }
+                    for att[i] in message.attachments: HorizontalLayout {
+                        alignment: start;
+                        if !att.has-video: AttachmentView {
+                            item: att;
+                            open => { root.open-attachment(i); }
+                        }
+                        // A video file: the player, its name below to open or save it.
+                        if att.has-video: VerticalLayout {
+                            spacing: Theme.space-1;
+                            EmbedMedia {
+                                embed: att.video;
+                                link-clicked(u) => { root.link-clicked(u); }
+                                play-inline(u, k) => { root.play-inline(u, k); }
+                                player-fullscreen(u) => { root.player-fullscreen(u); }
+                                player-pointer(u, x, y, d) => { root.player-pointer(u, x, y, d); }
+                                player-move(u, x, y) => { root.player-move(u, x, y); }
+                            }
+                            Text {
+                                text: att.name + " · " + att.detail;
+                                font-size: Theme.text-small;
+                                color: name-area.has-hover ? Theme.primary : Theme.outline;
+                                overflow: elide;
+                                max-width: att.video.width;
+                                name-area := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.open-attachment(i); }
+                                }
+                            }
+                        }
+                    }
+                    for invite in message.invites: HorizontalLayout {
+                        alignment: start;
+                        InviteCard {
+                            item: invite;
+                            join => { root.join-invite(invite.code); }
+                        }
+                    }
+                    for embed in message.embeds: HorizontalLayout {
+                        alignment: start;
+                        if embed.style == 0: EmbedCard {
+                            embed: embed;
+                            link-clicked(u) => { root.link-clicked(u); }
+                            play-inline(u, k) => { root.play-inline(u, k); }
+                            player-fullscreen(u) => { root.player-fullscreen(u); }
+                            player-pointer(u, x, y, d) => { root.player-pointer(u, x, y, d); }
+                            player-move(u, x, y) => { root.player-move(u, x, y); }
+                        }
+                        // Bare image and video links and GIFs: just the media.
+                        if embed.style != 0 && embed.has-media: EmbedMedia {
+                            embed: embed;
+                            link-clicked(u) => { root.link-clicked(u); }
+                            play-inline(u, k) => { root.play-inline(u, k); }
+                            player-fullscreen(u) => { root.player-fullscreen(u); }
+                            player-pointer(u, x, y, d) => { root.player-pointer(u, x, y, d); }
+                            player-move(u, x, y) => { root.player-move(u, x, y); }
+                        }
+                    }
+                    if message.reactions.length > 0: HorizontalLayout {
+                        alignment: start;
+                        spacing: Theme.gap-sm;
+                        for r[i] in message.reactions: ReactionChip {
+                            item: r;
+                            clicked => { root.react(i); }
+                        }
+                    }
+                }
+            }
+        }
+        // The hover toolbar: reply, react, edit and delete (ours), as officially.
+        // Inside the row (Godwit's sits on its top edge), so moving onto it
+        // keeps the row hovered.
+        if root.hovered && !message.pending && (!message.system || root.deletable): Rectangle {
+            x: parent.width - self.width - Theme.gap-lg;
+            y: 2px;
+            width: tools.preferred-width;
+            height: Theme.control-icon;
+            border-radius: Theme.radius-sm;
+            background: Theme.surface-highest;
+            TouchArea {
+                changed has-hover => { root.on-toolbar = self.has-hover; }
+            }
+            tools := HorizontalLayout {
+                if !message.system && root.can-reply: IconButton { glyph: Icons.reply; tooltip: "Reply"; clicked => { root.reply(); } }
+                if !message.system && root.can-react: IconButton { glyph: Icons.add-reaction; tooltip: "React"; clicked => { root.open-picker(); } }
+                if !message.system && message.mine && root.can-edit: IconButton { glyph: Icons.edit; tooltip: "Edit"; clicked => { root.edit(); } }
+                if root.deletable: IconButton {
+                    glyph: Icons.delete;
+                    tooltip: "Delete";
+                    tint: Theme.error;
+                    clicked => { root.delete(false); }
+                }
+            }
+        }
+    }
+    menu := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        MenuPanel {
+            // Text selected: copy it, as a browser's menu offers first.
+            if Select.active: MenuRow { glyph: Icons.copy; label: "Copy"; clicked => { Select.copy(); } }
+            if Select.active: MenuDivider { }
+            if !root.message.system && root.can-reply: MenuRow { glyph: Icons.reply; label: "Reply"; clicked => { root.reply(); } }
+            MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.mark-unread(); } }
+            MenuRow { glyph: Icons.copy; label: "Copy text"; clicked => { root.copy-text(); } }
+            MenuDivider { }
+            if !root.message.system && root.can-react: MenuRow { glyph: Icons.emoji; label: "React"; clicked => { root.open-picker(); } }
+            if !root.message.system && root.message.mine && root.can-edit: MenuRow { glyph: Icons.edit; label: "Edit message"; clicked => { root.edit(); } }
+            MenuRow { glyph: Icons.link; label: "Copy link"; clicked => { root.copy-link(); } }
+            if !root.message.system && root.can-pin: MenuRow { glyph: Icons.notes; label: "Pin message"; clicked => { root.pin(); } }
+            if !root.message.system && root.can-thread: MenuRow { glyph: Icons.chat; label: "Create thread"; clicked => { root.create-thread(); } }
+            if root.deletable: MenuDivider { }
+            if root.deletable: MenuRow { glyph: Icons.delete; label: "Delete message"; danger: true; clicked => { root.delete(false); } }
+        }
+    }
+}

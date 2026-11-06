@@ -1,0 +1,28 @@
+[package]
+name = "godwit-secrets"
+description = "Godwit's secrets: tokens and keys behind one interface (OS keychain, owner-only files)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+getrandom = "0.3"
+keyring-core = "1"
+
+# The OS keychain for each platform (keyring-core's stores, as the keyring
+# crate's own setup picks them). Android needs its app context first: files
+# there until the Android build exists.
+[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
+zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+
+[lints]
+workspace = true

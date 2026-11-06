@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+// Shared branding for the first-run picker and About page.
+export component BrandBanner inherits Rectangle {
+    height: 144px;
+    border-radius: Theme.radius-lg;
+    background: Theme.brand-night;
+    HorizontalLayout {
+        padding: Theme.space-6;
+        spacing: Theme.space-5;
+        Image {
+            source: @image-url("../../assets/icon/icon-128.png");
+            width: 72px;
+            image-fit: contain;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: Theme.space-3;
+            Text { text: "Godwit"; font-size: Theme.text-display; font-weight: 700; color: Theme.on-media; }
+            Text {
+                text: "one client for your chat networks";
+                font-size: Theme.text-body;
+                color: Theme.on-brand-variant;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

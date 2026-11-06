@@ -1,0 +1,285 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+//! Conversations as the UI sees them, whatever their network.
+
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
+
+use crate::ids::{RoomId, ServerId, UserId};
+use crate::network::Network;
+
+/// What can be done in a room. The UI follows these instead of asking which
+/// network a room is on. Backends start from [`Capabilities::of`] and adjust
+/// per room (permissions, room settings).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Capabilities {
+    pub send: bool,
+    pub edit: bool,
+    pub delete: bool,
+    /// Delete others' messages, including system messages, as a moderator.
+    #[serde(default)]
+    pub delete_others: bool,
+    pub react: bool,
+    pub reply: bool,
+    pub attachments: bool,
+    /// `||text||` hides text until clicked.
+    pub spoilers: bool,
+    pub pins: bool,
+    pub search: bool,
+    /// Threads can be started here (from a message, or as a forum's post).
+    pub threads: bool,
+    /// A forum: no messages of its own, its posts are threads under it.
+    #[serde(default)]
+    pub forum: bool,
+    pub voice: bool,
+    /// A voice channel's capacity: 0 means unlimited, None means unknown.
+    #[serde(default)]
+    pub voice_user_limit: Option<u32>,
+    /// Sending a camera or screen, after instance limits and room permissions.
+    #[serde(default)]
+    pub video: bool,
+    /// Maximum width/height; a zero side is unlimited.
+    #[serde(default)]
+    pub video_resolution: [u32; 2],
+    /// The network has calls, but Godwit's don't work yet: the call button
+    /// shows, disabled, with a note. Joining stays impossible (`voice` is false).
+    #[serde(default)]
+    pub voice_unavailable: bool,
+    pub typing: bool,
+    /// Custom emoji from other servers may be used here.
+    pub external_emoji: bool,
+    /// The GIF picker can send here (Stoat: the SendEmbeds permission).
+    #[serde(default)]
+    pub gifs: bool,
+    /// The largest file that can be attached here, in bytes (0: not known).
+    #[serde(default)]
+    pub max_upload: u64,
+    /// Messages can be pinned and unpinned here (`pins`: the list can be seen).
+    #[serde(default)]
+    pub pin_messages: bool,
+}
+
+impl Capabilities {
+    /// What a network's rooms normally allow a member to do.
+    pub const fn of(network: Network) -> Self {
+        let all = Self {
+            send: true,
+            edit: true,
+            delete: true,
+            delete_others: false,
+            react: true,
+            reply: true,
+            attachments: true,
+            spoilers: true,
+            pins: true,
+            search: true,
+            threads: false,
+            voice: true,
+            voice_user_limit: None,
+            video: false,
+            video_resolution: [1280, 720],
+            voice_unavailable: false,
+            typing: true,
+            external_emoji: true,
+            gifs: true,
+            max_upload: 0,
+            pin_messages: false,
+            forum: false,
+        };
+        match network {
+            // Autumn takes attachments up to 20 MB (Stoat's own limit).
+            Network::Stoat => Self {
+                video: true,
+                max_upload: 20 * 1024 * 1024,
+                ..all
+            },
+            // Discord without Nitro or boosts (the account adjusts per room).
+            Network::Discord => Self {
+                threads: true,
+                max_upload: 10 * 1024 * 1024,
+                ..all
+            },
+            // First version: text, replies, edits, deletes and reactions.
+            Network::Fluxer => Self {
+                attachments: true,
+                max_upload: crate::media::MAX_UPLOAD,
+                pins: false,
+                search: false,
+                voice: false,
+                gifs: false,
+                ..all
+            },
+            // First version: text, deleting and read state. Editing, reactions
+            // and files go through calls not built yet; calls come later.
+            Network::Teams => Self {
+                edit: false,
+                react: false,
+                reply: false,
+                attachments: false,
+                spoilers: false,
+                pins: false,
+                search: false,
+                voice: false,
+                voice_unavailable: true,
+                gifs: false,
+                external_emoji: false,
+                ..all
+            },
+            // Text, files, edits, deletes, reactions, read state, and replies
+            // as thread replies. Huddles come later.
+            Network::Slack => Self {
+                attachments: true,
+                max_upload: crate::media::MAX_UPLOAD,
+                spoilers: false,
+                pins: false,
+                search: false,
+                voice: false,
+                voice_unavailable: true,
+                gifs: false,
+                external_emoji: false,
+                ..all
+            },
+            // Text, history and files; other operations remain disabled.
+            // Text, files, edits, deletes, reactions and quote replies, as
+            // maugclib sends them. Threads show flat for now.
+            Network::GoogleChat => Self {
+                // Our own messages only: space managers' deletes aren't sent.
+                delete_others: false,
+                threads: false,
+                attachments: true,
+                max_upload: crate::media::MAX_UPLOAD,
+                spoilers: false,
+                pins: false,
+                search: false,
+                voice: false,
+                typing: false,
+                gifs: false,
+                external_emoji: false,
+                ..all
+            },
+            Network::Steam => Self {
+                edit: false,
+                delete: false,
+                // Steam's chat uploads images through its web file-upload
+                // flow, which isn't built: attaching would send nothing.
+                attachments: false,
+                spoilers: false,
+                pins: false,
+                search: false,
+                // 1:1 and group voice (docs/steam-voice.md); group rooms set
+                // `voice` from Steam's `voice_allowed`.
+                voice: true,
+                voice_unavailable: false,
+                gifs: false,
+                ..all
+            },
+        }
+    }
+}
+
+/// Where a room sits.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RoomKind {
+    /// One-to-one with another person.
+    Direct {
+        with: UserId,
+    },
+    Group,
+    /// A channel inside a server, guild or space.
+    Channel {
+        server: ServerId,
+    },
+    /// Notes to yourself (Stoat's Saved Notes and the like).
+    Notes,
+}
+
+/// Whether this room's messages are end-to-end encrypted *right now*. A room
+/// can differ from its network's default (see [`crate::network::Security`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RoomEncryption {
+    Unencrypted,
+    Encrypted,
+    /// Not known yet (still loading).
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Room {
+    pub id: RoomId,
+    pub name: Arc<str>,
+    pub kind: RoomKind,
+    pub icon_url: Option<Arc<str>>,
+    pub capabilities: Capabilities,
+    pub encryption: RoomEncryption,
+    pub unread: bool,
+    pub mentions: u32,
+    /// The last message we've read here, if the network knows it.
+    pub last_read: Option<crate::ids::MessageId>,
+    /// We're invited, not in it yet: by whom (a name). Nothing loads until
+    /// the invite is accepted.
+    pub invited_by: Option<Arc<str>>,
+    /// A direct chat: the other person's presence and custom status text.
+    pub presence: Option<crate::members::Presence>,
+    pub status: Option<Arc<str>>,
+    /// A group: how many are in it.
+    pub member_count: Option<u32>,
+    /// When something last happened here (its newest message), in Unix
+    /// milliseconds; 0 when not known. Home lists chats newest first.
+    #[serde(default)]
+    pub last_activity: i64,
+    /// A thread (or a forum's post): the room it belongs to (its raw id),
+    /// listed under it.
+    #[serde(default)]
+    pub parent: Option<Arc<str>>,
+}
+
+impl Room {
+    pub fn network(&self) -> Network {
+        self.id.network()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn steam_chats_cannot_be_edited() {
+        let c = Capabilities::of(Network::Steam);
+        assert!(c.send && !c.edit && !c.delete);
+    }
+
+    #[test]
+    fn google_chat_supports_text_files_edits_reactions_and_replies() {
+        let c = Capabilities::of(Network::GoogleChat);
+        assert!(c.send && c.attachments && c.edit && c.delete && c.react && c.reply);
+        assert_eq!(c.max_upload, crate::media::MAX_UPLOAD);
+        assert!(
+            [
+                c.delete_others,
+                c.spoilers,
+                c.pins,
+                c.search,
+                c.threads,
+                c.forum,
+                c.voice,
+                c.video,
+                c.voice_unavailable,
+                c.typing,
+                c.external_emoji,
+                c.gifs,
+                c.pin_messages,
+            ]
+            .into_iter()
+            .all(|enabled| !enabled)
+        );
+    }
+
+    #[test]
+    fn only_some_networks_thread() {
+        assert!(Capabilities::of(Network::Discord).threads);
+        assert!(Capabilities::of(Network::Discord).threads);
+        assert!(!Capabilities::of(Network::Stoat).threads);
+    }
+}

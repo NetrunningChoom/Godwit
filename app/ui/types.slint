@@ -1,0 +1,626 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+// Rows the Rust side fills (src/view/).
+
+export enum Screen { login, mfa, connecting, main }
+
+// One of someone's networks with their status there (transparent: unknown),
+// so it's plain where they're online.
+export struct NetPresence {
+    label: string,
+    colour: color,
+}
+
+// A row of the rail: an account (its avatar heads its section, as the
+// multi-account layout has it) or one of its servers.
+export struct ServerItem {
+    // An account's own row, not a server.
+    account: bool,
+    // An account's network, in a word ("Slack", "Teams"), shown above it.
+    network: string,
+    // A divider goes above it (between sections, and under each account).
+    divider-before: bool,
+    name: string,
+    initials: string,
+    icon: image,
+    has-icon: bool,
+    unread: bool,
+    mentions: int,
+    selected: bool,
+    // An account's presence dot (transparent: none).
+    presence: color,
+    // An account whose servers are hidden (clicking its avatar shows them).
+    collapsed: bool,
+    // A kept sign-in still connecting: shown greyed out.
+    pending: bool,
+    // Its network signed it out: a click signs in again.
+    sign-in: bool,
+}
+
+export struct CallVideoItem {
+    label: string,
+    frame: image,
+    has-frame: bool,
+    // A screen share (Go Live) rather than a camera.
+    screen: bool,
+    // Its row in the call's streams (for its sound controls), or -1.
+    stream: int,
+}
+
+// A piece of a short label: text, or an emoji drawn as its colour picture
+// (the text font's emoji are monochrome outlines).
+export struct LabelRun {
+    text: string,
+    is-emoji: bool,
+    emoji: image,
+}
+
+export struct CallMemberItem {
+    name: string,
+    // The name as text and emoji pictures (EmojiText).
+    name-runs: [LabelRun],
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    speaking: bool,
+    muted: bool,
+    deafened: bool,
+    // Us: no volume menu.
+    me: bool,
+    // How loud they play here (0..2, 1 as sent), and muted here only.
+    volume: float,
+    local-muted: bool,
+}
+
+// kind: 0 direct message, 1 group, 2 channel, 3 notes.
+export struct RoomItem {
+    header: bool,
+    name: string,
+    // The name with its emoji as pictures; empty when it has none.
+    name-runs: [LabelRun],
+    kind: int,
+    icon: image,
+    has-icon: bool,
+    initials: string,
+    unread: bool,
+        mentions: int,
+    selected: bool,
+    // Who is in its call ("" when nobody).
+    // Who's in its call (voice channels).
+    occupants: [CallMemberItem],
+    voice-channel: bool,
+    // Current occupancy / capacity; an infinity sign means unlimited.
+    voice-count: string,
+    // When its call began (Unix seconds; 0: unknown or nobody in it).
+    voice-since: int,
+    // A direct chat: the other person's presence dot.
+    presence: color,
+    has-presence: bool,
+    // Under the name: a custom status or presence ("Idle"), or a group's
+    // member count; "" for none.
+    subtitle: string,
+    // Home with several accounts: whose chat it is, as a small avatar on
+    // the row's picture.
+    account-badged: bool,
+    account-badge: image,
+    has-account-badge: bool,
+    account-initials: string,
+    // A person merged across networks: each, with their status there.
+    networks: [NetPresence],
+    // Home: pinned to the top, or in the hidden section (the menu's words).
+    pinned: bool,
+    hidden: bool,
+    // Muzzle mode applies to this chat (its own choice, or the default).
+    muzzled: bool,
+    // This chat's notifications: 0 the network's rules, 1 every message, 2 off.
+    alerts: int,
+    // A heading that opens or closes Home's hidden section.
+    toggles-hidden: bool,
+    // A thread (or forum post): indented under the channel it's in.
+    thread: bool,
+    // A channel category's heading: folded (its quiet channels hidden).
+    category-collapsed: bool,
+    // Home: when you last talked ("14:05", "Tue", "Mar 3", "2023"); "" for none.
+    when: string,
+}
+
+export struct EmojiCellItem {
+    name: string,
+    // A Unicode emoji's character, drawn until its picture arrives.
+    glyph: string,
+    image: image,
+    has-image: bool,
+    // Its animation slot (Anim.frames), -1 when still.
+    anim: int,
+}
+
+// A piece of a message's text. kind: 0 text, 1 quote, 2 heading, 3 code.
+// A piece of laid-out message text (app/src/textlayout.rs): a run of one
+// style at its place, or an emoji picture inside the line.
+export struct PieceItem {
+    x: length,
+    y: length,
+    width: length,
+    text: string,
+    // Its font size (emoji: none; they follow the block's).
+    size: length,
+    bold: bool,
+    italic: bool,
+    strike: bool,
+    link: bool,
+    // A link drawn in the text's colour (a header's author).
+    quiet: bool,
+    // Drawn in the faint colour (a header's time).
+    faint: bool,
+    code: bool,
+    colour: color,
+    has-colour: bool,
+    emoji: bool,
+    image: image,
+    has-image: bool,
+    anim: int,
+}
+
+// kind: 0 text, 1 quote, 2 heading, 3 code, 4 a group's header (author and time). Laid out in Rust at the width
+// the timeline reports, so text can be selected across messages.
+export struct BlockItem {
+    kind: int,
+    // The font size.
+    size: length,
+    pieces: [PieceItem],
+    text-height: length,
+}
+
+// A selection highlight (app/src/selection.rs).
+export struct SelRect {
+    row: int,
+    block: int,
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+}
+
+// The timeline's one text selection, across messages.
+export global Select {
+    in property <[SelRect]> rects;
+    in property <bool> active;
+    // The pressed pointer, in window coordinates: every block under it
+    // reports where it is, so a drag selects across messages.
+    in-out property <bool> dragging;
+    in-out property <length> px;
+    in-out property <length> py;
+    // The block whose link is under the pointer (a hand cursor).
+    in property <int> link-row: -1;
+    in property <int> link-block: -1;
+    callback down(int, int, length, length, bool);
+    callback drag(int, int, length, length);
+    callback up(int, int, length, length);
+    callback word(int, int, length, length);
+    callback hover(int, int, length, length);
+    callback copy();
+    callback clear();
+    // The width message text gets (the timeline's width less the avatar
+    // column and padding): text is laid out again when it changes.
+    callback width-changed(length);
+}
+
+
+export struct ReactionItem {
+    emoji: string,
+    image: image,
+    has-image: bool,
+    count: int,
+    me: bool,
+    // Its animation slot (Anim.frames), -1 when still.
+    anim: int,
+}
+
+// A link preview or bot embed. style: 0 card, 1 bare media, 2 GIF.
+// An invite link's card (the official messaging/elements/Invite). state: 0
+// loading, 1 can join, 2 joining, 3 joined, 4 not valid.
+export struct InviteItem {
+    code: string,
+    state: int,
+    name: string,
+    initials: string,
+    members: string,
+    icon: image,
+    has-icon: bool,
+}
+
+export struct EmbedItem {
+    style: int,
+    title: string,
+    description: styled-text,
+    has-description: bool,
+    url: string,
+    // What plays inline: a provider's player, else the video ("" for none).
+    play-url: string,
+    // A GIF's looping picture, to star it (empty when it can't be).
+    gif-picture: string,
+    play-kind: string,
+    // Its slot in Players.frames, once the player has drawn.
+    player-slot: int,
+    has-player-frame: bool,
+    inline-playing: bool,
+    site-name: string,
+    icon: image,
+    has-icon: bool,
+    image: image,
+    has-image: bool,
+    // The image is a small picture beside the text, not media below it.
+    image-thumbnail: bool,
+    // A media area below the text (or alone): the image, or a player.
+    has-media: bool,
+    width: length,
+    height: length,
+    accent: color,
+    has-accent: bool,
+    // Its animation slot (Anim.frames), -1 when still.
+    anim: int,
+}
+
+// kind: 0 image, 1 video, 2 audio, 3 other file.
+export struct AttachmentItem {
+    kind: int,
+    name: string,
+    detail: string,
+    image: image,
+    has-image: bool,
+    // On the server already (an upload in progress isn't, so it can't open).
+    openable: bool,
+    // The preview's size on screen (images), known before it loads.
+    width: length,
+    height: length,
+    // Its animation slot (Anim.frames), -1 when still.
+    anim: int,
+    // A video file plays inline: this is its media area (a bare video embed).
+    has-video: bool,
+    video: EmbedItem,
+}
+
+export struct MessageItem {
+    author: string,
+    // Their role colour (has-author-colour false: the normal text colour).
+    author-colour: color,
+    has-author-colour: bool,
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    time: string,
+    // The group's first message: its author and time as selectable text
+    // (block 0 of the selection; the text blocks are 1 on).
+    header: BlockItem,
+    blocks: [BlockItem],
+    // Only emoji: shown large (96 px alone, 48 px several) in place of the text.
+    jumbo: [EmojiCellItem],
+    system: bool,
+    pending: bool,
+    edited: bool,
+    // Pinned in its room: a small pin under it, like "(edited)".
+    pinned: bool,
+    mine: bool,
+    // Starts a group: shows the avatar, name and time.
+    first-in-group: bool,
+    // Dividers above it: the day, when it changed; and "NEW", before the
+    // first message that wasn't read when the room was opened.
+    divider-date: string,
+    divider-new: bool,
+    // Non-zero: jump here and flash (a new number for each jump).
+    jump: int,
+    has-reply: bool,
+    reply-author: string,
+    // Their name and the quote as text and emoji pictures (EmojiText).
+    reply-author-runs: [LabelRun],
+    reply-text: string,
+    reply-runs: [LabelRun],
+    // The replied-to message: its author's picture and colour, and
+    // "Sent an attachment" when it had any ("" otherwise).
+    reply-avatar: image,
+    reply-has-avatar: bool,
+    reply-initials: string,
+    reply-colour: color,
+    reply-has-colour: bool,
+    reply-note: string,
+    // The original isn't loaded: a jump link instead of a preview.
+    reply-missing: bool,
+    attachments: [AttachmentItem],
+    embeds: [EmbedItem],
+    invites: [InviteItem],
+    reactions: [ReactionItem],
+}
+
+export struct PersonItem {
+    name: string,
+    name-runs: [LabelRun],
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    online: bool,
+    // Where they're a friend, each with their status there ("Steam (Name)"
+    // with two of ours on one network).
+    networks: [NetPresence],
+}
+
+// A pending friend request on the friends list.
+export struct RequestItem {
+    name: string,
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    // They asked (Accept / Decline); else we did (Cancel).
+    incoming: bool,
+    // Where it's from: the network, and which of our accounts if several.
+    network: string,
+}
+
+// A file waiting to be sent.
+export struct FileItem {
+    name: string,
+    detail: string,
+}
+
+
+// A network on the "Add an account" page, with its security summary.
+export struct NetworkItem {
+    // Network::key ("stoat", "matrix", …), for forms that differ.
+    key: string,
+    name: string,
+    available: bool,
+    encrypted: bool,
+    lines: [string],
+    // Why using it through Godwit may be a risk ("" when it isn't).
+    warning: string,
+    // Still being built: it works in part, or not yet.
+    wip: bool,
+}
+
+// One of the seven emoji to compare when verifying a device.
+export struct VerifyEmojiItem {
+    name: string,
+    image: image,
+    has-image: bool,
+}
+
+// One logged problem (Settings → Problems).
+export struct ProblemItem {
+    when: string,
+    text: string,
+}
+
+// A status our account can be set to: its name and dot as the network shows
+// them, and which one it is (0 online, 1 idle/away, 2 focus, 3 busy, 4 invisible).
+export struct PresenceChoice {
+    label: string,
+    colour: color,
+    value: int,
+}
+
+// Someone streaming (Discord's Go Live) in the call, and whether we watch.
+export struct StreamItem {
+    name: string,
+    watching: bool,
+    // Why watching stopped or failed; empty when there's nothing to say.
+    note: string,
+    // Its sound (0..2, 1 as sent) and whether it's muted here.
+    volume: float,
+    muted: bool,
+}
+
+// A pinned message, as the pins panel lists it.
+export struct PinItem {
+    author: string,
+    text: string,
+    time: string,
+}
+
+export struct AccountItem {
+    key: string,
+    // Its network takes friend requests (others list who you have DMs with).
+    can-befriend: bool,
+    network: string,
+    name: string,
+    username: string,
+    // A line about this sign-in ("" for none): Steam's made-up device name.
+    detail: string,
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    // This device needs verifying (a recovery key) to read older messages.
+    unverified: bool,
+    // Verifying with another device: 0 not, 1 waiting for it, 2 compare,
+    // 3 confirmed (waiting), 4 done, 5 failed (see verify-text), 6 another
+    // device asks.
+    verify-step: int,
+    verify-text: string,
+    verify-emoji: [VerifyEmojiItem],
+    // Its alerts: the choices (its network's) and the one picked.
+    alert-options: [string],
+    alert-index: int,
+    // Whether its connection can be taken down, and whether it is.
+    can-offline: bool,
+    offline: bool,
+}
+
+// A member list row: a group heading, or a member.
+export struct MemberItem {
+    header: bool,
+    // A row not loaded yet (streamed lists load in ranges): drawn blank.
+    placeholder: bool,
+    name: string,
+    // The name with its emoji as pictures; empty when it has none.
+    name-runs: [LabelRun],
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    // Their role colour (has-colour false: the normal text colour).
+    colour: color,
+    has-colour: bool,
+    // The presence dot.
+    presence: color,
+    status: string,
+}
+
+export struct RoleItem {
+    name: string,
+    colour: color,
+    has-colour: bool,
+}
+
+// A picker row: a heading, or up to nine emoji.
+export struct EmojiRowItem {
+    header: bool,
+    title: string,
+    cells: [EmojiCellItem],
+    // The row of its section's heading (the category bar marks it).
+    section: int,
+}
+
+// A quick-switcher result. kind: as RoomItem.
+export struct SwitchItem {
+    name: string,
+    detail: string,
+    kind: int,
+    initials: string,
+    icon: image,
+    has-icon: bool,
+}
+
+// A room of the open server we could join.
+export struct DirectoryItem {
+    name: string,
+    // The topic, or how many are in it.
+    detail: string,
+}
+
+// One of a person's accounts on People.
+export struct IdentityItem {
+    network: string,
+    // Godwit talks to them here (the user's choice, else the most private).
+    chosen: bool,
+}
+
+// One of a merged person's networks in their chat's header: switching to
+// it opens the chat there (and talks to them there from then on).
+export struct TalkOnItem {
+    label: string,
+    current: bool,
+    // Their status on it (transparent: unknown).
+    colour: color,
+}
+
+// Two people on People who might be one (names nearly the same, on
+// different networks): only ever a suggestion, merged when the user says so.
+export struct MergeItem {
+    // Their rows on People.
+    a: int,
+    b: int,
+    a-name: string,
+    b-name: string,
+    // Where each is: "Stoat", "Steam (Name)".
+    a-where: string,
+    b-where: string,
+}
+
+// One person across networks, on People.
+// A line of a person's account chips on People (`first`: the index of its
+// first chip among all their accounts).
+export struct IdentityRow {
+    items: [IdentityItem],
+    first: int,
+}
+
+export struct ContactItem {
+    name: string,
+    name-runs: [LabelRun],
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    identities: [IdentityItem],
+    // Where Godwit talks to them, and what that network can see.
+    talk-on: string,
+    // The user turned off "switch to a better network" suggestions for them.
+    no-nudges: bool,
+    // Our own name for them ("" for none): it can be reset here.
+    nickname: string,
+    // `identities` in lines of a few, so any number of accounts fits.
+    identity-rows: [IdentityRow],
+}
+
+// The current frame of each animation on screen (app/src/anim.rs): pictures
+// that move show frames[anim], so playing never rebuilds a row.
+export global Anim {
+    in property <[image]> frames;
+}
+
+// Each inline player's newest frame (app/src/inline_player.rs), the same way:
+// a playing GIF or video swaps one picture, its row stays as it is.
+export global Players {
+    in property <[image]> frames;
+}
+
+// The call's video pictures, by tile (call-videos' order): a new frame swaps
+// one picture here, without rebuilding the tiles or the rest of the window
+// (as Yapfast shows its video), so only the video's area repaints.
+export global CallFrames {
+    in property <[image]> frames;
+}
+
+// Server settings → Invites: one invite.
+export struct ServerInviteItem {
+    code: string,
+    creator: string,
+    channel: string,
+    avatar: image,
+    has-avatar: bool,
+}
+
+// Server settings → Bans: one banned user.
+export struct BanItem {
+    name: string,
+    reason: string,
+    avatar: image,
+    has-avatar: bool,
+}
+
+// Server settings → Roles: one role in the list (row 0 is Everyone).
+export struct AdminRoleItem {
+    name: string,
+    colour: color,
+    has-colour: bool,
+}
+
+// A permission in the role editor; heading starts a group.
+export struct PermissionItem {
+    heading: string,
+    title: string,
+    description: string,
+    allowed: bool,
+}
+
+// A row in Active now. kind 0: a call with friends in it (title: the room,
+// detail: server · network, who: the friends in it); kind 1: a friend doing
+// something (title: their name, detail: the network, who: "Playing …").
+export struct ActiveItem {
+    kind: int,
+    title: string,
+    title-runs: [LabelRun],
+    detail: string,
+    who: string,
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    // A call we could join (not the one we're in).
+    can-join: bool,
+    // The call we're in.
+    here: bool,
+}
+
+export struct ThreadItem {
+    name: string,
+    context: string,
+    preview: string,
+    when: string,
+    unread: bool,
+}

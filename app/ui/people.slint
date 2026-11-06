@@ -1,0 +1,233 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ListView } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { ContactItem, MergeItem } from "types.slint";
+import { Avatar, Button, TextField, EmojiText, PageHeader, EmptyState, ChoiceChip } from "widgets.slint";
+
+// One account as a chip: the network's name; clicking talks to them there,
+// the ✕ says "this account isn't them".
+export component Chip inherits ChoiceChip { }
+
+// A small text button for the suggestion line.
+component SmallLink inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    width: label.preferred-width + 16px;
+    height: 22px;
+    border-radius: self.height / 2;
+    background: touch.has-hover ? Theme.surface-highest : transparent;
+    label := Text {
+        text: root.text;
+        font-size: Theme.text-small;
+        font-weight: 600;
+        color: Theme.primary;
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// Everyone as one person across networks. Godwit never links accounts on
+// its own: the user picks "Link" on one person, then who they also are.
+export component People inherits Rectangle {
+    in property <[ContactItem]> people;
+    // People who might be one (see MergeItem): suggestions, never merged alone.
+    in property <[MergeItem]> merges;
+    // The person being linked, or -1.
+    in-out property <int> linking: -1;
+    callback link(int, int);
+    callback not-same(int, int);
+    callback nudges(int, bool);
+    callback unlink(int, int);
+    callback choose(int, int);
+    callback message(int);
+    // Back to their own name (drops our nickname for them).
+    callback reset-nickname(int);
+    // Search by name and a network filter ("" for all), applied by the app.
+    in property <[string]> networks;
+    in-out property <string> filter;
+    // The search's text, kept by the window (it survives the list redrawing).
+    in-out property <string> query;
+    callback search(string);
+    callback filtered(string);
+
+    VerticalLayout {
+        PageHeader {
+            glyph: Icons.link;
+            label: root.linking >= 0 && root.linking < root.people.length
+                ? "Who else is " + root.people[root.linking].name + "?" : "People";
+                if root.linking >= 0: Button {
+                    y: (parent.height - self.height) / 2;
+                    text: "Cancel";
+                    kind: "text";
+                    clicked => { root.linking = -1; }
+                }
+        }
+        // Finding someone: by name, and by the network they're on.
+        HorizontalLayout {
+            padding-left: Theme.gap-lg;
+            padding-right: Theme.gap-lg;
+            padding-bottom: Theme.gap-md;
+            spacing: Theme.gap-sm;
+            TextField {
+                horizontal-stretch: 1;
+                text <=> root.query;
+                placeholder: root.linking >= 0 ? "Search for who they also are" : "Search people";
+                edited(t) => { root.search(t); people-list.content-y = 0; }
+            }
+            if root.query != "": Button {
+                y: (parent.height - self.height) / 2;
+                text: "Clear";
+                kind: "text";
+                clicked => { root.query = ""; root.search(""); people-list.content-y = 0; }
+            }
+            if root.networks.length > 1: Chip {
+                y: (parent.height - self.height) / 2;
+                label: "All";
+                chosen: root.filter == "";
+                choose => { root.filter = ""; root.filtered(""); people-list.content-y = 0; }
+            }
+            for n in (root.networks.length > 1 ? root.networks : []): Chip {
+                y: (parent.height - self.height) / 2;
+                label: n;
+                chosen: root.filter == n;
+                choose => { root.filter = n; root.filtered(n); people-list.content-y = 0; }
+            }
+        }
+        if root.people.length == 0: EmptyState {
+            text: root.filter != "" ? "Nobody here matches." : "People you add as friends show up here.";
+        }
+        // Suggested merges, above everyone: names nearly the same on
+        // different networks. Godwit never merges on its own.
+        if root.merges.length > 0 && root.linking < 0: VerticalLayout {
+            padding-left: Theme.gap-lg;
+            padding-right: Theme.gap-lg;
+            padding-bottom: Theme.gap-md;
+            spacing: Theme.space-2;
+            Text {
+                text: "Suggested merges — " + root.merges.length;
+                font-size: Theme.text-small;
+                font-weight: 600;
+                color: Theme.outline;
+            }
+            for m in root.merges: Rectangle {
+                height: Theme.row-member;
+                border-radius: Theme.radius-sm;
+                background: Theme.surface-low;
+                HorizontalLayout {
+                    padding-left: Theme.gap-md;
+                    padding-right: Theme.gap-md;
+                    spacing: Theme.gap-md;
+                    Text {
+                        horizontal-stretch: 1;
+                        text: m.a-name + " (" + m.a-where + ") and " + m.b-name + " (" + m.b-where + ") might be the same person";
+                        vertical-alignment: center;
+                        overflow: elide;
+                        color: Theme.on-surface;
+                    }
+                    Button {
+                        y: (parent.height - self.height) / 2;
+                        text: "Merge";
+                        kind: "tonal";
+                        clicked => { root.link(m.a, m.b); }
+                    }
+                    Button {
+                        y: (parent.height - self.height) / 2;
+                        text: "Not the same";
+                        kind: "text";
+                        clicked => { root.not-same(m.a, m.b); }
+                    }
+                }
+            }
+        }
+        people-list := ListView {
+            vertical-stretch: 1;
+            for person[i] in root.people: Rectangle {
+                // A line of chips more for every three accounts past the first three.
+                height: 76px + max(0, person.identity-rows.length - 1) * 34px;
+                property <bool> pickable: root.linking >= 0 && root.linking != i;
+                // Not secondary-container: the chosen chip is drawn in it.
+                background: root.linking == i ? Theme.surface-highest
+                    : touch.has-hover && self.pickable ? Theme.surface-high
+                    : touch.has-hover ? Theme.surface-low : transparent;
+                // While linking, a click anywhere on someone picks them.
+                touch := TouchArea {
+                    mouse-cursor: parent.pickable ? pointer : default;
+                    clicked => {
+                        if parent.pickable {
+                            root.link(root.linking, i);
+                            root.linking = -1;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: Theme.gap-lg;
+                    padding-right: Theme.gap-lg;
+                    spacing: Theme.gap-lg;
+                    Avatar {
+                        y: (parent.height - self.height) / 2;
+                        source: person.avatar;
+                        has-image: person.has-avatar;
+                        initials: person.initials;
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: Theme.space-compact;
+                        // The name, then their accounts three to a line, so
+                        // neither is ever squeezed out.
+                        for line[r] in person.identity-rows: HorizontalLayout {
+                            spacing: Theme.gap-md;
+                            if r == 0: EmojiText {
+                                text: person.name;
+                                runs: person.name-runs;
+                                font-weight: 600;
+                                color: Theme.on-surface;
+                            }
+                            for id[k] in line.items: Chip {
+                                label: id.network;
+                                chosen: id.chosen;
+                                removable: person.identities.length > 1 && root.linking < 0;
+                                choose => { root.choose(i, line.first + k); }
+                                remove => { root.unlink(i, line.first + k); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.gap-md;
+                            Text {
+                                text: person.talk-on;
+                                vertical-alignment: center;
+                                font-size: Theme.text-small;
+                                overflow: elide;
+                                color: Theme.on-surface-variant;
+                            }
+                            if person.nickname != "" && root.linking < 0: SmallLink {
+                                text: "Reset nickname";
+                                clicked => { root.reset-nickname(i); }
+                            }
+                            // Undoes "Don't suggest again" from the chat's bar.
+                            if person.no-nudges && person.identities.length > 1 && root.linking < 0: SmallLink {
+                                text: "Suggest switching again";
+                                clicked => { root.nudges(i, true); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                    if root.linking < 0: Button {
+                        y: (parent.height - self.height) / 2;
+                        text: "Link";
+                        kind: "text";
+                        clicked => { root.linking = i; }
+                    }
+                    if root.linking < 0: Button {
+                        y: (parent.height - self.height) / 2;
+                        text: "Message";
+                        kind: "tonal";
+                        clicked => { root.message(i); }
+                    }
+                }
+            }
+        }
+    }
+}

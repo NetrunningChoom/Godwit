@@ -1,0 +1,1453 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+// Godwit's window: adding an account until one is ready, then the rail,
+// the room list and the open room, with Settings and the profile card on top.
+
+import { AdState } from "autodelete.slint";
+export { AdState }
+import { AccountPages } from "account-pages.slint";
+export { AccountPages }
+import { Palette, Slider, ScrollView } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import {
+    Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
+    ProblemItem, RequestItem, ActiveItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, AdminRoleItem, PermissionItem, PinItem, StreamItem
+} from "types.slint";
+export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
+export { Gifs } from "gif-picker.slint";
+export { PlayerWindow } from "player-window.slint";
+import { Switcher } from "switcher.slint";
+import { UserCard } from "usercard.slint";
+import { Members } from "members.slint";
+import { Login } from "login.slint";
+import { Rail } from "rail.slint";
+import { Sidebar } from "sidebar.slint";
+import { Timeline } from "timeline.slint";
+import { Friends } from "friends.slint";
+import { JoinServer } from "join-server.slint";
+import { ShareSettings } from "share-settings.slint";
+import { ShareSource } from "share-source.slint";
+import { People } from "people.slint";
+import { Active } from "active.slint";
+import { Threads } from "threads.slint";
+import { ServerSettings } from "server-settings.slint";
+import { Settings } from "settings.slint";
+import { ProfileCard } from "profile.slint";
+import { Dialog, Button, TextField, TextArea, ResizeHandle, Avatar, IconButton } from "widgets.slint";
+import { IncomingCall } from "incoming-call.slint";
+import { Cropper } from "cropper.slint";
+import { ImageViewer } from "image-viewer.slint";
+import { FullscreenVideo } from "fullscreen-video.slint";
+import { PinsDialog } from "pins-dialog.slint";
+import { SearchDialog } from "search-dialog.slint";
+import { ThreadDialog } from "thread-dialog.slint";
+import { ProfilePopup } from "profile-popup.slint";
+import { CallDialogs, ManagementDialogs } from "app-dialogs.slint";
+
+export {
+    Palette,
+    Theme, Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem, PinItem, ActiveItem, ThreadItem
+}
+
+export component AppWindow inherits Window {
+    title: "Godwit";
+    // A godwit silhouette from a public-domain USFWS photo (assets/icon/LICENSE.txt).
+    icon: @image-url("../../assets/icon/icon-256.png");
+    preferred-width: 1100px;
+    preferred-height: 720px;
+    // Never so narrow that something is cut off: the rail, the sidebar as
+    // wide as it's dragged, and the narrowest whole chat.
+    min-width: max(640px, Theme.rail-width + root.sidebar-w + Theme.chat-min-width);
+    min-height: 400px;
+        // The window and rail sit on surface-high, as officially.
+    background: Theme.surface-high;
+    default-font-family: "Inter";
+    default-font-size: Theme.text-body;
+
+    in property <Screen> screen: Screen.connecting;
+    // Adding an account.
+    in property <[NetworkItem]> networks;
+    in property <int> login-network: -1;
+    // A page to open while signing in (Teams' device sign-in), or empty.
+    in property <string> login-link;
+    callback login-open-link(string);
+    callback login-copy(string);
+    in property <bool> login-busy;
+    in property <string> login-error;
+    in property <bool> login-can-cancel;
+    in property <image> login-qr;
+    in property <bool> login-has-qr;
+    in property <bool> login-qr-scanned;
+    in property <string> login-mfa-hint;
+    // Us.
+    in property <string> account-name;
+    in property <string> account-username;
+    in property <string> account-network;
+    in property <string> account-initials;
+    in property <image> account-avatar;
+    in property <bool> account-has-avatar;
+
+    in property <[ServerItem]> servers;
+    in property <bool> home-selected: true;
+    in property <bool> server-settings-available;
+    in property <bool> server-settings-open;
+    in property <bool> server-edit-loaded;
+    in property <bool> server-edit-busy;
+    in property <bool> server-edit-allowed;
+    in property <bool> server-edit-dirty;
+    in property <bool> server-edit-failed;
+    in property <string> server-edit-status;
+    in-out property <string> server-edit-name;
+    in-out property <string> server-edit-description;
+    in property <image> server-edit-icon;
+    in property <bool> server-edit-has-icon;
+    in property <string> server-edit-icon-label;
+    in property <image> server-edit-banner;
+    in property <bool> server-edit-has-banner;
+    in property <string> server-edit-banner-label;
+    in property <[string]> server-edit-channels;
+    in-out property <int> server-edit-joined;
+    in-out property <int> server-edit-left;
+    in-out property <int> server-edit-kicked;
+    in-out property <int> server-edit-banned;
+    callback open-server-settings(); callback close-server-settings();
+    callback save-server-overview(); callback reset-server-overview(); callback reload-server-overview(); callback server-overview-edited();
+    callback pick-server-image(bool); callback remove-server-image(bool);
+    // Server settings' other pages (see server-settings.slint).
+    in property <string> server-edit-server-name;
+    in property <int> server-edit-page;
+    in property <bool> server-edit-show-roles;
+    in property <bool> server-edit-show-invites;
+    in property <bool> server-edit-show-bans;
+    in property <bool> server-edit-can-delete;
+    in property <bool> server-edit-admin-busy;
+    in property <string> server-edit-notice;
+    in property <bool> server-edit-notice-failed;
+    in property <[ServerInviteItem]> server-edit-invites;
+    in property <bool> server-edit-invites-loaded;
+    in property <[BanItem]> server-edit-bans;
+    in property <bool> server-edit-bans-loaded;
+    in property <[AdminRoleItem]> server-edit-roles;
+    in property <bool> server-edit-roles-loaded;
+    in property <int> server-edit-role-index;
+    in-out property <string> server-edit-role-name;
+    in-out property <string> server-edit-role-colour;
+    in-out property <bool> server-edit-role-hoist;
+    in property <[PermissionItem]> server-edit-permissions;
+    in property <bool> server-edit-role-dirty;
+    callback server-settings-page(int);
+    callback delete-server-invite(int); callback copy-server-invite(int);
+    callback unban-server-user(int);
+    callback select-server-role(int); callback create-server-role(string); callback server-role-edited();
+    callback toggle-server-permission(int); callback save-server-role(); callback delete-server-role();
+    callback delete-server();
+    // The profile card's Kick / Ban (ban: true), with the ban's reason.
+    in property <bool> card-can-kick;
+    in property <bool> card-can-ban;
+    // Kept on the window and exposed for generated off-screen scenes.
+    in-out property <int> confirm-moderate: 0;
+    in-out property <string> ban-reason;
+    callback moderate-member(bool, string);
+    // A new Discord account's one-time privacy question on first run: turn
+    // off its data use and activity sharing, or keep them.
+    in property <bool> discord-privacy-open;
+    callback discord-privacy(bool);
+    // Godwit kept an alert quiet because Steam's own app runs here: said once per account.
+    // The cropper: a picked avatar, icon or banner, panned and zoomed in a
+    // frame of the network's shape before it's uploaded.
+    in property <bool> crop-open;
+    in property <string> crop-title;
+    in property <string> crop-note;
+    in property <string> crop-error;
+    in property <image> crop-image;
+    in property <int> crop-image-width;
+    in property <int> crop-image-height;
+    in property <float> crop-frame-width;
+    in property <float> crop-frame-height;
+    in property <bool> crop-round;
+    in-out property <float> crop-zoom: 1;
+    in-out property <float> crop-pan-x;
+    in-out property <float> crop-pan-y;
+    // true: upload the file as picked (an animated GIF stays animated).
+    callback crop-done(bool);
+    callback crop-cancel();
+    // The image viewer (Yapfast's ImageViewer): an attachment shown large.
+    in property <bool> viewer-open;
+    in property <image> viewer-image;
+    in property <int> viewer-width;
+    in property <int> viewer-height;
+    in property <string> viewer-name;
+    // "2 / 3", or empty for a message's only picture.
+    in property <string> viewer-position;
+    // While the picture loads.
+    in property <string> viewer-note;
+    // A web picture: it can open in the browser too.
+    in property <bool> viewer-web;
+    // An animated picture's frame slot (Anim.frames), or -1.
+    in property <int> viewer-anim: -1;
+    // A looping-video GIF's slot in Players.frames, or -1.
+    in property <int> viewer-player: -1;
+    // Zoom (1: fitted, up to 8) and how far the zoomed picture is dragged.
+    in-out property <float> viewer-zoom: 1;
+    in-out property <float> viewer-pan-x;
+    in-out property <float> viewer-pan-y;
+    callback close-image();
+    callback step-image(int);
+    // true: open in the browser; false: save to Downloads.
+    callback save-image(bool);
+    // A call ringing us: who, and how ("Calling you on Steam").
+    in property <bool> incoming-call-open;
+    in property <string> incoming-call-name;
+    in property <string> incoming-call-body;
+    in property <image> incoming-call-avatar;
+    in property <bool> incoming-call-has-avatar;
+    // We're in another call: answering leaves it.
+    in property <bool> incoming-call-switches;
+    in property <string> incoming-call-initials;
+    // 0: dismissed (hide, stop ringing), 1: accept, 2: decline.
+    callback incoming-call(int);
+    in property <bool> quiet-notice-open;
+    // Godwit stopped mid-call last time: offer to rejoin that call.
+    in property <bool> rejoin-open;
+    in property <string> rejoin-room;
+    callback rejoin-call(bool);
+    // A link waiting for "Open in browser?" (empty: none).
+    in-out property <string> confirm-link;
+    callback open-confirmed-link();
+    // Adding Godwit to the system's apps (install.rs).
+    in-out property <bool> install-offer;
+    in-out property <bool> install-note;
+    in property <bool> install-supported;
+    in property <bool> app-installed;
+    in property <string> install-status;
+    callback install-app();
+    callback install-later();
+    callback uninstall-app();
+    // A newer release offered (empty: none), and how its download goes.
+    in-out property <string> update-version;
+    in property <string> update-status;
+    callback update-now();
+    in property <string> quiet-notice-account;
+    callback quiet-notice(bool);
+    // The server menu and its dialogs.
+    in property <bool> server-menu;
+    in property <bool> server-can-invite;
+    in property <bool> server-notify-levels;
+    in property <int> server-notify;
+    callback server-menu-notify(int);
+    in property <bool> server-can-create-channel;
+    in property <bool> server-can-leave;
+    // The Invite dialog: open, and its link once made ("" while it's made).
+    in property <bool> invite-open;
+    in property <string> invite-link;
+    in-out property <bool> creating-channel;
+    in-out property <string> new-channel-name;
+    property <bool> new-channel-voice;
+    in-out property <bool> confirm-leave;
+    // Signing out asks first: it ends the sign-in at the network (Discord and
+    // Steam need a new QR code after). -2 none, -1 the current account, else
+    // the Settings row.
+    in-out property <int> confirm-log-out: -2;
+    callback server-menu-invite();
+    callback server-menu-mark-read();
+    callback server-menu-create-channel(string, bool);
+    callback server-menu-leave();
+    callback copy-invite-link();
+    callback close-invite-link();
+    in property <string> sidebar-title;
+    in property <image> sidebar-banner;
+    in property <bool> sidebar-has-banner;
+    in property <[RoomItem]> rooms;
+
+    in property <bool> has-room;
+    in property <[DirectoryItem]> directory;
+    in property <string> room-title;
+    // The open room's account, with several accounts ("" with one).
+    in property <string> room-account;
+    // A merged person's networks, for switching in their chat's header.
+    in property <[TalkOnItem]> room-talk-on;
+    in property <[string]> room-talk-on-labels;
+    in property <int> room-talk-on-current;
+    callback talk-on(int);
+    // The open chat is a person's: they can be given a nickname.
+    in property <bool> room-can-rename;
+    in property <string> room-nickname;
+    callback rename-person(string);
+    // People's "Reset nickname" on row `int`.
+    callback reset-nickname(int);
+    // The open room is an invite from this person ("" when it isn't).
+    in property <string> invite-from;
+    in property <bool> room-is-channel;
+    in property <bool> room-encrypted;
+    in property <string> room-security;
+    in property <[MessageItem]> messages;
+    in property <bool> loading-history;
+    in property <bool> reached-start;
+    in property <bool> detached;
+    callback jump-to-present();
+    in property <bool> can-send;
+    in property <bool> can-react;
+    in property <bool> can-reply;
+    in property <bool> can-edit;
+    in property <bool> can-delete;
+    in property <bool> can-delete-others;
+    in property <string> compose-label;
+    in property <string> typing;
+    in property <bool> can-attach;
+    in property <[FileItem]> files;
+    in property <bool> showing-friends;
+    in property <bool> showing-people;
+    in property <bool> showing-active;
+    in property <bool> showing-threads;
+    in property <bool> can-show-threads;
+    in property <[ThreadItem]> thread-items;
+    callback show-threads();
+    callback overview-thread-open(int);
+    callback threads-load-more();
+    in property <bool> self-muted;
+    in property <bool> self-deafened;
+    in property <[ActiveItem]> active-items;
+    in property <[ContactItem]> people;
+    in property <[MergeItem]> merges;
+    // Friends, People or Active now is open in place of a room.
+    property <bool> page: root.showing-friends || root.showing-people || root.showing-active || root.showing-threads;
+    in property <[PersonItem]> friends;
+    in property <bool> in-call;
+    in property <string> call-status;
+    // Seconds since the call connected (-1: not connected), counted on here
+    // between refreshes; `call-time` shows it as 4:05 or 1:02:03.
+    in-out property <int> call-elapsed: -1;
+    property <string> call-time: root.call-elapsed < 0 ? "" : (root.call-elapsed >= 3600 ? Math.floor(root.call-elapsed / 3600) + ":" : "")
+        + (root.call-elapsed >= 3600 && Math.mod(Math.floor(root.call-elapsed / 60), 60) < 10 ? "0" : "")
+        + Math.mod(Math.floor(root.call-elapsed / 60), 60) + ":"
+        + (Math.mod(root.call-elapsed, 60) < 10 ? "0" : "") + Math.mod(root.call-elapsed, 60);
+    Timer {
+        interval: 1s;
+        running: root.call-elapsed >= 0;
+        triggered => { root.call-elapsed += 1; }
+    }
+    // Now (Unix seconds), set on each refresh and counted on here while a
+    // channel shows how long its call has been going (else nothing ticks).
+    in-out property <int> clock;
+    in property <bool> voice-clock;
+    Timer {
+        interval: 1s;
+        running: root.voice-clock;
+        triggered => { root.clock += 1; }
+    }
+    in property <bool> call-speaking;
+    in property <string> call-room;
+    in property <bool> call-muted;
+    in property <bool> call-deafened;
+    in property <bool> call-camera;
+    in property <bool> call-screen-share;
+    in property <bool> call-can-video;
+    callback member-rows(int, int);
+    in property <bool> call-video-network;
+    in property <[CallVideoItem]> call-videos;
+    callback set-camera(bool);
+    // Turning the camera on asks first (`camera-confirm`); off doesn't.
+    in-out property <bool> camera-confirm;
+    function camera-asked(on: bool) {
+        if on { root.camera-confirm = true; } else { root.set-camera(false); }
+    }
+    callback set-screen-share(bool);
+    in property <bool> share-dialog-open;
+    in property <[string]> share-qualities;
+    in-out property <int> share-quality-index;
+    in-out property <bool> share-remember;
+    // Windows: Godwit's own screen/window list (set only there).
+    in property <bool> share-pick-source;
+    in property <[string]> share-screens;
+    in property <[string]> share-windows;
+    in-out property <int> share-source-tab;
+    in-out property <int> share-source-index;
+    callback confirm-screen-share();
+    callback cancel-screen-share();
+    in property <bool> can-call;
+    in property <string> call-unavailable;
+    in property <bool> has-members;
+    in property <bool> has-pins;
+    in property <bool> has-search;
+    callback open-search();
+    in property <bool> can-thread;
+    in property <bool> is-forum;
+    callback create-thread(int);
+    callback new-post();
+    // The "Create thread" / "New post" dialog.
+    in-out property <bool> thread-open;
+    in property <bool> thread-post;
+    in-out property <string> thread-name;
+    in-out property <string> thread-text;
+    callback thread-confirm();
+    // The message search dialog.
+    in property <bool> search-open;
+    in property <bool> search-busy;
+    in property <bool> search-failed;
+    in property <bool> search-asked;
+    in property <[PinItem]> search-results;
+    callback search(string);
+    callback close-search();
+    callback search-jump(int);
+    in property <bool> can-pin;
+    callback open-pins();
+    callback pin(int);
+    // The pinned messages panel.
+    in property <bool> pins-open;
+    in property <bool> pins-loading;
+    in property <bool> pins-failed;
+    in property <[PinItem]> pins;
+    callback close-pins();
+    callback pin-jump(int);
+    callback pin-unpin(int);
+    in property <bool> members-shown;
+    in property <[MemberItem]> members;
+    // The open profile card.
+    in property <bool> card-open;
+    in property <string> card-name;
+    in property <[BlockItem]> card-blocks;
+    in property <string> card-username;
+    in property <image> card-avatar;
+    in property <bool> card-has-avatar;
+    in property <string> card-initials;
+    in property <image> card-banner;
+    in property <bool> card-has-banner;
+    in property <color> card-presence;
+    in property <string> card-status;
+    in property <[RoleItem]> card-roles;
+    in property <bool> card-has-bio;
+    in property <bool> card-me;
+    in property <[RequestItem]> friend-requests;
+    in property <string> friend-request-status;
+    in property <bool> friend-request-failed;
+    callback send-friend-request(string, string);
+    callback answer-friend-request(int, bool);
+    in property <int> card-relationship;
+    callback add-friend-profile();
+    callback remove-friend-profile();
+    in property <string> card-linked;
+    in property <bool> call-here;
+    in property <[CallMemberItem]> call-members;
+    in property <[StreamItem]> call-streams;
+    callback watch-stream(int, bool);
+    // Volume and mute for a stream or a person; `done` is false while a
+    // slider is still being dragged (applied, not yet saved).
+    callback stream-sound(int, float, bool, bool);
+    callback user-sound(int, float, bool, bool);
+    // How many of the call's videos are screens (the video area grows for them).
+    in property <int> call-screen-videos;
+    // A call video filling the window (its index), or -1.
+    in property <int> fullscreen-video: -1;
+    callback video-fullscreen(int);
+    in-out property <string> draft;
+    in-out property <int> composer-anchor;
+    in-out property <int> composer-cursor;
+    in property <int> composer-inserted-at;
+    in property <int> composer-insert-serial;
+    in property <string> nudge;
+
+    // Settings.
+    in-out property <bool> settings-open;
+    in-out property <int> settings-section: 1;
+    in-out property <int> settings-account: -1;
+    in-out property <int> settings-account-tab: 0;
+    in property <bool> settings-account-profile;
+    in property <bool> settings-account-autodelete;
+    callback settings-open-autodelete();
+    in property <bool> settings-account-discord;
+    callback settings-open-privacy();
+    callback settings-open-sessions();
+    callback open-settings-account(int);
+    in property <[AccountItem]> accounts;
+    in property <[string]> edit-profile-accounts;
+    in-out property <int> edit-profile-index;
+    in property <bool> edit-profile-loaded;
+    in property <bool> edit-profile-busy;
+    in property <bool> edit-profile-failed;
+    in property <string> edit-profile-status;
+    in-out property <string> edit-profile-name;
+    in-out property <string> edit-profile-pronouns;
+    in-out property <string> edit-profile-bio;
+    in property <image> edit-profile-avatar;
+    in property <bool> edit-profile-has-avatar;
+    in property <string> edit-profile-avatar-label;
+    in property <image> edit-profile-banner;
+    in property <bool> edit-profile-has-banner;
+    in property <bool> edit-profile-banner-allowed: true;
+    in property <string> edit-profile-banner-label;
+    callback select-profile-account(int);
+    callback reload-own-profile();
+    callback reset-own-profile();
+    callback save-own-profile();
+    callback own-profile-edited();
+    callback pick-profile-image(bool);
+    callback remove-profile-image(bool);
+
+    in-out property <bool> notifications;
+    in-out property <bool> sounds;
+    in-out property <bool> muzzle;
+    in property <[string]> muzzle-pauses;
+    in-out property <int> muzzle-pause-index;
+    in property <[string]> muzzle-maxes;
+    in-out property <int> muzzle-max-index;
+    in-out property <bool> dnd;
+    callback set-alert-mode(int, int);
+    callback set-offline(int, bool);
+    in property <[string]> inputs;
+    in property <[string]> outputs;
+    in-out property <int> input-index;
+    in-out property <int> output-index;
+    in property <[string]> cameras;
+    in-out property <int> camera-index;
+    in-out property <int> screen-quality-index;
+    in-out property <bool> screen-quality-ask;
+    in-out property <int> noise-index;
+    in property <[string]> rejoin-offers;
+    in-out property <int> rejoin-offer-index;
+    in-out property <bool> echo-cancellation;
+    in-out property <bool> auto-gain;
+    in-out property <bool> dark;
+    in-out property <int> accent-index;
+    in-out property <int> style-index;
+    in property <[string]> emoji-packs;
+    in-out property <int> emoji-pack-index;
+    in property <[string]> scales;
+    // 2: 100%, until Settings opens and says otherwise.
+    in-out property <int> scale-index: 2;
+    in property <string> memory;
+    in property <string> cache-size;
+    in property <bool> cache-clearable;
+    in property <string> version;
+    in property <[ProblemItem]> problems;
+    in property <int> problems-unseen;
+    in property <bool> has-problem-log;
+    callback problems-opened();
+    callback copy-problems();
+    callback open-problem-log();
+    callback clear-problems();
+
+    property <bool> profile-open;
+    // The message row waiting for "Delete message" (-1: none).
+    in-out property <int> confirm-delete: -1;
+    // Room for the member list beside the chat (it hides below this, and
+    // comes back when the window widens).
+    property <bool> wide: self.width >= 1100px;
+
+    callback pick-network(int);
+    callback login-back();
+    callback log-in(string, string, string);
+    callback submit-mfa(string);
+    callback log-out();
+    callback select-home();
+    callback select-server(int);
+    // A rail account row was right-clicked (its row in `servers`): its profile.
+    callback open-account(int);
+    // A rail account row was clicked: collapse or expand its section.
+    callback toggle-account(int);
+    // The rail row of the account the profile popup shows.
+    in-out property <int> focus-account: -1;
+    callback select-room(int);
+    callback load-earlier();
+    callback visible-rows(int, int);
+    in property <bool> history-failed;
+    in property <string> room-offline;
+    callback draft-edited(string);
+    callback send();
+    callback dismiss-nudge(bool);
+    callback reply(int);
+    callback edit(int);
+    callback delete(int);
+    callback react(int, int);
+    callback open-picker(int);
+    in property <bool> picker-open;
+    in property <[EmojiRowItem]> emoji-rows;
+    callback picker-search(string);
+    callback picker-picked(int, int);
+    callback picker-scrolled(int);
+    callback close-picker();
+    callback open-attachment(int, int);
+    callback link-clicked(int, string);
+    callback play-inline(string, string);
+    callback player-fullscreen(string);
+    callback join-invite(string);
+    in property <bool> join-server-open;
+    in property <[string]> join-server-accounts;
+    in property <string> join-server-status;
+    in property <string> join-server-name;
+    in property <bool> join-server-ready;
+    in property <bool> join-server-busy;
+    in property <bool> join-server-failed;
+    callback open-join-server();
+    callback close-join-server();
+    callback reset-join-server();
+    callback inspect-invite(int, string);
+    callback accept-server-invite();
+    callback player-pointer(string, int, int, bool);
+    callback player-move(string, int, int);
+    callback cancel-compose();
+    callback edit-last();
+    callback jump-to-reply(int);
+    // The quick switcher.
+    in-out property <bool> switcher-open;
+    in property <[SwitchItem]> switch-results;
+    callback switcher-search(string);
+    callback switcher-picked(int);
+    // Alt+Up/Down: the room before or after the open one in the sidebar.
+    callback adjacent-room(int);
+    callback attach();
+    callback paste-files() -> bool;
+    callback room-menu(int, int);
+    in-out property <string> home-query;
+    callback search-home(string);
+    in property <[string]> home-networks;
+    in property <string> home-network;
+    callback filter-home(string);
+    callback move-server-by(int, int);
+    callback move-account-by(int, int);
+    callback move-server(int, int);
+    callback toggle-hidden-rooms();
+    callback toggle-category(int);
+    // Panel widths, dragged by their handles: kept between starts, with
+    // sane limits; a double-click on a handle puts it back.
+    in-out property <length> sidebar-w: Theme.sidebar-width;
+    in-out property <length> members-w: Theme.sidebar-width;
+    callback panels-resized(length, length);
+    in property <[string]> tones;
+    in-out property <int> tone-index;
+    in property <[string]> people-networks;
+    in-out property <string> people-query;
+    callback people-search(string);
+    callback people-filter(string);
+    callback remove-file(int);
+    callback show-friends();
+    callback show-people();
+    callback show-active();
+    callback active-open(int);
+    callback active-join(int);
+    callback set-presence(int);
+    // Our presence on the first account (see ProfileCard).
+    in property <bool> account-has-presence;
+    in property <color> account-presence;
+    in property <int> account-presence-index;
+    in property <[PresenceChoice]> account-presence-choices;
+    in property <bool> account-has-status-text: true;
+    in property <string> account-status;
+    callback set-status-text(string);
+    callback answer-invite(bool);
+    callback join-room(int);
+    callback link-people(int, int);
+    callback not-same(int, int);
+    // The person People is linking, or -1 (Escape cancels).
+    in-out property <int> people-linking: -1;
+    callback unlink-person(int, int);
+    callback choose-network(int, int);
+    callback message-person(int);
+    callback open-direct(int);
+    callback join-call();
+    callback toggle-members();
+    callback open-message-profile(int);
+    callback open-member-profile(int);
+    callback close-profile();
+    callback mark-unread(int);
+    callback copy-text(int);
+    // Copies this text itself to the clipboard (a username).
+    callback copy-string(string);
+    callback copy-link(int);
+    callback message-profile();
+    callback link-profile();
+    callback set-nudges(int, bool);
+    callback leave-call();
+    callback toggle-mute();
+    callback toggle-deafen();
+    callback open-call-room();
+    callback add-account();
+    callback log-out-account(int);
+    callback unlock-account(int, string);
+    callback start-verify(int);
+    callback answer-verify(bool);
+    callback accept-verify();
+    callback close-verify();
+    callback settings-changed();
+    callback list-devices();
+    in property <bool> mic-testing;
+    in property <float> mic-level;
+    callback mic-test(bool);
+    callback settings-opened();
+    callback clear-cache();
+
+    if screen == Screen.login || screen == Screen.mfa: Login {
+        networks: root.networks;
+        network: root.login-network;
+        mfa: root.screen == Screen.mfa;
+        busy: root.login-busy;
+        error: root.login-error;
+        can-cancel: root.login-can-cancel;
+        qr: root.login-qr;
+        has-qr: root.login-has-qr;
+        qr-scanned: root.login-qr-scanned;
+        mfa-hint: root.login-mfa-hint;
+        link: root.login-link;
+        open-link(url) => { root.login-open-link(url); }
+        copy(text) => { root.login-copy(text); }
+        pick-network(i) => { root.pick-network(i); }
+        back => { root.login-back(); }
+        log-in(s, u, p) => { root.log-in(s, u, p); }
+        submit-mfa(c) => { root.submit-mfa(c); }
+    }
+    if screen == Screen.connecting: VerticalLayout {
+        alignment: center;
+        spacing: Theme.space-3;
+        Text {
+            text: "Godwit";
+            horizontal-alignment: center;
+            font-size: Theme.text-display;
+            font-weight: 600;
+            color: Theme.on-surface;
+        }
+        Text {
+            text: "Connecting to your accounts…";
+            horizontal-alignment: center;
+            color: Theme.on-surface-variant;
+        }
+        // A fresh sign-in that never finishes connecting: a way out.
+        if root.login-network >= 0: HorizontalLayout {
+            alignment: center;
+            Button { text: "Cancel"; kind: "text"; clicked => { root.login-back(); } }
+        }
+    }
+    // Shortcuts anywhere in the main view (keys nothing inside used).
+    if screen == Screen.main: FocusScope {
+        init => { self.focus(); }
+        key-pressed(e) => {
+            if e.modifiers.control && (e.text == "f" || e.text == "F") && root.has-search {
+                root.open-search();
+                return accept;
+            }
+            if e.modifiers.control && (e.text == "k" || e.text == "K") {
+                root.switcher-open = true;
+                root.switcher-search("");
+                return accept;
+            }
+            if e.text == Key.Escape && root.people-linking >= 0 {
+                root.people-linking = -1;
+                return accept;
+            }
+            if e.modifiers.alt && e.text == Key.UpArrow {
+                root.adjacent-room(-1);
+                return accept;
+            }
+            if e.modifiers.alt && e.text == Key.DownArrow {
+                root.adjacent-room(1);
+                return accept;
+            }
+            reject
+        }
+        HorizontalLayout {
+            Rail {
+                servers: root.servers;
+                home-selected: root.home-selected;
+                has-problems: root.problems-unseen > 0;
+                // The account's profile, for that account (the popup and
+                // presence act on it): opened, or closed when open on it.
+                toggle-account(i) => { root.toggle-account(i); }
+                move-server(i, d) => { root.move-server(i, d); }
+                move-server-by(i, d) => { root.move-server-by(i, d); }
+                move-account-by(i, d) => { root.move-account-by(i, d); }
+                menu-can-invite: root.server-can-invite;
+                menu-settings: root.server-settings-available;
+                menu-can-leave: root.server-can-leave;
+                server-invite => { root.server-menu-invite(); }
+                server-mark-read => { root.server-menu-mark-read(); }
+                server-settings => { root.open-server-settings(); }
+                server-leave => { root.confirm-leave = true; }
+                open-account(i) => {
+                    root.profile-open = !root.profile-open || root.focus-account != i;
+                    root.focus-account = i;
+                    root.open-account(i);
+                }
+                open-settings => {
+                    root.settings-open = true;
+                    root.settings-opened();
+                }
+                select-home => { root.select-home(); }
+                select-server(i) => { root.select-server(i); }
+                join-server => { root.open-join-server(); }
+            }
+            // Everything right of the rail: a surface-low sheet with a rounded
+            // top-left corner, 8 px below the top.
+            VerticalLayout {
+                padding-top: Theme.gap-md;
+                Rectangle {
+                    background: Theme.surface-low;
+                    border-top-left-radius: Theme.radius-lg;
+                    HorizontalLayout {
+                        Sidebar {
+                            panel-width: root.sidebar-w;
+                            title: root.sidebar-title;
+                            banner: root.sidebar-banner;
+                            has-banner: root.sidebar-has-banner;
+                            server-settings-available: root.server-settings-available;
+                            open-server-settings => { root.open-server-settings(); }
+                            server-menu: root.server-menu;
+                            room-menu(i, a) => { root.room-menu(i, a); }
+                            home-query <=> root.home-query;
+                            search-home(t) => { root.search-home(t); }
+                            home-networks: root.home-networks;
+                            home-network: root.home-network;
+                            filter-home(n) => { root.filter-home(n); }
+                            toggle-hidden-rooms => { root.toggle-hidden-rooms(); }
+                            toggle-category(i) => { root.toggle-category(i); }
+                            can-invite: root.server-can-invite;
+                            notify-levels: root.server-notify-levels;
+                            notify: root.server-notify;
+                            set-notify(level) => { root.server-menu-notify(level); }
+                            can-create-channel: root.server-can-create-channel;
+                            can-leave: root.server-can-leave;
+                            invite-people => { root.server-menu-invite(); }
+                            mark-server-read => { root.server-menu-mark-read(); }
+                            create-channel => { root.new-channel-name = ""; root.new-channel-voice = false; root.creating-channel = true; }
+                            leave-server => { root.confirm-leave = true; }
+                            rooms: root.rooms;
+                            directory: root.directory;
+                            join-room(i) => { root.join-room(i); }
+                            account-name: root.account-name;
+                            account-avatar: root.account-avatar;
+                            account-has-presence: root.account-has-presence;
+                            account-presence: root.account-presence;
+                            account-has-avatar: root.account-has-avatar;
+                            account-initials: root.account-initials;
+                            home: root.home-selected;
+                            friends-selected: root.showing-friends;
+                            show-friends => { root.show-friends(); }
+                            people-selected: root.showing-people;
+                            show-people => { root.show-people(); }
+                            can-show-threads: root.can-show-threads;
+                            threads-selected: root.showing-threads;
+                            show-threads => { root.show-threads(); }
+                            active-selected: root.showing-active;
+                            show-active => { root.show-active(); }
+                            in-call: root.in-call;
+                            call-status: root.call-status;
+                            call-time: root.call-time;
+                            call-can-video: root.call-can-video;
+                            call-video-network: root.call-video-network;
+                            call-screen-share: root.call-screen-share;
+                            call-camera: root.call-camera;
+                            set-camera(active) => { root.camera-asked(active); }
+                            set-screen-share(active) => { root.set-screen-share(active); }
+                            call-speaking: root.call-speaking;
+                            call-room: root.call-room;
+                            call-muted: root.call-muted;
+                            call-deafened: root.call-deafened;
+                            clock: root.clock;
+                            self-muted: root.self-muted;
+                            self-deafened: root.self-deafened;
+                            open-call-room => { root.open-call-room(); }
+                            toggle-mute => { root.toggle-mute(); }
+                            toggle-deafen => { root.toggle-deafen(); }
+                            leave-call => { root.leave-call(); }
+                            select-room(i) => { root.select-room(i); }
+                            log-out => { root.confirm-log-out = -1; }
+                            open-settings => {
+                                root.settings-open = true;
+                                root.settings-opened();
+                            }
+                        }
+                        ResizeHandle {
+                            value: root.sidebar-w;
+                            dragged(w) => { root.sidebar-w = clamp(w, 200px, 420px); }
+                            released => { root.panels-resized(root.sidebar-w, root.members-w); }
+                            reset => { root.sidebar-w = Theme.sidebar-width; root.panels-resized(root.sidebar-w, root.members-w); }
+                        }
+                        // The open room: a floating surface-lowest card, 28 px corners.
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            padding-right: Theme.gap-md;
+                            padding-bottom: Theme.gap-md;
+                            Rectangle {
+                                background: Theme.surface-lowest;
+                                border-radius: Theme.radius-dialog;
+                                clip: true;
+                                HorizontalLayout {
+                                    padding-left: Theme.gap-md;
+                                    padding-right: Theme.gap-md;
+                                    if root.showing-active: Active {
+                                        horizontal-stretch: 1;
+                                        items: root.active-items;
+                                        open(i) => { root.active-open(i); }
+                                        join(i) => { root.active-join(i); }
+                                    }
+                                    if root.showing-threads: Threads {
+                                        horizontal-stretch: 1;
+                                        items: root.thread-items;
+                                        open(i) => { root.overview-thread-open(i); }
+                                        refresh => { root.show-threads(); }
+                                        load-more => { root.threads-load-more(); }
+                                    }
+                                    if root.page && !root.showing-active && !root.showing-threads: VerticalLayout {
+                                    People {
+                                        horizontal-stretch: 1;
+                                        people: root.people;
+                                        merges: root.merges;
+                                        linking <=> root.people-linking;
+                                        link(a, b) => { root.link-people(a, b); }
+                                        not-same(a, b) => { root.not-same(a, b); }
+                                        nudges(i, on) => { root.set-nudges(i, on); }
+                                        unlink(a, b) => { root.unlink-person(a, b); }
+                                        choose(a, b) => { root.choose-network(a, b); }
+                                        message(i) => { root.message-person(i); }
+                                        reset-nickname(i) => { root.reset-nickname(i); }
+                                        networks: root.people-networks;
+                                        query <=> root.people-query;
+                                        search(t) => { root.people-search(t); }
+                                        filtered(n) => { root.people-filter(n); }
+                                    }
+                                    Friends {
+                                        // Just the add form, at its own height: under People, by the pending requests.
+                                        form-only: true;
+                                        vertical-stretch: 0;
+                                        management-only: true;
+                                        accounts: root.accounts;
+                                        horizontal-stretch: 1;
+                                        people: [];
+                                        requests: root.friend-requests;
+                                        request-status: root.friend-request-status;
+                                        request-failed: root.friend-request-failed;
+                                        open-direct(i) => { root.open-direct(i); }
+                                        send-request(account, name) => { root.send-friend-request(account, name); }
+                                        accept-request(i) => { root.answer-friend-request(i, true); }
+                                        decline-request(i) => { root.answer-friend-request(i, false); }
+                                    }
+                                    // Pending requests, at the bottom; capped so People keeps the room.
+                                    if root.friend-requests.length > 0: Friends {
+                                        requests-only: true;
+                                        management-only: true;
+                                        height: min(28px + root.friend-requests.length * 56px + 8px, max(120px, root.height * 0.3));
+                                        accounts: root.accounts;
+                                        horizontal-stretch: 1;
+                                        people: [];
+                                        requests: root.friend-requests;
+                                        accept-request(i) => { root.answer-friend-request(i, true); }
+                                        decline-request(i) => { root.answer-friend-request(i, false); }
+                                    }
+                                    }
+                                    // An invite: who asks, and the answer; nothing to read yet.
+                                    if root.has-room && !root.page && root.invite-from != "": VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        alignment: center;
+                                        spacing: Theme.space-5;
+                                        Text {
+                                            text: root.room-title;
+                                            horizontal-alignment: center;
+                                            font-size: Theme.text-large;
+                                            font-weight: 600;
+                                            color: Theme.on-surface;
+                                        }
+                                        Text {
+                                            text: root.invite-from + " wants to message you. Their messages show once you accept.";
+                                            horizontal-alignment: center;
+                                            wrap: word-wrap;
+                                            color: Theme.on-surface-variant;
+                                        }
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            spacing: Theme.space-3;
+                                            Button { text: "Ignore"; kind: "text"; clicked => { root.answer-invite(false); } }
+                                            Button { text: "Accept"; kind: "filled"; clicked => { root.answer-invite(true); } }
+                                        }
+                                    }
+                                    if root.has-room && !root.page && root.invite-from == "": Timeline {
+                                        horizontal-stretch: 1;
+                                        title: root.room-title;
+                                        as-account: root.room-account;
+                                        talk-on: root.room-talk-on;
+                                        talk-on-labels: root.room-talk-on-labels;
+                                        talk-on-current: root.room-talk-on-current;
+                                        talk-on-picked(i) => { root.talk-on(i); }
+                                        can-rename: root.room-can-rename;
+                                        nickname: root.room-nickname;
+                                        rename(n) => { root.rename-person(n); }
+                                        is-channel: root.room-is-channel;
+                                        encrypted: root.room-encrypted;
+                                        security: root.room-security;
+                                        messages: root.messages;
+                                        loading: root.loading-history;
+                                        confirm-delete <=> root.confirm-delete;
+                                    reached-start: root.reached-start;
+                                    detached: root.detached;
+                                    jump-to-present => { root.jump-to-present(); }
+                                        can-send: root.can-send;
+                                        can-react: root.can-react;
+                                        can-reply: root.can-reply;
+                                        can-edit: root.can-edit;
+                                        can-delete: root.can-delete;
+                                        can-delete-others: root.can-delete-others;
+                                        compose-label: root.compose-label;
+                                        typing: root.typing;
+                                        can-attach: root.can-attach;
+                                        files: root.files;
+                                        can-call: root.can-call;
+                                        call-unavailable: root.call-unavailable;
+                                        call-here: root.call-here;
+                                        call-members: root.call-members;
+                                        call-streams: root.call-streams;
+                                        watch-stream(i, on) => { root.watch-stream(i, on); }
+                                        stream-sound(i, v, m, d) => { root.stream-sound(i, v, m, d); }
+                                        user-sound(i, v, m, d) => { root.user-sound(i, v, m, d); }
+                                        screen-videos: root.call-screen-videos;
+                                        video-fullscreen(i) => { root.video-fullscreen(i); }
+                                        call-videos: root.call-videos;
+                                        call-camera: root.call-camera;
+                                        call-screen-share: root.call-screen-share;
+                                        call-can-video: root.call-can-video;
+                                        set-camera(active) => { root.camera-asked(active); }
+                                        set-screen-share(active) => { root.set-screen-share(active); }
+                                        has-members: root.has-members;
+                                        has-pins: root.has-pins;
+                                        has-search: root.has-search;
+                                        can-thread: root.can-thread;
+                                        is-forum: root.is-forum;
+                                        create-thread(i) => { root.create-thread(i); }
+                                        new-post => { root.new-post(); }
+                                        open-search => { root.open-search(); }
+                                        can-pin: root.can-pin;
+                                        open-pins => { root.open-pins(); }
+                                        pin(i) => { root.pin(i); }
+                                        members-shown: root.members-shown;
+                                        toggle-members => { root.toggle-members(); }
+                                        join-call => { root.join-call(); }
+                                        attach => { root.attach(); }
+                                        paste-files => { return root.paste-files(); }
+                                        remove-file(i) => { root.remove-file(i); }
+                                        draft <=> root.draft;
+                                        capture-composer(anchor, cursor) => {
+                                            root.composer-anchor = anchor;
+                                            root.composer-cursor = cursor;
+                                        }
+                                        inserted-at: root.composer-inserted-at;
+                                        insert-serial: root.composer-insert-serial;
+                                        nudge: root.nudge;
+                                        load-earlier => { root.load-earlier(); }
+                                        visible-rows(t, b) => { root.visible-rows(t, b); }
+                                        failed: root.history-failed;
+                                        offline: root.room-offline;
+                                        draft-edited(t) => { root.draft-edited(t); }
+                                        send => { root.send(); }
+                                        dismiss-nudge(n) => { root.dismiss-nudge(n); }
+                                        reply(i) => { root.reply(i); }
+                                        edit(i) => { root.edit(i); }
+                                        delete(i) => { root.delete(i); }
+                                        react(i, r) => { root.react(i, r); }
+                                        open-picker(i) => { root.open-picker(i); }
+                                        picker-open: root.picker-open;
+                                        emoji-rows: root.emoji-rows;
+                                        picker-search(q) => { root.picker-search(q); }
+                                        picker-picked(r, c) => { root.picker-picked(r, c); }
+                                        picker-scrolled(r) => { root.picker-scrolled(r); }
+                                        close-picker => { root.close-picker(); }
+                                        open-attachment(i, a) => { root.open-attachment(i, a); }
+                                        link-clicked(i, url) => { root.link-clicked(i, url); }
+                                        play-inline(url, kind) => { root.play-inline(url, kind); }
+                                        player-fullscreen(url) => { root.player-fullscreen(url); }
+                                        join-invite(code) => { root.join-invite(code); }
+                                        player-pointer(url, x, y, down) => { root.player-pointer(url, x, y, down); }
+                                        player-move(url, x, y) => { root.player-move(url, x, y); }
+                                        cancel-compose => { root.cancel-compose(); }
+                                    edit-last => { root.edit-last(); }
+                                    jump-to-reply(i) => { root.jump-to-reply(i); }
+                                        open-profile(i) => { root.open-message-profile(i); }
+                                        mark-unread(i) => { root.mark-unread(i); }
+                                        copy-text(i) => { root.copy-text(i); }
+                                        copy-link(i) => { root.copy-link(i); }
+                                    }
+                                    if !root.has-room && !root.page: Rectangle {
+                                        horizontal-stretch: 1;
+                                        Text {
+                                            text: "Pick a conversation";
+                                            color: Theme.outline;
+                                            font-size: Theme.text-title;
+                                        }
+                                    }
+    
+                                }
+                            }
+                        }
+                        // The member list, on the sheet beside the card.
+                        if root.wide && root.members-shown && root.has-members && root.has-room && !root.page: ResizeHandle {
+                            // Dragging left widens the list.
+                            value: root.members-w;
+                            direction: -1;
+                            dragged(w) => { root.members-w = clamp(w, 200px, 400px); }
+                            released => { root.panels-resized(root.sidebar-w, root.members-w); }
+                            reset => { root.members-w = Theme.sidebar-width; root.panels-resized(root.sidebar-w, root.members-w); }
+                        }
+                        if root.wide && root.members-shown && root.has-members && root.has-room && !root.page: VerticalLayout {
+                            padding-right: Theme.gap-md;
+                            padding-bottom: Theme.gap-md;
+                            Members {
+                                panel-width: root.members-w;
+                                rows: root.members;
+                                open-profile(i) => { root.open-member-profile(i); }
+                                rows-visible(first, last) => { root.member-rows(first, last); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if root.profile-open && screen == Screen.main: ProfilePopup {
+        account-avatar: root.account-avatar;
+        account-has-avatar: root.account-has-avatar;
+        account-has-presence: root.account-has-presence;
+        account-has-status-text: root.account-has-status-text;
+        account-initials: root.account-initials;
+        account-name: root.account-name;
+        account-network: root.account-network;
+        account-presence: root.account-presence;
+        account-presence-choices: root.account-presence-choices;
+        account-presence-index: root.account-presence-index;
+        account-status: root.account-status;
+        account-username: root.account-username;
+        confirm-log-out <=> root.confirm-log-out;
+        profile-open <=> root.profile-open;
+        set-presence(a0) => { root.set-presence(a0); }
+        set-status-text(a0) => { root.set-status-text(a0); }
+        settings-open <=> root.settings-open;
+        settings-opened() => { root.settings-opened(); }
+    }
+    if root.card-open && screen == Screen.main: UserCard {
+        name: root.card-name;
+        blocks: root.card-blocks;
+        username: root.card-username;
+        avatar: root.card-avatar;
+        has-avatar: root.card-has-avatar;
+        initials: root.card-initials;
+        banner: root.card-banner;
+        has-banner: root.card-has-banner;
+        presence: root.card-presence;
+        status: root.card-status;
+        roles: root.card-roles;
+        has-bio: root.card-has-bio;
+        me: root.card-me;
+        relationship: root.card-relationship;
+        add-friend => { root.add-friend-profile(); }
+        remove-friend => { root.remove-friend-profile(); }
+        linked: root.card-linked;
+        link => { root.link-profile(); }
+        can-kick: root.card-can-kick;
+        can-ban: root.card-can-ban;
+        kick => { root.confirm-moderate = 1; }
+        ban => { root.confirm-moderate = 2; root.ban-reason = ""; }
+        close => { root.close-profile(); }
+        copy(t) => { root.copy-string(t); }
+        message => { root.message-profile(); }
+    }
+    if root.share-dialog-open && root.share-pick-source && screen == Screen.main: ShareSource {
+        screens: root.share-screens;
+        windows: root.share-windows;
+        tab <=> root.share-source-tab;
+        source-index <=> root.share-source-index;
+        qualities: root.share-qualities;
+        quality-index <=> root.share-quality-index;
+        confirm => { root.confirm-screen-share(); }
+        dismissed => { root.cancel-screen-share(); }
+    }
+    if root.share-dialog-open && !root.share-pick-source && screen == Screen.main: ShareSettings {
+        qualities: root.share-qualities;
+        quality-index <=> root.share-quality-index;
+        remember <=> root.share-remember;
+        confirm => { root.confirm-screen-share(); }
+        dismissed => { root.cancel-screen-share(); }
+    }
+    if root.server-settings-open && screen == Screen.main: ServerSettings {
+        loaded: root.server-edit-loaded; busy: root.server-edit-busy; allowed: root.server-edit-allowed;
+        dirty: root.server-edit-dirty; failed: root.server-edit-failed; status: root.server-edit-status;
+        name <=> root.server-edit-name; description <=> root.server-edit-description;
+        icon: root.server-edit-icon; has-icon: root.server-edit-has-icon; icon-label: root.server-edit-icon-label;
+        banner: root.server-edit-banner; has-banner: root.server-edit-has-banner; banner-label: root.server-edit-banner-label;
+        channels: root.server-edit-channels; joined <=> root.server-edit-joined; left <=> root.server-edit-left; kicked <=> root.server-edit-kicked; banned <=> root.server-edit-banned;
+        close => { root.close-server-settings(); } save => { root.save-server-overview(); }
+        reset => { root.reset-server-overview(); } reload => { root.reload-server-overview(); }
+        changed => { root.server-overview-edited(); }
+        pick-image(icon) => { root.pick-server-image(icon); } remove-image(icon) => { root.remove-server-image(icon); }
+        server-name: root.server-edit-server-name; page: root.server-edit-page;
+        show-roles: root.server-edit-show-roles; show-invites: root.server-edit-show-invites; show-bans: root.server-edit-show-bans;
+        can-delete: root.server-edit-can-delete; admin-busy: root.server-edit-admin-busy;
+        notice: root.server-edit-notice; notice-failed: root.server-edit-notice-failed;
+        invites: root.server-edit-invites; invites-loaded: root.server-edit-invites-loaded;
+        bans: root.server-edit-bans; bans-loaded: root.server-edit-bans-loaded;
+        roles: root.server-edit-roles; roles-loaded: root.server-edit-roles-loaded; role-index: root.server-edit-role-index;
+        role-name <=> root.server-edit-role-name; role-colour <=> root.server-edit-role-colour; role-hoist <=> root.server-edit-role-hoist;
+        permissions: root.server-edit-permissions; role-dirty: root.server-edit-role-dirty;
+        select-page(i) => { root.server-settings-page(i); }
+        delete-invite(i) => { root.delete-server-invite(i); } copy-invite(i) => { root.copy-server-invite(i); }
+        unban(i) => { root.unban-server-user(i); }
+        select-role(i) => { root.select-server-role(i); } create-role(n) => { root.create-server-role(n); }
+        role-edited => { root.server-role-edited(); } toggle-permission(i) => { root.toggle-server-permission(i); }
+        save-role => { root.save-server-role(); } delete-role => { root.delete-server-role(); }
+        delete-server => { root.delete-server(); }
+    }
+    if root.settings-open && screen == Screen.main: Settings {
+        reset-panels => {
+            root.sidebar-w = Theme.sidebar-width;
+            root.members-w = Theme.sidebar-width;
+            root.panels-resized(0, 0);
+        }
+        section <=> root.settings-section;
+        account-index <=> root.settings-account;
+        account-tab <=> root.settings-account-tab;
+        account-profile: root.settings-account-profile;
+        account-autodelete: root.settings-account-autodelete;
+        open-autodelete => { root.settings-open-autodelete(); }
+        account-discord: root.settings-account-discord;
+        open-privacy => { root.settings-open-privacy(); }
+        open-sessions => { root.settings-open-sessions(); }
+        open-account(i) => { root.open-settings-account(i); }
+        accounts: root.accounts;
+        edit-profile-accounts : root.edit-profile-accounts;
+        edit-profile-index <=> root.edit-profile-index;
+        edit-profile-loaded : root.edit-profile-loaded;
+        edit-profile-busy : root.edit-profile-busy;
+        edit-profile-failed : root.edit-profile-failed;
+        edit-profile-status : root.edit-profile-status;
+        edit-profile-name <=> root.edit-profile-name;
+        edit-profile-pronouns <=> root.edit-profile-pronouns;
+        edit-profile-bio <=> root.edit-profile-bio;
+        edit-profile-avatar : root.edit-profile-avatar;
+        edit-profile-has-avatar : root.edit-profile-has-avatar;
+        edit-profile-avatar-label : root.edit-profile-avatar-label;
+        edit-profile-banner : root.edit-profile-banner;
+        edit-profile-has-banner : root.edit-profile-has-banner;
+        edit-profile-banner-allowed: root.edit-profile-banner-allowed;
+        edit-profile-banner-label : root.edit-profile-banner-label;
+        select-profile-account(v) => { root.select-profile-account(v); }
+        reload-own-profile => { root.reload-own-profile(); }
+        reset-own-profile => { root.reset-own-profile(); }
+        save-own-profile => { root.save-own-profile(); }
+        own-profile-edited => { root.own-profile-edited(); }
+        pick-profile-image(v) => { root.pick-profile-image(v); }
+        remove-profile-image(v) => { root.remove-profile-image(v); }
+
+        notifications <=> root.notifications;
+        sounds <=> root.sounds;
+        muzzle <=> root.muzzle;
+        muzzle-pauses: root.muzzle-pauses;
+        muzzle-pause-index <=> root.muzzle-pause-index;
+        muzzle-maxes: root.muzzle-maxes;
+        muzzle-max-index <=> root.muzzle-max-index;
+        dnd <=> root.dnd;
+        set-alert-mode(row, index) => { root.set-alert-mode(row, index); }
+        set-offline(row, offline) => { root.set-offline(row, offline); }
+        inputs: root.inputs;
+        outputs: root.outputs;
+        input-index <=> root.input-index;
+        output-index <=> root.output-index;
+        cameras: root.cameras;
+        camera-index <=> root.camera-index;
+        screen-quality-index <=> root.screen-quality-index;
+        screen-quality-ask <=> root.screen-quality-ask;
+        noise-index <=> root.noise-index;
+        rejoin-offers: root.rejoin-offers;
+        rejoin-offer-index <=> root.rejoin-offer-index;
+        tones: root.tones;
+        tone-index <=> root.tone-index;
+        echo-cancellation <=> root.echo-cancellation;
+        auto-gain <=> root.auto-gain;
+        dark <=> root.dark;
+        accent-index <=> root.accent-index;
+        style-index <=> root.style-index;
+        emoji-packs: root.emoji-packs;
+        emoji-pack-index <=> root.emoji-pack-index;
+        scales: root.scales;
+        scale-index <=> root.scale-index;
+        memory: root.memory;
+        cache-size: root.cache-size;
+        problems: root.problems;
+        problems-unseen: root.problems-unseen;
+        has-problem-log: root.has-problem-log;
+        problems-opened => { root.problems-opened(); }
+        copy-problems => { root.copy-problems(); }
+        open-problem-log => { root.open-problem-log(); }
+        clear-problems => { root.clear-problems(); }
+        cache-clearable: root.cache-clearable;
+        clear-cache => { root.clear-cache(); }
+        version: root.version;
+        install-supported: root.install-supported;
+        app-installed: root.app-installed;
+        install-status: root.install-status;
+        install-app => { root.install-app(); }
+        uninstall-app => { root.uninstall-app(); }
+        close => { root.mic-test(false); root.settings-open = false; }
+        add-account => {
+            root.settings-open = false;
+            root.add-account();
+        }
+        log-out(i) => { root.confirm-log-out = i; }
+        unlock(i, key) => { root.unlock-account(i, key); }
+        start-verify(i) => { root.start-verify(i); }
+        answer-verify(m) => { root.answer-verify(m); }
+        accept-verify => { root.accept-verify(); }
+        close-verify => { root.close-verify(); }
+        changed => { root.settings-changed(); }
+        list-devices => { root.list-devices(); }
+        mic-testing: root.mic-testing;
+        mic-level: root.mic-level;
+        mic-test(on) => { root.mic-test(on); }
+    }
+    if root.switcher-open && screen == Screen.main: Switcher {
+        results: root.switch-results;
+        search(q) => { root.switcher-search(q); }
+        picked(i) => {
+            root.switcher-open = false;
+            root.switcher-picked(i);
+        }
+        close => { root.switcher-open = false; }
+    }
+    if root.join-server-open && screen == Screen.main: JoinServer {
+        accounts: root.join-server-accounts;
+        status: root.join-server-status;
+        server-name: root.join-server-name;
+        ready: root.join-server-ready;
+        busy: root.join-server-busy;
+        failed: root.join-server-failed;
+        dismissed => { root.close-join-server(); }
+        reset => { root.reset-join-server(); }
+        inspect(i, text) => { root.inspect-invite(i, text); }
+        join => { root.accept-server-invite(); }
+    }
+    CallDialogs {
+        screen: root.screen;
+        discord-privacy-open: root.discord-privacy-open;
+        discord-privacy(on) => { root.discord-privacy(on); }
+        quiet-notice-open: root.quiet-notice-open;
+        incoming-call-open: root.incoming-call-open;
+        quiet-notice-account: root.quiet-notice-account;
+        quiet-notice(on) => { root.quiet-notice(on); }
+        camera-confirm <=> root.camera-confirm;
+        in-call: root.in-call;
+        call-room: root.call-room;
+        set-camera(on) => { root.set-camera(on); }
+        rejoin-open: root.rejoin-open;
+        rejoin-room: root.rejoin-room;
+        rejoin-call(on) => { root.rejoin-call(on); }
+        confirm-link <=> root.confirm-link;
+        open-confirmed-link => { root.open-confirmed-link(); }
+        install-offer <=> root.install-offer;
+        install-note <=> root.install-note;
+        install-status: root.install-status;
+        install-app => { root.install-app(); }
+        install-later => { root.install-later(); }
+        update-version <=> root.update-version;
+        update-status: root.update-status;
+        update-now => { root.update-now(); }
+    }
+    // A call video filling the window: double-click or Esc comes back.
+    if root.fullscreen-video >= 0 && root.fullscreen-video < root.call-videos.length && screen == Screen.main: FullscreenVideo {
+        call-deafened: root.call-deafened;
+        call-members: root.call-members;
+        call-muted: root.call-muted;
+        call-speaking: root.call-speaking;
+        call-streams: root.call-streams;
+        call-time: root.call-time;
+        call-videos: root.call-videos;
+        fullscreen-video: root.fullscreen-video;
+        stream-sound(a0, a1, a2, a3) => { root.stream-sound(a0, a1, a2, a3); }
+        toggle-deafen() => { root.toggle-deafen(); }
+        toggle-mute() => { root.toggle-mute(); }
+        video-fullscreen(a0) => { root.video-fullscreen(a0); }
+    }
+    if root.viewer-open && screen == Screen.main: ImageViewer {
+        close-image() => { root.close-image(); }
+        save-image(a0) => { root.save-image(a0); }
+        step-image(a0) => { root.step-image(a0); }
+        viewer-anim: root.viewer-anim;
+        viewer-height: root.viewer-height;
+        viewer-image: root.viewer-image;
+        viewer-name: root.viewer-name;
+        viewer-note: root.viewer-note;
+        viewer-pan-x <=> root.viewer-pan-x;
+        viewer-pan-y <=> root.viewer-pan-y;
+        viewer-player: root.viewer-player;
+        viewer-position: root.viewer-position;
+        viewer-web: root.viewer-web;
+        viewer-width: root.viewer-width;
+        viewer-zoom <=> root.viewer-zoom;
+    }
+    if root.thread-open && screen == Screen.main: ThreadDialog {
+        thread-confirm() => { root.thread-confirm(); }
+        thread-name <=> root.thread-name;
+        thread-open <=> root.thread-open;
+        thread-post: root.thread-post;
+        thread-text <=> root.thread-text;
+    }
+    if root.search-open && screen == Screen.main: SearchDialog {
+        close-search() => { root.close-search(); }
+        search(a0) => { root.search(a0); }
+        search-asked: root.search-asked;
+        search-busy: root.search-busy;
+        search-failed: root.search-failed;
+        search-jump(a0) => { root.search-jump(a0); }
+        search-results: root.search-results;
+    }
+    if root.pins-open && screen == Screen.main: PinsDialog {
+        can-pin: root.can-pin;
+        close-pins() => { root.close-pins(); }
+        pin-jump(a0) => { root.pin-jump(a0); }
+        pin-unpin(a0) => { root.pin-unpin(a0); }
+        pins: root.pins;
+        pins-failed: root.pins-failed;
+        pins-loading: root.pins-loading;
+    }
+    if root.crop-open && screen == Screen.main: Cropper {
+        crop-cancel() => { root.crop-cancel(); }
+        crop-done(a0) => { root.crop-done(a0); }
+        crop-error: root.crop-error;
+        crop-frame-height: root.crop-frame-height;
+        crop-frame-width: root.crop-frame-width;
+        crop-image: root.crop-image;
+        crop-image-height: root.crop-image-height;
+        crop-image-width: root.crop-image-width;
+        crop-note: root.crop-note;
+        crop-pan-x <=> root.crop-pan-x;
+        crop-pan-y <=> root.crop-pan-y;
+        crop-round: root.crop-round;
+        crop-title: root.crop-title;
+        crop-zoom <=> root.crop-zoom;
+    }
+    // A call ringing us: who, from where, and Decline / Accept. The backdrop
+    // only hides it (the call can still be joined from the chat).
+    if root.incoming-call-open && screen == Screen.main: IncomingCall {
+        incoming-call(a0) => { root.incoming-call(a0); }
+        incoming-call-avatar: root.incoming-call-avatar;
+        incoming-call-body: root.incoming-call-body;
+        incoming-call-has-avatar: root.incoming-call-has-avatar;
+        incoming-call-initials: root.incoming-call-initials;
+        incoming-call-name: root.incoming-call-name;
+        incoming-call-switches: root.incoming-call-switches;
+    }
+    ManagementDialogs {
+        invite-open: root.invite-open;
+        invite-link: root.invite-link;
+        close-invite-link => { root.close-invite-link(); }
+        copy-invite-link => { root.copy-invite-link(); }
+        creating-channel <=> root.creating-channel;
+        new-channel-name <=> root.new-channel-name;
+        new-channel-voice <=> root.new-channel-voice;
+        server-menu-create-channel(name, voice) => { root.server-menu-create-channel(name, voice); }
+        confirm-log-out <=> root.confirm-log-out;
+        log-out => { root.log-out(); }
+        log-out-account(i) => { root.log-out-account(i); }
+        confirm-leave <=> root.confirm-leave;
+        sidebar-title: root.sidebar-title;
+        server-menu-leave => { root.server-menu-leave(); }
+        confirm-moderate <=> root.confirm-moderate;
+        card-name: root.card-name;
+        ban-reason <=> root.ban-reason;
+        moderate-member(ban, reason) => { root.moderate-member(ban, reason); }
+        confirm-delete <=> root.confirm-delete;
+        delete(i) => { root.delete(i); }
+    }
+}

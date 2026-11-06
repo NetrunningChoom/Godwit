@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons } from "theme.slint";
+import { Anim, Players } from "types.slint";
+import { Button, IconButton } from "widgets.slint";
+
+// The image viewer: an attachment shown large, zoomed and dragged.
+export component ImageViewer inherits Rectangle {
+    callback close-image();
+    callback save-image(bool);
+    callback step-image(int);
+    in property <int> viewer-anim: -1;
+    in property <int> viewer-height;
+    in property <image> viewer-image;
+    in property <string> viewer-name;
+    in property <string> viewer-note;
+    in-out property <float> viewer-pan-x;
+    in-out property <float> viewer-pan-y;
+    in property <int> viewer-player: -1;
+    in property <string> viewer-position;
+    in property <bool> viewer-web;
+    in property <int> viewer-width;
+    in-out property <float> viewer-zoom: 1;
+
+    background: Theme.scrim-viewer;
+    TouchArea {
+        clicked => { root.close-image(); }
+        scroll-event(e) => { accept }
+    }
+    viewer-keys := FocusScope {
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.text == Key.Escape { root.close-image(); return accept; }
+            if event.text == Key.LeftArrow && root.viewer-position != "" { root.step-image(-1); return accept; }
+            if event.text == Key.RightArrow && root.viewer-position != "" { root.step-image(1); return accept; }
+            if event.text == "+" || event.text == "=" { root.viewer-zoom = min(8, root.viewer-zoom * 1.25); return accept; }
+            if event.text == "-" { root.viewer-zoom = max(1, root.viewer-zoom / 1.25); return accept; }
+            if event.text == "0" { root.viewer-zoom = 1; root.viewer-pan-x = 0; root.viewer-pan-y = 0; return accept; }
+            return reject;
+        }
+        // Its own size, shrunk to fit beside the bar and the arrows.
+        property <length> room-width: root.width - 160px;
+        property <length> room-height: root.height - 128px;
+        property <length> natural-width: max(1, root.viewer-width) * 1px;
+        property <length> natural-height: max(1, root.viewer-height) * 1px;
+        property <float> scale: min(1, min(self.room-width / self.natural-width, self.room-height / self.natural-height));
+        // Zoomed, the picture may be dragged as far as its edges.
+        property <length> shown-w: self.natural-width * self.scale * root.viewer-zoom;
+        property <length> shown-h: self.natural-height * self.scale * root.viewer-zoom;
+        property <length> room-x: max(0px, (self.shown-w - self.width) / 2);
+        property <length> room-y: max(0px, (self.shown-h - self.height) / 2);
+        Image {
+            width: viewer-keys.shown-w;
+            height: viewer-keys.shown-h;
+            x: (parent.width - self.width) / 2 + clamp(root.viewer-pan-x * 1px, -viewer-keys.room-x, viewer-keys.room-x);
+            y: (parent.height - self.height) / 2 + clamp(root.viewer-pan-y * 1px, -viewer-keys.room-y, viewer-keys.room-y);
+            source: root.viewer-player >= 0 ? Players.frames[root.viewer-player] : root.viewer-anim >= 0 ? Anim.frames[root.viewer-anim] : root.viewer-image;
+            image-fit: contain;
+            accessible-role: image;
+            accessible-label: root.viewer-name;
+            // Clicking the picture itself doesn't close it: double-click zooms,
+            // the wheel zooms, dragging moves a zoomed picture.
+            TouchArea {
+                mouse-cursor: root.viewer-zoom > 1 ? move : default;
+                property <length> from-x;
+                property <length> from-y;
+                // In window coordinates: this area moves with the picture
+                // while it's dragged, so its own mouse position would
+                // shift under the pointer (the picture jittered and lagged).
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down {
+                        self.from-x = root.viewer-pan-x * 1px - (self.absolute-position.x + self.mouse-x);
+                        self.from-y = root.viewer-pan-y * 1px - (self.absolute-position.y + self.mouse-y);
+                    }
+                }
+                moved => {
+                    if root.viewer-zoom > 1 {
+                        root.viewer-pan-x = clamp(self.from-x + self.absolute-position.x + self.mouse-x, -viewer-keys.room-x, viewer-keys.room-x) / 1px;
+                        root.viewer-pan-y = clamp(self.from-y + self.absolute-position.y + self.mouse-y, -viewer-keys.room-y, viewer-keys.room-y) / 1px;
+                    }
+                }
+                double-clicked => {
+                    if root.viewer-zoom > 1 {
+                        root.viewer-zoom = 1;
+                        root.viewer-pan-x = 0;
+                        root.viewer-pan-y = 0;
+                    } else {
+                        root.viewer-zoom = 2.5;
+                    }
+                }
+                scroll-event(e) => {
+                    root.viewer-zoom = clamp(root.viewer-zoom * (1 + e.delta-y / 600px), 1, 8);
+                    if root.viewer-zoom == 1 {
+                        root.viewer-pan-x = 0;
+                        root.viewer-pan-y = 0;
+                    }
+                    accept
+                }
+            }
+        }
+        HorizontalLayout {
+            y: 0px;
+            height: 64px;
+            padding-left: Theme.space-6;
+            padding-right: Theme.space-4;
+            spacing: Theme.space-3;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text { text: root.viewer-name; color: Theme.on-media; font-size: Theme.text-navigation; font-weight: 700; overflow: elide; }
+                if root.viewer-position != "": Text { text: root.viewer-position; color: Theme.on-media-variant; font-size: Theme.text-label; }
+            }
+            if root.viewer-zoom > 1: VerticalLayout {
+                alignment: center;
+                Text { text: round(root.viewer-zoom * 100) + "%"; color: Theme.on-media-variant; font-size: Theme.text-label; }
+            }
+            VerticalLayout {
+                alignment: center;
+                Button { text: "Save"; kind: "text"; clicked => { root.save-image(false); } }
+            }
+            if root.viewer-web: VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.open-in-new; tooltip: "Open in browser"; tint: Theme.on-media; clicked => { root.save-image(true); } }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.close; tooltip: "Close"; tint: Theme.on-media; clicked => { root.close-image(); } }
+            }
+        }
+        if root.viewer-position != "": Rectangle {
+            x: 20px;
+            y: (parent.height - self.height) / 2;
+            width: 48px;
+            height: 48px;
+            border-radius: self.width / 2;
+            background: previous-touch.has-hover ? Theme.on-media-hover-soft : Theme.on-media-idle;
+            Text { text: "‹"; color: Theme.on-media; font-size: Theme.text-media-control; horizontal-alignment: center; vertical-alignment: center; }
+            previous-touch := TouchArea { mouse-cursor: pointer; clicked => { root.step-image(-1); } }
+            accessible-role: button;
+            accessible-label: "Previous image";
+        }
+        if root.viewer-position != "": Rectangle {
+            x: parent.width - self.width - 20px;
+            y: (parent.height - self.height) / 2;
+            width: 48px;
+            height: 48px;
+            border-radius: self.width / 2;
+            background: next-touch.has-hover ? Theme.on-media-hover-soft : Theme.on-media-idle;
+            Text { text: "›"; color: Theme.on-media; font-size: Theme.text-media-control; horizontal-alignment: center; vertical-alignment: center; }
+            next-touch := TouchArea { mouse-cursor: pointer; clicked => { root.step-image(1); } }
+            accessible-role: button;
+            accessible-label: "Next image";
+        }
+        if root.viewer-note != "": Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - self.height - 20px;
+            width: viewer-note-text.preferred-width + 24px;
+            height: 32px;
+            border-radius: Theme.radius-control;
+            background: Theme.scrim-strong;
+            viewer-note-text := Text { text: root.viewer-note; color: Theme.on-media-note; font-size: Theme.text-label; }
+        }
+    }
+}

@@ -1,0 +1,3 @@
+# Tests may unwrap: a failing test should panic.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

@@ -1,0 +1,661 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { RoomItem, DirectoryItem } from "types.slint";
+import { Chip } from "people.slint";
+import { Avatar, Badge, IconButton, Button, NetList, MenuPanel, MenuRow, MenuDivider, TextField, EmojiText } from "widgets.slint";
+
+// Rows as Godwit and the official sidebar draw them: 16 px corners,
+// secondary-container when selected, surface-highest on hover.
+component Entry inherits Rectangle {
+    in property <bool> selected;
+    callback clicked;
+    // A right-click, where it happened.
+    callback context(length, length);
+    border-radius: Theme.radius-lg;
+    background: root.selected ? Theme.secondary-container : touch.has-hover ? Theme.surface-highest : transparent;
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                root.context(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+    @children
+}
+
+// Home, Friends: 42 px, a 22 px symbol, a semibold label.
+component MenuButton inherits Entry {
+    in property <string> glyph;
+    in property <string> label;
+    height: 42px;
+    HorizontalLayout {
+        padding-left: Theme.space-4;
+        spacing: Theme.space-3;
+        Icon {
+            width: 20px;
+            text: root.glyph;
+            font-size: Theme.text-xl;
+            color: root.selected ? Theme.on-secondary-container : Theme.on-surface;
+        }
+        Text {
+            text: root.label;
+            vertical-alignment: center;
+            font-weight: 600;
+            color: root.selected ? Theme.on-secondary-container : Theme.on-surface;
+        }
+    }
+}
+
+component RoomRow inherits Rectangle {
+    in property <RoomItem> room;
+    // Now, in Unix seconds (for how long a channel's call has been going).
+    in property <int> clock;
+    // `secs` as 4:05 or 1:02:03, as the call timer.
+    pure function elapsed(secs: int) -> string {
+        (secs >= 3600 ? Math.floor(secs / 3600) + ":" : "")
+            + (secs >= 3600 && Math.mod(Math.floor(secs / 60), 60) < 10 ? "0" : "")
+            + Math.mod(Math.floor(secs / 60), 60) + ":"
+            + (Math.mod(secs, 60) < 10 ? "0" : "") + Math.mod(secs, 60)
+    }
+    callback clicked;
+    // Its menu's choice: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide.
+    callback menu(int);
+    callback toggle-hidden();
+    // A category heading clicked: fold or unfold it.
+    callback toggle-category();
+    property <length> menu-x;
+    property <length> menu-y;
+    property <length> entry: room.kind == 2 ? 36px : 44px;
+    height: room.header ? 26px : self.entry + room.occupants.length * 26px;
+    // A category title: 13 px semibold, as the official sidebar.
+    // A category's fold arrow, as the official sidebar.
+    if room.header && !room.toggles-hidden: Icon {
+        x: 4px;
+        width: 16px;
+        text: room.category-collapsed ? Icons.arrow-forward : Icons.expand;
+        font-size: Theme.text-body;
+        color: Theme.on-surface-variant;
+        vertical-alignment: center;
+    }
+    if room.header && !room.toggles-hidden: TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggle-category(); }
+    }
+    if room.header: EmojiText {
+        x: 20px;
+        width: parent.width - 28px;
+        text: room.name;
+        runs: room.name-runs;
+        font-size: Theme.text-label;
+        font-weight: 600;
+        color: room.toggles-hidden ? Theme.on-surface-variant : Theme.on-surface;
+    }
+    if room.header && room.toggles-hidden: TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggle-hidden(); }
+    }
+    room-menu := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        MenuPanel {
+            // A server channel pins to Home, beside the DMs (a "general" to keep at hand).
+            MenuRow {
+                glyph: Icons.notes;
+                label: room.kind == 2 ? (room.pinned ? "Unpin from Home" : "Pin to Home") : (room.pinned ? "Unpin" : "Pin to top");
+                clicked => { root.menu(0); }
+            }
+            MenuRow { glyph: Icons.chat; label: "Mark as read"; clicked => { root.menu(1); } }
+            MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.menu(2); } }
+            // Muzzle mode (Settings → Notifications) for just this chat.
+            // Cycles: the network's rules → every message → off.
+            if !room.header: MenuRow { glyph: Icons.unread; label: room.alerts == 1 ? "Notifications: all messages" : room.alerts == 2 ? "Notifications: off" : "Notifications: default"; clicked => { root.menu(5); } }
+            if !room.header: MenuRow { glyph: Icons.schedule; label: room.muzzled ? "Unmuzzle repeat messages" : "Muzzle repeat messages"; clicked => { root.menu(4); } }
+            if room.kind != 2: MenuDivider { }
+            if room.kind != 2: MenuRow { glyph: Icons.close; label: room.hidden ? "Unhide" : "Hide"; clicked => { root.menu(3); } }
+        }
+    }
+    if !room.header: Entry {
+        y: 0;
+        height: root.entry;
+        selected: room.selected;
+        clicked => { root.clicked(); }
+        context(x, y) => {
+            root.menu-x = x;
+            root.menu-y = y;
+            room-menu.show();
+        }
+        HorizontalLayout {
+            // Threads sit under their channel, as Discord's sidebar shows them.
+            padding-left: room.thread ? Theme.space-dialog : Theme.space-3;
+            padding-right: Theme.space-3;
+            spacing: Theme.space-3;
+            if room.thread: Text {
+                width: 16px;
+                text: "↳";
+                font-size: Theme.text-title;
+                vertical-alignment: center;
+                color: Theme.on-surface-variant;
+            }
+            if room.kind == 2 && !room.thread: Icon {
+                width: 32px;
+                text: room.voice-channel ? Icons.headset : Icons.tag;
+                font-size: Theme.text-large;
+                color: room.selected ? Theme.on-secondary-container
+                    : room.unread ? Theme.on-surface : Theme.on-surface-variant;
+            }
+            if room.kind != 2: Rectangle {
+                width: 32px;
+                Avatar {
+                    y: (parent.height - self.height) / 2;
+                    size: 32px;
+                    source: room.icon;
+                    has-image: room.has-icon;
+                    initials: room.initials;
+                }
+                // Godwit's dot: 10 px at the avatar's corner, ringed in the
+                // row's colour.
+                // Whose chat (Home with several accounts): the account's
+                // picture on the top-left corner.
+                if room.account-badged: Rectangle {
+                    x: -4px;
+                    y: (parent.height - 32px) / 2 - 4px;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: Theme.radius-sm;
+                    background: room.selected ? Theme.secondary-container : Theme.surface-low;
+                    Avatar {
+                        x: 1px;
+                        y: 1px;
+                        size: 14px;
+                        source: room.account-badge;
+                        has-image: room.has-account-badge;
+                        initials: room.account-initials;
+                    }
+                }
+                if room.has-presence: Rectangle {
+                    x: 32px - 10px + 1px;
+                    y: (parent.height + 32px) / 2 - 10px + 1px;
+                    width: 12px;
+                    height: 12px;
+                    border-radius: self.width / 2;
+                    border-width: 2px;
+                    border-color: room.selected ? Theme.secondary-container : Theme.surface-low;
+                    background: room.presence;
+                }
+            }
+            // Channels: the name alone. Others (as Godwit and the official
+            // list): the name in semibold, and a line under it when there is one.
+            if room.kind == 2: EmojiText {
+                text: room.name;
+                runs: room.name-runs;
+                horizontal-stretch: 1;
+                color: room.selected ? Theme.on-secondary-container
+                    : room.unread ? Theme.on-surface : Theme.on-surface-variant;
+            }
+            // A thread's last activity ("3d"), as chats show theirs.
+            if room.kind == 2 && room.when != "": Text {
+                text: room.when;
+                font-size: Theme.text-caption;
+                vertical-alignment: center;
+                color: room.selected ? Theme.on-secondary-container : Theme.outline;
+            }
+            // A voice channel's limit, as Discord shows it: "2/5" at the row's end.
+            if room.kind == 2 && room.subtitle != "": Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: limit-text.preferred-width + 10px;
+                height: 18px;
+                border-radius: Theme.radius-xs;
+                background: Theme.surface-highest;
+                limit-text := Text { text: room.subtitle; font-size: Theme.text-caption; color: Theme.on-surface-variant; }
+            }
+            if room.kind != 2: VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                HorizontalLayout {
+                    spacing: Theme.space-compact;
+                    EmojiText {
+                        horizontal-stretch: 1;
+                        text: room.name;
+                        runs: room.name-runs;
+                        font-weight: 600;
+                        color: room.selected ? Theme.on-secondary-container
+                            : room.unread ? Theme.on-surface : Theme.on-surface-variant;
+                    }
+                    if room.when != "": Text {
+                        text: room.when;
+                        font-size: Theme.text-caption;
+                        vertical-alignment: center;
+                        color: room.selected ? Theme.on-secondary-container : Theme.outline;
+                    }
+                }
+                if room.subtitle != "": Text {
+                    text: room.subtitle;
+                    font-size: Theme.text-caption;
+                    overflow: elide;
+                    color: room.selected ? Theme.on-secondary-container : Theme.on-surface-variant;
+                }
+                // Someone on several networks: their status on each.
+                if room.networks.length > 0: NetList {
+                    items: room.networks;
+                    size: 11px;
+                    text-colour: room.selected ? Theme.on-secondary-container : Theme.on-surface-variant;
+                }
+            }
+            // How long its call has been going, as Discord shows it.
+            if room.voice-since > 0 && root.clock >= room.voice-since: Text {
+                text: root.elapsed(root.clock - room.voice-since);
+                font-size: Theme.text-caption;
+                vertical-alignment: center;
+                color: room.selected ? Theme.on-secondary-container : Theme.outline;
+            }
+            // The pill above shows limited channels; this, the rest.
+            if room.voice-count != "" && !(room.kind == 2 && room.subtitle != ""): Text {
+                text: room.voice-count;
+                font-size: Theme.text-small;
+                vertical-alignment: center;
+                color: room.selected ? Theme.on-secondary-container : Theme.on-surface-variant;
+            }
+            if !room.selected && (room.mentions > 0 || room.unread): Badge {
+                y: (parent.height - self.height) / 2;
+                count: room.mentions;
+            }
+        }
+    }
+    // Who's in its call, under it, as the official sidebar (and Godwit):
+    // 26 px rows, a 20 px avatar 28 px in, the name, and on the right
+    // headphones-off and mic-off for who deafened or muted themselves.
+    for m[i] in room.occupants: Rectangle {
+        y: root.entry + i * 26px;
+        height: 26px;
+        Avatar {
+            x: 28px;
+            y: (parent.height - self.height) / 2;
+            size: 20px;
+            source: m.avatar;
+            has-image: m.has-avatar;
+            initials: m.initials;
+        }
+        HorizontalLayout {
+            x: 28px + 20px + Theme.gap-sm + 2px;
+            width: parent.width - self.x - Theme.gap-md;
+            spacing: Theme.space-1;
+            EmojiText {
+                text: m.name;
+                runs: m.name-runs;
+                font-size: Theme.text-label;
+                color: Theme.on-surface-variant;
+                horizontal-stretch: 1;
+            }
+            if m.deafened: Icon { text: Icons.headset-off; font-size: Theme.text-title; color: Theme.on-surface-variant; width: 18px; }
+            if m.muted: Icon { text: Icons.mic-off; font-size: Theme.text-title; color: Theme.on-surface-variant; width: 18px; }
+        }
+    }
+}
+
+// The rooms of the selected server, or the conversations, with the call
+// bar and our account underneath.
+export component Sidebar inherits Rectangle {
+    in property <string> title;
+    // The server's banner, above its channels (as Stoat's client shows it).
+    in property <image> banner;
+    in property <bool> has-banner;
+    in property <[RoomItem]> rooms;
+    // The server's rooms we haven't joined (Matrix spaces).
+    in property <[DirectoryItem]> directory;
+    callback join-room(int);
+    in property <string> account-name;
+    in property <int> clock;
+    in property <image> account-avatar;
+    in property <bool> account-has-presence;
+    in property <color> account-presence;
+    in property <bool> account-has-avatar;
+    in property <string> account-initials;
+    // Home shows Friends above the conversations.
+    in property <bool> home;
+    in property <bool> friends-selected;
+    in property <bool> people-selected;
+    in property <bool> active-selected;
+    in property <bool> can-show-threads;
+    in property <bool> threads-selected;
+    callback show-threads();
+    in property <bool> in-call;
+    in property <string> call-status;
+    // How long the call has been connected ("" while connecting).
+    in property <string> call-time;
+    in property <bool> call-can-video;
+    // The call's network can carry video at all (the button shows, greyed if not allowed here).
+    in property <bool> call-video-network;
+    in property <bool> call-screen-share;
+    callback set-screen-share(bool);
+    in property <bool> call-camera;
+    callback set-camera(bool);
+    // We sound like speech right now (our own voice activity, from anywhere).
+    in property <bool> call-speaking;
+    in property <string> call-room;
+    in property <bool> call-muted;
+    in property <bool> call-deafened;
+    // Our own mute and deafen (kept outside calls).
+    in property <bool> self-muted;
+    in property <bool> self-deafened;
+    callback show-friends();
+    callback show-people();
+    callback show-active();
+    callback select-room(int);
+    callback room-menu(int, int);
+    in-out property <string> home-query;
+    callback search-home(string);
+    // Home's network filter: the networks with chats, and the one picked ("" for all).
+    in property <[string]> home-networks;
+    in property <string> home-network;
+    callback filter-home(string);
+    callback toggle-hidden-rooms();
+    callback toggle-category(int);
+    callback log-out();
+    callback open-settings();
+    in property <bool> server-settings-available;
+    callback open-server-settings();
+    // The server menu (the official ServerContextMenu), opened from the
+    // header: each entry only with its permission.
+    in property <bool> server-menu;
+    in property <bool> can-invite;
+    in property <bool> can-create-channel;
+    in property <bool> can-leave;
+    callback invite-people();
+    callback mark-server-read();
+    // The server's notification level (0 all, 1 mentions, 2 nothing), where the network keeps one.
+    in property <bool> notify-levels;
+    in property <int> notify;
+    callback set-notify(int);
+    callback create-channel();
+    callback leave-server();
+    callback open-call-room();
+    callback toggle-mute();
+    callback toggle-deafen();
+    callback leave-call();
+
+    // Its width, as the user dragged it (see app.slint's handles).
+    in property <length> panel-width: Theme.sidebar-width;
+    width: root.panel-width;
+    VerticalLayout {
+        padding-left: Theme.gap-md;
+        padding-right: Theme.gap-md;
+        // The header: 40 px, 16 px semibold, after an 8 px gap; with a
+        // banner, the name sits on its lower edge.
+        head := Rectangle {
+            property <bool> banner-shown: root.has-banner && !root.home;
+            height: self.banner-shown ? 136px : 52px;
+            if head.banner-shown: Rectangle {
+                x: -Theme.gap-md;
+                width: parent.width + 2 * Theme.gap-md;
+                height: 136px;
+                clip: true;
+                Image { width: parent.width; height: parent.height; source: root.banner; image-fit: cover; }
+                // Darkens the bottom so the name stays readable on any picture.
+                Rectangle {
+                    y: parent.height - 64px;
+                    height: 64px;
+                    background: @linear-gradient(180deg, transparent 0%, Theme.scrim-strong 100%);
+                }
+            }
+            header := Rectangle {
+                y: head.banner-shown ? head.height - 48px : 8px;
+                height: 40px;
+                border-radius: Theme.radius-sm;
+                background: root.server-menu && header-touch.has-hover ? (head.banner-shown ? Theme.on-media-overlay : Theme.surface-highest) : transparent;
+                Text {
+                    x: 12px;
+                    width: parent.width - (root.server-menu ? 48px : 24px);
+                    text: root.home ? "Conversations" : root.title;
+                    font-size: Theme.text-title;
+                    font-weight: 600;
+                    color: root.has-banner && !root.home ? Theme.on-media : Theme.on-surface;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                if root.server-menu: Icon {
+                    x: parent.width - 32px;
+                    text: Icons.expand;
+                    color: Theme.on-surface-variant;
+                }
+                header-touch := TouchArea {
+                    enabled: root.server-menu;
+                    mouse-cursor: root.server-menu ? pointer : default;
+                    clicked => { server-menu.show(); }
+                }
+            }
+            // The popup's own width, or it sizes to the panel's preferred
+            // width and centres the wider panel (off to the left).
+            server-menu := PopupWindow {
+                x: 0;
+                y: header.y + header.height + 4px;
+                width: header.width;
+                MenuPanel {
+                    width: parent.width;
+                    if root.can-invite: MenuRow { glyph: Icons.link; label: "Invite people"; clicked => { root.invite-people(); } }
+                    MenuRow { glyph: Icons.unread; label: "Mark as read"; clicked => { root.mark-server-read(); } }
+                    if root.notify-levels: MenuDivider { }
+                    if root.notify-levels: MenuRow { glyph: Icons.chat; label: (root.notify == 0 ? "✓ " : "") + "Notify: all messages"; clicked => { root.set-notify(0); } }
+                    if root.notify-levels: MenuRow { glyph: Icons.at; label: (root.notify == 1 ? "✓ " : "") + "Notify: only @mentions"; clicked => { root.set-notify(1); } }
+                    if root.notify-levels: MenuRow { glyph: Icons.lock; label: (root.notify == 2 ? "✓ " : "") + "Notify: nothing"; clicked => { root.set-notify(2); } }
+                    if root.notify-levels: MenuDivider { }
+                    if root.can-create-channel: MenuRow { glyph: Icons.tag; label: "Create channel"; clicked => { root.create-channel(); } }
+                    if root.server-settings-available: MenuRow { glyph: Icons.settings; label: "Server settings"; clicked => { root.open-server-settings(); } }
+                    if root.can-leave: MenuDivider { }
+                    if root.can-leave: MenuRow { glyph: Icons.logout; label: "Leave server"; danger: true; clicked => { root.leave-server(); } }
+                }
+            }
+        }
+        // No scrollbar here either; it pushed the rows off their padding.
+        list := Flickable {
+            vertical-stretch: 1;
+            content-height: rows.preferred-height;
+            // Its own height, not the view's, so the last rows can be scrolled to.
+            rows := VerticalLayout {
+                width: list.width;
+                height: self.preferred-height;
+                alignment: start;
+                spacing: Theme.space-1;
+                padding-bottom: Theme.gap-md;
+                // Finding a conversation by name (any of a person's names).
+                if root.home: TextField {
+                    height: 36px;
+                    placeholder: "Search conversations";
+                    text <=> root.home-query;
+                    edited(t) => { root.search-home(t); }
+                }
+                if root.home: Rectangle { height: 4px; }
+                if root.can-show-threads: Rectangle {
+                    height: 40px;
+                    background: root.threads-selected || threads-touch.has-hover ? Theme.surface-high : transparent;
+                    border-radius: Theme.radius-sm;
+                    Text { x: Theme.gap-md; text: "Threads"; color: Theme.on-surface; vertical-alignment: center; height: parent.height; }
+                    threads-touch := TouchArea { mouse-cursor: pointer; clicked => { root.show-threads(); } }
+                }
+                // Chats on one network only; sideways if they don't fit.
+                if root.home && root.home-networks.length > 1: Flickable {
+                    height: 32px;
+                    content-width: max(self.width, chips.preferred-width);
+                    chips := HorizontalLayout {
+                        height: 28px;
+                        spacing: Theme.space-compact;
+                        alignment: start;
+                        Chip { label: "All"; chosen: root.home-network == ""; choose => { root.filter-home(""); } }
+                        for n in root.home-networks: Chip { label: n; chosen: root.home-network == n; choose => { root.filter-home(n); } }
+                    }
+                }
+                // Everyone as one person across networks.
+                if root.home: MenuButton {
+                    glyph: Icons.link;
+                    label: "People";
+                    selected: root.people-selected || root.friends-selected;
+                    clicked => { root.show-people(); }
+                }
+                // Friends in calls and in games, across networks.
+                if root.home: MenuButton {
+                    glyph: Icons.group;
+                    label: "Active now";
+                    selected: root.active-selected;
+                    clicked => { root.show-active(); }
+                }
+                if root.home: Rectangle { height: 5px; }
+                for room[i] in root.rooms: RoomRow {
+                    room: room;
+                    clock: root.clock;
+                    clicked => { root.select-room(i); }
+                    menu(a) => { root.room-menu(i, a); }
+                    toggle-hidden => { root.toggle-hidden-rooms(); }
+                    toggle-category => { root.toggle-category(i); }
+                }
+                if !root.home && root.directory.length > 0: Text {
+                    x: 20px;
+                    height: 34px;
+                    text: "More rooms";
+                    font-size: Theme.text-label;
+                    font-weight: 600;
+                    color: Theme.on-surface;
+                    vertical-alignment: bottom;
+                }
+                for d[i] in root.directory: HorizontalLayout {
+                    height: 48px;
+                    padding-left: Theme.space-4;
+                    padding-right: Theme.space-2;
+                    spacing: Theme.space-3;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        Text { text: d.name; overflow: elide; color: Theme.on-surface-variant; }
+                        Text { text: d.detail; overflow: elide; font-size: Theme.text-small; color: Theme.outline; }
+                    }
+                    Button { y: (parent.height - self.height) / 2; text: "Join"; kind: "text"; clicked => { root.join-room(i); } }
+                }
+            }
+        }
+        // The call: what and where on top (with leaving), its controls under
+        // it, so a narrow sidebar never squeezes the status.
+        if root.in-call: Rectangle {
+            border-radius: Theme.radius-lg;
+            background: Theme.surface-high;
+            VerticalLayout {
+                padding: Theme.gap-md;
+                padding-left: Theme.space-4;
+                spacing: Theme.space-2;
+                HorizontalLayout {
+                    spacing: Theme.space-2;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        HorizontalLayout {
+                            spacing: Theme.space-compact;
+                            Text { text: root.call-status; font-weight: 600; font-size: Theme.text-label; color: Theme.online; overflow: elide; horizontal-stretch: 1; }
+                            if root.call-time != "": Text { text: root.call-time; font-size: Theme.text-label; color: Theme.on-surface-variant; horizontal-stretch: 0; }
+                        }
+                        Text {
+                            text: root.call-room;
+                            font-size: Theme.text-small;
+                            color: Theme.on-surface-variant;
+                            overflow: elide;
+                            TouchArea { mouse-cursor: pointer; clicked => { root.open-call-room(); } }
+                        }
+                    }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        glyph: Icons.call-end;
+                        tooltip: "Leave call";
+                        tint: Theme.error;
+                        clicked => { root.leave-call(); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Theme.space-1;
+                    alignment: start;
+                    // (Mute and deafen sit on the account card below, as Discord's.)
+                    // The camera, where the call allows video (turning it on asks first).
+                    if root.call-video-network || root.call-camera: IconButton {
+                        glyph: root.call-camera ? Icons.videocam-off : Icons.videocam;
+                        enabled: root.call-can-video || root.call-camera;
+                        tooltip: root.call-camera ? "Turn camera off"
+                            : root.call-can-video ? "Turn camera on"
+                            : "The camera isn't allowed in this call (no Video permission), or it's still connecting";
+                        tint: root.call-camera ? Theme.online : Theme.on-surface-variant;
+                        clicked => { root.set-camera(!root.call-camera); }
+                    }
+                    // Sharing the screen, where the call allows video.
+                    if root.call-video-network || root.call-screen-share: IconButton {
+                        glyph: root.call-screen-share ? Icons.stop-screen-share : Icons.screen-share;
+                        enabled: root.call-can-video || root.call-screen-share;
+                        tooltip: root.call-screen-share ? "Stop sharing"
+                            : root.call-can-video ? "Share your screen"
+                            : "Sharing isn't allowed in this call (no Video permission), or it's still connecting";
+                        tint: root.call-screen-share ? Theme.online : Theme.on-surface-variant;
+                        clicked => { root.set-screen-share(!root.call-screen-share); }
+                    }
+                }
+            }
+        }
+        if root.in-call: Rectangle { height: Theme.gap-md; }
+        // Our account.
+        Rectangle {
+            height: 56px;
+            HorizontalLayout {
+                padding-left: Theme.space-3;
+                padding-bottom: Theme.space-2;
+                spacing: Theme.space-3;
+                Rectangle {
+                    width: 32px;
+                    Avatar {
+                        y: (parent.height - self.height) / 2;
+                        size: 32px;
+                        source: root.account-avatar;
+                        has-image: root.account-has-avatar;
+                        initials: root.account-initials;
+                    }
+                    if root.account-has-presence: Rectangle {
+                        x: 32px - 10px + 1px;
+                        y: (parent.height + 32px) / 2 - 10px + 1px;
+                        width: 12px;
+                        height: 12px;
+                        border-radius: self.width / 2;
+                        border-width: 2px;
+                        border-color: Theme.surface-low;
+                        background: root.account-presence;
+                    }
+                }
+                Text {
+                    text: root.account-name;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    color: Theme.on-surface;
+                    font-weight: 600;
+                }
+                // Always here, as Discord's user panel: they hold outside a
+                // call too, and the next call starts muted or deafened.
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: root.self-muted ? Icons.mic-off : Icons.mic;
+                    tooltip: root.self-muted ? "Unmute" : "Mute";
+                    tint: root.self-muted ? Theme.error : root.in-call && root.call-speaking ? Theme.online : Theme.on-surface-variant;
+                    clicked => { root.toggle-mute(); }
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: root.self-deafened ? Icons.headset-off : Icons.headset;
+                    tooltip: root.self-deafened ? "Undeafen" : "Deafen";
+                    tint: root.self-deafened ? Theme.error : Theme.on-surface-variant;
+                    clicked => { root.toggle-deafen(); }
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Icons.settings;
+                    tooltip: "Settings";
+                    clicked => { root.open-settings(); }
+                }
+            }
+        }
+    }
+}

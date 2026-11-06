@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Slider } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { CallMemberItem, StreamItem, CallVideoItem, CallFrames } from "types.slint";
+import { Avatar, IconButton } from "widgets.slint";
+
+// A call video filling the window: double-click or Esc comes back.
+export component FullscreenVideo inherits Rectangle {
+    in property <bool> call-deafened;
+    in property <[CallMemberItem]> call-members;
+    in property <bool> call-muted;
+    in property <bool> call-speaking;
+    in property <[StreamItem]> call-streams;
+    in property <string> call-time;
+    in property <[CallVideoItem]> call-videos;
+    in property <int> fullscreen-video;
+    callback stream-sound(int, float, bool, bool);
+    callback toggle-deafen();
+    callback toggle-mute();
+    callback video-fullscreen(int);
+
+    background: Theme.media;
+    fs := FocusScope {
+        // The controls hide after a while without the mouse moving, and
+        // come back when it moves (as the official client's player).
+        property <bool> controls: true;
+        // The call's people along the bottom (theater with people).
+        property <bool> people: false;
+        property <length> strip: fs.people && root.call-members.length > 0 ? 112px : 0px;
+        init => {
+            self.focus();
+            hide-controls.restart();
+        }
+        key-pressed(e) => {
+            if e.text == Key.Escape { root.video-fullscreen(-1); return accept; }
+            fs.controls = true;
+            hide-controls.restart();
+            reject
+        }
+        hide-controls := Timer {
+            interval: 3s;
+            running: false;
+            triggered => {
+                fs.controls = false;
+                self.stop();
+            }
+        }
+        Image {
+            width: parent.width;
+            height: parent.height - fs.strip;
+            y: 0;
+            source: root.fullscreen-video < CallFrames.frames.length ? CallFrames.frames[root.fullscreen-video] : root.call-videos[root.fullscreen-video].frame;
+            image-fit: contain;
+        }
+        fs-touch := TouchArea {
+            mouse-cursor: fs.controls ? MouseCursor.default : MouseCursor.none;
+            double-clicked => { root.video-fullscreen(-1); }
+            changed mouse-x => {
+                fs.controls = true;
+                hide-controls.restart();
+            }
+            changed mouse-y => {
+                fs.controls = true;
+                hide-controls.restart();
+            }
+        }
+        // Who's in the call, under the picture.
+        if fs.strip > 0: HorizontalLayout {
+            y: parent.height - fs.strip;
+            height: fs.strip;
+            alignment: center;
+            spacing: Theme.space-4;
+            padding: Theme.space-4;
+            for m in root.call-members: Rectangle {
+                width: 120px;
+                border-radius: Theme.radius-md;
+                background: Theme.on-media-faint;
+                border-width: m.speaking ? 2px : 0;
+                border-color: Theme.primary;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.space-compact;
+                    HorizontalLayout {
+                        alignment: center;
+                        Avatar { size: 48px; source: m.avatar; has-image: m.has-avatar; initials: m.initials; }
+                    }
+                    Text {
+                        text: m.name;
+                        color: white;
+                        font-size: Theme.text-small;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+        if fs.controls: Rectangle {
+            x: 16px;
+            y: 16px;
+            width: fs-label.preferred-width + 24px;
+            height: 32px;
+            border-radius: Theme.radius-lg;
+            background: Theme.scrim;
+            fs-label := Text { text: root.call-videos[root.fullscreen-video].label + " · Esc to leave"; color: white; font-size: Theme.text-label; }
+        }
+        // A watched stream's sound, as beside its LIVE pill.
+        property <int> stream: root.call-videos[root.fullscreen-video].stream;
+        if fs.controls && fs.stream >= 0 && fs.stream < root.call-streams.length: Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - fs.strip - self.height - 24px;
+            width: fs-sound.preferred-width + 24px;
+            height: 44px;
+            border-radius: self.height / 2;
+            background: Theme.scrim-strong;
+            fs-sound := HorizontalLayout {
+                x: 12px;
+                spacing: Theme.space-3;
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: root.call-streams[fs.stream].muted ? Icons.headset-off : Icons.headset;
+                    tooltip: root.call-streams[fs.stream].muted ? "Unmute stream" : "Mute stream";
+                    tint: white;
+                    clicked => {
+                        root.stream-sound(fs.stream, root.call-streams[fs.stream].volume, !root.call-streams[fs.stream].muted, true);
+                    }
+                }
+                Slider {
+                    width: 160px;
+                    y: (parent.height - self.height) / 2;
+                    enabled: !root.call-streams[fs.stream].muted;
+                    minimum: 0;
+                    maximum: 2;
+                    value: root.call-streams[fs.stream].volume;
+                    changed(v) => { root.stream-sound(fs.stream, v, false, false); }
+                    released(v) => { root.stream-sound(fs.stream, v, false, true); }
+                }
+            }
+        }
+        // Our microphone and hearing, while watching (as the call bar's).
+        if fs.controls: Rectangle {
+            x: 16px;
+            y: parent.height - fs.strip - self.height - 24px;
+            width: fs-call.preferred-width + 16px;
+            height: 44px;
+            border-radius: self.height / 2;
+            background: Theme.scrim-strong;
+            fs-call := HorizontalLayout {
+                x: 8px;
+                spacing: Theme.space-2;
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: root.call-muted ? Icons.mic-off : Icons.mic;
+                    tooltip: root.call-muted ? "Unmute" : "Mute";
+                    tint: root.call-muted ? Theme.error : root.call-speaking ? Theme.online : white;
+                    clicked => { root.toggle-mute(); }
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: root.call-deafened ? Icons.headset-off : Icons.headset;
+                    tooltip: root.call-deafened ? "Undeafen" : "Deafen";
+                    tint: root.call-deafened ? Theme.error : white;
+                    clicked => { root.toggle-deafen(); }
+                }
+                if root.call-time != "": Text {
+                    text: root.call-time;
+                    vertical-alignment: center;
+                    font-size: Theme.text-label;
+                    color: white;
+                }
+            }
+        }
+        // Theater with people: show or hide who's in the call.
+        if fs.controls && root.call-members.length > 0: Rectangle {
+            x: parent.width - self.width - 16px - 40px - 8px;
+            y: 16px;
+            width: people-label.preferred-width + 24px;
+            height: 32px;
+            border-radius: Theme.radius-lg;
+            background: people-touch.has-hover ? Theme.on-media-hover : Theme.scrim;
+            people-label := Text { text: fs.people ? "Hide people" : "Show people"; color: white; font-size: Theme.text-label; }
+            people-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { fs.people = !fs.people; }
+            }
+        }
+        if fs.controls: IconButton {
+            x: parent.width - self.width - 16px;
+            y: 16px;
+            glyph: Icons.close;
+            tooltip: "Leave fullscreen";
+            tint: white;
+            clicked => { root.video-fullscreen(-1); }
+        }
+    }
+}

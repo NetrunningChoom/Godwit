@@ -1,0 +1,16 @@
+[package]
+name = "godwit-cache"
+description = "Godwit's bounded, encrypted, network-neutral local cache."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+blake3 = "1"
+chacha20poly1305 = "0.11"
+getrandom = "0.3"
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

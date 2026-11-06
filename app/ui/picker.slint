@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { EmojiRowItem } from "types.slint";
+import { TextField } from "widgets.slint";
+
+// The emoji picker, as Godwit's: a search, then 36 px cells nine to a row.
+// Rows are uniform, so the scroll position says which are on screen.
+export component EmojiPicker inherits Rectangle {
+    in property <[EmojiRowItem]> rows;
+    callback search(string);
+    callback picked(int, int);
+    // The top row on screen.
+    callback scrolled-to(int);
+    callback escape();
+    // Nine cells, the padding, and the list's scrollbar (which otherwise
+    // covered the ninth column).
+    width: 9 * 36px + 24px + 16px;
+    // The top row on screen: the category bar marks its section.
+    property <int> top: 0;
+    height: 440px;
+    border-radius: Theme.radius-lg;
+    background: Theme.surface-high;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: Theme.shadow;
+    TouchArea { }
+    // Escape anywhere inside (the search too) closes the picker.
+    FocusScope {
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                root.escape();
+                return accept;
+            }
+            reject
+        }
+    VerticalLayout {
+        padding: Theme.space-4;
+        spacing: Theme.space-3;
+        TextField {
+            placeholder: "Search for emojis...";
+            autofocus: true;
+            edited(t) => { root.search(t); }
+        }
+        // The categories (each server's emoji, then the Unicode groups), as
+        // Discord's picker: each is its first emoji; clicking jumps there.
+        bar := Flickable {
+            height: 32px;
+            content-width: max(self.width, sections.preferred-width);
+            // No spacing: every row has a (zero-width) place here.
+            sections := HorizontalLayout {
+                alignment: start;
+                spacing: 0;
+                for row[i] in root.rows: Rectangle {
+                    // Only headings make a button (with a row after them).
+                    property <bool> section: row.header && i + 1 < root.rows.length && root.rows[i + 1].cells.length > 0;
+                    width: self.section ? 34px : 0px;
+                    visible: self.section;
+                    border-radius: Theme.radius-sm;
+                    background: jump.has-hover ? Theme.surface-highest
+                        : self.section && root.top < root.rows.length && root.rows[root.top].section == i ? Theme.secondary-container : transparent;
+                    if self.section && root.rows[i + 1].cells[0].has-image: Image {
+                        width: 22px;
+                        height: 22px;
+                        source: root.rows[i + 1].cells[0].image;
+                    }
+                    if self.section && !root.rows[i + 1].cells[0].has-image: Text {
+                        text: root.rows[i + 1].cells[0].glyph;
+                        font-size: Theme.text-heading;
+                        color: Theme.on-surface;
+                    }
+                    jump := TouchArea {
+                        enabled: parent.section;
+                        mouse-cursor: pointer;
+                        clicked => {
+                            list.content-y = -(i * 36px);
+                            root.top = i;
+                            root.scrolled-to(i);
+                        }
+                    }
+                }
+            }
+        }
+        list := ListView {
+            vertical-stretch: 1;
+            // Not `scrolled`: it doesn't fire for the mouse wheel.
+            changed content-y => {
+                root.top = floor(-self.content-y / 36px);
+                root.scrolled-to(root.top);
+            }
+            for row[i] in root.rows: Rectangle {
+                height: 36px;
+                if row.header: Text {
+                    x: 4px;
+                    y: parent.height - self.height - 8px;
+                    text: row.title;
+                    font-size: Theme.text-small;
+                    font-weight: 600;
+                    color: Theme.on-surface-variant;
+                }
+                if !row.header: HorizontalLayout {
+                    alignment: start;
+                    for cell[j] in row.cells: Rectangle {
+                        width: 36px;
+                        border-radius: Theme.radius-sm;
+                        background: pick.has-hover ? Theme.surface-highest : transparent;
+                        if cell.has-image: Image {
+                            width: 24px;
+                            height: 24px;
+                            source: cell.image;
+                        }
+                        if !cell.has-image: Text { text: cell.glyph; font-size: Theme.text-large; color: Theme.on-surface; }
+                        pick := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.picked(i, j); }
+                        }
+                        Tooltip {
+                            Rectangle {
+                                width: tip.preferred-width + 16px;
+                                height: tip.preferred-height + 8px;
+                                border-radius: Theme.radius-xs;
+                                background: Theme.surface-highest;
+                                tip := Text { text: cell.name; color: Theme.on-surface; font-size: Theme.text-small; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+}

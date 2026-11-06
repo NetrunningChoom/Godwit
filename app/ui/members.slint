@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { MemberItem } from "types.slint";
+import { Avatar, EmojiText } from "widgets.slint";
+
+// The member list, as Godwit and the official sidebar: 44 px rows (uniform,
+// so only what's visible is drawn), group headings in 12 px semibold, a
+// 32 px avatar with its presence dot, the name in role colour and the status.
+export component Members inherits Rectangle {
+    in property <[MemberItem]> rows;
+    callback open-profile(int);
+    // The rows on screen, at most ~4 times a second while scrolling:
+    // streamed lists (Discord, Fluxer) load the ranges around them.
+    callback rows-visible(int, int);
+    property <bool> moved;
+    in property <length> panel-width: Theme.sidebar-width;
+    width: root.panel-width;
+    Timer {
+        interval: 250ms;
+        running: root.moved;
+        triggered => {
+            root.moved = false;
+            root.rows-visible(floor(-list.content-y / Theme.row-member), floor((-list.content-y + list.visible-height) / Theme.row-member));
+        }
+    }
+    list := ListView {
+        changed content-y => { root.moved = true; }
+        for row[i] in root.rows: Rectangle {
+            height: Theme.row-member;
+            // Not loaded yet: a faint bar where the name will be.
+            if row.placeholder: Rectangle {
+                x: 50px;
+                width: parent.width * 0.4;
+                height: 10px;
+                border-radius: Theme.radius-dot;
+                background: Theme.surface-high;
+            }
+            if row.header: Text {
+                x: 8px;
+                y: parent.height - self.height - 8px;
+                text: row.name;
+                font-size: Theme.text-small;
+                font-weight: 600;
+                color: Theme.on-surface-variant;
+            }
+            if !row.header && !row.placeholder: Rectangle {
+                border-radius: Theme.radius-lg;
+                background: touch.has-hover ? Theme.surface-highest : transparent;
+                touch := TouchArea { mouse-cursor: pointer; clicked => { root.open-profile(i); } }
+                HorizontalLayout {
+                    padding-left: Theme.space-3;
+                    padding-right: Theme.space-3;
+                    spacing: Theme.space-between;
+                    Rectangle {
+                        width: 32px;
+                        Avatar {
+                            size: Theme.avatar-small;
+                            source: row.avatar;
+                            has-image: row.has-avatar;
+                            initials: row.initials;
+                        }
+                        // No dot when the network doesn't say (transparent).
+                        if row.presence != transparent: Rectangle {
+                            x: 32px - 9px;
+                            y: (parent.height + 32px) / 2 - 9px;
+                            width: 10px;
+                            height: 10px;
+                            border-radius: self.width / 2;
+                            border-width: 2px;
+                            border-color: Theme.surface-low;
+                            background: row.presence;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        EmojiText {
+                            text: row.name;
+                            runs: row.name-runs;
+                            font-weight: 600;
+                            color: row.has-colour ? row.colour : Theme.on-surface;
+                        }
+                        if row.status != "": Text {
+                            text: row.status;
+                            font-size: Theme.text-caption;
+                            overflow: elide;
+                            color: Theme.on-surface-variant;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

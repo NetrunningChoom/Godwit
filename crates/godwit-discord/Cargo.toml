@@ -1,0 +1,52 @@
+[package]
+name = "godwit-discord"
+description = "Godwit's Discord network: QR sign-in, servers, channels, DMs and friends over Discord's gateway and HTTP API, behaving as its web client."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+godwit-core.workspace = true
+godwit-secrets.workspace = true
+# Discord's Markdown is Stoat's dialect with a few spellings changed: its
+# parser and rich-text conversion are shared (see `markdown`).
+godwit-stoat.workspace = true
+# Calls: the microphone, processing, speakers and Opus, shared with the other networks.
+godwit-voice.workspace = true
+# Call video: decoding cameras and Go Live streams (VP8, and H264 where
+# libwebrtc has it) with the codecs livekit's libwebrtc already links.
+godwit-media.workspace = true
+# Voice's transport encryption (Discord's "rtpsize" AEAD modes), as Yapfast.
+aes-gcm = "0.10.3"
+chacha20poly1305 = "0.10.1"
+# DAVE, Discord's end-to-end encryption for calls (MLS through openmls).
+davey = "0.1.4"
+# The voice gateway's messages, DAVE's binary ones among them.
+serenity-voice-model = "0.3"
+anyhow.workspace = true
+base64 = "0.22"
+chrono.workspace = true
+flate2 = "1"
+futures-util.workspace = true
+rand = "0.9"
+# Linking by QR code: Discord's remote login encrypts to the client's RSA
+# key, OAEP with SHA-256 (as Steam's sign-in already uses).
+rsa = { version = "0.9", features = ["getrandom"] }
+sha2 = "0.10"
+reqwest = { workspace = true, features = ["cookies", "gzip", "deflate", "brotli", "zstd"] }
+rustls.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+tokio = { workspace = true, features = ["process"] }
+tokio-tungstenite.workspace = true
+
+[dev-dependencies]
+godwit-secrets = { workspace = true, features = ["test-support"] }
+
+# Building DAVE handshake messages in tests, at the versions davey uses.
+openmls = "0.8.1"
+openmls_basic_credential = "0.5.0"
+openmls_rust_crypto = "0.5.1"
+
+[lints]
+workspace = true

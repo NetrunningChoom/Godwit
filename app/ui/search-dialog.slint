@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { PinItem } from "types.slint";
+import { Dialog, Button, TextField, MessageSummary } from "widgets.slint";
+
+// The message search dialog.
+export component SearchDialog inherits Dialog {
+    callback close-search();
+    callback search(string);
+    in property <bool> search-asked;
+    in property <bool> search-busy;
+    in property <bool> search-failed;
+    callback search-jump(int);
+    in property <[PinItem]> search-results;
+
+    title: "Search messages";
+    card-width: 560px;
+    dismissed => { root.close-search(); }
+    search-field := TextField {
+        placeholder: "Words to find, then Enter";
+        autofocus: true;
+        accepted => { root.search(self.text); }
+    }
+    if root.search-busy: Text { text: "Searching…"; color: Theme.on-surface-variant; }
+    if root.search-failed: Text { text: "The search didn't work. Try again in a moment."; color: Theme.error; }
+    if root.search-asked && !root.search-busy && !root.search-failed && root.search-results.length == 0: Text {
+        text: "Nothing found.";
+        color: Theme.on-surface-variant;
+    }
+    // As tall as the results, up to a cap, + the 12px a ScrollView keeps
+    // for its bar (a guessed height per result stretched the cards).
+    ScrollView {
+        height: min(440px, list.preferred-height + 12px);
+        list := VerticalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            for r[i] in root.search-results: MessageSummary {
+                author: r.author;
+                time: r.time;
+                snippet: r.text;
+                action-spacing: 0px;
+                Button { text: "Jump"; kind: "text"; clicked => { root.search-jump(i); } }
+            }
+        }
+    }
+}

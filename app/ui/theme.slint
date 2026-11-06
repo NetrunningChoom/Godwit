@@ -1,0 +1,202 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+// Colours, sizes and icons. The palette is a Material You "tonal spot" dark
+// scheme generated in Rust (src/theme.rs) from the accent; the defaults here
+// are only what shows before that runs.
+
+import "../../assets/fonts/Inter-Regular.ttf";
+import "../../assets/fonts/NotoEmoji-Regular.ttf";
+import "../../assets/fonts/Inter-SemiBold.ttf";
+import "../../assets/fonts/MaterialSymbolsOutlined.ttf";
+
+export global Theme {
+    in-out property <color> primary: #b8c3ff;
+    // Warnings (signing in with an unofficial client): amber, readable on
+    // both themes; not from the accent, so it always reads as a warning.
+    in-out property <color> warning: #f5a623;
+    in-out property <color> warning-container: #f5a6231f;
+    in-out property <color> on-primary: #1f2c61;
+    in-out property <color> primary-container: #364379;
+    in-out property <color> on-primary-container: #dde1ff;
+    in-out property <color> secondary-container: #3f4759;
+    in-out property <color> on-secondary-container: #dbe2f9;
+    in-out property <color> error: #ffb4ab;
+    in-out property <color> on-error: #690005;
+    in-out property <color> surface-lowest: #0d0e13;
+    in-out property <color> surface-low: #1b1b21;
+    in-out property <color> surface: #1f1f25;
+    in-out property <color> surface-high: #29292f;
+    in-out property <color> surface-highest: #34343a;
+    in-out property <color> on-surface: #e4e1e9;
+    in-out property <color> on-surface-variant: #c6c5d0;
+    in-out property <color> outline: #90909a;
+    in-out property <color> outline-variant: #46464f;
+    // Code blocks, as GitHub draws them: its dark colours, or its light ones
+    // in the light theme (theme.rs sets these with the rest).
+    in-out property <color> code-background: #0d1117;
+    in-out property <color> on-code: #c9d1d9;
+
+    // Fixed colours, the same in both themes: overlays drawn over media
+    // (images, video, the call stage) and the brand panel, so they don't
+    // follow the palette.
+    out property <color> shadow: #00000060;
+    out property <color> scrim: #00000099;
+    out property <color> scrim-strong: #000000b3;
+    out property <color> media: #000000;
+    out property <color> on-media: #ffffff;
+    out property <color> on-media-variant: #ffffffb3;
+    out property <color> on-media-hover: #ffffff40;
+    out property <color> on-media-overlay: #ffffff26;
+    // Online and speaking green (Stoat's for-web online colour).
+    out property <color> online: #3abf7e;
+    // The brand panel: the middle of Godwit's old gradient, and its text.
+    out property <color> brand-night: #2a2240;
+    out property <color> on-brand-variant: #ffffffc8;
+
+    // Fixed media overlays retained from the existing controls. Rust sets
+    // these alongside the palette; their contrast follows the media, not
+    // the surrounding light/dark surface.
+    in-out property <color> scrim-light: #00000040;
+    in-out property <color> scrim-half: #00000080;
+    in-out property <color> scrim-play: #000000a0;
+    in-out property <color> scrim-control: #000000c8;
+    in-out property <color> scrim-control-idle: #0000008c;
+    in-out property <color> scrim-viewer: #000000e6;
+    in-out property <color> media-stage: #0b0b0b;
+    in-out property <color> on-media-soft: #ffffff99;
+    in-out property <color> on-media-strong: #ffffffcc;
+    in-out property <color> on-media-note: #ffffffd9;
+    in-out property <color> on-media-hover-soft: #ffffff33;
+    in-out property <color> on-media-idle: #ffffff1a;
+    in-out property <color> on-media-faint: #ffffff14;
+    // QR cards are always white, including in the dark theme.
+    in-out property <color> on-qr: #555555;
+    in-out property <[color]> accent-swatches: [#5470ec, #2f9e8f, #3f9d4a, #d0a02a, #e0702e, #d64550, #c2448f, #8a55d6];
+
+    // The official client's sizes (for-web's tokens).
+    out property <length> rail-width: 72px;
+    out property <length> sidebar-width: 248px;
+    // The narrowest a chat can be with its header and composer whole.
+    out property <length> chat-min-width: 360px;
+    out property <length> server-icon: 42px;
+    out property <length> avatar: 36px;
+    out property <length> message-size: 14px;
+    out property <length> radius-sm: 8px;
+    out property <length> radius-md: 12px;
+    out property <length> radius-lg: 16px;
+    out property <length> gap-sm: 4px;
+    out property <length> gap-md: 8px;
+    out property <length> gap-lg: 15px;
+    out property <length> radius-xs: 4px;
+
+    // Type scale by role (docs/slint.md): use these, never a literal size.
+    out property <length> text-tiny: 10px;
+    out property <length> text-caption: 11px;
+    out property <length> text-small: 12px;
+    out property <length> text-label: 13px;
+    out property <length> text-body: 14px;
+    out property <length> text-title: 16px;
+    out property <length> text-heading: 18px;
+    out property <length> text-large: 20px;
+    // Headings and display text: Material 3's title-large (22),
+    // headline-small (24) and headline-medium (28).
+    out property <length> text-xl: 22px;
+    out property <length> text-headline: 24px;
+    out property <length> text-display: 28px;
+    // Existing navigation labels and oversized media/brand glyphs. Keep
+    // their measured sizes so token migration does not change wrapping.
+    out property <length> text-navigation: 15px;
+    out property <length> text-media-control: 30px;
+    out property <length> text-brand: 40px;
+
+    // Spacing scale for `spacing` and `padding*` (docs/slint.md).
+    out property <length> space-1: 2px;
+    out property <length> space-2: 4px;
+    out property <length> space-3: 8px;
+    out property <length> space-4: 12px;
+    out property <length> space-5: 16px;
+    out property <length> space-6: 20px;
+    out property <length> space-7: 24px;
+    // Existing compact rows and specialized panels (measured in app/ui).
+    out property <length> space-compact: 6px;
+    out property <length> space-between: 10px;
+    out property <length> space-invite: 11px;
+    out property <length> space-dialog: 28px;
+    out property <length> space-page: 32px;
+    out property <length> space-profile-top: 52px;
+    out property <length> space-brand: 62px;
+    out property <length> radius-line: 3px;
+    out property <length> radius-dot: 5px;
+    out property <length> radius-control: 6px;
+    // Material 3 dialog corners, also used by popovers in the existing UI.
+    out property <length> radius-dialog: 28px;
+    out property <length> radius-brand: 48px;
+    // Shared controls and list geometry, from the existing rendered UI.
+    out property <length> control-button: 40px;
+    out property <length> control-icon: 36px;
+    out property <length> control-field: 48px;
+    out property <length> row-compact: 32px;
+    out property <length> row-member: 44px;
+    out property <length> row-header: 48px;
+    out property <length> icon-small: 16px;
+    out property <length> icon-medium: 20px;
+    out property <length> icon-large: 24px;
+    out property <length> avatar-small: 32px;
+    out property <length> avatar-large: 40px;
+    out property <length> avatar-profile: 56px;
+    out property <length> chip-height: 28px;
+    out property <length> chip-compact-height: 24px;
+}
+
+// Material Symbols codepoints (see assets/fonts; names as in the official client).
+export global Icons {
+    out property <string> home: "\u{e9b2}";
+    out property <string> settings: "\u{e8b8}";
+    out property <string> send: "\u{e163}";
+    out property <string> tag: "\u{e9ef}";
+    out property <string> group: "\u{ea21}";
+    out property <string> notes: "\u{f562}";
+    out property <string> logout: "\u{e9ba}";
+    out property <string> close: "\u{e5cd}";
+    out property <string> play: "\u{e037}";
+    out property <string> fullscreen: "\u{e5d0}";
+    out property <string> lock: "\u{e899}";
+    out property <string> info: "\u{e88e}";
+    out property <string> shield: "\u{e9e0}";
+    out property <string> schedule: "\u{efd6}";
+    out property <string> error: "\u{f8b6}";
+    out property <string> arrow-forward: "\u{e5c8}";
+    out property <string> reply: "\u{e15e}";
+    out property <string> edit: "\u{f097}";
+    out property <string> delete: "\u{e92e}";
+    out property <string> add-reaction: "\u{e1d3}";
+    out property <string> file: "\u{e873}";
+    out property <string> open-in-new: "\u{e89e}";
+    out property <string> attach: "\u{e226}";
+    out property <string> chat: "\u{e0c9}";
+    out property <string> call: "\u{f0d4}";
+    out property <string> at: "\u{e0e6}";
+    out property <string> expand: "\u{e5cf}";
+    out property <string> expand-less: "\u{e5ce}";
+    out property <string> copy: "\u{e14d}";
+    out property <string> link: "\u{e250}";
+    out property <string> unread: "\u{f189}";
+    out property <string> emoji: "\u{ea22}";
+    out property <string> call-end: "\u{f0bc}";
+    out property <string> mic: "\u{e31d}";
+    out property <string> mic-off: "\u{e02b}";
+    out property <string> headset: "\u{f01f}";
+    out property <string> headset-off: "\u{e33a}";
+    out property <string> volume-off: "\u{e04f}";
+    out property <string> screen-share: "\u{e0e2}";
+    out property <string> videocam: "\u{e04b}";
+    out property <string> videocam-off: "\u{e04c}";
+    out property <string> stop-screen-share: "\u{e0e3}";
+}
+
+export component Icon inherits Text {
+    font-family: "Material Symbols Outlined";
+    font-size: 20px;
+    horizontal-alignment: center;
+    vertical-alignment: center;
+}

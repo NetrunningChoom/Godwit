@@ -1,0 +1,325 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { NetworkItem } from "types.slint";
+import { Button, TextField, Warning } from "widgets.slint";
+import { NetworkIcon } from "network-icon.slint";
+import { BrandBanner } from "brand-banner.slint";
+
+// One network on the picker: name, what it protects, and the risk of using
+// it through Godwit. Calm, factual, no red alarms (see docs/design.md).
+component NetworkCard inherits Rectangle {
+    in property <NetworkItem> network;
+    callback picked();
+    height: card.preferred-height;
+    border-radius: Theme.radius-md;
+    background: touch.has-hover && network.available ? Theme.surface-highest : Theme.surface-high;
+    opacity: network.available ? 1 : 0.6;
+    card := VerticalLayout {
+        padding: Theme.space-5;
+        spacing: Theme.space-2;
+        HorizontalLayout {
+            spacing: Theme.gap-md;
+            NetworkIcon { network: root.network.key; }
+            Text { text: network.name; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
+            Icon {
+                text: network.encrypted ? Icons.lock : Icons.info;
+                font-size: Theme.text-title;
+                color: network.encrypted ? Theme.primary : Theme.outline;
+            }
+            if network.wip: Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 18px;
+                width: wip-label.preferred-width + 12px;
+                border-radius: self.width / 2;
+                background: Theme.surface-highest;
+                wip-label := Text { text: "WIP"; font-size: Theme.text-caption; font-weight: 600; color: Theme.on-surface-variant; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if !network.available: Text { text: "Coming soon"; font-size: Theme.text-small; color: Theme.outline; }
+        }
+        for line in network.lines: Text { text: line; font-size: Theme.text-small; color: Theme.on-surface-variant; wrap: word-wrap; }
+        if network.warning != "": Warning { text: network.warning; }
+    }
+    touch := TouchArea {
+        enabled: network.available;
+        mouse-cursor: network.available ? pointer : default;
+        clicked => { root.picked(); }
+    }
+}
+
+// The licence and disclaimer, under the banner (or the form when narrow).
+component Notice inherits Text {
+    text: "Godwit is free software under the GNU AGPL v3 and comes with no warranty, to the extent the law allows. It isn't made or endorsed by the networks it connects to: you're responsible for your accounts and for following each network's terms.";
+    font-size: Theme.text-small;
+    wrap: word-wrap;
+}
+
+// Adding an account: pick a network, then sign in to it. Stoat signs in
+// with email and password, then the two-factor code if the account has one.
+export component Login inherits Rectangle {
+    in property <[NetworkItem]> networks;
+    // -1: choosing a network; otherwise the network being signed in to.
+    in property <int> network: -1;
+    in property <bool> mfa;
+    in property <bool> busy;
+    in property <string> error;
+    // There's an account already, so this can be closed.
+    in property <bool> can-cancel;
+    // Steam: the QR code to scan with its mobile app, once it's there.
+    in property <image> qr;
+    in property <bool> has-qr;
+    in property <bool> qr-scanned;
+    // What the code screen asks for, when the network says (Steam Guard);
+    // for Teams, the code to enter on Microsoft's page.
+    in property <string> mfa-hint;
+    // Teams: Microsoft's sign-in page, to click or copy.
+    in property <string> link;
+    callback open-link(string);
+    callback copy(string);
+    callback pick-network(int);
+    callback back();
+    // The user and the password (`server` is kept for networks that ask which one).
+    callback log-in(string, string, string);
+    callback submit-mfa(string);
+
+    property <string> server;
+    property <string> email;
+    // Steam signs in with a QR code first, its account name and password second.
+    property <bool> steam: root.network >= 0 && root.networks[root.network].key == "steam";
+    // Discord signs in only by QR code, scanned with its phone app.
+    property <bool> discord: root.network >= 0 && root.networks[root.network].key == "discord";
+    // Teams signs in with a code entered on Microsoft's own page.
+    property <bool> teams: root.network >= 0 && root.networks[root.network].key == "teams";
+    property <bool> qr-login: root.steam || root.discord;
+    // Networks without a password form here.
+    // Slack and Google Chat sign in on their own pages, in their own windows.
+    property <bool> slack: root.network >= 0 && root.networks[root.network].key == "slack";
+    property <bool> gchat: root.network >= 0 && root.networks[root.network].key == "gchat";
+    property <bool> no-form: root.discord || root.teams || root.slack || root.gchat;
+    property <string> password;
+    property <string> code;
+
+    background: Theme.surface-lowest;
+    if root.network < 0: Rectangle {
+        width: min(560px, parent.width - 32px);
+        VerticalLayout {
+            padding-top: Theme.space-page;
+            spacing: Theme.space-4;
+            BrandBanner { }
+            HorizontalLayout {
+                Text { text: "Add an account"; font-size: Theme.text-headline; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; }
+                if root.can-cancel: Button { text: "Cancel"; kind: "text"; clicked => { root.back(); } }
+            }
+            Text {
+                text: "Godwit keeps your chats in one place and shows how private each network is. Where you and a friend are both on a more private one, it suggests moving there.";
+                color: Theme.on-surface-variant;
+                wrap: word-wrap;
+            }
+            picker := ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    width: picker.visible-width;
+                    spacing: Theme.space-3;
+                    padding-bottom: Theme.space-5;
+                    for n[i] in root.networks: NetworkCard {
+                        network: n;
+                        picked => { root.pick-network(i); }
+                    }
+                }
+            }
+        }
+    }
+    // Signing in: Godwit's two panels, the gradient hero beside the form.
+    if root.network >= 0: HorizontalLayout {
+        padding: Theme.space-5;
+        spacing: Theme.space-5;
+        if root.width > 900px: Rectangle {
+            horizontal-stretch: 1;
+            border-radius: Theme.radius-brand;
+            // The middle of Godwit's gradient: the software
+            // renderer neither rounds a gradient nor draws it without a seam.
+            background: Theme.brand-night;
+            VerticalLayout {
+                padding: Theme.space-brand;
+                spacing: Theme.space-4;
+                Text { text: "Godwit"; font-size: Theme.text-brand; font-weight: 700; color: Theme.on-media; }
+                Text { text: "one client for your chat networks"; font-size: Theme.text-title; color: Theme.on-brand-variant; }
+                // Flattened on the banner's own colour, so a small JPEG is enough
+                // (assets/art/godwit/README.md).
+                Image {
+                    source: @image-url("../../assets/art/login-godwit.jpg");
+                    vertical-stretch: 1;
+                    image-fit: contain;
+                    min-height: 0;
+                }
+                Notice { color: Theme.on-media-soft; }
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 400px;
+            Rectangle {
+                width: 360px;
+                height: layout.preferred-height;
+                layout := VerticalLayout {
+                    spacing: Theme.space-5;
+                    Text {
+                        text: root.mfa ? (root.steam ? "Steam Guard" : "Two-factor authentication") : "Sign in to " + root.networks[root.network].name;
+                        font-size: Theme.text-display;
+                        font-weight: 600;
+                        color: Theme.on-surface;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.mfa ? (root.mfa-hint != "" ? root.mfa-hint : "Enter the code from your authenticator app, or a recovery code.")
+                                       : root.steam ? "Scan the code with the Steam mobile app (Steam Guard → scan a QR code). Godwit never sees your password this way."
+                                       : root.discord ? "Scan the code with the Discord mobile app (Settings → Scan QR Code). Godwit never sees your password."
+                                       : root.teams ? "Open Microsoft's sign-in page in your browser, enter the code below, and sign in there with your work or school account. Godwit never sees your password."
+                                       : root.slack ? "Slack's sign-in page opened in a window of its own. Sign in there (any workspace; single sign-on works too): Godwit continues by itself once Slack has opened, and brings in every workspace you signed in to. Godwit never sees your password."
+                                       : root.gchat ? "Google's sign-in page opened in a window of its own. Sign in there with your Google account (Workspace single sign-on works too): Godwit continues by itself once Google Chat has opened. Godwit never sees your password."
+                                       : "Use your " + root.networks[root.network].name + " email and password.";
+                        color: Theme.on-surface-variant;
+                        wrap: word-wrap;
+                    }
+                    if root.qr-login && !root.mfa: HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 200px;
+                            height: 200px;
+                            border-radius: Theme.radius-md;
+                            // A light card: QR scanners want dark on light.
+                            background: white;
+                            if root.has-qr: Image {
+                                x: 12px;
+                                y: 12px;
+                                width: parent.width - 24px;
+                                height: parent.height - 24px;
+                                source: root.qr;
+                                image-rendering: pixelated;
+                            }
+                            if !root.has-qr: Text {
+                                text: "Getting a code…";
+                                color: Theme.on-qr;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    if root.teams && !root.mfa && root.link == "": Text {
+                        text: root.error == "" ? "Getting a code…" : "";
+                        color: Theme.on-surface-variant;
+                    }
+                    if root.teams && !root.mfa && root.link != "": VerticalLayout {
+                        spacing: Theme.space-3;
+                        Text { text: "1. Open this page:"; color: Theme.on-surface-variant; }
+                        HorizontalLayout {
+                            spacing: Theme.gap-md;
+                            // The address itself, so it can be typed if clicking and copying fail.
+                            link-text := Text {
+                                text: root.link;
+                                color: Theme.primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                wrap: word-wrap;
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.open-link(root.link); }
+                                }
+                            }
+                            Button { text: "Open"; kind: "text"; clicked => { root.open-link(root.link); } }
+                            Button { text: "Copy"; kind: "text"; clicked => { root.copy(root.link); } }
+                        }
+                        Text { text: "2. Enter this code:"; color: Theme.on-surface-variant; }
+                        HorizontalLayout {
+                            spacing: Theme.gap-md;
+                            Text {
+                                text: root.mfa-hint;
+                                color: Theme.on-surface;
+                                font-size: Theme.text-headline;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            Button { text: "Copy"; kind: "text"; clicked => { root.copy(root.mfa-hint); } }
+                        }
+                        Text { text: "Godwit signs in by itself once you're done there."; color: Theme.on-surface-variant; wrap: word-wrap; }
+                    }
+                    if root.qr-login && !root.mfa && root.qr-scanned: Text {
+                        text: root.discord && root.mfa-hint != "" ? root.mfa-hint : "Scanned. Approve the sign-in in the app.";
+                        color: Theme.primary;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    if root.steam && !root.mfa: Text {
+                        text: "Or sign in with your account name and password:";
+                        color: Theme.on-surface-variant;
+                        wrap: word-wrap;
+                    }
+                    if !root.mfa && !root.no-form: TextField {
+                        placeholder: root.steam ? "Account name" : "Email";
+                        enabled: !root.busy;
+                        edited(t) => { root.email = t; }
+                    }
+                    if !root.mfa && !root.no-form: TextField {
+                        placeholder: "Password";
+                        password: true;
+                        enabled: !root.busy;
+                        edited(t) => { root.password = t; }
+                        accepted => { root.log-in(root.server, root.email, root.password); }
+                    }
+                    if root.mfa: TextField {
+                        placeholder: "Code";
+                        enabled: !root.busy;
+                        edited(t) => { root.code = t; }
+                        accepted => { root.submit-mfa(root.code); }
+                    }
+                    // Waiting for approval elsewhere (the Steam app, an email link).
+                    if !root.mfa && !root.no-form && root.busy && root.mfa-hint != "": Text {
+                        text: root.mfa-hint;
+                        color: Theme.primary;
+                        wrap: word-wrap;
+                    }
+                    if root.error != "": Text { text: root.error; color: Theme.error; wrap: word-wrap; }
+                    HorizontalLayout {
+                        spacing: Theme.gap-md;
+                        // Always usable: a sign-in that hangs must not trap you here.
+                        // As visible as Log in and as wide: going back is an
+                        // equal choice, never a faint one (no nudging).
+                        Button { horizontal-stretch: 1; text: root.busy ? "Cancel" : "Back"; kind: "tonal"; clicked => { root.back(); } }
+                        if !root.no-form: Button {
+                            horizontal-stretch: 1;
+                            text: root.busy ? "Signing in…" : root.mfa ? "Confirm" : "Log in";
+                            kind: "filled";
+                            enabled: !root.busy;
+                            clicked => {
+                                if root.mfa { root.submit-mfa(root.code); } else { root.log-in(root.server, root.email, root.password); }
+                            }
+                        }
+                    }
+                    // Valve doesn't offer chat to other apps, nor explicitly allow them:
+                    // said calmly, before signing in (docs/design.md, the risk shown).
+                    // Said before the code is scanned (docs/design.md: the risk, shown calmly).
+                    if root.discord: Warning {
+                        text: "Godwit isn't an official Discord client and isn't affiliated with Discord. Discord's terms don't allow other clients on personal accounts, so your account could be limited or closed. Godwit never automates anything and offers no Nitro features. Use it entirely at your own risk.";
+                    }
+                    if root.slack: Warning {
+                        text: "Godwit isn't an official Slack client and isn't affiliated with Slack. It signs in with your Slack web session, which Slack doesn't support for other clients, and your workspace's admins may see it. Messages aren't end-to-end encrypted. Use it entirely at your own risk.";
+                    }
+                    if root.gchat: Warning {
+                        text: "Godwit isn't an official Google Chat client and isn't affiliated with Google. It signs in with your Google web session, which Google doesn't support for other clients, and your Workspace admins may block or see it. Messages aren't end-to-end encrypted. Use it entirely at your own risk.";
+                    }
+                    if root.teams: Warning {
+                        text: "Godwit isn't an official Teams client and isn't affiliated with Microsoft. It signs in the way Teams' web app does, which Microsoft doesn't support for other apps, and your organisation's IT may block or see it. Chats aren't end-to-end encrypted. Use it entirely at your own risk.";
+                    }
+                    if root.steam: Warning {
+                        text: "Godwit isn't an official Steam client and isn't affiliated with Valve. Steam's terms don't explicitly allow other clients, so your account could be limited. Godwit only chats and never automates anything. Use it entirely at your own risk.";
+                    }
+                    if root.width <= 900px: Notice { color: Theme.outline; }
+                }
+            }
+        }
+    }
+}

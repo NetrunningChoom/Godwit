@@ -1,0 +1,16 @@
+[package]
+name = "x264-src"
+version = "0.164.0"
+edition = "2024"
+publish = false
+license = "GPL-2.0-or-later"
+description = "x264's H264 encoder library, built from the source in x264/"
+repository = "https://code.videolan.org/videolan/x264"
+# Hands dependents the headers' folder as DEP_X264_INCLUDE.
+links = "x264"
+
+[lib]
+path = "src/lib.rs"
+
+[build-dependencies]
+cc = "1.2"

@@ -1,0 +1,111 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { ActiveItem } from "types.slint";
+import { Avatar, Button, EmojiText, PageHeader, EmptyState } from "widgets.slint";
+
+// Active now (Discord's column of that name, across every network): calls
+// with friends in them, then friends playing something. Clicking a call
+// opens its room, Join joins it; clicking a person opens a chat with them.
+export component Active inherits Rectangle {
+    in property <[ActiveItem]> items;
+    callback open(int);
+    callback join(int);
+
+    VerticalLayout {
+        PageHeader { label: "Active now"; glyph: Icons.group; }
+        if root.items.length == 0: EmptyState {
+            text: "It's quiet for now. Friends in calls or playing something show up here.";
+            wrap: word-wrap;
+        }
+        // Rows differ in height (headings), so not a ListView (it guesses them).
+        if root.items.length > 0: list := Flickable {
+            vertical-stretch: 1;
+            content-height: rows.preferred-height;
+            rows := VerticalLayout {
+            width: list.width;
+            height: self.preferred-height;
+            alignment: start;
+            for item[i] in root.items: VerticalLayout {
+                // A heading above each kind's first row.
+                if i == 0 || root.items[i - 1].kind != item.kind: Text {
+                    height: 32px;
+                    x: Theme.gap-lg;
+                    text: item.kind == 0 ? "In a call" : "Playing";
+                    vertical-alignment: bottom;
+                    font-size: Theme.text-small;
+                    font-weight: 600;
+                    color: Theme.outline;
+                }
+                Rectangle {
+                    height: 60px;
+                    background: touch.has-hover ? Theme.surface-high : transparent;
+                    border-radius: Theme.radius-sm;
+                    touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open(i); }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.gap-lg;
+                        padding-right: Theme.gap-lg;
+                        spacing: Theme.gap-md;
+                        Avatar {
+                            y: (parent.height - self.height) / 2;
+                            size: Theme.avatar-large;
+                            source: item.avatar;
+                            has-image: item.has-avatar;
+                            initials: item.initials;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            HorizontalLayout {
+                                spacing: Theme.space-compact;
+                                EmojiText {
+                                    text: item.title;
+                                    runs: item.title-runs;
+                                    font-weight: 600;
+                                    color: Theme.on-surface;
+                                    horizontal-stretch: 0;
+                                }
+                                Text {
+                                    text: item.detail;
+                                    overflow: elide;
+                                    font-size: Theme.text-small;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    color: Theme.outline;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.space-2;
+                                if item.kind == 0: Icon { text: Icons.headset; font-size: Theme.text-body; width: 16px; color: Theme.on-surface-variant; }
+                                Text {
+                                    text: item.who;
+                                    overflow: elide;
+                                    font-size: Theme.text-label;
+                                    horizontal-stretch: 1;
+                                    color: Theme.on-surface-variant;
+                                }
+                            }
+                        }
+                        if item.here: Text {
+                            text: "You're in it";
+                            vertical-alignment: center;
+                            font-size: Theme.text-small;
+                            color: Theme.outline;
+                        }
+                        if item.can-join: Button {
+                            y: (parent.height - self.height) / 2;
+                            text: "Join";
+                            kind: "tonal";
+                            clicked => { root.join(i); }
+                        }
+                    }
+                }
+            }
+        }
+        }
+    }
+}

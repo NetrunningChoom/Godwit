@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { PinItem } from "types.slint";
+import { Dialog, Button, MessageSummary } from "widgets.slint";
+
+// The pinned messages panel.
+export component PinsDialog inherits Dialog {
+    in property <bool> can-pin;
+    callback close-pins();
+    callback pin-jump(int);
+    callback pin-unpin(int);
+    in property <[PinItem]> pins;
+    in property <bool> pins-failed;
+    in property <bool> pins-loading;
+
+    title: "Pinned messages";
+    closable: true;
+    card-width: 520px;
+    dismissed => { root.close-pins(); }
+    if root.pins-loading: Text { text: "Loading…"; color: Theme.on-surface-variant; }
+    if root.pins-failed: Text { text: "Couldn't load the pinned messages."; color: Theme.error; }
+    if !root.pins-loading && !root.pins-failed && root.pins.length == 0: Text {
+        text: "Nothing is pinned here yet.";
+        color: Theme.on-surface-variant;
+    }
+    // As tall as the pins themselves, up to a cap (a guessed height per pin
+    // stretched short ones into tall, half-empty cards).
+    ScrollView {
+        // + the 12px a ScrollView keeps for its bar.
+        height: min(420px, list.preferred-height + 12px);
+        list := VerticalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            for p[i] in root.pins: MessageSummary {
+                author: p.author;
+                time: p.time;
+                snippet: p.text;
+                Button { text: "Jump"; kind: "text"; clicked => { root.pin-jump(i); } }
+                if root.can-pin: Button { text: "Unpin"; kind: "text"; danger: true; clicked => { root.pin-unpin(i); } }
+            }
+        }
+    }
+}

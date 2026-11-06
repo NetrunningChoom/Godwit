@@ -1,0 +1,20 @@
+[package]
+name = "godwit-media"
+description = "Godwit's media coding: WebM (VP8/VP9) clips and live call video (VP8, VP9, H264) to RGBA frames through the codecs livekit's libwebrtc already links."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Only for linking: livekit's prebuilt libwebrtc carries libvpx and libyuv, which
+# this crate calls directly. The same version as livekit's, so nothing new builds.
+webrtc-sys = { version = "0.3.52", default-features = false }
+# x264, built from source, for Go Live's H264 (what every Go Live sender known
+# to work sends; see src/h264.rs).
+x264-src = { path = "../../vendor/x264-src" }
+
+[build-dependencies]
+cc = "1.2"
+
+[lints]
+workspace = true

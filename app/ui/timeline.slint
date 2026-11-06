@@ -1,0 +1,1137 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Slider, ScrollView } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { Anim, Players, CallFrames, Select, BlockItem, MessageItem, AttachmentItem, EmbedItem, InviteItem, ReactionItem, FileItem, CallMemberItem, EmojiRowItem, StreamItem } from "types.slint";
+import { CallVideoItem } from "types.slint";
+import { EmojiPicker } from "picker.slint";
+import { TextBlock } from "textblock.slint";
+import { Gifs, GifPicker } from "gif-picker.slint";
+import { Avatar, IconButton, Button, MenuPanel, MenuRow, MenuDivider, TextField, Select as Dropdown, EmojiText, ChoiceChip } from "widgets.slint";
+import { TalkOnItem } from "types.slint";
+import { MessageRow } from "message-row.slint";
+
+
+// The open room: header with its security line, the suggestion bar, the
+// messages, who's typing and the composer.
+export component Timeline inherits Rectangle {
+        in property <string> title;
+        // With several accounts: the one this room is on ("" otherwise),
+        // shown as a chip in the header and named in the composer.
+        in property <string> as-account;
+        // A merged person's networks (two or more): switch between them here.
+        in property <[TalkOnItem]> talk-on;
+        // The same, as a dropdown's words, and the current one's place.
+        in property <[string]> talk-on-labels;
+        in property <int> talk-on-current;
+        callback talk-on-picked(int);
+        // A person's chat: our own nickname for them can be set here.
+        in property <bool> can-rename;
+        in property <string> nickname;
+        callback rename(string);
+        property <bool> renaming;
+        property <string> rename-draft;
+    // A server channel (a # symbol) rather than a conversation (an @).
+    in property <bool> is-channel;
+    in property <bool> encrypted;
+    in property <string> security;
+    in property <[MessageItem]> messages;
+    in property <bool> loading;
+    // Loading failed: a calm line with a retry instead of the typing line.
+    in property <bool> failed;
+    // The room's network is reconnecting ("" when connected).
+    in property <string> offline;
+    // The whole history is loaded: say so at the top, as Godwit does.
+    in property <bool> reached-start;
+    // Showing older messages around a jump, not the newest.
+    in property <bool> detached;
+    callback jump-to-present();
+    in property <bool> can-send;
+    in property <bool> can-react;
+    in property <bool> can-reply;
+    in property <bool> can-edit;
+    in property <bool> can-delete;
+    in property <bool> can-delete-others;
+    in-out property <string> draft;
+    in property <string> nudge;
+    in property <string> compose-label;
+    in property <string> typing;
+    in property <bool> can-attach;
+    in property <bool> can-call;
+    // Calls exist on this network but don't work in Godwit yet: the button shows disabled.
+    in property <string> call-unavailable;
+    // A server channel or group: it has a member list to show.
+    in property <bool> has-members;
+    // The room's pinned messages can be seen (a header button) and set (the menu).
+    in property <bool> has-pins;
+    in property <bool> has-search;
+    callback open-search();
+    // Threads can be started from messages here; a forum takes posts instead.
+    in property <bool> can-thread;
+    in property <bool> is-forum;
+    callback create-thread(int);
+    callback new-post();
+    in property <bool> can-pin;
+    callback open-pins();
+    callback pin(int);
+    in property <bool> members-shown;
+    callback toggle-members();
+    // We're in this room's call: show its members.
+    in property <bool> call-here;
+    in property <bool> call-camera;
+    in property <bool> call-screen-share;
+    in property <bool> call-can-video;
+    in property <[CallVideoItem]> call-videos;
+    callback set-camera(bool);
+    callback set-screen-share(bool);
+    in property <[CallMemberItem]> call-members;
+    // Go Live streams in the call: Watch / Stop watching, and their sound.
+    in property <[StreamItem]> call-streams;
+    callback watch-stream(int, bool);
+    callback stream-sound(int, float, bool, bool);
+    // Someone's volume here (0..2) and whether they're muted here only.
+    callback user-sound(int, float, bool, bool);
+    property <int> sound-member: -1;
+    property <length> sound-x;
+    property <length> sound-y;
+    // The video area: theater mode, and its height once dragged.
+    in-out property <bool> theater;
+    // Theater ends with the last video (its button went with it).
+    property <bool> any-video: root.call-here && root.call-videos.length > 0;
+    changed any-video => {
+        if !root.any-video { root.theater = false; }
+    }
+    in-out property <bool> video-dragged;
+    // The video area's height once dragged (it then stays exactly that).
+    in-out property <length> video-h: 140px;
+    // Its height as laid out now (where a drag starts from).
+    property <length> video-shown-h;
+    property <bool> has-screen-video: root.call-videos.length > 0 && root.screen-videos > 0;
+    in property <int> screen-videos;
+    callback video-fullscreen(int);
+    callback join-call();
+    in property <[FileItem]> files;
+    callback attach();
+    // Ctrl+V with a picture (or copied files) on the clipboard attaches it;
+    // false: nothing to attach, the text pastes as usual.
+    callback paste-files() -> bool;
+    callback remove-file(int);
+    callback load-earlier();
+    callback draft-edited(string);
+    callback capture-composer(int, int);
+    in property <int> inserted-at;
+    in property <int> insert-serial;
+    changed insert-serial => {
+        input.set-selection-offsets(root.inserted-at, root.inserted-at);
+        input.focus();
+    }
+    callback send();
+    callback dismiss-nudge(bool);
+    callback reply(int);
+    callback edit(int);
+    callback delete(int);
+    callback react(int, int);
+    callback open-picker(int);
+    // The emoji picker (for row's reactions, or the composer when -1).
+    in property <bool> picker-open;
+    in property <[EmojiRowItem]> emoji-rows;
+    callback picker-search(string);
+    callback picker-picked(int, int);
+    callback picker-scrolled(int);
+    callback close-picker();
+    callback open-attachment(int, int);
+    callback link-clicked(int, string);
+    callback play-inline(string, string);
+    callback player-fullscreen(string);
+    callback join-invite(string);
+    callback player-pointer(string, int, int, bool);
+    callback player-move(string, int, int);
+    callback cancel-compose();
+    callback edit-last();
+    callback jump-to-reply(int);
+    callback open-profile(int);
+    callback mark-unread(int);
+    callback copy-text(int);
+    callback copy-link(int);
+
+    // A newly opened room puts the cursor in its composer, as officially.
+    changed title => { input.focus(); }
+    // Follow new messages while the view is at the bottom; otherwise keep
+    // the distance to the bottom, so pages loaded above don't move the view.
+    // The visible range: the first and last rows in view (see the list).
+    property <int> top-row: -1;
+    property <int> bottom-row: -1;
+    // Reported at most ~8 times a second: a fast scroll passes many rows,
+    // and each report starts pictures and players for the rows near it.
+    property <bool> rows-moved;
+    changed top-row => { root.rows-moved = true; }
+    changed bottom-row => { root.rows-moved = true; }
+    rows-timer := Timer {
+        interval: 120ms;
+        running: root.rows-moved;
+        triggered => {
+            root.rows-moved = false;
+            root.visible-rows(root.top-row, root.bottom-row);
+        }
+    }
+    callback visible-rows(int, int);
+    // Older messages load a screen before the top is reached, so they're in
+    // place when it is; while the view stays up there, at most a page every
+    // 0.7 s (the core asks for one page at a time), so a fast scroll doesn't
+    // fire page after page at the network.
+    property <bool> near-top;
+    changed near-top => { if root.near-top && !root.reached-start { root.load-earlier(); } }
+    earlier-timer := Timer {
+        interval: 700ms;
+        // Not once the chat's start is in: nothing ticks while idle.
+        running: root.near-top && !root.reached-start;
+        triggered => { root.load-earlier(); }
+    }
+    property <bool> at-bottom: true;
+    property <length> from-bottom: 0;
+    function settle() {
+        if root.at-bottom {
+            list.content-y = min(0px, list.visible-height - list.content-height);
+        } else {
+            list.content-y = min(0px, root.from-bottom - list.content-height);
+        }
+    }
+    // The message waiting for "Delete message" (-1: none); the window shows
+    // the dialog, so its scrim covers everything.
+    in-out property <int> confirm-delete: -1;
+
+    VerticalLayout {
+        // The header: 48 px, a 24 px symbol and the 15 px semibold title.
+        Rectangle {
+            height: Theme.row-header;
+            HorizontalLayout {
+                padding-left: Theme.gap-md;
+                padding-right: Theme.gap-md;
+                spacing: Theme.gap-md;
+                Icon {
+                    text: root.is-channel ? Icons.tag : Icons.at;
+                    font-size: Theme.text-headline;
+                    color: Theme.on-surface-variant;
+                }
+                // Header texts elide: an unwrapped text's minimum is its whole
+                // length, which made the chat wider than the window (its
+                // composer's buttons went off screen).
+                if !root.renaming: Text {
+                    text: root.title;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    min-width: min(self.preferred-width, 80px);
+                    font-size: Theme.text-navigation;
+                    font-weight: 600;
+                    color: Theme.on-surface;
+                    // A person: click their name to give them your own.
+                    if root.can-rename: TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.rename-draft = root.nickname;
+                            root.renaming = true;
+                        }
+                    }
+                }
+                if root.renaming: TextField {
+                    y: (parent.height - self.height) / 2;
+                    width: 220px;
+                    text: root.nickname;
+                    placeholder: "Nickname (only you see it)";
+                    autofocus: true;
+                    edited(t) => { root.rename-draft = t; }
+                    accepted => {
+                        root.rename(root.rename-draft);
+                        root.renaming = false;
+                    }
+                }
+                // Back to their own name.
+                if root.renaming && root.nickname != "": Button {
+                    y: (parent.height - self.height) / 2;
+                    text: "Reset";
+                    kind: "text";
+                    clicked => {
+                        root.rename("");
+                        root.renaming = false;
+                    }
+                }
+                if root.renaming: Button {
+                    y: (parent.height - self.height) / 2;
+                    text: "Cancel";
+                    kind: "text";
+                    clicked => { root.renaming = false; }
+                }
+                if root.as-account != "": Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    height: 22px;
+                    width: min(account-chip.preferred-width, 160px) + 16px;
+                    border-radius: self.height / 2;
+                    background: Theme.surface-high;
+                    account-chip := Text {
+                        width: min(self.preferred-width, 160px);
+                        overflow: elide;
+                        text: root.as-account;
+                        font-size: Theme.text-small;
+                        color: Theme.on-surface-variant;
+                        vertical-alignment: center;
+                    }
+                }
+                Icon {
+                    text: root.encrypted ? Icons.lock : Icons.info;
+                    color: root.encrypted ? Theme.primary : Theme.outline;
+                    font-size: Theme.text-title;
+                }
+                Text {
+                    text: root.security;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    font-size: Theme.text-small;
+                    color: Theme.outline;
+                }
+                if root.has-search: Button {
+                    y: (parent.height - self.height) / 2;
+                    text: "Search";
+                    kind: "text";
+                    clicked => { root.open-search(); }
+                }
+                if root.has-pins: IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Icons.notes;
+                    tooltip: "Pinned messages";
+                    clicked => { root.open-pins(); }
+                }
+                if root.has-members: IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Icons.group;
+                    tooltip: root.members-shown ? "Hide members" : "View members";
+                    tint: root.members-shown ? Theme.primary : Theme.on-surface-variant;
+                    clicked => { root.toggle-members(); }
+                }
+                // A labelled button, set apart, as officially: a stray click
+                // on a small icon shouldn't put anyone in a call.
+                if root.can-call && !root.call-here: Rectangle { width: 12px; }
+                if root.can-call && !root.call-here: Button {
+                    y: (parent.height - self.height) / 2;
+                    kind: "tonal";
+                    text: "Join call";
+                    clicked => { root.join-call(); }
+                }
+                if !root.can-call && root.call-unavailable != "": Rectangle { width: 12px; }
+                if !root.can-call && root.call-unavailable != "": Button {
+                    y: (parent.height - self.height) / 2;
+                    kind: "tonal";
+                    text: "Call";
+                    enabled: false;
+                }
+                if !root.can-call && root.call-unavailable != "": Text {
+                    vertical-alignment: center;
+                    overflow: elide;
+                    min-width: 0;
+                    text: root.call-unavailable;
+                    font-size: Theme.text-small;
+                    color: Theme.outline;
+                }
+            }
+            }
+        // A merged person's networks, on a strip of their own so none is cut
+        // off (four or more, alts included, don't fit the header): the current
+        // one marked; another opens the chat there.
+        // Many accounts (more than four): one dropdown naming them all.
+        if root.talk-on.length > 4: HorizontalLayout {
+            height: Theme.row-member;
+            alignment: start;
+            padding-left: Theme.gap-md;
+            padding-right: Theme.gap-md;
+            spacing: Theme.gap-sm;
+            Text { text: "Talk on"; vertical-alignment: center; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+            Dropdown {
+                y: (parent.height - self.height) / 2;
+                height: 36px;
+                width: 320px;
+                model: root.talk-on-labels;
+                current-index: root.talk-on-current;
+                selected(i) => {
+                    if i != root.talk-on-current {
+                        root.talk-on-picked(i);
+                    }
+                }
+            }
+        }
+        if root.talk-on.length > 1 && root.talk-on.length <= 4: talk-strip := Flickable {
+            height: 36px;
+            content-width: max(self.width, talk-row.preferred-width);
+            talk-row := HorizontalLayout {
+                height: 36px;
+                padding-left: Theme.gap-md;
+                padding-right: Theme.gap-md;
+                spacing: Theme.gap-sm;
+                alignment: start;
+                    for t[i] in root.talk-on: ChoiceChip {
+                        y: (parent.height - self.height) / 2;
+                        label: t.label;
+                        chosen: t.current;
+                        compact: true;
+                        presence: t.colour;
+                        choose => { root.talk-on-picked(i); }
+                    }
+            }
+        }
+
+        if root.call-here && (root.call-can-video || root.call-camera || root.call-screen-share): HorizontalLayout {
+            padding: Theme.gap-md;
+            spacing: Theme.gap-md;
+            alignment: start;
+            Button {
+                text: root.call-camera ? "Turn camera off" : "Turn camera on";
+                enabled: root.call-can-video || root.call-camera;
+                clicked => { root.set-camera(!root.call-camera); }
+            }
+            Button {
+                text: root.call-screen-share ? "Stop sharing" : "Share screen";
+                enabled: root.call-can-video || root.call-screen-share;
+                clicked => { root.set-screen-share(!root.call-screen-share); }
+            }
+        }
+        // The call's video: tiles sharing the width, as tall as the user
+        // dragged it (or, until then, half the view when a stream shows).
+        // Theater mode gives it nearly all the room; a tile can go fullscreen.
+        if root.call-here && root.call-videos.length > 0: Rectangle {
+            // Shares the height with the chat by stretch (a fixed height
+            // from the view's own would loop the layout): video : chat.
+            // Once dragged, pinned to the dragged height (clamped while
+            // dragging, so the chat keeps room).
+            min-height: root.video-dragged && !root.theater ? root.video-h : 140px;
+            max-height: root.video-dragged && !root.theater ? root.video-h : 100000px;
+            // Its own wish stays small, so the stretch alone sets its height:
+            // otherwise a 1080p frame's natural height made it want the whole
+            // view, and dragging the handle had no effect.
+            preferred-height: 140px;
+            init => { root.video-shown-h = self.height; }
+            changed height => { root.video-shown-h = self.height; }
+            vertical-stretch: root.theater ? 8 : (root.has-screen-video ? 1 : 0.4);
+            background: Theme.media;
+            HorizontalLayout {
+                padding: Theme.gap-sm;
+                spacing: Theme.gap-sm;
+                for video[vi] in root.call-videos: Rectangle {
+                    horizontal-stretch: 1;
+                    min-width: 160px;
+                    background: Theme.media-stage;
+                    border-radius: Theme.radius-sm;
+                    clip: true;
+                    Image { width: parent.width; height: parent.height; source: vi < CallFrames.frames.length ? CallFrames.frames[vi] : video.frame; image-fit: contain; }
+                    // Until the first frame: say it's coming rather than show black.
+                    if !video.has-frame: Text {
+                        text: video.screen ? "Connecting to the stream…" : "Waiting for video…";
+                        color: Theme.on-media-variant;
+                        font-size: Theme.text-label;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    // Name and controls along the bottom, over the picture.
+                    Rectangle {
+                        y: parent.height - self.height;
+                        height: 32px;
+                        background: @linear-gradient(180deg, transparent 0%, Theme.scrim-strong 100%);
+                        HorizontalLayout {
+                            padding-left: Theme.space-3;
+                            padding-right: Theme.space-2;
+                            spacing: Theme.space-2;
+                            Text { text: video.label; color: white; font-size: Theme.text-small; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                            IconButton { y: (parent.height - self.height) / 2; glyph: Icons.fullscreen; tooltip: "Fullscreen"; tint: white; clicked => { root.video-fullscreen(vi); } }
+                        }
+                    }
+                    TouchArea {
+                        height: parent.height - 32px;
+                        y: 0;
+                        double-clicked => { root.video-fullscreen(vi); }
+                    }
+                }
+            }
+            // Theater mode: the video gets nearly the whole view.
+            Rectangle {
+                x: parent.width - self.width - 8px;
+                y: 8px;
+                width: theater-label.preferred-width + 20px;
+                height: 28px;
+                border-radius: self.height / 2;
+                background: theater-touch.has-hover ? Theme.on-media-hover : Theme.on-media-overlay;
+                theater-label := Text { text: root.theater ? "Exit theater" : "Theater"; color: white; font-size: Theme.text-small; }
+                theater-touch := TouchArea { mouse-cursor: pointer; clicked => { root.theater = !root.theater; } }
+            }
+        }
+        // Drag to share the view between the video and the chat.
+        if root.call-here && root.call-videos.length > 0 && !root.theater: Rectangle {
+            height: 6px;
+            background: video-handle.has-hover || video-handle.pressed ? Theme.outline-variant : transparent;
+            video-handle := TouchArea {
+                mouse-cursor: row-resize;
+                // From where the drag began (the height then, and the pointer
+                // in window coordinates), so the edge stays under the pointer:
+                // the handle itself moves with the edge.
+                property <length> start-h;
+                property <length> start-y;
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                        self.start-h = root.video-shown-h;
+                        self.start-y = self.absolute-position.y + self.mouse-y;
+                    }
+                }
+                moved => {
+                    if self.pressed {
+                        root.video-dragged = true;
+                        root.video-h = clamp(self.start-h + (self.absolute-position.y + self.mouse-y - self.start-y), 140px, max(140px, root.height - 220px));
+                    }
+                }
+                double-clicked => { root.video-dragged = false; }
+            }
+        }
+        // Streams in the call (Discord's Go Live): watching opens its tile above.
+        if root.call-here && root.call-streams.length > 0: Rectangle {
+            height: Theme.row-header;
+            background: Theme.surface-low;
+            HorizontalLayout {
+                padding-left: Theme.gap-md;
+                padding-right: Theme.gap-md;
+                spacing: Theme.gap-sm;
+                alignment: start;
+                for s[i] in root.call-streams: Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    height: 36px;
+                    width: stream-row.preferred-width + 24px;
+                    border-radius: self.height / 2;
+                    background: Theme.surface-high;
+                    stream-row := HorizontalLayout {
+                        x: 12px;
+                        spacing: Theme.space-3;
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: live-text.preferred-width + 10px;
+                            height: 18px;
+                            border-radius: Theme.radius-xs;
+                            background: Theme.error;
+                            live-text := Text { text: "LIVE"; font-size: Theme.text-tiny; font-weight: 700; color: Theme.on-error; }
+                        }
+                        Text { text: s.name; vertical-alignment: center; color: Theme.on-surface; }
+                        if !s.watching && s.note != "": Text {
+                            text: s.note;
+                            vertical-alignment: center;
+                            color: Theme.on-surface-variant;
+                            font-size: Theme.text-small;
+                        }
+                        Button {
+                            y: (parent.height - self.height) / 2;
+                            text: s.watching ? "Stop watching" : "Watch";
+                            kind: s.watching ? "text" : "tonal";
+                            clicked => { root.watch-stream(i, !s.watching); }
+                        }
+                        // A watched stream's sound: mute and volume, per person.
+                        if s.watching: IconButton {
+                            y: (parent.height - self.height) / 2;
+                            glyph: s.muted ? Icons.headset-off : Icons.headset;
+                            tooltip: s.muted ? "Unmute stream" : "Mute stream";
+                            clicked => { root.stream-sound(i, s.volume, !s.muted, true); }
+                        }
+                        if s.watching && !s.muted: Slider {
+                            width: 100px;
+                            y: (parent.height - self.height) / 2;
+                            minimum: 0;
+                            maximum: 2;
+                            value: s.volume;
+                            changed(v) => { root.stream-sound(i, v, false, false); }
+                            released(v) => { root.stream-sound(i, v, false, true); }
+                        }
+                    }
+                }
+            }
+        }
+        // Wrap participants at the available width; larger calls scroll
+        // vertically instead of pushing people beyond a fixed horizontal row.
+        if root.call-here: participants := ScrollView {
+            property <int> columns: max(1, floor((self.visible-width - Theme.gap-md) / 176px));
+            property <int> rows: max(1, ceil(root.call-members.length / self.columns));
+            property <length> needed: self.rows * 124px + Theme.gap-md;
+            // Material's ScrollView keeps 12px (8px bar + 4px gap) under and
+            // beside its content whether a bar shows or not: add it, or the
+            // tiles come up just short and scroll.
+            height: min(288px, self.needed + 12px);
+            content-width: self.visible-width;
+            content-height: self.needed;
+            Rectangle {
+                width: participants.visible-width;
+                height: participants.content-height;
+                background: Theme.surface-low;
+                for m[i] in root.call-members: Rectangle {
+                    property <length> cell-width: (participants.visible-width - Theme.gap-md) / participants.columns;
+                    x: Theme.gap-md + (i - floor(i / participants.columns) * participants.columns) * self.cell-width;
+                    y: Theme.gap-md + floor(i / participants.columns) * 124px;
+                    width: self.cell-width - Theme.gap-md;
+                    height: 108px;
+                    border-radius: Theme.radius-md;
+                    background: Theme.surface-high;
+                    border-width: m.speaking ? 2px : 0;
+                    border-color: Theme.primary;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: Theme.gap-sm;
+                        HorizontalLayout {
+                            alignment: center;
+                            Avatar { size: Theme.avatar-profile; source: m.avatar; has-image: m.has-avatar; initials: m.initials; }
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: Theme.space-2;
+                            Text { text: m.name; color: Theme.on-surface; overflow: elide; }
+                            if m.muted: Icon { text: Icons.mic-off; font-size: Theme.text-body; color: Theme.error; }
+                            if m.deafened: Icon { text: Icons.headset-off; font-size: Theme.text-body; color: Theme.error; }
+                            // Muted here only: a speaker-off icon beside the others, as the
+                            // official clients show it (a caption threw the row off).
+                            if m.local-muted: Icon { text: Icons.volume-off; font-size: Theme.text-body; color: Theme.error; }
+                        }
+                    }
+                    // Right-click: their volume here, as the official clients' user menu.
+                    if !m.me: TouchArea {
+                        pointer-event(e) => {
+                            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                                root.sound-member = i;
+                                root.sound-x = self.absolute-position.x - root.absolute-position.x + self.mouse-x;
+                                root.sound-y = self.absolute-position.y - root.absolute-position.y + self.mouse-y;
+                                member-sound.show();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if root.nudge != "": Rectangle {
+            height: Theme.row-member;
+            border-radius: Theme.radius-lg;
+            background: Theme.primary-container;
+            HorizontalLayout {
+                padding-left: Theme.gap-lg;
+                padding-right: Theme.gap-md;
+                spacing: Theme.gap-md;
+                Icon { text: Icons.shield; color: Theme.on-primary-container; }
+                Text {
+                    text: root.nudge;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    color: Theme.on-primary-container;
+                    overflow: elide;
+                }
+                Text {
+                    text: "Don't suggest again";
+                    vertical-alignment: center;
+                    color: Theme.on-primary-container;
+                    font-size: Theme.text-small;
+                    TouchArea { mouse-cursor: pointer; clicked => { root.dismiss-nudge(true); } }
+                }
+                IconButton {
+                    glyph: Icons.close;
+                    tint: Theme.on-primary-container;
+                    clicked => { root.dismiss-nudge(false); }
+                }
+            }
+        }
+        // A plain scroll view: every loaded row is laid out, so heights are
+        // exact and the wheel isn't fought (a virtualized ListView's
+        // estimated heights broke scrolling). Memory is saved where it
+        // matters: each row says whether it crosses the view's top or bottom
+        // edge, giving the visible range, and only rows near it get pictures.
+        list := ScrollView {
+            vertical-stretch: 1;
+            // Small on purpose: its content is every loaded row, and that as
+            // its preferred height left no room to share, so the call's video
+            // above never grew past its minimum (stretch shares only spare room).
+            preferred-height: 120px;
+            // A message row: padding, the avatar column and the gap beside it.
+            property <length> text-width: self.visible-width - 3 * Theme.gap-lg - Theme.avatar;
+            init => { Select.width-changed(self.text-width); }
+            changed text-width => { Select.width-changed(self.text-width); }
+            // When heights change (messages arrive, text wraps, pictures load,
+            // rows get measured, the window resizes): at the bottom, stay
+            // there; away from it, keep the distance to it, so pages loaded
+            // above don't move the view. Only size changes move it, so nothing
+            // fights the wheel.
+            changed content-height => { root.settle(); }
+            // A selection dragged past the top or bottom edge scrolls the
+            // view, faster the further out, as a browser does; the blocks then
+            // under the pointer extend it. Runs only while the drag is out.
+            property <length> drag-out: !Select.dragging ? 0px
+                : Select.py < self.absolute-position.y ? Select.py - self.absolute-position.y
+                : Select.py > self.absolute-position.y + self.visible-height
+                    ? Select.py - self.absolute-position.y - self.visible-height
+                : 0px;
+            Timer {
+                interval: 16ms;
+                running: list.drag-out != 0px;
+                triggered => {
+                    list.content-y = max(min(0px, list.visible-height - list.content-height),
+                        min(0px, list.content-y - max(-40px, min(40px, list.drag-out / 3))));
+                }
+            }
+            changed visible-height => { root.settle(); }
+            // Wherever the view moved (wheel, drag, or our own scrolling to
+            // the bottom), see where it is: `scrolled` doesn't fire for the
+            // mouse wheel, so relying on it left the view thinking it was at
+            // the bottom and pulled it back there.
+            changed content-y => {
+                root.from-bottom = self.content-height + self.content-y;
+                root.at-bottom = root.from-bottom <= self.visible-height + 4px;
+                root.near-top = self.content-y > -max(200px, self.visible-height);
+            }
+            // Sized to its content explicitly: left to itself, the scroll
+            // area under-measured it and the last message was cut off.
+            content-height: messages.preferred-height;
+            // Never sideways: anything too wide (a long code line) is cut, as
+            // the list's width is the view's.
+            content-width: self.visible-width;
+            messages := VerticalLayout {
+            width: list.visible-width;
+            height: self.preferred-height;
+            for message[i] in root.messages: VerticalLayout {
+                // Where it sits in the view, for the visible range.
+                property <length> view-y: self.y + list.content-y;
+                function report() {
+                    if self.view-y <= 0px && self.view-y + self.height > 0px { root.top-row = i; }
+                    if self.view-y < list.visible-height
+                        && (self.view-y + self.height >= list.visible-height || i == root.messages.length - 1) {
+                        root.bottom-row = i;
+                    }
+                }
+                init => { self.report(); }
+                changed view-y => { self.report(); }
+                changed height => { self.report(); }
+                // The first row starts the history, the last ends with a gap.
+                if i == 0 && root.reached-start: Text {
+                    x: Theme.gap-lg;
+                    height: 40px;
+                    vertical-alignment: center;
+                    text: "This is the start of the conversation.";
+                    color: Theme.outline;
+                }
+                // Jumped to: scroll here (a little below the top) and flash, as
+                // Godwit. A jump rebuilds the row, so it starts with the number
+                // set (`changed` wouldn't fire): a one-shot timer acts once the
+                // row is laid out.
+                property <bool> to-jump: message.jump != 0;
+                property <bool> flash;
+                Timer {
+                    interval: 1ms;
+                    running: parent.to-jump;
+                    triggered => {
+                        list.content-y = max(min(0px, list.visible-height - list.content-height), 48px - parent.y);
+                        parent.flash = true;
+                        parent.to-jump = false;
+                    }
+                }
+                Timer {
+                    interval: 1600ms;
+                    running: parent.flash;
+                    triggered => { parent.flash = false; }
+                }
+                // Godwit's dividers: 17 px above and below a 1 px line; the
+                // date centred on it, "NEW" as a pill at its start.
+                if message.divider-date != "" || message.divider-new: Rectangle {
+                    height: 35px;
+                    Rectangle {
+                        x: 8px;
+                        width: parent.width - 20px;
+                        height: 1px;
+                        background: message.divider-new ? Theme.primary : Theme.outline-variant;
+                    }
+                    if message.divider-date != "": Rectangle {
+                        width: date.preferred-width + 10px;
+                        height: date.preferred-height + 2px;
+                        border-radius: Theme.radius-md;
+                        background: Theme.surface-lowest;
+                        date := Text { text: message.divider-date; font-size: Theme.text-caption; font-weight: 600; color: Theme.outline; }
+                    }
+                    if message.divider-new: Rectangle {
+                        x: 8px;
+                        width: new.preferred-width + 12px;
+                        height: new.preferred-height + 2px;
+                        border-radius: self.height / 2;
+                        background: Theme.primary;
+                        new := Text { text: "NEW"; font-size: Theme.text-tiny; font-weight: 600; color: Theme.on-primary; }
+                    }
+                }
+                MessageRow {
+                    flash: parent.flash;
+                    message: message;
+                    row-number: i;
+                    can-react: root.can-react;
+                    can-reply: root.can-reply;
+                    can-edit: root.can-edit;
+                    can-delete: root.can-delete;
+                    can-delete-others: root.can-delete-others;
+                    can-pin: root.can-pin;
+                    pin => { root.pin(i); }
+                    can-thread: root.can-thread && !root.is-forum;
+                    create-thread => { root.create-thread(i); }
+                    reply => { root.reply(i); }
+                    edit => { root.edit(i); }
+                    // Shift skips the question, as officially.
+                    delete(skip) => { if skip { root.delete(i); } else { root.confirm-delete = i; } }
+                    react(r) => { root.react(i, r); }
+                    open-picker => { root.open-picker(i); }
+                    jump-to-reply => { root.jump-to-reply(i); }
+                    open-attachment(a) => { root.open-attachment(i, a); }
+                    link-clicked(url) => { root.link-clicked(i, url); }
+                    play-inline(url, kind) => { root.play-inline(url, kind); }
+                    player-fullscreen(url) => { root.player-fullscreen(url); }
+                    join-invite(code) => { root.join-invite(code); }
+                    // Typing on selected text goes on in the composer.
+                    typed(t) => {
+                        input.focus();
+                        root.draft += t;
+                        root.draft-edited(root.draft);
+                        // The cursor at the end (offsets are clamped to the text).
+                        input.set-selection-offsets(2147483647, 2147483647);
+                    }
+                    player-pointer(url, x, y, down) => { root.player-pointer(url, x, y, down); }
+                    player-move(url, x, y) => { root.player-move(url, x, y); }
+                    open-profile => { root.open-profile(i); }
+                    mark-unread => { root.mark-unread(i); }
+                    copy-text => { root.copy-text(i); }
+                    copy-link => { root.copy-link(i); }
+                }
+                if i == root.messages.length - 1: Rectangle { height: Theme.gap-md; }
+            }
+            }
+        }
+        Rectangle {
+            height: 20px;
+            if !root.failed || root.loading: Text {
+                x: Theme.gap-lg;
+                text: root.loading ? "Loading…" : root.offline != "" ? root.offline : root.typing;
+                color: root.offline != "" && !root.loading ? Theme.outline : Theme.on-surface-variant;
+                font-size: Theme.text-small;
+            }
+            if root.failed && !root.loading: HorizontalLayout {
+                x: Theme.gap-lg;
+                spacing: Theme.space-3;
+                Text { text: "Couldn't load messages."; color: Theme.error; font-size: Theme.text-small; vertical-alignment: center; }
+                Text {
+                    text: "Try again";
+                    color: Theme.primary;
+                    font-size: Theme.text-small;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    TouchArea { mouse-cursor: pointer; clicked => { root.load-earlier(); } }
+                }
+            }
+        }
+        // Lined up with the composer below it.
+        if root.compose-label != "": HorizontalLayout {
+            padding-left: Theme.gap-lg;
+            padding-right: Theme.gap-lg;
+            padding-bottom: Theme.gap-sm;
+            Rectangle {
+                height: 36px;
+                border-radius: Theme.radius-lg;
+                background: Theme.primary-container;
+                HorizontalLayout {
+                    padding-left: Theme.gap-lg;
+                    padding-right: Theme.gap-lg;
+                    spacing: Theme.gap-md;
+                    Icon { text: Icons.reply; font-size: Theme.text-title; color: Theme.on-primary-container; width: 20px; }
+                    Text {
+                        text: root.compose-label;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        color: Theme.on-primary-container;
+                        overflow: elide;
+                    }
+                    IconButton { glyph: Icons.close; clicked => { root.cancel-compose(); } }
+                }
+            }
+        }
+        // A forum has no chat of its own: its posts are threads, listed under it.
+        if root.is-forum: Rectangle {
+            height: forum-row.preferred-height + Theme.gap-md * 2;
+            forum-row := HorizontalLayout {
+                padding: Theme.gap-md;
+                padding-left: Theme.gap-lg;
+                spacing: Theme.gap-md;
+                Text {
+                    text: "This is a forum: its posts are listed under it in the sidebar.";
+                    color: Theme.on-surface-variant;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                }
+                if root.can-thread: Button { text: "New post"; kind: "filled"; clicked => { root.new-post(); } }
+            }
+        }
+        if root.files.length > 0: HorizontalLayout {
+            padding-left: Theme.gap-lg;
+            padding-right: Theme.gap-lg;
+            padding-bottom: Theme.gap-md;
+            spacing: Theme.gap-md;
+            alignment: start;
+            for f[i] in root.files: Rectangle {
+                height: 52px;
+                width: min(240px, chip.preferred-width);
+                border-radius: Theme.radius-md;
+                background: Theme.surface-high;
+                chip := HorizontalLayout {
+                    padding-left: Theme.gap-md;
+                    spacing: Theme.gap-sm;
+                    Icon { text: Icons.file; color: Theme.on-surface-variant; width: Theme.icon-large; }
+                    VerticalLayout {
+                        alignment: center;
+                        Text { text: f.name; overflow: elide; color: Theme.on-surface; }
+                        Text { text: f.detail; font-size: Theme.text-caption; color: Theme.outline; }
+                    }
+                    IconButton { y: (parent.height - self.height) / 2; glyph: Icons.close; clicked => { root.remove-file(i); } }
+                }
+            }
+        }
+        Rectangle {
+            height: composer.preferred-height + Theme.gap-md * 2;composer := HorizontalLayout {
+                padding-left: Theme.gap-lg;
+                padding-right: Theme.gap-lg;
+                padding-bottom: Theme.gap-md;
+                spacing: Theme.gap-md;
+                if root.can-attach: IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Icons.attach;
+                    tooltip: "Attach files";
+                    clicked => { root.attach(); }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    // Shrinks with the window down to this, never below (the
+                    // buttons beside it stay on screen).
+                    min-width: 120px;
+                    // Grows with the draft up to a cap, then scrolls inside
+                    // (the input used to spill over the chat above).
+                    height: min(max(Theme.row-member, input.preferred-height + Theme.space-7), 220px);
+                    border-radius: Theme.radius-lg;
+                    background: Theme.surface;
+                    // A ScrollView, not a bare Flickable: the wheel scrolls it
+                        // and a scrollbar shows once the draft passes the cap.
+                    draft-scroll := ScrollView {
+                        x: Theme.gap-lg;
+                        width: parent.width - Theme.gap-lg;
+                        horizontal-scrollbar-policy: always-off;
+                        content-width: self.visible-width;
+                        // 12px above the text; the 12px below is the one
+                        // Material's ScrollView always keeps for its bar.
+                        content-height: input.height + 12px;
+                    input := TextInput {
+                        // Exactly the text's height, padded from outside: with
+                        // spare height and centred text, Up/Down landed on the
+                        // wrong line (Slint's line moves ignore the offset).
+                        y: 12px;
+                        width: draft-scroll.visible-width - Theme.gap-lg;
+                        height: self.preferred-height;
+                        // Keep the cursor in view while typing past the cap,
+                        // as Slint's own TextEdit does.
+                        cursor-position-changed(pos) => {
+                            if self.y + pos.y + draft-scroll.content-y < 0 {
+                                draft-scroll.content-y = min(0px, -pos.y);
+                            } else if self.y + pos.y + self.font-size * 1.5 + draft-scroll.content-y > draft-scroll.visible-height {
+                                draft-scroll.content-y = min(0px, draft-scroll.visible-height - self.y - pos.y - self.font-size * 1.5);
+                            }
+                        }
+                        text <=> root.draft;
+                        // The software renderer draws outlines, not COLR emoji.
+                        // Use our bundled outline emoji face; text falls back
+                        // to the normal UI fonts for letters it doesn't cover.
+                        font-family: "Noto Emoji";
+                        enabled: root.can-send;
+                        color: Theme.on-surface;
+                        font-size: Theme.message-size;
+                        wrap: word-wrap;
+                        single-line: false;
+                        edited => { root.draft-edited(self.text); }
+                        // Enter sends; Shift+Enter makes a new line; Escape
+                        // drops a reply or edit.
+                        key-pressed(event) => {
+                            // Ctrl+C with chat text selected and none here: the chat's.
+                            if event.modifiers.control && (event.text == "c" || event.text == "C") && Select.active
+                                && self.anchor-position-byte-offset == self.cursor-position-byte-offset {
+                                Select.copy();
+                                return accept;
+                            }
+                            if event.text == Key.Escape && Select.active {
+                                Select.clear();
+                                return accept;
+                            }
+                            if event.modifiers.control && (event.text == "v" || event.text == "V") && root.can-attach {
+                                if root.paste-files() {
+                                    return accept;
+                                }
+                            }
+                            if event.text == "\n" && !event.modifiers.shift {
+                                root.send();
+                                return accept;
+                            }
+
+                            // Arrow-up in an empty box edits our last message, as officially.
+                            if event.text == Key.UpArrow && self.text == "" {
+                                root.edit-last();
+                                return accept;
+                            }
+                            if event.text == Key.Escape && root.compose-label != "" {
+                                root.cancel-compose();
+                                return accept;
+                            }
+                            reject
+                        }
+                    }
+                    }
+                    // Elided, not clipped: an unwrapped text's minimum is its
+                    // whole length, which held the box (and the buttons) wide.
+                    if input.text == "": Text {
+                        // At the input's own place: the ScrollView insets it,
+                        // so a fixed x left the cursor inside the first letter.
+                        x: input.absolute-position.x - parent.absolute-position.x;
+                        y: input.absolute-position.y - parent.absolute-position.y;
+                        width: parent.width - self.x - Theme.gap-lg;
+                        overflow: elide;
+                        text: !root.can-send ? "You can't send messages here"
+                            : root.as-account != "" ? "Message " + root.title + " as " + root.as-account
+                            : "Message " + root.title;
+                        color: Theme.outline;
+                        font-size: Theme.message-size;
+                    }
+                }
+                // The official GIF button: only while there's nothing to send.
+                if Gifs.available && root.can-send && input.text == "" && root.files.length == 0: Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 36px;
+                    height: 36px;
+                    border-radius: Theme.radius-sm;
+                    background: gif-touch.has-hover ? Theme.surface-highest : transparent;
+                    Rectangle {
+                        width: 28px;
+                        height: 18px;
+                        border-radius: Theme.radius-xs;
+                        border-width: 1.5px;
+                        border-color: Theme.on-surface-variant;
+                        Text { text: "GIF"; font-size: Theme.text-tiny; font-weight: 700; color: Theme.on-surface-variant; }
+                    }
+                    gif-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            Gifs.open = true;
+                            Gifs.opened();
+                        }
+                    }
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Icons.emoji;
+                    tooltip: "Emoji";
+                    enabled: root.can-send;
+                    clicked => {
+                        root.capture-composer(input.anchor-position-byte-offset, input.cursor-position-byte-offset);
+                        root.open-picker(-1);
+                    }
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    glyph: Icons.send;
+                    tooltip: "Send";
+                    enabled: root.can-send && (input.text != "" || root.files.length > 0);tint: Theme.primary;
+                    clicked => { root.send(); }
+                }
+            }
+        }
+    }
+    // "Jump to present", once more than two screens above the newest
+    // message, as Godwit: back to the bottom, where the view then stays.
+    if root.detached || (!root.at-bottom && root.from-bottom - list.visible-height > list.visible-height * 2): Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: list.y + list.height - self.height - 12px;
+        width: jump.preferred-width + 32px;
+        height: 36px;
+        border-radius: self.height / 2;
+        background: Theme.primary;
+        drop-shadow-blur: 6px;
+        drop-shadow-color: Theme.shadow;
+        jump := Text { text: "Jump to present"; color: Theme.on-primary; font-weight: 600; }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.at-bottom = true;
+                root.settle();
+                root.jump-to-present();
+            }
+        }
+    }
+    // The GIF picker, where the emoji picker opens.
+    if Gifs.open: Rectangle {
+        TouchArea {
+            clicked => { Gifs.open = false; }
+            scroll-event(e) => { accept }
+        }
+        GifPicker {
+            x: parent.width - self.width - 16px;
+            y: parent.height - self.height - 72px;
+        }
+    }
+    // The emoji picker, above the composer's right end.
+    if root.picker-open: Rectangle {
+        TouchArea { clicked => { root.close-picker(); } }
+        EmojiPicker {
+            x: parent.width - self.width - 16px;
+            y: parent.height - self.height - 72px;
+            rows: root.emoji-rows;
+            search(q) => { root.picker-search(q); }
+            picked(r, c) => { root.picker-picked(r, c); }
+            scrolled-to(r) => { root.picker-scrolled(r); }
+            escape => { root.close-picker(); }
+        }
+    }
+    // Someone's sound here: volume 0–200% and a mute that only we hear.
+    member-sound := PopupWindow {
+        x: min(root.sound-x, root.width - 260px);
+        y: min(root.sound-y, root.height - 130px);
+        width: 240px;
+        close-policy: close-on-click-outside;
+        // Sized by its contents: without a height of its own the panel
+        // collapsed and the controls showed over the call, see-through.
+        Rectangle {
+            width: parent.width;
+            height: sound-panel.preferred-height;
+            border-radius: Theme.radius-md;
+            background: Theme.surface-high;
+            drop-shadow-blur: 6px;
+            drop-shadow-color: Theme.shadow;
+            sound-panel := VerticalLayout {
+                padding: Theme.space-4;
+                spacing: Theme.space-3;
+                if root.sound-member >= 0 && root.sound-member < root.call-members.length: VerticalLayout {
+                spacing: Theme.space-3;
+                Text { text: root.call-members[root.sound-member].name; font-weight: 600; color: Theme.on-surface; overflow: elide; }
+                HorizontalLayout {
+                    spacing: Theme.space-3;
+                    Text { text: "Volume"; color: Theme.on-surface-variant; vertical-alignment: center; }
+                    volume := Slider {
+                        horizontal-stretch: 1;
+                        minimum: 0;
+                        maximum: 2;
+                        value: root.call-members[root.sound-member].volume;
+                        changed(v) => { root.user-sound(root.sound-member, v, root.call-members[root.sound-member].local-muted, false); }
+                        released(v) => { root.user-sound(root.sound-member, v, root.call-members[root.sound-member].local-muted, true); }
+                    }
+                    Text { text: round(volume.value * 100) + "%"; width: 40px; horizontal-alignment: right; color: Theme.on-surface; vertical-alignment: center; }
+                }
+                Button {
+                    text: root.call-members[root.sound-member].local-muted ? "Unmute for me" : "Mute for me";
+                    kind: "tonal";
+                    clicked => {
+                        root.user-sound(root.sound-member, root.call-members[root.sound-member].volume, !root.call-members[root.sound-member].local-muted, true);
+                    }
+                }
+                }
+            }
+        }
+    }
+}

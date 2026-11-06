@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Avatar, Button } from "widgets.slint";
+
+// A call ringing us: who, from where, and Decline / Accept.
+export component IncomingCall inherits Rectangle {
+    callback incoming-call(int);
+    in property <image> incoming-call-avatar;
+    in property <string> incoming-call-body;
+    in property <bool> incoming-call-has-avatar;
+    in property <string> incoming-call-initials;
+    in property <string> incoming-call-name;
+    in property <bool> incoming-call-switches;
+
+    background: Theme.scrim;
+    TouchArea {
+        clicked => { root.incoming-call(0); }
+        scroll-event(e) => { accept }
+    }
+    Rectangle {
+        width: min(320px, parent.width - 32px);
+        height: call-card.preferred-height;
+        border-radius: Theme.radius-dialog;
+        background: Theme.surface-high;
+        TouchArea { }
+        call-card := VerticalLayout {
+            padding: Theme.space-dialog;
+            spacing: Theme.space-4;
+            HorizontalLayout {
+                alignment: center;
+                Avatar {
+                    size: 80px;
+                    source: root.incoming-call-avatar;
+                    has-image: root.incoming-call-has-avatar;
+                    initials: root.incoming-call-initials;
+                }
+            }
+            Text {
+                text: root.incoming-call-name;
+                font-size: Theme.text-xl;
+                font-weight: 600;
+                color: Theme.on-surface;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.incoming-call-body;
+                color: Theme.on-surface-variant;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                padding-top: Theme.space-3;
+                spacing: Theme.gap-sm;
+                Button { horizontal-stretch: 1; text: "Decline"; danger: true; clicked => { root.incoming-call(2); } }
+                Button { horizontal-stretch: 1; text: root.incoming-call-switches ? "Leave and answer" : "Accept"; kind: "filled"; clicked => { root.incoming-call(1); } }
+            }
+        }
+    }
+}

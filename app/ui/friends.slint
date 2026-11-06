@@ -1,0 +1,201 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { PersonItem, RequestItem, AccountItem } from "types.slint";
+import { Avatar, Button, TextField, NetList, EmojiText, PageHeader, EmptyState } from "widgets.slint";
+
+// A pending request: theirs with Accept and Decline, ours with Cancel (the
+// official Pending list).
+component RequestRow inherits Rectangle {
+    in property <RequestItem> item;
+    callback accept();
+    callback decline();
+    height: 56px;
+    HorizontalLayout {
+        padding-left: Theme.gap-lg;
+        padding-right: Theme.gap-lg;
+        spacing: Theme.gap-lg;
+        Rectangle {
+            width: Theme.avatar;
+            Avatar { source: item.avatar; has-image: item.has-avatar; initials: item.initials; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text { text: item.name; overflow: elide; color: Theme.on-surface; }
+            Text {
+                text: (item.incoming ? "Wants to be friends" : "Request sent") + " · " + item.network;
+                font-size: Theme.text-small;
+                color: Theme.outline;
+            }
+        }
+        if item.incoming: Button { y: (parent.height - self.height) / 2; text: "Accept"; kind: "filled"; clicked => { root.accept(); } }
+        Button {
+            y: (parent.height - self.height) / 2;
+            text: item.incoming ? "Decline" : "Cancel";
+            kind: "text";
+            clicked => { root.decline(); }
+        }
+    }
+}
+
+// Your friends, online first, each with a button to message them; adding one
+// by name, and the requests waiting for an answer.
+export component Friends inherits Rectangle {
+    in property <bool> management-only;
+    // On People the page splits it: the add form at the top (`form-only`),
+    // the pending requests at the bottom (`requests-only`).
+    in property <bool> form-only;
+    in property <bool> requests-only;
+    in property <[AccountItem]> accounts;
+    property <string> account-key;
+    in property <[PersonItem]> people;
+    in property <[RequestItem]> requests;
+    // The last request sent from here: what happened ("" for nothing yet).
+    in property <string> request-status;
+    in property <bool> request-failed;
+    callback open-direct(int);
+    callback send-request(string, string);
+    callback accept-request(int);
+    callback decline-request(int);
+    property <string> name;
+
+    VerticalLayout {
+        if !root.management-only: PageHeader {
+            label: "Friends";
+            glyph: Icons.group;
+            end-padding: 0px;
+            label-stretch: 0;
+        }
+        // Add friend, as officially: their username and tag.
+        if !root.requests-only: VerticalLayout {
+            alignment: start;
+            vertical-stretch: 0;
+            padding-top: Theme.gap-md;
+            padding-left: Theme.gap-lg;
+            padding-right: Theme.gap-lg;
+            padding-bottom: Theme.gap-md;
+            spacing: Theme.space-between;
+            Text { text: "Add a friend — choose a network and account"; color: Theme.on-surface-variant; }
+            // The accounts, scrolling sideways if they don't fit (no scrollbar).
+            accounts-strip := Flickable {
+                height: 40px;
+                content-width: max(self.width, account-row.preferred-width);
+                account-row := HorizontalLayout {
+                    height: 40px;
+                    spacing: Theme.space-compact;
+                    alignment: start;
+                    // Networks without friend requests show, disabled: their
+                    // people are who you have direct chats with.
+                    for a in root.accounts: Button {
+                        text: a.network + " · " + a.name + (a.can-befriend ? "" : " (no friend requests)");
+                        kind: root.account-key == a.key ? "filled" : "tonal";
+                        enabled: a.can-befriend;
+                        clicked => { root.account-key = a.key; }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.gap-md;
+                TextField {
+                    horizontal-stretch: 1;
+                    placeholder: "Username or account ID";
+                    edited(t) => { root.name = t; }
+                    accepted => { if root.account-key != "" { root.send-request(root.account-key, root.name); } }
+                }
+                Button {
+                    text: "Send request";
+                    kind: "tonal";
+                    enabled: root.account-key != "" && root.name != "";
+                    clicked => { root.send-request(root.account-key, root.name); }
+                }
+            }
+            if root.request-status != "": Text {
+                text: root.request-status;
+                font-size: Theme.text-small;
+                wrap: word-wrap;
+                color: root.request-failed ? Theme.error : Theme.on-surface-variant;
+            }
+        }
+        // Friends and pending requests share one scroll range, so a long
+        // pending list cannot squeeze the friends out of the page.
+        if !root.form-only: list := ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                width: list.visible-width;
+                alignment: start;
+                if !root.management-only && root.people.length == 0: Text {
+                    text: "No friends here yet.";
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    height: 56px;
+                    color: Theme.outline;
+                }
+                for person[i] in root.people: Rectangle {
+                    visible: !root.management-only;
+                    height: 56px;
+                    background: touch.has-hover ? Theme.surface-low : transparent;
+                    touch := TouchArea { }
+                    HorizontalLayout {
+                        padding-left: Theme.gap-lg;
+                        padding-right: Theme.gap-lg;
+                        spacing: Theme.gap-lg;
+                        Rectangle {
+                            width: Theme.avatar;
+                            Avatar {
+                                source: person.avatar;
+                                has-image: person.has-avatar;
+                                initials: person.initials;
+                            }
+                            Rectangle {
+                                x: parent.width - 12px;
+                                y: (parent.height + Theme.avatar) / 2 - 12px;
+                                width: 12px;
+                                height: 12px;
+                                border-radius: self.width / 2;
+                                border-width: 2px;
+                                border-color: Theme.surface-lowest;
+                                background: person.online ? Theme.online : Theme.outline;
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            EmojiText {
+                                text: person.name;
+                                runs: person.name-runs;
+                                color: Theme.on-surface;
+                            }
+                            // Where they're a friend, and their status on each.
+                            if person.networks.length > 0: NetList { items: person.networks; }
+                        }
+                        Button {
+                            y: (parent.height - self.height) / 2;
+                            text: "Message";
+                            kind: "tonal";
+                            clicked => { root.open-direct(i); }
+                        }
+                    }
+                }
+                if root.requests.length > 0: Rectangle {
+                    height: 28px;
+                    Text {
+                        x: Theme.gap-lg;
+                        text: "Pending — " + root.requests.length;
+                        vertical-alignment: center;
+                        font-size: Theme.text-small;
+                        font-weight: 600;
+                        color: Theme.outline;
+                    }
+                }
+                for r[i] in root.requests: RequestRow {
+                    item: r;
+                    accept => { root.accept-request(i); }
+                    decline => { root.decline-request(i); }
+                }
+            }
+        }
+    }
+}

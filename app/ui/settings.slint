@@ -1,0 +1,668 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { AutoDeletePage, AdState } from "autodelete.slint";
+import { PrivacyPage, SessionsPage } from "account-pages.slint";
+import { ProfileSettings } from "profile-settings.slint";
+import { BrandBanner } from "brand-banner.slint";
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { AccountItem, ProblemItem } from "types.slint";
+import { Avatar, IconButton, Button, Toggle, Select, TextField, SectionHeading as Heading, SettingsRow as Row } from "widgets.slint";
+
+export component Section inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    // A destructive entry (Delete Server), in the error colour.
+    in property <bool> danger;
+    callback clicked();
+    // The official SidebarButton: 32 px, 8 px corners, 15 px text.
+    height: Theme.row-compact;
+    border-radius: Theme.radius-sm;
+    background: selected ? Theme.primary-container : touch.has-hover ? Theme.surface-highest : transparent;
+    Text {
+        x: 8px;
+        text: label;
+        font-size: Theme.text-navigation;
+        color: selected ? Theme.on-primary-container : danger ? Theme.error : Theme.on-surface;
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// Godwit's settings: accounts, notifications, voice, appearance, about.
+export component Settings inherits Rectangle {
+    // 1 Notifications, 2 Voice, 3 Appearance, 4 About, 5 Problems,
+    // 7 Message cache, 10 an account's page (`account-index`).
+    in-out property <int> section: 1;
+    in-out property <int> account-index: -1;
+    // The account page's tab: 0 Profile, 1 Account.
+    in-out property <int> account-tab: 0;
+    // The open account's profile can be edited here (its Profile tab shows).
+    in property <bool> account-profile;
+    // A Stoat account: its Auto-delete tab.
+    in property <bool> account-autodelete;
+    callback open-autodelete();
+    // A Discord account: its Privacy and Sessions tabs.
+    in property <bool> account-discord;
+    callback open-privacy();
+    callback open-sessions();
+    callback open-account(int);
+    in property <[AccountItem]> accounts;
+    in property <[string]> edit-profile-accounts;
+    in-out property <int> edit-profile-index;
+    in property <bool> edit-profile-loaded;
+    in property <bool> edit-profile-busy;
+    in property <bool> edit-profile-failed;
+    in property <string> edit-profile-status;
+    in-out property <string> edit-profile-name;
+    in-out property <string> edit-profile-pronouns;
+    in-out property <string> edit-profile-bio;
+    in property <image> edit-profile-avatar;
+    in property <bool> edit-profile-has-avatar;
+    in property <string> edit-profile-avatar-label;
+    in property <image> edit-profile-banner;
+    in property <bool> edit-profile-has-banner;
+    in property <bool> edit-profile-banner-allowed: true;
+    in property <string> edit-profile-banner-label;
+    callback select-profile-account(int);
+    callback reload-own-profile();
+    callback reset-own-profile();
+    callback save-own-profile();
+    callback own-profile-edited();
+    callback pick-profile-image(bool);
+    callback remove-profile-image(bool);
+
+    in-out property <bool> notifications;
+    in-out property <bool> sounds;
+    in-out property <bool> muzzle;
+    // Muzzle mode's times: rows of `muzzle-pauses` and `muzzle-maxes`.
+    in property <[string]> muzzle-pauses;
+    in-out property <int> muzzle-pause-index;
+    in property <[string]> muzzle-maxes;
+    in-out property <int> muzzle-max-index;
+    in-out property <bool> dnd;
+    callback set-alert-mode(int, int);
+    callback set-offline(int, bool);
+    in property <[string]> inputs;
+    in property <[string]> outputs;
+    in-out property <int> input-index;
+    in-out property <int> output-index;
+    in property <[string]> cameras;
+    in-out property <int> camera-index;
+    in-out property <int> screen-quality-index;
+    in-out property <bool> screen-quality-ask;
+    in-out property <int> noise-index;
+    // When the next start offers to rejoin the call Godwit stopped in.
+    in property <[string]> rejoin-offers;
+    in-out property <int> rejoin-offer-index;
+    // The new-message sound, from `tones`.
+    in property <[string]> tones;
+    in-out property <int> tone-index;
+    in-out property <bool> echo-cancellation;
+    in-out property <bool> auto-gain;
+    in-out property <bool> dark;
+    // Appearance: the accent swatch picked (theme::ACCENTS' order) and the colour style.
+    in-out property <int> accent-index;
+    in-out property <int> style-index;
+    // Settings › Appearance › Emoji: the packs (Stoat's) and the one used.
+    in property <[string]> emoji-packs;
+    in-out property <int> emoji-pack-index;
+    // The interface scale: rows of `scales`.
+    in property <[string]> scales;
+    in-out property <int> scale-index;
+    in property <string> memory;
+    // The encrypted message cache's size on disk, and whether it can be cleared.
+    in property <string> cache-size;
+    in property <bool> cache-clearable;
+    callback clear-cache();
+    in property <string> version;
+    // Adding Godwit to the system's apps (install.rs).
+    in property <bool> install-supported;
+    in property <bool> app-installed;
+    in property <string> install-status;
+    callback install-app();
+    callback uninstall-app();
+    // Settings → Problems: errors, newest first, instead of pop-ups.
+    in property <[ProblemItem]> problems;
+    in property <int> problems-unseen;
+    in property <bool> has-problem-log;
+    callback problems-opened();
+    callback copy-problems();
+    callback open-problem-log();
+    callback clear-problems();
+    callback close();
+    callback add-account();
+    callback log-out(int);
+    // The account in row int, with the recovery key typed.
+    callback unlock(int, string);
+    callback start-verify(int);
+    callback answer-verify(bool);
+    callback accept-verify();
+    callback close-verify();
+    callback changed();
+    callback list-devices();
+    // The microphone test: running, and its level (0..1).
+    in property <bool> mic-testing;
+    in property <float> mic-level;
+    callback mic-test(bool);
+    callback reset-panels();
+
+    background: Theme.surface-lowest;
+    // Settings covers the window, but a Rectangle doesn't stop the pointer:
+    // without this, clicks, hovers and scrolls reached the views behind it.
+    TouchArea {
+        scroll-event(e) => { accept }
+    }
+    // Escape anywhere in Settings (fields included) closes it, as officially.
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                root.close();
+                return accept;
+            }
+            reject
+        }
+    HorizontalLayout {
+        Rectangle {
+            width: 220px;
+            background: Theme.surface-low;
+            VerticalLayout {
+                padding: Theme.space-4;
+                spacing: Theme.space-1;
+                alignment: start;
+                Text { text: "Settings"; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; }
+                Text { text: "General"; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; vertical-alignment: bottom; }
+                Section { label: "Notifications"; selected: root.section == 1; clicked => { root.section = 1; } }
+                Section {
+                    label: "Voice";
+                    selected: root.section == 2;
+                    clicked => {
+                        root.section = 2;
+                        root.list-devices();
+                    }
+                }
+                Section { label: "Appearance"; selected: root.section == 3; clicked => { root.section = 3; } }
+                // One heading per network, its accounts under it.
+                for a[i] in root.accounts: VerticalLayout {
+                    spacing: Theme.space-1;
+                    if i == 0 || root.accounts[i - 1].network != a.network: Text {
+                        text: a.network;
+                        font-size: Theme.text-small;
+                        font-weight: 600;
+                        color: Theme.outline;
+                        height: 36px;
+                        vertical-alignment: bottom;
+                    }
+                    Section {
+                        label: a.name;
+                        selected: root.section == 10 && root.account-index == i;
+                        clicked => { root.open-account(i); }
+                    }
+                }
+                Section { label: "+ Add an account"; clicked => { root.add-account(); } }
+                Text { text: "App"; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 36px; vertical-alignment: bottom; }
+                Section { label: "Message cache"; selected: root.section == 7; clicked => { root.section = 7; } }
+                Section {
+                    label: root.problems-unseen > 0 ? "Problems (" + root.problems-unseen + ")" : "Problems";
+                    selected: root.section == 5;
+                    clicked => {
+                        root.section = 5;
+                        root.problems-opened();
+                    }
+                }
+                Section { label: "About"; selected: root.section == 4; clicked => { root.section = 4; } }
+            }
+        }
+        page := ScrollView {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                width: min(page.visible-width, 680px);
+                padding: Theme.space-page;
+                spacing: Theme.space-5;
+                alignment: start;
+                if root.section == 10 && root.account-index >= 0 && root.account-index < root.accounts.length: HorizontalLayout {
+                    height: 56px;
+                    spacing: Theme.space-4;
+                    Avatar {
+                        size: 56px;
+                        source: root.accounts[root.account-index].avatar;
+                        has-image: root.accounts[root.account-index].has-avatar;
+                        initials: root.accounts[root.account-index].initials;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text { text: root.accounts[root.account-index].name; font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; }
+                        Text {
+                            text: root.accounts[root.account-index].network + " · " + root.accounts[root.account-index].username;
+                            font-size: Theme.text-label;
+                            color: Theme.outline;
+                        }
+                    }
+                }
+                if root.section == 10 && (root.account-profile || root.account-autodelete || root.account-discord): HorizontalLayout {
+                    alignment: start;
+                    spacing: Theme.space-2;
+                    if root.account-profile: Button { text: "Profile"; kind: root.account-tab == 0 ? "tonal" : "text"; clicked => { root.account-tab = 0; } }
+                    Button { text: "Account"; kind: root.account-tab == 1 ? "tonal" : "text"; clicked => { root.account-tab = 1; } }
+                    if root.account-discord: Button {
+                        text: "Privacy";
+                        kind: root.account-tab == 3 ? "tonal" : "text";
+                        clicked => {
+                            root.account-tab = 3;
+                            root.open-privacy();
+                        }
+                    }
+                    if root.account-discord: Button {
+                        text: "Sessions";
+                        kind: root.account-tab == 4 ? "tonal" : "text";
+                        clicked => {
+                            root.account-tab = 4;
+                            root.open-sessions();
+                        }
+                    }
+                    if root.account-autodelete: Button {
+                        text: "Chat retention";
+                        kind: root.account-tab == 2 ? "tonal" : "text";
+                        clicked => {
+                            root.account-tab = 2;
+                            AdState.step = 0;
+                            root.open-autodelete();
+                        }
+                    }
+                }
+                if root.section == 10 && root.account-autodelete && root.account-tab == 2: AutoDeletePage { }
+                if root.section == 10 && root.account-discord && root.account-tab == 3: PrivacyPage { }
+                if root.section == 10 && root.account-discord && root.account-tab == 4: SessionsPage { }
+                if root.section == 10 && root.account-profile && root.account-tab == 0: ProfileSettings {
+                    accounts: root.edit-profile-accounts;
+                    account-index <=> root.edit-profile-index;
+                    loaded: root.edit-profile-loaded;
+                    busy: root.edit-profile-busy;
+                    failed: root.edit-profile-failed;
+                    status: root.edit-profile-status;
+                    display-name <=> root.edit-profile-name;
+                    pronouns <=> root.edit-profile-pronouns;
+                    bio <=> root.edit-profile-bio;
+                    avatar: root.edit-profile-avatar;
+                    has-avatar: root.edit-profile-has-avatar;
+                    avatar-label: root.edit-profile-avatar-label;
+                    banner: root.edit-profile-banner;
+                    has-banner: root.edit-profile-has-banner;
+                    banner-allowed: root.edit-profile-banner-allowed;
+                    banner-label: root.edit-profile-banner-label;
+                    selected-account(i) => { root.select-profile-account(i); }
+                    save => { root.save-own-profile(); }
+                    reset => { root.reset-own-profile(); }
+                    reload => { root.reload-own-profile(); }
+                    changed => { root.own-profile-edited(); }
+                    pick-image(avatar) => { root.pick-profile-image(avatar); }
+                    remove-image(avatar) => { root.remove-profile-image(avatar); }
+                }
+                if root.section == 10 && (root.account-tab == 1 || (!root.account-profile && root.account-tab < 2)): VerticalLayout {
+                    spacing: 0px;
+                    for a[i] in root.accounts: VerticalLayout {
+                    spacing: Theme.space-4;
+                    if i == root.account-index: Rectangle {
+                        border-radius: Theme.radius-md;
+                        background: Theme.surface-high;
+                        VerticalLayout {
+                            padding: Theme.space-4;
+                            spacing: Theme.space-4;
+                            // The page's header already names it: here, what can be done.
+                            Row {
+                                label: "Sign-in";
+                                detail: a.detail != "" ? a.detail : "Signed in on this device.";
+                                Button { y: (parent.height - self.height) / 2; text: "Log out"; kind: "text"; danger: true; clicked => { root.log-out(i); } }
+                            }
+                            Row {
+                                label: "Alerts";
+                                detail: a.offline ? "Offline: signed in, but nothing comes through until it's back online."
+                                    : a.alert-options.length > 2 && a.alert-index == 1 ? "Quiet while the " + a.network + " app is running on this computer, so nothing alerts twice."
+                                    : "";
+                                Select {
+                                    width: 220px;
+                                    model: a.alert-options;
+                                    current-index: a.alert-index;
+                                    selected(index) => { root.set-alert-mode(i, index); }
+                                }
+                            }
+                            if a.can-offline: Row {
+                                label: "Online";
+                                detail: "Take it offline to stay signed in without anything coming through.";
+                                Toggle {
+                                    y: (parent.height - self.height) / 2;
+                                    checked: !a.offline;
+                                    toggled => { root.set-offline(i, !self.checked); }
+                                }
+                            }
+                            // Calm, and only while it matters: what's wrong,
+                            // why, and the one thing that fixes it here.
+                            if a.verify-step > 0: VerticalLayout {
+                                spacing: Theme.space-4;
+                                Text {
+                                    text: a.verify-step == 1 ? "Accept the request on your other device (look for a verification request there)."
+                                        : a.verify-step == 2 ? "Check that your other device shows these emoji, in this order:"
+                                        : a.verify-step == 3 ? "Waiting for your other device to confirm…"
+                                        : a.verify-step == 4 ? "This device is verified."
+                                        : a.verify-step == 6 ? "Your other device asks to verify this one. Accept if you just started that there."
+                                        : a.verify-text;
+                                    wrap: word-wrap;
+                                    font-size: Theme.text-label;
+                                    color: a.verify-step == 5 ? Theme.error : Theme.on-surface;
+                                }
+                                if a.verify-step == 2: HorizontalLayout {
+                                    alignment: center;
+                                    spacing: Theme.space-3;
+                                    for e in a.verify-emoji: VerticalLayout {
+                                        width: 72px;
+                                        spacing: Theme.space-2;
+                                        Rectangle {
+                                            height: 40px;
+                                            if e.has-image: Image { width: 40px; height: 40px; source: e.image; }
+                                        }
+                                        Text { text: e.name; font-size: Theme.text-small; horizontal-alignment: center; color: Theme.on-surface-variant; }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    alignment: end;
+                                    spacing: Theme.space-3;
+                                    if a.verify-step == 2: Button { text: "They don't match"; kind: "text"; danger: true; clicked => { root.answer-verify(false); } }
+                                    if a.verify-step == 2: Button { text: "They match"; kind: "filled"; clicked => { root.answer-verify(true); } }
+                                    if a.verify-step == 1 || a.verify-step == 3: Button { text: "Cancel"; kind: "text"; clicked => { root.close-verify(); } }
+                                    if a.verify-step == 4 || a.verify-step == 5: Button { text: "Close"; kind: "tonal"; clicked => { root.close-verify(); } }
+                                    if a.verify-step == 6: Button { text: "Not now"; kind: "text"; clicked => { root.close-verify(); } }
+                                    if a.verify-step == 6: Button { text: "Accept"; kind: "filled"; clicked => { root.accept-verify(); } }
+                                }
+                            }
+                            if a.unverified && a.verify-step == 0: VerticalLayout {
+                                spacing: Theme.space-3;
+                                Text {
+                                    text: "Verify this device to read your older encrypted messages. Enter your recovery key: other apps show it when you set up key backup (in Element: Settings, Encryption).";
+                                    wrap: word-wrap;
+                                    font-size: Theme.text-label;
+                                    color: Theme.on-surface-variant;
+                                }
+                                HorizontalLayout {
+                                    spacing: Theme.space-3;
+                                    key := TextField {
+                                        horizontal-stretch: 1;
+                                        placeholder: "Recovery key";
+                                        password: true;
+                                        accepted => { root.unlock(i, self.text); self.text = ""; }
+                                    }
+                                    Button {
+                                        y: (parent.height - self.height) / 2;
+                                        text: "Verify";
+                                        kind: "tonal";
+                                        clicked => { root.unlock(i, key.text); key.text = ""; }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    alignment: start;
+                                    Text { text: "No recovery key at hand?"; vertical-alignment: center; font-size: Theme.text-label; color: Theme.on-surface-variant; }
+                                    Button { text: "Verify with another device"; kind: "text"; clicked => { root.start-verify(i); } }
+                                }
+                            }
+                        }
+                    }
+                    }
+                }
+                if root.section == 7: VerticalLayout {
+                    spacing: Theme.space-4;
+                    Heading { text: "Message cache"; }
+                    Row {
+                        label: "Cache";
+                        detail: "Recent rooms, messages and pictures, encrypted on this device so they show at once: " + root.cache-size;
+                        if root.cache-clearable: Button {
+                            y: (parent.height - self.height) / 2;
+                            text: "Clear";
+                            kind: "text";
+                            danger: true;
+                            clicked => { root.clear-cache(); }
+                        }
+                    }
+                }
+                if root.section == 1: VerticalLayout {
+                    spacing: Theme.space-4;
+                    Heading { text: "Notifications"; }
+                    Row {
+                        label: "Do not disturb";
+                        detail: "No notifications, sounds or ringing from any account. Messages and calls still arrive.";
+                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.dnd; toggled => { root.changed(); } }
+                    }
+                    Row {
+                        label: "Desktop notifications";
+                        detail: "For new messages and calls, following each network's mute and notification settings.";
+                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.notifications; toggled => { root.changed(); } }
+                    }
+                    Row {
+                        label: "Sounds";
+                        detail: "A sound for new messages, a ringtone for calls, and a tone when someone joins or leaves a call.";
+                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.sounds; toggled => { root.changed(); } }
+                    }
+                    Row {
+                        label: "Muzzle mode";
+                        detail: "When someone sends many messages in a row, only the first makes noise. The rest still arrive quietly, until they pause (or once the longest quiet stretch has passed).";
+                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.muzzle; toggled => { root.changed(); } }
+                    }
+                    if root.muzzle: Row {
+                        label: "Noisy again after a pause of";
+                        Select { width: 200px; y: (parent.height - self.height) / 2; model: root.muzzle-pauses; current-index <=> root.muzzle-pause-index; selected => { root.changed(); } }
+                    }
+                    if root.muzzle: Row {
+                        label: "Longest quiet stretch";
+                        detail: "Someone who never pauses is still heard once per this.";
+                        Select { width: 200px; y: (parent.height - self.height) / 2; model: root.muzzle-maxes; current-index <=> root.muzzle-max-index; selected => { root.changed(); } }
+                    }
+                    Row {
+                        label: "Message sound";
+                        detail: "Plays when you pick one.";
+                        Select { width: 200px; y: (parent.height - self.height) / 2; model: root.tones; current-index <=> root.tone-index; enabled: root.sounds; selected => { root.changed(); } }
+                    }
+                    if root.accounts.length > 0: Text {
+                        text: "Each account";
+                        font-size: Theme.text-navigation;
+                        font-weight: 600;
+                        color: Theme.on-surface;
+                    }
+                    for a[i] in root.accounts: Row {
+                        label: a.name + " · " + a.network;
+                        detail: a.offline ? "Offline: signed in, but nothing comes through until it's back online."
+                            : a.alert-options.length > 2 && a.alert-index == 1 ? "Quiet while the " + a.network + " app is running on this computer, so nothing alerts twice."
+                            : "";
+                        Select {
+                            width: 220px;
+                            model: a.alert-options;
+                            current-index: a.alert-index;
+                            selected(index) => { root.set-alert-mode(i, index); }
+                        }
+                        if a.can-offline: HorizontalLayout {
+                            spacing: Theme.space-3;
+                            alignment: end;
+                            Text { vertical-alignment: center; text: "Online"; color: Theme.outline; }
+                            Toggle {
+                                y: (parent.height - self.height) / 2;
+                                checked: !a.offline;
+                                toggled => { root.set-offline(i, !self.checked); }
+                            }
+                        }
+                    }
+                }
+                if root.section == 2: VerticalLayout {
+                    spacing: Theme.space-4;
+                    Heading { text: "Voice"; }
+                    Text { text: "Microphone"; color: Theme.on-surface; }
+                    Select { model: root.inputs; current-index <=> root.input-index; selected => { root.changed(); } }
+                    Text { text: "Speakers"; color: Theme.on-surface; }
+                    Select { model: root.outputs; current-index <=> root.output-index; selected => { root.changed(); } }
+                    // A test call on your own: hear yourself through everything a call uses.
+                    Row {
+                        label: "Test call";
+                        detail: root.mic-testing
+                            ? "Talk: you'll hear yourself half a second later, as others would hear you (noise suppression and echo cancellation included)."
+                            : "Checks your microphone, speakers and voice processing without calling anyone.";
+                        Button {
+                            y: (parent.height - self.height) / 2;
+                            text: root.mic-testing ? "Stop" : "Start test";
+                            kind: root.mic-testing ? "tonal" : "filled";
+                            clicked => { root.mic-test(!root.mic-testing); }
+                        }
+                    }
+                    if root.mic-testing: Rectangle {
+                        height: 10px;
+                        border-radius: Theme.radius-dot;
+                        background: Theme.surface-highest;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * root.mic-level;
+                            border-radius: Theme.radius-dot;
+                            background: root.mic-level > 0.85 ? Theme.error : Theme.primary;
+                        }
+                    }
+                    Text { text: "Camera"; color: Theme.on-surface; }
+                    Select { model: root.cameras; current-index <=> root.camera-index; selected => { root.changed(); } }
+                    Text { text: "Screen share quality"; color: Theme.on-surface; }
+                    Select { model: ["720p 30FPS", "1080p 30FPS", "Source 5FPS"]; current-index <=> root.screen-quality-index; selected => { root.changed(); } }
+                    Text { text: "The available qualities depend on the call's video limits."; color: Theme.outline; font-size: Theme.text-small; wrap: word-wrap; }
+                    Row {
+                        label: "Always ask for screen share quality";
+                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.screen-quality-ask; toggled => { root.changed(); } }
+                    }
+                    Text { text: "Noise suppression (applies from the next call)"; color: Theme.on-surface; wrap: word-wrap; }
+                    Select { model: ["None", "Basic (WebRTC)", "Enhanced (RNNoise)"]; current-index <=> root.noise-index; selected => { root.changed(); } }
+                    Row {
+                        label: "Echo cancellation";
+                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.echo-cancellation; toggled => { root.changed(); } }
+                    }
+                    Row {
+                        label: "Automatic gain control";
+                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.auto-gain; toggled => { root.changed(); } }
+                    }
+                    Text { text: "Offer to rejoin a call when Godwit starts"; color: Theme.on-surface; wrap: word-wrap; }
+                    Select { model: root.rejoin-offers; current-index <=> root.rejoin-offer-index; selected => { root.changed(); } }
+                    Text { text: "For the call you were in when Godwit closed."; color: Theme.outline; font-size: Theme.text-small; wrap: word-wrap; }
+                }
+                if root.section == 3: VerticalLayout {
+                    spacing: Theme.space-4;
+                    Heading { text: "Appearance"; }
+                    Row {
+                        label: "Dark theme";
+                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.dark; toggled => { root.changed(); } }
+                    }
+                    Row {
+                        label: "Accent colour";
+                        detail: "Godwit's colours are all built from it.";
+                        HorizontalLayout {
+                            spacing: Theme.space-3;
+                            alignment: end;
+                            for c[i] in Theme.accent-swatches: Rectangle {
+                                width: 28px;
+                                height: 28px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: self.width / 2;
+                                background: c;
+                                border-width: root.accent-index == i ? 3px : 0px;
+                                border-color: Theme.on-surface;
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.accent-index = i; root.changed(); }
+                                }
+                            }
+                        }
+                    }
+                    Row {
+                        label: "Colour style";
+                        detail: root.style-index == 1 ? "Stronger colours throughout." : root.style-index == 2 ? "Nearly grey, the accent only hinted at." : "Soft colours from the accent, as Stoat's client.";
+                        Select {
+                            width: 160px;
+                            y: (parent.height - self.height) / 2;
+                            model: ["Calm", "Vivid", "Muted"];
+                            current-index <=> root.style-index;
+                            selected => { root.changed(); }
+                        }
+                    }
+                    Row {
+                        label: "Emoji";
+                        detail: "How emoji look everywhere in Godwit (the packs Stoat offers).";
+                        Select {
+                            width: 160px;
+                            y: (parent.height - self.height) / 2;
+                            model: root.emoji-packs;
+                            current-index <=> root.emoji-pack-index;
+                            selected => { root.changed(); }
+                        }
+                    }
+                    Row {
+                        label: "Interface size";
+                        detail: "Everything larger or smaller, on top of your display's own scaling.";
+                        Select {
+                            width: 160px;
+                            y: (parent.height - self.height) / 2;
+                            model: root.scales;
+                            current-index <=> root.scale-index;
+                            selected => { root.changed(); }
+                        }
+                    }
+                    Row {
+                        label: "Panel sizes";
+                        detail: "Drag the edge of the conversation list or the member list to resize it; double-click the edge for its default size.";
+                        Button { y: (parent.height - self.height) / 2; text: "Reset"; kind: "tonal"; clicked => { root.reset-panels(); } }
+                    }
+                }
+                if root.section == 5: VerticalLayout {
+                    spacing: Theme.space-4;
+                    Heading { text: "Problems"; }
+                    Text {
+                        text: root.problems.length == 0
+                            ? "Nothing went wrong."
+                            : "What the networks and Godwit ran into, newest first. Copy them to share when reporting a bug: they hold no passwords or tokens.";
+                        wrap: word-wrap;
+                        color: Theme.on-surface-variant;
+                    }
+                    if root.problems.length > 0: HorizontalLayout {
+                        alignment: start;
+                        spacing: Theme.space-3;
+                        Button { text: "Copy all"; kind: "tonal"; clicked => { root.copy-problems(); } }
+                        if root.has-problem-log: Button { text: "Open log file"; kind: "text"; clicked => { root.open-problem-log(); } }
+                        Button { text: "Clear"; kind: "text"; danger: true; clicked => { root.clear-problems(); } }
+                    }
+                    for p in root.problems: HorizontalLayout {
+                        spacing: Theme.space-4;
+                        Text { text: p.when; font-size: Theme.text-small; color: Theme.outline; vertical-alignment: top; }
+                        Text { text: p.text; color: Theme.on-surface; wrap: word-wrap; horizontal-stretch: 1; }
+                    }
+                }
+                if root.section == 4: VerticalLayout {
+                    spacing: Theme.space-4;
+                    BrandBanner { }
+                    Heading { text: "About"; }
+                    Text { text: "Godwit " + root.version; color: Theme.on-surface; }
+                    Text { text: "Memory in use: " + root.memory; color: Theme.on-surface-variant; }
+                    if root.install-supported: HorizontalLayout {
+                        alignment: start;
+                        spacing: Theme.space-3;
+                        Button {
+                            text: root.app-installed ? "Remove from apps" : "Add to apps";
+                            kind: "tonal";
+                            clicked => { if root.app-installed { root.uninstall-app(); } else { root.install-app(); } }
+                        }
+                        Text { text: root.install-status; color: Theme.on-surface-variant; vertical-alignment: center; wrap: word-wrap; }
+                    }
+                    Text {
+                        text: "A fast, light chat client for many networks at once. Free software under the AGPL-3.0.";
+                        wrap: word-wrap;
+                        color: Theme.on-surface-variant;
+                    }
+                }
+            }
+        }
+    }
+    }
+    IconButton {
+        x: parent.width - self.width - 16px;
+        y: 16px;
+        glyph: Icons.close;
+        clicked => { root.close(); }
+    }
+}

@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { PresenceChoice } from "types.slint";
+import { ProfileCard } from "profile.slint";
+
+// Our profile popup from the rail: presence, status and account actions.
+export component ProfilePopup inherits Rectangle {
+    in property <image> account-avatar;
+    in property <bool> account-has-avatar;
+    in property <bool> account-has-presence;
+    in property <bool> account-has-status-text;
+    in property <string> account-initials;
+    in property <string> account-name;
+    in property <string> account-network;
+    in property <color> account-presence;
+    in property <[PresenceChoice]> account-presence-choices;
+    in property <int> account-presence-index;
+    in property <string> account-status;
+    in property <string> account-username;
+    in-out property <int> confirm-log-out;
+    in-out property <bool> profile-open;
+    callback set-presence(int);
+    callback set-status-text(string);
+    in-out property <bool> settings-open;
+    callback settings-opened();
+
+    TouchArea {
+        clicked => { root.profile-open = false; }
+        scroll-event(e) => { accept }
+    }
+    ProfileCard {
+        x: Theme.rail-width + 8px;
+        y: 60px;
+        name: root.account-name;
+        username: root.account-username;
+        network: root.account-network;
+        avatar: root.account-avatar;
+        has-avatar: root.account-has-avatar;
+        initials: root.account-initials;
+        has-presence: root.account-has-presence;
+        presence: root.account-presence;
+        presence-index: root.account-presence-index;
+        choices: root.account-presence-choices;
+        has-status-text: root.account-has-status-text;
+        status: root.account-status;
+        set-presence(i) => { root.set-presence(i); }
+        set-status(t) => { root.set-status-text(t); }
+        open-settings => {
+            root.profile-open = false;
+            root.settings-open = true;
+            root.settings-opened();
+        }
+        log-out => {
+            root.profile-open = false;
+            root.confirm-log-out = -1;
+        }
+    }
+}

@@ -1,0 +1,175 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+//! A server's settings: overview, invites, bans, roles, members and deleting it.
+
+use super::*;
+
+impl Shell {
+    pub fn open_server_settings(&mut self, ui: &AppWindow) {
+        if let Some(server) = self.app.state().selected_server.clone() {
+            self.act(ui, Action::OpenServerSettings(server));
+        }
+    }
+    pub fn reload_server_overview(&mut self, ui: &AppWindow) {
+        if let Some(s) = &self.app.state().server_settings
+            && !s.busy
+        {
+            self.act(ui, Action::OpenServerSettings(s.server.clone()));
+        }
+    }
+    pub fn save_server_overview(&mut self, ui: &AppWindow) {
+        if let Some(action) = self.server_editor.save(ui) {
+            self.act(ui, action);
+        }
+    }
+    pub fn reset_server_overview(&mut self, ui: &AppWindow) {
+        self.server_editor.reset(ui, self.app.state());
+        self.show_server_settings(ui);
+    }
+    pub fn server_overview_edited(&mut self, ui: &AppWindow) {
+        self.server_editor.edited();
+        self.show_server_settings(ui);
+    }
+    pub fn remove_server_image(&mut self, ui: &AppWindow, icon: bool) {
+        self.server_editor.remove(ui, icon);
+        self.show_server_settings(ui);
+    }
+    pub fn server_edit_token(&self) -> Option<(ServerId, u64)> {
+        self.server_editor.token()
+    }
+
+    pub fn server_settings_page(&mut self, ui: &AppWindow, page: i32) {
+        self.act(
+            ui,
+            Action::ServerSettingsPage(crate::server_settings::page_from_index(page)),
+        );
+    }
+
+    /// An admin change on the open settings' server.
+    pub(super) fn server_admin(&mut self, ui: &AppWindow, op: godwit_core::server_settings::ServerAdmin) {
+        if let Some(server) = self.app.state().server_settings.as_ref().map(|s| s.server.clone()) {
+            self.act(ui, Action::ServerAdmin { server, op });
+        }
+    }
+
+    /// The invite or ban in row `row` of the open settings' list.
+    pub(super) fn admin_row<T: Clone>(
+        &self,
+        row: i32,
+        list: impl Fn(&godwit_core::server_settings::ServerSettingsState) -> Option<&Vec<T>>,
+    ) -> Option<T> {
+        let s = self.app.state().server_settings.as_ref()?;
+        list(s)?.get(usize::try_from(row).ok()?).cloned()
+    }
+
+    pub fn delete_server_invite(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(invite) = self.admin_row(row, |s| s.invites.as_ref()) {
+            self.server_admin(ui, godwit_core::server_settings::ServerAdmin::DeleteInvite(invite.code));
+        }
+    }
+
+    pub fn copy_server_invite(&mut self, row: i32) {
+        if let Some(invite) = self.admin_row(row, |s| s.invites.as_ref()) {
+            copy_to_clipboard(invite.link.to_string());
+        }
+    }
+
+    pub fn unban_server_user(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(ban) = self.admin_row(row, |s| s.bans.as_ref()) {
+            self.server_admin(ui, godwit_core::server_settings::ServerAdmin::Unban(ban.user));
+        }
+    }
+
+    pub fn select_server_role(&mut self, ui: &AppWindow, row: i32) {
+        self.server_editor.select_role(ui, self.app.state(), row);
+        self.show_server_settings(ui);
+    }
+
+    pub fn create_server_role(&mut self, ui: &AppWindow, name: &str) {
+        if !name.trim().is_empty() {
+            self.server_admin(
+                ui,
+                godwit_core::server_settings::ServerAdmin::CreateRole(name.trim().into()),
+            );
+        }
+    }
+
+    pub fn server_role_edited(&mut self, ui: &AppWindow) {
+        self.server_editor.role_edited();
+        self.show_server_settings(ui);
+    }
+
+    pub fn toggle_server_permission(&mut self, ui: &AppWindow, row: i32) {
+        self.server_editor.toggle_permission(self.app.state(), row);
+        self.show_server_settings(ui);
+    }
+
+    pub fn save_server_role(&mut self, ui: &AppWindow) {
+        match self.server_editor.save_role(ui, self.app.state()) {
+            Ok(Some(action)) => self.act(ui, action),
+            Ok(None) => {}
+            Err(problem) => {
+                ui.set_server_edit_notice(problem.into());
+                ui.set_server_edit_notice_failed(true);
+            }
+        }
+    }
+
+    pub fn delete_server_role(&mut self, ui: &AppWindow) {
+        if let Some(action) = self.server_editor.delete_role(self.app.state()) {
+            self.act(ui, action);
+        }
+    }
+
+    /// The profile card's Kick or Ban, confirmed: the change arrives as the
+    /// member leaving; a refusal shows in Problems.
+    pub fn moderate_member(&mut self, ui: &AppWindow, ban: bool, reason: &str) {
+        use godwit_core::server_settings::ServerAdmin;
+        let Some((user, Some(profile))) = self.app.state().profile.clone() else {
+            return;
+        };
+        let Some(m) = profile.moderation else {
+            return;
+        };
+        let op = match ban {
+            true if m.ban => ServerAdmin::Ban {
+                user,
+                reason: reason.trim().into(),
+            },
+            false if m.kick => ServerAdmin::Kick(user),
+            _ => return,
+        };
+        self.act(ui, Action::ServerAdmin { server: m.server, op });
+        self.act(ui, Action::CloseProfile);
+    }
+
+    /// A server menu entry, for the selected server.
+    pub fn server_menu(&mut self, ui: &AppWindow, op: godwit_core::server_settings::ServerAdmin) {
+        if let Some(server) = self.app.state().selected_server.clone() {
+            self.act(ui, Action::ServerAdmin { server, op });
+        }
+    }
+
+    pub fn copy_invite_link(&mut self) {
+        if let Some((_, Some(link))) = &self.app.state().invite_link {
+            copy_to_clipboard(link.to_string());
+        }
+    }
+
+    pub fn delete_server(&mut self, ui: &AppWindow) {
+        self.server_admin(ui, godwit_core::server_settings::ServerAdmin::DeleteServer);
+    }
+    pub fn server_image_picked(
+        &mut self,
+        ui: &AppWindow,
+        token: &(ServerId, u64),
+        icon: bool,
+        result: Result<godwit_core::own_profile::ProfileImage, String>,
+    ) {
+        self.server_editor.picked(ui, token, icon, result);
+        self.show_server_settings(ui);
+    }
+    pub(super) fn show_server_settings(&mut self, ui: &AppWindow) {
+        self.server_editor.show(ui, self.app.state(), &mut self.images);
+    }
+}

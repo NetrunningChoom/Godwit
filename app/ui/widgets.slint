@@ -1,0 +1,645 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme, Icons, Icon } from "theme.slint";
+import { NetPresence, LabelRun } from "types.slint";
+
+// Shared settings cards, headings and label/detail rows. Their defaults
+// preserve the existing settings pages; pages only supply their content.
+export component SurfaceCard inherits Rectangle {
+    border-radius: Theme.radius-lg;
+    background: Theme.surface-high;
+    VerticalLayout {
+        padding: Theme.space-5;
+        spacing: Theme.space-3;
+        @children
+    }
+}
+
+// Search results and pins show the same author/time/snippet card; callers
+// supply the actions because their capabilities differ.
+export component MessageSummary inherits Rectangle {
+    in property <string> author;
+    in property <string> time;
+    in property <string> snippet;
+    in property <length> action-spacing: Theme.space-2;
+    border-radius: Theme.radius-md;
+    background: Theme.surface;
+    // Actions sit in the header row, beside the time: a row of their own
+    // left half of every card empty.
+    VerticalLayout {
+        padding: Theme.space-4;
+        padding-top: Theme.space-2;
+        spacing: Theme.space-1;
+        HorizontalLayout {
+            spacing: Theme.space-3;
+            Text { text: root.author; font-weight: 600; color: Theme.on-surface; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+            Text { text: root.time; font-size: Theme.text-small; color: Theme.outline; vertical-alignment: center; }
+            HorizontalLayout {
+                spacing: root.action-spacing;
+                @children
+            }
+        }
+        Text { text: root.snippet; wrap: word-wrap; max-height: 60px; overflow: elide; color: Theme.on-surface-variant; }
+    }
+}
+
+export component SectionHeading inherits Text {
+    font-size: Theme.text-large;
+    font-weight: 600;
+    color: Theme.on-surface;
+}
+
+export component SettingsRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> detail;
+    in property <color> detail-color: Theme.outline;
+    in property <int> label-weight: 400;
+    in property <bool> wrap-label;
+    in property <bool> show-empty-detail;
+    in property <length> label-spacing: 0px;
+    spacing: Theme.space-5;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: root.wrap-label ? stretch : center;
+        spacing: root.label-spacing;
+        Text { text: root.label; font-weight: root.label-weight; color: Theme.on-surface; wrap: root.wrap-label ? word-wrap : no-wrap; }
+        if root.show-empty-detail || root.detail != "": Text { text: root.detail; font-size: Theme.text-small; color: root.detail-color; wrap: word-wrap; }
+    }
+    @children
+}
+
+export component PageHeader inherits Rectangle {
+    in property <string> label;
+    in property <string> glyph;
+    in property <length> end-padding: Theme.gap-lg;
+    in property <float> label-stretch: 1;
+    height: Theme.row-header;
+    HorizontalLayout {
+        padding-left: Theme.gap-lg;
+        padding-right: root.end-padding;
+        spacing: Theme.gap-md;
+        Icon { text: root.glyph; color: Theme.on-surface-variant; width: Theme.icon-large; }
+        Text {
+            text: root.label;
+            vertical-alignment: center;
+            horizontal-stretch: root.label-stretch;
+            overflow: elide;
+            font-size: Theme.text-title;
+            font-weight: 600;
+            color: Theme.on-surface;
+        }
+        @children
+    }
+}
+
+// Contact accounts and the timeline's compact network choices share their
+// selection and hover treatment; the compact variant also shows presence.
+export component ChoiceChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> chosen;
+    in property <bool> removable;
+    in property <bool> compact;
+    in property <color> presence;
+    callback choose();
+    callback remove();
+    height: root.compact ? Theme.chip-compact-height : Theme.chip-height;
+    width: row.preferred-width;
+    border-radius: self.height / 2;
+    background: root.chosen ? Theme.secondary-container : touch.has-hover ? Theme.surface-highest : Theme.surface-high;
+    touch := TouchArea {
+        mouse-cursor: root.compact && root.chosen ? default : pointer;
+        clicked => { if !root.compact || !root.chosen { root.choose(); } }
+    }
+    row := HorizontalLayout {
+        padding-left: root.compact ? Theme.space-3 : Theme.space-4;
+        padding-right: root.compact ? Theme.space-between : root.removable ? Theme.space-2 : Theme.space-4;
+        spacing: Theme.space-2;
+        if root.compact: Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: Theme.space-3;
+            height: Theme.space-3;
+            border-radius: Theme.radius-xs;
+            background: root.presence == transparent ? Theme.outline-variant : root.presence;
+        }
+        Text {
+            text: root.label;
+            vertical-alignment: center;
+            font-size: root.compact ? Theme.text-small : Theme.text-label;
+            font-weight: root.chosen ? 600 : 400;
+            color: root.chosen ? Theme.on-secondary-container : root.compact ? Theme.on-surface-variant : Theme.on-surface;
+        }
+        if root.removable: Rectangle {
+            width: Theme.icon-medium;
+            border-radius: self.width / 2;
+            background: remove-touch.has-hover ? Theme.surface-lowest : transparent;
+            Icon { text: Icons.close; font-size: Theme.text-body; color: Theme.on-surface-variant; }
+            remove-touch := TouchArea { mouse-cursor: pointer; clicked => { root.remove(); } }
+        }
+    }
+}
+
+export component EmptyState inherits Text {
+    horizontal-alignment: center;
+    vertical-alignment: center;
+    vertical-stretch: 1;
+    color: Theme.outline;
+}
+
+// Someone's networks, each with a dot for their status there ("● Stoat
+// ● Steam"): where they're online at a glance.
+export component NetList inherits HorizontalLayout {
+    in property <[NetPresence]> items;
+    in property <color> text-colour: Theme.outline;
+    in property <length> size: Theme.text-small;
+    spacing: Theme.space-between;
+    alignment: start;
+    for n in root.items: HorizontalLayout {
+        spacing: Theme.space-2;
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 8px;
+            height: 8px;
+            border-radius: Theme.radius-xs;
+            background: n.colour == transparent ? Theme.outline-variant : n.colour;
+        }
+        Text { text: n.label; font-size: root.size; color: root.text-colour; overflow: elide; }
+    }
+}
+
+// A one-line label whose emoji are colour pictures, as in messages. Without
+// emoji (`runs` empty) it's a plain Text, so most labels cost nothing extra.
+export component EmojiText inherits HorizontalLayout {
+    in property <string> text;
+    in property <[LabelRun]> runs;
+    in property <color> color: Theme.on-surface;
+    in property <length> font-size: Theme.text-body;
+    in property <int> font-weight: 400;
+    spacing: 0;
+    alignment: start;
+    if root.runs.length == 0: Text {
+        text: root.text;
+        color: root.color;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        overflow: elide;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+    for r in root.runs: Rectangle {
+        min-width: 0;
+        preferred-width: r.is-emoji ? root.font-size * 1.25 : run-text.preferred-width;
+        horizontal-stretch: r.is-emoji ? 0 : 1;
+        if r.is-emoji: Image {
+            x: root.font-size * 0.05;
+            y: (parent.height - self.height) / 2;
+            width: root.font-size * 1.15;
+            height: root.font-size * 1.15;
+            source: r.emoji;
+        }
+        run-text := Text {
+            visible: !r.is-emoji;
+            width: parent.width;
+            text: r.is-emoji ? "" : r.text;
+            color: root.color;
+            font-size: root.font-size;
+            font-weight: root.font-weight;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// A round picture, or initials on a tinted circle while there's none.
+export component Avatar inherits Rectangle {
+    in property <image> source;
+    in property <bool> has-image;
+    in property <string> initials;
+    in property <length> size: Theme.avatar;
+    in property <length> radius: self.size / 2;
+    width: size;
+    height: size;
+    border-radius: radius;
+    clip: true;
+    background: has-image ? transparent : Theme.secondary-container;
+    if !has-image: Text {
+        text: initials;
+        color: Theme.on-secondary-container;
+        font-size: size * 0.4;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if has-image: Image {
+        source: source;
+        width: parent.width;
+        height: parent.height;
+        image-fit: cover;
+    }
+}
+
+// Godwit's mention badge: an 18 px error-red pill with a bold 11 px count;
+// with no count, the 8 px unread dot.
+export component Badge inherits Rectangle {
+    in property <int> count;
+    height: count > 0 ? 18px : 8px;
+    width: count > 0 ? max(18px, label.preferred-width + 8px) : 8px;
+    border-radius: self.height / 2;
+    background: count > 0 ? Theme.error : Theme.on-surface;
+    label := Text {
+        visible: count > 0;
+        text: count > 99 ? "99+" : "\{count}";
+        color: Theme.on-error;
+        font-size: Theme.text-caption;
+        font-weight: 700;
+    }
+}
+
+// A clear warning: an amber "Warning:" heading over the text, on a tinted
+// panel with an amber edge.
+export component Warning inherits Rectangle {
+    in property <string> text;
+    border-radius: Theme.radius-md;
+    background: Theme.warning-container;
+    border-width: 1px;
+    border-color: Theme.warning;
+    VerticalLayout {
+        padding: Theme.space-4;
+        spacing: Theme.space-2;
+        Text { text: "⚠ Warning:"; font-size: Theme.text-body; font-weight: 700; color: Theme.warning; }
+        Text { text: root.text; font-size: Theme.text-body; color: Theme.on-surface; wrap: word-wrap; }
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <string> glyph;
+    in property <string> tooltip;
+    in property <color> tint: Theme.on-surface-variant;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: Theme.control-icon;
+    height: Theme.control-icon;
+    border-radius: Theme.radius-sm;
+    background: touch.has-hover && enabled ? Theme.surface-highest : transparent;
+    Icon {
+        text: glyph;
+        color: enabled ? tint : Theme.outline;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    if root.tooltip != "": Tooltip {
+        Rectangle {
+            width: tip-label.preferred-width + 16px;
+            height: tip-label.preferred-height + 8px;
+            border-radius: Theme.radius-xs;
+            background: Theme.surface-highest;
+            tip-label := Text { text: root.tooltip; color: Theme.on-surface; font-size: Theme.text-small; }
+        }
+    }
+}
+
+// Buttons in Material 3's shapes, as Godwit and the official client:
+// 40 px tall, 20 px corners. "filled" is the main action, "tonal" a
+// secondary one, "text" a dialog action; `danger` turns the text red.
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <string> kind: "text";
+    in property <bool> danger;
+    in property <bool> enabled: true;
+    callback clicked;
+    property <color> fg: !root.enabled ? Theme.outline
+        : root.kind == "filled" ? Theme.on-primary
+        : root.kind == "tonal" ? Theme.on-secondary-container
+        : root.danger ? Theme.error : Theme.primary;
+    height: Theme.control-button;
+    min-width: label.preferred-width + 24px;
+    border-radius: self.height / 2;
+    background: root.kind == "filled" ? (root.enabled ? Theme.primary : Theme.surface-highest)
+        : root.kind == "tonal" ? Theme.secondary-container : transparent;
+    // The state layer: the label colour at 8% on hover, 12% pressed.
+    Rectangle {
+        border-radius: parent.border-radius;
+        background: root.fg;
+        opacity: !root.enabled ? 0 : touch.pressed ? 0.12 : touch.has-hover ? 0.08 : 0;
+    }
+    label := Text {
+        text: root.text;
+        color: root.fg;
+        font-weight: 600;
+        horizontal-alignment: center;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A text field: surface-highest, 12 px corners, a primary outline when focused.
+export component TextField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> password;
+    in property <bool> enabled: true;
+    // Takes the cursor when it appears.
+    in property <bool> autofocus;
+    callback edited(string);
+    callback accepted();
+    init => {
+        if root.autofocus {
+            input.focus();
+        }
+    }
+    height: Theme.control-field;
+    border-radius: Theme.radius-md;
+    background: Theme.surface-highest;
+    border-width: input.has-focus ? 2px : 0;
+    border-color: Theme.primary;
+    input := TextInput {
+        x: 16px;
+        width: parent.width - 32px;
+        text <=> root.text;
+        enabled: root.enabled;
+        input-type: root.password ? InputType.password : InputType.text;
+        color: Theme.on-surface;
+        vertical-alignment: center;
+        single-line: true;
+        edited => { root.edited(self.text); }
+        accepted => { root.accepted(); }
+    }
+    if root.text == "": Text {
+        x: 16px;
+        text: root.placeholder;
+        color: Theme.outline;
+    }
+}
+
+// A drag handle between panels: drag to resize (the parent clamps),
+// double-click for the default size. `delta` is how far it moved.
+// Drags a panel's edge. It works from where the drag began (the width then,
+// and the pointer in window coordinates), so the edge stays under the pointer:
+// adding each move's step drifted, as the handle itself moves with the edge.
+export component ResizeHandle inherits Rectangle {
+    // The width being resized, and whether dragging right widens it (1) or
+    // narrows it (-1).
+    in property <length> value;
+    in property <float> direction: 1;
+    // The width the pointer asks for now (unclamped).
+    callback dragged(length);
+    callback released();
+    callback reset();
+    property <length> start-value;
+    property <length> start-x;
+    width: 6px;
+    background: touch.has-hover || touch.pressed ? Theme.outline-variant : transparent;
+    touch := TouchArea {
+        mouse-cursor: col-resize;
+        moved => {
+            if self.pressed {
+                root.dragged(root.start-value + (self.absolute-position.x + self.mouse-x - root.start-x) * root.direction);
+            }
+        }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                root.start-value = root.value;
+                root.start-x = self.absolute-position.x + self.mouse-x;
+            }
+            if e.kind == PointerEventKind.up {
+                root.released();
+            }
+        }
+        double-clicked => { root.reset(); }
+    }
+}
+
+// A multi-line TextField: the same filled, rounded field, scrolling once
+// the text outgrows it. Set its height.
+export component TextArea inherits Rectangle {
+    in-out property <string> text;
+    in property <bool> enabled: true;
+    callback edited(string);
+    border-radius: Theme.radius-md;
+    background: Theme.surface-highest;
+    border-width: input.has-focus ? 2px : 0;
+    border-color: Theme.primary;
+    area := ScrollView {
+        x: 16px;
+        y: 12px;
+        width: parent.width - 32px;
+        height: parent.height - 24px;
+        // Its content is the text's height: without it, a long text (a bio)
+        // could neither scroll nor be reached.
+        content-width: self.visible-width;
+        content-height: input.height;
+        input := TextInput {
+            width: area.visible-width;
+            height: max(area.visible-height, self.preferred-height);
+            text <=> root.text;
+            enabled: root.enabled;
+            wrap: word-wrap;
+            color: Theme.on-surface;
+            edited => { root.edited(self.text); }
+            // Keep the cursor in view while typing past the bottom, as the composer.
+            cursor-position-changed(pos) => {
+                if pos.y + area.content-y < 0 {
+                    area.content-y = min(0px, -pos.y);
+                } else if pos.y + self.font-size * 1.5 + area.content-y > area.visible-height {
+                    area.content-y = min(0px, area.visible-height - pos.y - self.font-size * 1.5);
+                }
+            }
+        }
+    }
+}
+
+// Material 3's switch: a 52 × 32 track, the thumb grows when on.
+export component Toggle inherits Rectangle {
+    in-out property <bool> checked;
+    callback toggled();
+    width: 52px;
+    height: 32px;
+    border-radius: Theme.radius-lg;
+    background: root.checked ? Theme.primary : Theme.surface-highest;
+    border-width: root.checked ? 0 : 2px;
+    border-color: Theme.outline;
+    Rectangle {
+        property <length> size: root.checked ? 24px : 16px;
+        x: root.checked ? parent.width - self.size - 4px : 8px;
+        width: self.size;
+        height: self.size;
+        border-radius: self.size / 2;
+        background: root.checked ? Theme.on-primary : Theme.outline;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+}
+
+// A dropdown: the choice in a field, the options in a menu below it.
+export component Select inherits Rectangle {
+    in property <[string]> model;
+    in-out property <int> current-index;
+    in property <bool> enabled: true;
+    callback selected(int);
+    height: 48px;
+    border-radius: Theme.radius-md;
+    background: field.has-hover && root.enabled ? Theme.surface-highest : Theme.surface-high;
+    opacity: root.enabled ? 1.0 : 0.38;
+    HorizontalLayout {
+        padding-left: Theme.space-5;
+        padding-right: Theme.space-4;
+        Text {
+            text: root.current-index >= 0 && root.current-index < root.model.length ? root.model[root.current-index] : "";
+            color: Theme.on-surface;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Icon { text: Icons.expand; color: Theme.on-surface-variant; width: 24px; }
+    }
+    field := TouchArea { enabled: root.enabled; mouse-cursor: root.enabled ? pointer : default; clicked => { menu.show(); } }
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: root.width;
+        Rectangle {
+            border-radius: Theme.radius-xs;
+            background: Theme.surface;
+            drop-shadow-blur: 3px;
+            drop-shadow-color: Theme.shadow;
+            VerticalLayout {
+                padding-top: Theme.space-2;
+                padding-bottom: Theme.space-2;
+                for item[i] in root.model: Rectangle {
+                    height: 36px;
+                    background: option.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
+                    Text {
+                        x: 15px;
+                        text: item;
+                        color: Theme.on-surface;
+                        font-weight: i == root.current-index ? 600 : 400;
+                    }
+                    option := TouchArea {
+                        enabled: root.enabled;
+                        clicked => {
+                            root.current-index = i;
+                            root.selected(i);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The official Dialog: a 28 px-rounded surface-high card with 24 px padding
+// over a 60% black scrim. Put the body and a row of Buttons inside.
+export component Dialog inherits Rectangle {
+    in property <string> title;
+    in property <length> card-width: 380px;
+    // A close button beside the title, for dialogs that are views (not questions).
+    in property <bool> closable;
+    callback dismissed();
+    background: Theme.scrim;
+    // The backdrop takes the wheel too: it scrolled the timeline behind.
+    TouchArea {
+        clicked => { root.dismissed(); }
+        scroll-event(e) => { accept }
+    }
+    Rectangle {
+        width: min(root.card-width, root.width - 32px);
+        height: body.preferred-height;
+        border-radius: Theme.radius-dialog;
+        background: Theme.surface-high;
+        TouchArea { }
+        body := VerticalLayout {
+            padding: Theme.space-7;
+            spacing: Theme.space-5;
+            HorizontalLayout {
+                spacing: Theme.space-3;
+                Text { text: root.title; font-size: Theme.text-headline; color: Theme.on-surface; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
+                if root.closable: IconButton {
+                    glyph: Icons.close;
+                    tooltip: "Close";
+                    clicked => { root.dismissed(); }
+                }
+            }
+            @children
+        }
+    }
+}
+
+// Repeated title/message/actions confirmation. The optional detail and note
+// preserve the existing account notices without extra dialog variants.
+export component ConfirmDialog inherits Dialog {
+    in property <string> message;
+    in property <string> detail;
+    in property <string> note;
+    in property <string> cancel-text: "Cancel";
+    in property <string> confirm-text;
+    in property <string> confirm-kind: "text";
+    in property <bool> danger;
+    in property <bool> dismiss-confirms;
+    // Only the confirm button (a notice).
+    in property <bool> single;
+    callback cancelled();
+    callback confirmed();
+    dismissed => { if root.dismiss-confirms { root.confirmed(); } else { root.cancelled(); } }
+    Text { text: root.message; wrap: word-wrap; color: Theme.on-surface-variant; }
+    if root.detail != "": Text { text: root.detail; wrap: word-wrap; color: Theme.on-surface; }
+    if root.note != "": Text { text: root.note; font-size: Theme.text-small; wrap: word-wrap; color: Theme.outline; }
+    HorizontalLayout {
+        alignment: end;
+        spacing: Theme.gap-sm;
+        if !root.single: Button { text: root.cancel-text; clicked => { root.cancelled(); } }
+        Button { text: root.confirm-text; kind: root.confirm-kind; danger: root.danger; clicked => { root.confirmed(); } }
+    }
+}
+
+// The official ContextMenu: a surface-container panel, 4 px corners, a
+// 3 px shadow. Put MenuRows (and MenuDividers) inside.
+export component MenuPanel inherits Rectangle {
+    width: max(220px, rows.preferred-width);
+    height: rows.preferred-height;
+    border-radius: Theme.radius-xs;
+    background: Theme.surface;
+    drop-shadow-blur: 3px;
+    drop-shadow-color: Theme.shadow;
+    rows := VerticalLayout {
+        padding-top: Theme.space-2;
+        padding-bottom: Theme.space-2;
+        @children
+    }
+}
+
+// An official ContextMenuButton: 15 × 8 px padding, a 16 px icon, the label;
+// the 8% hover tint; destructive rows in the error colour.
+export component MenuRow inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <bool> danger;
+    callback clicked;
+    property <color> fg: root.danger ? Theme.error : Theme.on-surface;
+    height: 36px;
+    background: touch.pressed ? root.fg.with-alpha(0.12) : touch.has-hover ? root.fg.with-alpha(0.08) : transparent;
+    HorizontalLayout {
+        padding-left: Theme.gap-lg;
+        padding-right: Theme.gap-lg;
+        spacing: Theme.space-3;
+        Icon { text: root.glyph; font-size: Theme.text-title; color: root.fg; width: 16px; }
+        Text { text: root.label; color: root.fg; vertical-alignment: center; horizontal-stretch: 1; }
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component MenuDivider inherits Rectangle {
+    height: 9px;
+    Rectangle { height: 1px; background: Theme.outline-variant; }
+}

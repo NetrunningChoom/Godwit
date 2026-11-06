@@ -1,0 +1,168 @@
+[workspace]
+resolver = "3"
+members = ["app", "crates/*"]
+default-members = ["app", "crates/godwit-player"]
+
+[workspace.package]
+version = "0.1.4"
+edition = "2024"
+license = "AGPL-3.0-only"
+
+[workspace.dependencies]
+godwit-core = { path = "crates/godwit-core" }
+godwit-cache = { path = "crates/godwit-cache" }
+godwit-stoat = { path = "crates/godwit-stoat" }
+godwit-steam = { path = "crates/godwit-steam" }
+godwit-discord = { path = "crates/godwit-discord" }
+godwit-fluxer = { path = "crates/godwit-fluxer" }
+godwit-teams = { path = "crates/godwit-teams" }
+godwit-slack = { path = "crates/godwit-slack" }
+godwit-gchat = { path = "crates/godwit-gchat" }
+godwit-secrets = { path = "crates/godwit-secrets" }
+godwit-voice = { path = "crates/godwit-voice" }
+godwit-media = { path = "crates/godwit-media" }
+anyhow = "1.0.104"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+cpal = "0.18.2"
+directories = "6.0.0"
+emojis = "0.9.1"
+futures-executor = "0.3.34"
+futures-util = "0.3.34"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+indexmap = { version = "2.14.2", features = ["serde"] }
+livekit = { version = "0.10", default-features = false, features = ["tokio", "rustls-tls-webpki-roots"] }
+nnnoiseless = { version = "0.5.2", default-features = false }
+nokhwa = { version = "0.10", features = ["input-native"] }
+notify-rust = "4.18.2"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls-no-provider", "http2", "query", "multipart"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
+unicode-segmentation = "1"
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-18", "backend-winit", "unstable-winit-030", "renderer-software", "software-renderer-systemfonts", "accessibility"] }
+slint-build = "=1.18.1"
+material-colors = "0.5.0"
+mime = "0.3.17"
+open = "5"
+arboard = { version = "3.7.0", default-features = false, features = ["wayland-data-control", "image-data"] }
+rfd = "0.17.2"
+# Code block highlighting; pure-Rust regex (no Oniguruma) so it builds everywhere.
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "parsing", "regex-fancy"] }
+# Share Slint's renderer version and render SVG emoji's embedded PNG/JPEGs.
+resvg = { version = "0.48.1", default-features = false, features = ["raster-images"] }
+ureq = { version = "3.5", default-features = false, features = ["rustls", "gzip"] }
+gtk = "0.18.2"
+webkit2gtk = { version = "2.0.1", features = ["v2_40"] }
+libc = "0.2.191"
+
+# Optimise dependencies even in debug builds: unoptimised audio code (RNNoise,
+# the PulseAudio client) otherwise pins a core.
+[profile.dev.package."*"]
+opt-level = 2
+
+# davey reads a DAVE frame's LEB128 nonce with a shift that overflows past ten
+# bytes; a received frame shouldn't be able to panic a debug build (release
+# builds wrap anyway, and davey then rejects the frame).
+[profile.dev.package.davey]
+overflow-checks = false
+
+# Fat LTO with one codegen unit: thin LTO kept several copies of the same
+# functions (116 MB → 87 MB; docs/measurements.md, Binary size). Repaints got
+# faster and scrolling stayed the same (`--example scroll_bench`, `anim_bench`).
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+
+# Built for size: code that runs on network threads only (protocols, sign-in,
+# protobufs, signaling, MLS key exchange, keychain, dialogs, notifications).
+# Measured not to slow scrolling or repaints. Keep at opt-level 3 anything a
+# frame, a call or a video passes through: godwit-core and the app (the UI
+# reads through them every frame), godwit-voice, godwit-media, godwit-discord
+# (its RTP and video), davey (per-frame encryption), image decoding, Slint,
+# fonts, accesskit and zbus (Slint's accessibility runs during layout).
+# Setting the app itself (Slint's generated code) to "s" made repaints 11–23%
+# slower. These overrides are inherited by the `fast` profile.
+[profile.release.package.godwit-stoat]
+opt-level = "s"
+[profile.release.package.godwit-teams]
+opt-level = "s"
+[profile.release.package.godwit-slack]
+opt-level = "s"
+[profile.release.package.godwit-gchat]
+opt-level = "s"
+[profile.release.package.godwit-fluxer]
+opt-level = "s"
+[profile.release.package.godwit-steam]
+opt-level = "s"
+[profile.release.package.godwit-secrets]
+opt-level = "s"
+[profile.release.package.secret-service]
+opt-level = "s"
+[profile.release.package.keyring-core]
+opt-level = "s"
+[profile.release.package.notify-rust]
+opt-level = "s"
+[profile.release.package.rfd]
+opt-level = "s"
+[profile.release.package.steam-vent]
+opt-level = "s"
+[profile.release.package.steam-vent-proto-steam]
+opt-level = "s"
+[profile.release.package.steam-vent-proto-common]
+opt-level = "s"
+[profile.release.package.steam-vent-crypto]
+opt-level = "s"
+[profile.release.package.protobuf]
+opt-level = "s"
+[profile.release.package.openmls]
+opt-level = "s"
+[profile.release.package.openmls_rust_crypto]
+opt-level = "s"
+[profile.release.package.openmls_traits]
+opt-level = "s"
+[profile.release.package.tls_codec]
+opt-level = "s"
+[profile.release.package.rsa]
+opt-level = "s"
+[profile.release.package.num-bigint-dig]
+opt-level = "s"
+[profile.release.package.livekit-signaling]
+opt-level = "s"
+[profile.release.package.livekit-protocol]
+opt-level = "s"
+[profile.release.package.livekit-net]
+opt-level = "s"
+
+# Daily use and testing: release speed without link-time optimisation, rebuilt
+# incrementally, so a small change relinks in seconds. `cargo build --profile fast`;
+# the binary lands in <target>/fast/. Releases keep the LTO profile above.
+[profile.fast]
+inherits = "release"
+lto = false
+incremental = true
+codegen-units = 256
+
+# Line tables are enough for panics' backtraces; full debug info made dev and
+# test builds slow to link.
+[profile.dev]
+debug = "line-tables-only"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# No panicking shortcuts in shipped code: handle the error or give a default.
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+todo = "warn"
+
+# steam-vent without aws-lc and TLS key logging (see vendor/steam-vent/GODWIT.md).
+[patch.crates-io]
+steam-vent = { path = "vendor/steam-vent" }
+# One-line fix for Up/Down in multi-line text: see the "Godwit patch" comment
+# in vendor/i-slint-core/items/text.rs. Redo it when upgrading Slint.
+i-slint-core = { path = "vendor/i-slint-core" }

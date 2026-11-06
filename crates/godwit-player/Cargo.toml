@@ -1,0 +1,35 @@
+[package]
+name = "godwit-player"
+description = "Godwit's inline player helper: WebKit in its own process, so the app never loads it until a player starts."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+url = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk.workspace = true
+libc.workspace = true
+webkit2gtk.workspace = true
+# Browser sign-ins (Slack, Google Chat): their cookies (soup) and a script's answer (JavaScriptCore).
+# Both were already in the lock file as webkit2gtk's own dependencies.
+soup3 = "0.5"
+javascriptcore-rs = "1.1"
+
+# Windows: the same sign-in windows on WebView2 (Edge's engine, part of Windows 11),
+# through wry on a winit window (winit is already in the tree through Slint). wry is
+# pinned: 0.54+ needs webkit2gtk 2.0.2, which would move the Linux build's lock entry.
+[target.'cfg(windows)'.dependencies]
+wry = { version = "=0.53.5", default-features = false, features = ["os-webview"] }
+winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
+serde_json = "1"
+# The inline player (win_player): WebView2's COM API behind wry (capture,
+# input, fullscreen, serving the page), the same versions wry uses, and the
+# JPEG frames' decoder (already in the tree through the app).
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_System_Com", "Win32_UI_Shell"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+[lints]
+workspace = true

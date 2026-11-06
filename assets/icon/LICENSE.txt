@@ -1,0 +1,5 @@
+The app icon is a silhouette (assets/art/godwit/08-silhouette-gradient.png)
+cut from "Bar-tailed godwit in flight" by the U.S. Fish and Wildlife Service,
+a public-domain work of the U.S. federal government:
+https://commons.wikimedia.org/wiki/File:Bar-tailed_godwit_in_flight_(53707907003).jpg
+See assets/art/godwit/README.md for how it was made.

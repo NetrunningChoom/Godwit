@@ -1,0 +1,438 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+// Settings → a Stoat account → Auto-delete (Godwit's page): rules that delete
+// your own messages by where, what and how old. The editor, its "less than
+// 30 days" note and the confirmation are steps in the page itself.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Button, TextField, Toggle, SurfaceCard as Card } from "widgets.slint";
+
+export struct AdRuleItem {
+    name: string,
+    enabled: bool,
+    everyone: bool,
+    where: string,
+    what: string,
+    when: string,
+    progress: string,
+    deleted: string,
+    error: string,
+}
+
+// A row of the editor's "Where" list: a section heading, or a chat or server.
+export struct AdPlaceItem {
+    name: string,
+    chosen: bool,
+    header: bool,
+}
+
+// Why deleting messages younger than 30 days is usually unwise (Godwit's words).
+component Note inherits VerticalLayout {
+    in property <string> title;
+    in property <string> body;
+    spacing: Theme.space-1;
+    Text { text: root.title; font-weight: 600; color: Theme.on-surface; }
+    Text { text: root.body; wrap: word-wrap; color: Theme.on-surface-variant; }
+}
+
+// A checkbox with its label. The click area covers the whole row: inside a
+// layout it became a cell of its own beside it, and clicks never reached it.
+component Check inherits Rectangle {
+    in property <bool> checked;
+    in property <string> label;
+    callback toggled();
+    min-height: row.preferred-height;
+    preferred-width: row.preferred-width;
+    row := HorizontalLayout {
+        spacing: Theme.space-3;
+        alignment: start;
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 18px;
+            height: 18px;
+            border-radius: Theme.radius-xs;
+            border-width: 2px;
+            border-color: root.checked ? Theme.primary : Theme.outline;
+            background: root.checked ? Theme.primary : transparent;
+            if root.checked: Text { text: "✓"; color: Theme.on-primary; font-size: Theme.text-small; }
+        }
+        Text { text: root.label; color: Theme.on-surface; vertical-alignment: center; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        // The owner decides (radio-style choices keep their bindings).
+        clicked => { root.toggled(); }
+    }
+}
+
+// The page's state and its answers, reached from Rust as a global.
+export global AdState {
+    // The account's master switch, and whose account this is ("Stoat · Name (@user)").
+    in property <bool> on;
+    in property <string> account-label;
+    // Turning it on asks first.
+    in-out property <bool> on-warning;
+    callback set-on(bool);
+    in property <[AdRuleItem]> rules;
+    // The "Where" list as filtered by `place-query`.
+    in property <[AdPlaceItem]> places;
+    in-out property <string> place-query;
+    in property <bool> gentle;
+    in property <int> recheck-days;
+    in property <bool> working;
+    in property <string> index-error;
+    // The editor: 0 closed, 1 the form, 2 the short-cutoff note, 3 confirming.
+    in-out property <int> step;
+    in-out property <string> ed-name;
+    in-out property <bool> ed-enabled: true;
+    in-out property <bool> ed-everyone;
+    // "Everyone's" was ticked: its warning shows before it takes effect.
+    in-out property <bool> purge-warning;
+    in-out property <bool> ed-keep-pinned: true;
+    in-out property <bool> ed-all-private;
+    in-out property <bool> ed-text: true;
+    in-out property <bool> ed-links: true;
+    in-out property <bool> ed-media: true;
+    in-out property <bool> ed-rolling: true;
+    in-out property <string> ed-days: "90";
+    in-out property <string> ed-date;
+    in property <string> ed-error;
+    // What saving will do, in words (for the confirmation).
+    in property <string> ed-summary;
+    // A rule waiting for "Delete rule" to be confirmed (-1 none).
+    in-out property <int> removing: -1;
+    callback new-rule();
+    callback edit-rule(int);
+    callback toggle-rule(int, bool);
+    callback recheck-rule(int);
+    callback remove-rule(int);
+    callback toggle-place(int);
+    callback search-places(string);
+    // "Whose" or "All DMs and groups" changed: the list follows.
+    callback scope-changed();
+    callback set-gentle(bool);
+    callback set-recheck(int);
+    callback stop();
+    // The form's "Next": checked, then the note or the confirmation.
+    callback ed-next();
+    callback ed-save();
+}
+
+export component AutoDeletePage inherits VerticalLayout {
+    spacing: Theme.space-5;
+    alignment: start;
+
+    // Turning chat retention on: say plainly what that means first.
+    if AdState.step == 0 && AdState.on-warning: Card {
+        Text { text: "Turn on chat retention?"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+        Text { text: "For this account: " + AdState.account-label; font-weight: 600; color: Theme.on-surface; wrap: word-wrap; }
+        Text {
+            text: "Its active rules will start deleting this account's messages on their own, in the background, whenever Godwit runs. Other accounts aren't affected.";
+            wrap: word-wrap;
+            color: Theme.on-surface;
+        }
+        Text { text: "Deleted messages can't be brought back."; font-weight: 600; color: Theme.error; }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            Button { text: "Cancel"; clicked => { AdState.on-warning = false; } }
+            Button {
+                text: "Turn on";
+                kind: "filled";
+                danger: true;
+                clicked => {
+                    AdState.on-warning = false;
+                    AdState.set-on(true);
+                }
+            }
+        }
+    }
+    if AdState.step == 0 && !AdState.on-warning: VerticalLayout {
+        spacing: Theme.space-5;
+        // The master switch, big and first: OFF should read as calm and
+        // certain, so nobody opening this page fears it's already deleting.
+        Rectangle {
+            border-radius: Theme.radius-lg;
+            background: AdState.on ? Theme.error : Theme.surface-high;
+            HorizontalLayout {
+                padding: Theme.space-6;
+                spacing: Theme.space-5;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: Theme.space-2;
+                    Text {
+                        text: AdState.on ? "Chat retention is ON" : "Chat retention is OFF";
+                        font-size: Theme.text-headline;
+                        font-weight: 700;
+                        color: AdState.on ? Theme.on-error : Theme.on-surface;
+                    }
+                    Text {
+                        text: "For this account: " + AdState.account-label;
+                        font-weight: 600;
+                        wrap: word-wrap;
+                        color: AdState.on ? Theme.on-error : Theme.on-surface;
+                    }
+                    Text {
+                        text: AdState.on ? "Active rules below delete this account's messages."
+                            : "Nothing is deleted or indexed. Rules below stay paused until you turn this on.";
+                        wrap: word-wrap;
+                        color: AdState.on ? Theme.on-error : Theme.on-surface-variant;
+                    }
+                }
+                Rectangle {
+                    width: switch.width;
+                    switch := Toggle { checked: AdState.on; }
+                    // Over the toggle's own click area: on asks first, and
+                    // the toggle keeps following the account's real state.
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            if AdState.on {
+                                AdState.set-on(false);
+                            } else {
+                                AdState.on-warning = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Card {
+            Text { text: "Chat retention and auto-delete rules"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+            Text {
+                text: "Rules that delete your own messages: where, which kinds, and from how long ago.";
+                wrap: word-wrap;
+                color: Theme.on-surface;
+            }
+            Text {
+                text: "Godwit keeps a local index of your own messages in the channels your rules cover: only each message's id and whether it's text, a link or media; never what it says. It fills in as messages arrive and as you scroll, and slowly in the background for older history. Rules delete what the index knows.";
+                wrap: word-wrap;
+                font-size: Theme.text-small;
+                color: Theme.on-surface-variant;
+            }
+            Text { text: "Deleted messages can't be brought back."; color: Theme.error; }
+        }
+        for r[i] in AdState.rules: Card {
+            HorizontalLayout {
+                spacing: Theme.space-3;
+                Text { text: r.name; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; vertical-alignment: center; }
+                Text { text: r.enabled ? "Active" : "Paused"; color: Theme.on-surface-variant; vertical-alignment: center; }
+                Toggle {
+                    checked: r.enabled;
+                    toggled => { AdState.toggle-rule(i, self.checked); }
+                }
+            }
+            Text { text: "Where: " + r.where; color: Theme.on-surface; wrap: word-wrap; }
+            Text { text: "What: " + r.what; color: Theme.on-surface; }
+            Text { text: "When: " + r.when; color: Theme.on-surface; }
+            if r.everyone: Text { text: "Purge: deletes everyone's messages (Manage Messages)"; color: Theme.error; }
+            Text { text: r.progress; color: Theme.primary; wrap: word-wrap; }
+            Text { text: r.deleted + " deleted so far"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+            if r.error != "": Text { text: "Last problem: " + r.error; font-size: Theme.text-small; color: Theme.error; wrap: word-wrap; }
+            if AdState.removing != i: HorizontalLayout {
+                alignment: start;
+                spacing: Theme.space-3;
+                Button { text: "Edit"; clicked => { AdState.edit-rule(i); } }
+                Button { text: "Re-check"; kind: "text"; clicked => { AdState.recheck-rule(i); } }
+                Button { text: "Delete rule"; kind: "text"; danger: true; clicked => { AdState.removing = i; } }
+            }
+            if AdState.removing == i: VerticalLayout {
+                spacing: Theme.space-3;
+                Text {
+                    text: "Delete " + r.name + "? The rule stops; messages it already deleted stay deleted. Channels no other rule covers leave the index.";
+                    wrap: word-wrap;
+                    color: Theme.on-surface-variant;
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: Theme.space-3;
+                    Button { text: "Cancel"; clicked => { AdState.removing = -1; } }
+                    Button {
+                        text: "Delete";
+                        danger: true;
+                        clicked => {
+                            AdState.removing = -1;
+                            AdState.remove-rule(i);
+                        }
+                    }
+                }
+            }
+        }
+        if AdState.index-error != "": Text { text: "Last indexing problem: " + AdState.index-error; font-size: Theme.text-small; color: Theme.error; wrap: word-wrap; }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            Button { text: "New rule"; kind: "filled"; clicked => { AdState.new-rule(); } }
+            if AdState.working: Text { text: "Working in the background"; color: Theme.on-surface-variant; vertical-alignment: center; }
+            if AdState.working: Button { text: "Stop"; kind: "text"; danger: true; clicked => { AdState.stop(); } }
+        }
+        Card {
+            Text { text: "Speed"; font-weight: 600; color: Theme.on-surface; }
+            Check { checked: AdState.gentle; label: "Gentle: one deletion every 3 seconds"; toggled => { AdState.set-gentle(true); } }
+            Check { checked: !AdState.gentle; label: "Normal: one deletion every 1.5 seconds"; toggled => { AdState.set-gentle(false); } }
+            Text {
+                text: "Indexing older history always goes slowly (a page every 4 seconds, a little at a time). Both slow down further if the server asks.";
+                wrap: word-wrap;
+                font-size: Theme.text-small;
+                color: Theme.on-surface-variant;
+            }
+        }
+        Card {
+            Text { text: "Re-check"; font-weight: 600; color: Theme.on-surface; }
+            Text {
+                text: "Now and then each rule's channels are forgotten from the index and read again in the background, in case anything was missed.";
+                wrap: word-wrap;
+                font-size: Theme.text-small;
+                color: Theme.on-surface-variant;
+            }
+            Check { checked: AdState.recheck-days == 30; label: "Every 30 days"; toggled => { AdState.set-recheck(30); } }
+            Check { checked: AdState.recheck-days == 90; label: "Every 90 days"; toggled => { AdState.set-recheck(90); } }
+            Check { checked: AdState.recheck-days == 0; label: "Never"; toggled => { AdState.set-recheck(0); } }
+        }
+    }
+
+    // The editor's form.
+    if AdState.step == 1: Card {
+        Text { text: "Chat retention rule"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+        Text { text: "Name"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+        TextField { text <=> AdState.ed-name; placeholder: "Old messages"; }
+        Text { text: "Whose messages"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+        Check { checked: !AdState.ed-everyone; label: "Only mine"; toggled => { AdState.ed-everyone = false; AdState.scope-changed(); } }
+        Check { checked: AdState.ed-everyone; label: "Everyone's, where I may (a moderator purge)"; toggled => { if !AdState.ed-everyone { AdState.purge-warning = true; } } }
+        // A purge deletes other people's messages: say so plainly, before it's chosen.
+        if AdState.purge-warning: Rectangle {
+            border-radius: Theme.radius-md;
+            border-width: 2px;
+            border-color: Theme.error;
+            background: Theme.surface-highest;
+            min-height: purge-text.preferred-height;
+            purge-text := VerticalLayout {
+                padding: Theme.space-4;
+                spacing: Theme.space-3;
+                Text { text: "This can be very destructive"; font-weight: 600; color: Theme.error; }
+                Text {
+                    text: "A purge deletes everyone's messages, not just yours, in every server channel the rule covers where you have Manage Messages. Whole conversations, other people's work and evidence of abuse can disappear, and nothing can be brought back. Only use it if the server's owners asked for it.";
+                    wrap: word-wrap;
+                    color: Theme.on-surface;
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: Theme.space-3;
+                    Button { text: "Keep it to my messages"; kind: "filled"; clicked => { AdState.purge-warning = false; } }
+                    Button {
+                        text: "I understand, make it a purge";
+                        kind: "text";
+                        danger: true;
+                        clicked => {
+                            AdState.purge-warning = false;
+                            AdState.ed-everyone = true;
+                            AdState.scope-changed();
+                        }
+                    }
+                }
+            }
+        }
+        if AdState.ed-everyone: Check { checked: AdState.ed-keep-pinned; toggled => { AdState.ed-keep-pinned = !AdState.ed-keep-pinned; } label: "Keep pinned messages"; }
+        Text { text: "Where"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+        if !AdState.ed-everyone: Check { checked: AdState.ed-all-private; toggled => { AdState.ed-all-private = !AdState.ed-all-private; AdState.scope-changed(); } label: "All DMs and groups"; }
+        // Searchable and scrolling: some accounts are in a great many servers.
+        TextField {
+            text <=> AdState.place-query;
+            placeholder: "Search chats and servers";
+            edited(t) => { AdState.search-places(t); }
+        }
+        Rectangle {
+            height: min(260px, places.preferred-height + 8px);
+            border-radius: Theme.radius-md;
+            background: Theme.surface-highest;
+            ScrollView {
+                places := VerticalLayout {
+                    padding: Theme.space-3;
+                    spacing: Theme.space-2;
+                    for p[i] in AdState.places: Rectangle {
+                        height: p.header ? 24px : 28px;
+                        if p.header: Text {
+                            x: 0;
+                            text: p.name;
+                            font-size: Theme.text-small;
+                            font-weight: 600;
+                            color: Theme.on-surface-variant;
+                            vertical-alignment: bottom;
+                        }
+                        if !p.header: Check {
+                            x: 0;
+                            width: parent.width;
+                            checked: p.chosen;
+                            label: p.name;
+                            toggled => { AdState.toggle-place(i); }
+                        }
+                    }
+                    if AdState.places.length == 0: Text { text: "Nothing matches."; color: Theme.on-surface-variant; }
+                }
+            }
+        }
+        Text { text: "What"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-5;
+            Check { checked: AdState.ed-text; toggled => { AdState.ed-text = !AdState.ed-text; } label: "Text"; }
+            Check { checked: AdState.ed-links; toggled => { AdState.ed-links = !AdState.ed-links; } label: "Links"; }
+            Check { checked: AdState.ed-media; toggled => { AdState.ed-media = !AdState.ed-media; } label: "Media"; }
+        }
+        Text { text: "When"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+        Check { checked: AdState.ed-rolling; label: "Older than a number of days (keeps going)"; toggled => { AdState.ed-rolling = true; } }
+        if AdState.ed-rolling: HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            TextField { width: 100px; text <=> AdState.ed-days; }
+            Text { text: "days"; color: Theme.on-surface; vertical-alignment: center; }
+        }
+        Check { checked: !AdState.ed-rolling; label: "Sent before a date (once)"; toggled => { AdState.ed-rolling = false; } }
+        if !AdState.ed-rolling: TextField { width: 160px; text <=> AdState.ed-date; placeholder: "YYYY-MM-DD"; }
+        Check { checked: AdState.ed-enabled; toggled => { AdState.ed-enabled = !AdState.ed-enabled; } label: "Active"; }
+        if AdState.ed-error != "": Text { text: AdState.ed-error; color: Theme.error; wrap: word-wrap; }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            Button { text: "Cancel"; clicked => { AdState.step = 0; } }
+            Button { text: "Next"; kind: "filled"; clicked => { AdState.ed-next(); } }
+        }
+    }
+
+    // Less than 30 days: why that's usually a bad idea, before going on.
+    if AdState.step == 2: Card {
+        Text { text: "Less than 30 days?"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+        Text { text: "Deleting messages this soon is usually a bad idea:"; color: Theme.on-surface; }
+        Note { title: "Reports and safety"; body: "Moderators and Stoat's safety team rely on messages as evidence. Deleting quickly can keep harassment, scams or threats, against you or others, from being reported or looked into."; }
+        Note { title: "Conversations"; body: "Replies, quotes and threads lose their context, which confuses everyone else in the chat."; }
+        Note { title: "Looks like abuse"; body: "Messages that vanish quickly are a common way to dodge moderation; servers may treat it as suspicious or against their rules."; }
+        Note { title: "Your own record"; body: "You lose things you might need later: agreements, links, or proof of what was said."; }
+        Note { title: "Rules and law"; body: "Some communities, workplaces and places require messages to be kept."; }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            Button { text: "Back"; clicked => { AdState.step = 1; } }
+            Button { text: "I understand, but want to anyway"; danger: true; clicked => { AdState.step = 3; } }
+        }
+    }
+
+    // Saving an active rule starts deleting: say exactly what, once more.
+    if AdState.step == 3: Card {
+        Text { text: AdState.ed-everyone ? "Start purging?" : "Start deleting?"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+        Text { text: AdState.ed-summary; wrap: word-wrap; color: Theme.on-surface; }
+        if AdState.ed-everyone: Text {
+            text: "This deletes other people's messages, in channels where you have Manage Messages. " + (AdState.ed-keep-pinned ? "Pinned messages are kept." : "Pinned messages go too.") + " Make sure the server agrees to it.";
+            wrap: word-wrap;
+            color: Theme.error;
+        }
+        Text { text: "This can't be undone."; color: Theme.error; }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            Button { text: "Back"; clicked => { AdState.step = 1; } }
+            Button { text: AdState.ed-enabled ? "Save and start" : "Save"; danger: AdState.ed-enabled; kind: "filled"; clicked => { AdState.ed-save(); } }
+        }
+    }
+}

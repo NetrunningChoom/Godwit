@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Avatar, Button, TextArea, TextField } from "widgets.slint";
+
+export component ProfileSettings inherits VerticalLayout {
+    in property <[string]> accounts;
+    in-out property <int> account-index;
+    in property <bool> loaded;
+    in property <bool> busy;
+    in property <bool> failed;
+    in property <string> status;
+    in-out property <string> display-name;
+    in-out property <string> pronouns;
+    in-out property <string> bio;
+    in property <image> avatar;
+    in property <bool> has-avatar;
+    in property <string> avatar-label;
+    in property <image> banner;
+    in property <bool> has-banner;
+    in property <string> banner-label;
+    // The network lets a banner be set (Discord's are Nitro: hidden there).
+    in property <bool> banner-allowed: true;
+    callback selected-account(int);
+    callback save();
+    callback reset();
+    callback reload();
+    callback changed();
+    callback pick-image(bool);
+    callback remove-image(bool);
+    spacing: Theme.space-4;
+    // The account page's header and tabs say whose profile this is.
+    if root.status != "": Text {
+        text: root.status;
+        wrap: word-wrap;
+        color: root.failed ? Theme.error : Theme.on-surface-variant;
+    }
+    if root.loaded: VerticalLayout {
+        spacing: Theme.space-4;
+        Text { text: "Avatar"; color: Theme.on-surface; }
+        HorizontalLayout {
+            spacing: Theme.space-4;
+            Rectangle {
+                width: 80px;
+                height: 80px;
+                Avatar { size: 80px; source: root.avatar; has-image: root.has-avatar; initials: ""; }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: Theme.space-3;
+                if root.avatar-label != "": Text { text: root.avatar-label; wrap: word-wrap; color: Theme.on-surface-variant; }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: Theme.space-3;
+                    Button { text: "Change avatar"; enabled: !root.busy; clicked => { root.pick-image(true); } }
+                    Button { text: "Remove"; kind: "text"; enabled: !root.busy; clicked => { root.remove-image(true); } }
+                }
+            }
+        }
+        if root.banner-allowed: VerticalLayout {
+            spacing: Theme.space-3;
+            Text { text: "Banner"; color: Theme.on-surface; }
+            // Sized and clipped: an unsized Image draws at its natural size, over the form below.
+            Rectangle {
+                height: 120px;
+                clip: true;
+                background: Theme.surface-high;
+                if root.has-banner: Image { width: parent.width; height: parent.height; source: root.banner; image-fit: cover; }
+            }
+            if root.banner-label != "": Text { text: root.banner-label; wrap: word-wrap; color: Theme.on-surface-variant; }
+            HorizontalLayout {
+                alignment: start;
+                spacing: Theme.space-3;
+                Button { text: "Change banner"; enabled: !root.busy; clicked => { root.pick-image(false); } }
+                Button { text: "Remove"; kind: "text"; enabled: !root.busy; clicked => { root.remove-image(false); } }
+            }
+        }
+        Text { text: "Display name"; color: Theme.on-surface; }
+        TextField { text <=> root.display-name; enabled: !root.busy; edited => { root.changed(); } accepted => { root.save(); } }
+        Text { text: "Pronouns"; color: Theme.on-surface; }
+        TextField { text <=> root.pronouns; enabled: !root.busy; edited => { root.changed(); } accepted => { root.save(); } }
+        Text { text: "Bio (Markdown)"; color: Theme.on-surface; }
+        TextArea { height: 160px; text <=> root.bio; enabled: !root.busy; edited => { root.changed(); } }
+    }
+    HorizontalLayout {
+        alignment: start;
+        spacing: Theme.space-3;
+        Button { text: "Reload"; enabled: !root.busy && root.accounts.length > 0; clicked => { root.reload(); } }
+        Button { text: "Reset changes"; enabled: root.loaded && !root.busy; clicked => { root.reset(); } }
+        Button { text: root.busy ? "Please wait…" : "Apply changes"; kind: "filled"; enabled: root.loaded && !root.busy; clicked => { root.save(); } }
+    }
+}

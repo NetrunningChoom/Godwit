@@ -1,0 +1,35 @@
+[package]
+name = "godwit-fluxer"
+description = "Godwit's Fluxer network: email sign-in, servers, channels, DMs and messages over Fluxer's gateway and HTTP API."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+godwit-core.workspace = true
+godwit-secrets.workspace = true
+# Fluxer's guild, channel and message objects have Discord's shapes: its state
+# store, permissions and Markdown conversion are shared (no Discord requests).
+godwit-discord.workspace = true
+anyhow.workspace = true
+base64 = "0.22"
+chrono.workspace = true
+futures-util.workspace = true
+rand = "0.9"
+# The gateway's zstd-stream compression (the only one Fluxer offers).
+zstd = "0.14"
+# Fluxer's sign-in CAPTCHA: ALTCHA v2 proof of work, PBKDF2 with SHA-256.
+pbkdf2 = "0.12"
+sha2 = "0.10"
+reqwest = { workspace = true, features = ["gzip"] }
+rustls.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+
+[dev-dependencies]
+godwit-secrets = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true
