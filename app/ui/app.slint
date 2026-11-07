@@ -34,7 +34,7 @@ import { Threads } from "threads.slint";
 import { ServerSettings } from "server-settings.slint";
 import { Settings } from "settings.slint";
 import { ProfileCard } from "profile.slint";
-import { Dialog, Button, TextField, TextArea, ResizeHandle, Avatar, IconButton } from "widgets.slint";
+import { Dialog, ConfirmDialog, Button, TextField, TextArea, ResizeHandle, Avatar, IconButton } from "widgets.slint";
 import { IncomingCall } from "incoming-call.slint";
 import { Cropper } from "cropper.slint";
 import { ImageViewer } from "image-viewer.slint";
@@ -400,6 +400,8 @@ export component AppWindow inherits Window {
     in property <bool> can-pin;
     callback open-pins();
     callback pin(int, bool);
+    in-out property <int> confirm-pin: -1;
+    in-out property <bool> confirm-pin-value;
     callback remove-reactions(int, int);
     callback remove-all-reactions(int);
     // The pinned messages panel.
@@ -1020,7 +1022,7 @@ export component AppWindow inherits Window {
                                         open-search => { root.open-search(); }
                                         can-pin: root.can-pin;
                                         open-pins => { root.open-pins(); }
-                                        pin(i, pinned) => { root.pin(i, pinned); }
+                                        pin(i, pinned) => { root.confirm-pin = i; root.confirm-pin-value = pinned; }
                                         remove-reactions(i, r) => { root.remove-reactions(i, r); }
                                         remove-all-reactions(i) => { root.remove-all-reactions(i); }
                                         members-shown: root.members-shown;
@@ -1433,6 +1435,19 @@ export component AppWindow inherits Window {
         pins: root.pins;
         pins-failed: root.pins-failed;
         pins-loading: root.pins-loading;
+    }
+    if root.confirm-pin >= 0 && screen == Screen.main: ConfirmDialog {
+        title: root.confirm-pin-value ? "Pin message" : "Unpin message";
+        message: root.confirm-pin-value
+            ? "Pin this message so it stays easy to find?"
+            : "Remove this message from the pinned list?";
+        confirm-text: root.confirm-pin-value ? "Pin" : "Unpin";
+        confirm-kind: "filled";
+        cancelled => { root.confirm-pin = -1; }
+        confirmed => {
+            root.pin(root.confirm-pin, root.confirm-pin-value);
+            root.confirm-pin = -1;
+        }
     }
     if root.crop-open && screen == Screen.main: Cropper {
         crop-cancel() => { root.crop-cancel(); }

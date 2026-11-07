@@ -1404,6 +1404,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         Scene::new("jump-old", Box::new(|_, _, _, _| Screen::Main)),
         Scene::new("jump", Box::new(|_, _, _, _| Screen::Main)),
+        Scene::new(
+            "pin-confirm",
+            Box::new(|_, ui, _, _| {
+                ui.set_confirm_pin(0);
+                ui.set_confirm_pin_value(true);
+                Screen::Main
+            }),
+        ),
         Scene {
             late: true,
             ..Scene::new("channel-late", Box::new(|_, _, _, _| Screen::Main))
