@@ -709,6 +709,7 @@ impl Application {
             bot: false,
             has_friends,
             moderation: None,
+            group_moderation: None,
         })
     }
 

@@ -413,6 +413,24 @@ impl Application {
                 account: user.account.clone(),
                 command: Command::RemoveFriend { user },
             }],
+            Action::RemoveGroupMember { room, user } => {
+                let permitted = room.account == user.account
+                    && self.state.profile.as_ref().is_some_and(|(shown, profile)| {
+                        shown == &user
+                            && profile.as_ref().is_some_and(|p| {
+                                p.group_moderation
+                                    .as_ref()
+                                    .is_some_and(|m| m.remove_member && m.room == room)
+                            })
+                    });
+                if !permitted {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::RemoveGroupMember { room, user },
+                }]
+            }
             Action::LoadInvite { account, code } => self.dispatch_load_invite(account, code),
             Action::JoinInvite { account, code } => {
                 let key = (account.clone(), code.clone());

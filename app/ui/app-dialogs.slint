@@ -147,6 +147,8 @@ export component ManagementDialogs inherits Rectangle {
     in property <string> card-name;
     in-out property <string> ban-reason;
     callback moderate-member(bool, string);
+    in-out property <bool> confirm-remove-group-member;
+    callback remove-group-member();
     in-out property <int> confirm-delete: -1;
     callback delete(int);
 
@@ -244,6 +246,14 @@ export component ManagementDialogs inherits Rectangle {
                 }
             }
         }
+    }
+    if root.confirm-remove-group-member: ConfirmDialog {
+        title: "Remove " + root.card-name + "?";
+        message: "They will leave this group conversation.";
+        confirm-text: "Remove member";
+        danger: true;
+        cancelled => { root.confirm-remove-group-member = false; }
+        confirmed => { root.remove-group-member(); root.confirm-remove-group-member = false; }
     }
     if root.confirm-delete >= 0: ConfirmDialog {
         title: "Delete message";

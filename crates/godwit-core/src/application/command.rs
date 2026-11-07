@@ -75,6 +75,11 @@ pub enum Command {
     RemoveFriend {
         user: UserId,
     },
+    /// Remove a member from a group conversation.
+    RemoveGroupMember {
+        room: RoomId,
+        user: UserId,
+    },
     /// The GIF categories; answered with [`Event::GifCategories`].
     LoadGifCategories,
     /// GIFs for `query` ([`crate::gifs::TRENDING`]: trending), from

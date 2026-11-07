@@ -98,6 +98,7 @@ pub fn profile(user: UserId, name: &str) -> godwit_core::members::Profile {
         bot: false,
         has_friends: true,
         moderation: None,
+        group_moderation: None,
     }
 }
 

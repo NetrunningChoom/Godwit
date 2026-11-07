@@ -89,6 +89,16 @@ pub struct Profile {
     /// Seen in a server where we may kick or ban them (they rank below us).
     #[serde(default)]
     pub moderation: Option<Moderation>,
+    /// A group conversation where this member may be removed.
+    #[serde(default)]
+    pub group_moderation: Option<GroupModeration>,
+}
+
+/// What a profile card may do to a group member, and where.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupModeration {
+    pub room: crate::ids::RoomId,
+    pub remove_member: bool,
 }
 
 /// What a profile card may do to its member, and where.

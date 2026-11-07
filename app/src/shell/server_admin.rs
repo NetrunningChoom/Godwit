@@ -143,6 +143,26 @@ impl Shell {
         self.act(ui, Action::CloseProfile);
     }
 
+    /// Remove the profile's member from the group after the confirmation dialog.
+    pub fn remove_group_member(&mut self, ui: &AppWindow) {
+        let Some((user, Some(profile))) = self.app.state().profile.clone() else {
+            return;
+        };
+        let Some(moderation) = profile.group_moderation else {
+            return;
+        };
+        if moderation.remove_member {
+            self.act(
+                ui,
+                Action::RemoveGroupMember {
+                    room: moderation.room,
+                    user,
+                },
+            );
+            self.act(ui, Action::CloseProfile);
+        }
+    }
+
     /// A server menu entry, for the selected server.
     pub fn server_menu(&mut self, ui: &AppWindow, op: godwit_core::server_settings::ServerAdmin) {
         if let Some(server) = self.app.state().selected_server.clone() {

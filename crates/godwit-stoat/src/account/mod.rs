@@ -121,7 +121,8 @@ pub struct StoatAccount {
     session_revoke_pending: bool,
     channel_for: Option<String>,
     /// The open profile card: the user and the server it's seen from.
-    profile_for: Option<(String, Option<String>)>,
+    profile_for: Option<(String, Option<String>, Option<String>)>,
+    group_member_pending: Option<(String, String)>,
     /// Custom emoji as last sent to the core.
     /// Our presence as last sent to the core.
     own_presence: Option<Presence>,
@@ -504,6 +505,7 @@ impl StoatAccount {
             session_revoke_pending: false,
             channel_for: None,
             profile_for: None,
+            group_member_pending: None,
             emoji_sent: None,
             own_presence: None,
             own_status: None,
@@ -552,6 +554,7 @@ impl StoatAccount {
             session_revoke_pending: false,
             channel_for: None,
             profile_for: None,
+            group_member_pending: None,
             emoji_sent: None,
             own_presence: None,
             own_status: None,
@@ -701,6 +704,7 @@ mod tests {
             session_revoke_pending: false,
             channel_for: None,
             profile_for: None,
+            group_member_pending: None,
             emoji_sent: None,
             own_presence: None,
             own_status: None,

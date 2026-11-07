@@ -2360,6 +2360,7 @@ fn profiles_open_load_and_ignore_stale_answers() {
         bot: false,
         has_friends: true,
         moderation: None,
+        group_moderation: None,
     };
     app.apply(Event::Profile(profile(&UserId::new(account(Network::Stoat), "bo"))));
     assert_eq!(

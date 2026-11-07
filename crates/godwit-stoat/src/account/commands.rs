@@ -145,6 +145,9 @@ impl StoatAccount {
             }
             Command::LoadProfile { user, room } => {
                 let user = user.raw.to_string();
+                let group = room.as_ref().and_then(|r| self.store.channels.get(&*r.raw))
+                    .filter(|c| c.channel_type == "Group")
+                    .map(|c| c.id.clone());
                 let server = room
                     .and_then(|r| self.store.channels.get(&*r.raw))
                     .and_then(|c| c.server.clone());
@@ -153,8 +156,27 @@ impl StoatAccount {
                     self.store.profiles.insert(user.clone(), None);
                     self.net.send(Cmd::People(PeopleCmd::FetchProfile { user: user.clone() }));
                 }
-                self.profile_for = Some((user, server));
+                self.profile_for = Some((user, server, group));
                 self.profile().map(Event::Profile).into_iter().collect()
+            }
+            Command::RemoveGroupMember { room, user } => {
+                let channel = room.raw.to_string();
+                let target = user.raw.to_string();
+                let allowed = self.profile_for.as_ref().is_some_and(|(shown, _, group)| {
+                    shown == &target && group.as_deref() == Some(channel.as_str())
+                }) && self.store.channels.get(&channel).is_some_and(|c| {
+                    c.channel_type == "Group"
+                        && c.owner.as_deref() != Some(target.as_str())
+                        && c.recipients.iter().any(|u| u == &target)
+                        && self.store.me.as_deref() != Some(target.as_str())
+                        && (c.owner.as_deref() == self.store.me.as_deref()
+                            || self.store.can(&channel, crate::permissions::MANAGE_CHANNEL))
+                });
+                if allowed {
+                    self.group_member_pending = Some((channel.clone(), target.clone()));
+                    self.net.send(Cmd::Member(MemberCmd::RemoveRecipient { channel, user: target }));
+                }
+                Vec::new()
             }
             // Stoat sends whole member lists, not ranges.
             Command::MemberRows { .. } => Vec::new(),

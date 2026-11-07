@@ -302,10 +302,25 @@ impl StoatAccount {
             }
             Ev::Profile { user, profile } => {
                 self.store.profiles.insert(user.clone(), Some(profile));
-                if self.profile_for.as_ref().is_some_and(|(u, _)| *u == user)
+                if self.profile_for.as_ref().is_some_and(|(u, _, _)| *u == user)
                     && let Some(p) = self.profile()
                 {
                     out.push(Event::Profile(p));
+                }
+            }
+            Ev::MemberSaved(result) => {
+                let Some((channel, user)) = self.group_member_pending.take() else {
+                    return;
+                };
+                match result {
+                    Ok(()) => {
+                        if let Some(c) = self.store.channels.get_mut(&channel) {
+                            c.recipients.retain(|u| u != &user);
+                        }
+                        self.sync_rooms(out);
+                        self.sync_members(out);
+                    }
+                    Err(error) => out.push(Event::Error(format!("Stoat, removing group member: {error}").into())),
                 }
             }
             Ev::Members { data } => {

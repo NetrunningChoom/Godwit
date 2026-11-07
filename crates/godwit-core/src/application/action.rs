@@ -233,6 +233,11 @@ pub enum Action {
     AddFriend(UserId),
     /// Unfriend `user`, cancel our request, or turn theirs down.
     RemoveFriend(UserId),
+    /// Remove a member from a group conversation, when the shown profile allows it.
+    RemoveGroupMember {
+        room: RoomId,
+        user: UserId,
+    },
     /// An invite card came on screen: fetch what it leads to (once).
     LoadInvite {
         account: AccountId,

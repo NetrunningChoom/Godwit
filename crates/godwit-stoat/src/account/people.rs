@@ -7,7 +7,7 @@ use super::*;
 impl StoatAccount {
     /// The open profile card, from what's known now.
     pub(super) fn profile(&self) -> Option<Profile> {
-        let (user, server) = self.profile_for.as_ref()?;
+        let (user, server, group) = self.profile_for.as_ref()?;
         let server = server.as_deref();
         let member = self.member(user, server);
         let u = self.store.users.get(user);
@@ -79,6 +79,20 @@ impl StoatAccount {
             bot: u.is_some_and(|u| u.bot.is_some()),
             has_friends: true,
             moderation: server.and_then(|s| self.moderation(s, user)),
+            group_moderation: group.as_ref().and_then(|channel| {
+                let c = self.store.channels.get(channel)?;
+                let me = self.store.me.as_deref()?;
+                let remove_member = c.channel_type == "Group"
+                    && user != me
+                    && c.owner.as_deref() != Some(user.as_str())
+                    && c.recipients.iter().any(|u| u == user)
+                    && (c.owner.as_deref() == Some(me) || self.store.can(channel, crate::permissions::MANAGE_CHANNEL));
+                let account = self.account.as_ref()?.clone();
+                remove_member.then(|| godwit_core::members::GroupModeration {
+                    room: RoomId::new(account, channel.as_str()),
+                    remove_member,
+                })
+            }),
         })
     }
 

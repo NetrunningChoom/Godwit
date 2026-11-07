@@ -33,8 +33,10 @@ export component UserCard inherits Rectangle {
     // Seen in a server where we outrank them (the official UserContextMenu).
     in property <bool> can-kick;
     in property <bool> can-ban;
+    in property <bool> can-remove-group-member;
     callback kick();
     callback ban();
+    callback remove-group-member();
     callback close();
     callback message();
     callback add-friend();
@@ -177,6 +179,10 @@ export component UserCard inherits Rectangle {
                     spacing: Theme.space-3; alignment: start;
                     if root.can-kick: Button { text: "Kick member"; kind: "text"; danger: true; clicked => { root.kick(); } }
                     if root.can-ban: Button { text: "Ban member"; kind: "text"; danger: true; clicked => { root.ban(); } }
+                }
+                if !root.me && root.can-remove-group-member: HorizontalLayout {
+                    spacing: Theme.space-3; alignment: start;
+                    Button { text: "Remove member"; kind: "text"; danger: true; clicked => { root.remove-group-member(); } }
                 }
             }
         }

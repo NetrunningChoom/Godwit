@@ -154,6 +154,7 @@ impl SteamAccount {
             bot: false,
             has_friends: true,
             moderation: None,
+            group_moderation: None,
         })
     }
 
