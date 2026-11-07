@@ -33,6 +33,11 @@ impl StoatAccount {
             | ServerAdmin::EditRole(_)
             | ServerAdmin::DeleteRole(_)
             | ServerAdmin::SetDefaultPermissions(_) => Some((p::MANAGE_ROLE, "Manage Roles")),
+            // for-web gates the Emoji page on Manage Customisation.
+            ServerAdmin::LoadEmoji
+            | ServerAdmin::CreateEmoji { .. }
+            | ServerAdmin::RenameEmoji { .. }
+            | ServerAdmin::DeleteEmoji(_) => Some((p::MANAGE_CUSTOMISATION, "Manage Customisation")),
             ServerAdmin::CreateInvite => Some((p::INVITE_OTHERS, "Invite Others")),
             ServerAdmin::CreateChannel { .. } => Some((p::MANAGE_CHANNEL, "Manage Channels")),
             ServerAdmin::LoadRoles
@@ -130,6 +135,70 @@ impl StoatAccount {
                     server: raw,
                     permissions,
                 }))
+            }
+            ServerAdmin::LoadEmoji => {
+                // Emoji come with Ready and the EmojiCreate/Delete events: nothing to fetch.
+                let emoji = self.server_emojis(&raw);
+                self.emoji_watch = Some((raw, emoji.clone()));
+                return vec![Event::ServerAdmin {
+                    server,
+                    result: Ok(ServerAdminResult::Emoji(emoji)),
+                }];
+            }
+            ServerAdmin::CreateEmoji { name, file } => {
+                let name = name.trim();
+                let current = self.server_emojis(&raw);
+                if let Err(e) = current.check_new(name, file.size) {
+                    return fail(server, &e);
+                }
+                self.emoji_pending = Some(EmojiChange::Create { server: raw.clone() });
+                Cmd::Emoji(EmojiCmd::CreateEmoji {
+                    server: raw,
+                    name: name.to_owned(),
+                    file: Upload {
+                        name: file.path.file_name().and_then(|s| s.to_str()).unwrap_or("emoji").into(),
+                        size: file.size,
+                        source: UploadSource::Path(file.path),
+                    },
+                })
+            }
+            ServerAdmin::RenameEmoji { id, name } => {
+                let name = name.trim();
+                if let Err(e) = self.server_emojis(&raw).rules.validate_name(name) {
+                    return fail(server, &e);
+                }
+                if !self
+                    .store
+                    .emojis
+                    .get(id.as_ref())
+                    .is_some_and(|e| e.server() == Some(raw.as_str()))
+                {
+                    return fail(server, "That emoji is no longer here.");
+                }
+                self.emoji_pending = Some(EmojiChange::Rename {
+                    server: raw,
+                    id: id.to_string(),
+                    name: name.to_owned(),
+                });
+                Cmd::Emoji(EmojiCmd::RenameEmoji {
+                    id: id.to_string(),
+                    name: name.to_owned(),
+                })
+            }
+            ServerAdmin::DeleteEmoji(id) => {
+                if !self
+                    .store
+                    .emojis
+                    .get(id.as_ref())
+                    .is_some_and(|e| e.server() == Some(raw.as_str()))
+                {
+                    return fail(server, "That emoji is no longer here.");
+                }
+                self.emoji_pending = Some(EmojiChange::Delete {
+                    server: raw,
+                    id: id.to_string(),
+                });
+                Cmd::Emoji(EmojiCmd::DeleteEmoji { id: id.to_string() })
             }
             ServerAdmin::DeleteServer => {
                 if owner != *server.account.user {
@@ -264,6 +333,94 @@ impl StoatAccount {
         }
     }
 
+    /// A server's custom emoji for the Emoji page, newest first (ULIDs sort
+    /// by age, as for-web's list), with Stoat's name rules and limits.
+    pub(super) fn server_emojis(&self, server: &str) -> godwit_core::server_settings::ServerEmojis {
+        let autumn = self.config.as_ref().map(|c| c.features.autumn.url.clone());
+        let limits = self.config.as_ref().and_then(|c| c.features.limits.as_ref());
+        let mut emoji: Vec<&crate::api::Emoji> = self
+            .store
+            .emojis
+            .values()
+            .filter(|e| e.server() == Some(server))
+            .collect();
+        emoji.sort_by(|a, b| b.id.cmp(&a.id));
+        godwit_core::server_settings::ServerEmojis {
+            emoji: emoji
+                .into_iter()
+                .map(|e| godwit_core::server_settings::ServerEmoji {
+                    id: e.id.as_str().into(),
+                    name: e.name.as_str().into(),
+                    url: autumn.as_ref().map(|a| format!("{a}/emojis/{}", e.id).into()),
+                    creator: e
+                        .creator_id
+                        .as_deref()
+                        .map(|c| self.store.display_name(c, Some(server)))
+                        .unwrap_or_default()
+                        .into(),
+                })
+                .collect(),
+            limit: limits.and_then(|l| l.global.as_ref()?.server_emoji),
+            max_file_bytes: limits.and_then(|l| l.default.file_upload_size_limits.get("emojis").copied()),
+            rules: godwit_core::server_settings::EmojiRules::default(),
+        }
+    }
+
+    /// Sends the watched server's emoji again when an event or our own change altered them.
+    pub(super) fn sync_emoji_page(&mut self, out: &mut Vec<Event>) {
+        let Some((server, sent)) = &self.emoji_watch else {
+            return;
+        };
+        let (Some(account), true) = (self.account.clone(), self.store.servers.contains_key(server)) else {
+            self.emoji_watch = None;
+            return;
+        };
+        let now = self.server_emojis(server);
+        if now != *sent {
+            let server = server.clone();
+            out.push(Event::ServerAdmin {
+                server: ServerId::new(account, server.as_str()),
+                result: Ok(ServerAdminResult::Emoji(now.clone())),
+            });
+            self.emoji_watch = Some((server, now));
+        }
+    }
+
+    /// The answer to an emoji request: the store follows it at once (the
+    /// socket's EmojiCreate/Delete repeat it; there is no rename event).
+    pub(super) fn emoji_saved(&mut self, result: Result<Value, String>, out: &mut Vec<Event>) {
+        let Some(change) = self.emoji_pending.take() else {
+            return;
+        };
+        let (server, message) = match &change {
+            EmojiChange::Create { server } => (server.clone(), "Emoji created."),
+            EmojiChange::Rename { server, .. } => (server.clone(), "Emoji renamed."),
+            EmojiChange::Delete { server, .. } => (server.clone(), "Emoji deleted."),
+        };
+        let result = result.map(|value| {
+            match change {
+                EmojiChange::Create { .. } => {
+                    if let Ok(e) = serde_json::from_value::<crate::api::Emoji>(value) {
+                        self.store.emojis.insert(e.id.clone(), e);
+                    }
+                }
+                EmojiChange::Rename { id, name, .. } => {
+                    if let Some(e) = self.store.emojis.get_mut(&id) {
+                        e.name = name;
+                    }
+                }
+                EmojiChange::Delete { id, .. } => {
+                    self.store.emojis.remove(&id);
+                }
+            }
+            ServerAdminResult::Done(message.into())
+        });
+        // The refreshed list goes first so the notice lands on current rows.
+        self.sync_emoji(out);
+        self.sync_emoji_page(out);
+        self.admin_answer(&server, result.map_err(Into::into), out);
+    }
+
     /// Sends the watched server's roles again when a websocket event changed them.
     pub(super) fn sync_roles(&mut self, out: &mut Vec<Event>) {
         let Some((server, sent)) = &self.roles_watch else {
@@ -329,6 +486,9 @@ impl StoatAccount {
             can_manage: self.store.can_in_server(&s.id, crate::permissions::MANAGE_SERVER),
             can_manage_roles: self.store.can_in_server(&s.id, crate::permissions::MANAGE_ROLE),
             can_ban: self.store.can_in_server(&s.id, crate::permissions::BAN_MEMBERS),
+            can_manage_emoji: self
+                .store
+                .can_in_server(&s.id, crate::permissions::MANAGE_CUSTOMISATION),
             owner: s.owner == *id.account.user,
             channels: s
                 .channels

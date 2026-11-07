@@ -1097,6 +1097,7 @@ fn demo_overview(app: &Application, server: &Server, index: usize) -> godwit_cor
         can_manage: index == 0,
         can_manage_roles: index == 0,
         can_ban: index == 0,
+        can_manage_emoji: index == 0,
         owner: index == 0,
         channels,
         system_channels: [first.clone(), first, None, None],
@@ -1108,6 +1109,7 @@ struct DemoAdmin {
     invites: Vec<godwit_core::server_settings::ServerInvite>,
     bans: Vec<godwit_core::server_settings::ServerBan>,
     roles: godwit_core::server_settings::ServerRoles,
+    emoji: godwit_core::server_settings::ServerEmojis,
 }
 
 fn demo_admin(overview: &godwit_core::server_settings::ServerOverview, seed: u64) -> DemoAdmin {
@@ -1152,7 +1154,23 @@ fn demo_admin(overview: &godwit_core::server_settings::ServerOverview, seed: u64
         role(Some("#4caf8f"), true, p::MANAGE_MESSAGES | p::TIMEOUT_MEMBERS),
         role(None, false, p::REACT),
     ];
+    let emoji = godwit_core::server_settings::ServerEmojis {
+        emoji: ["party_parrot", "this_is_fine", "shipit", "pepe_sad", "big_brain"]
+            .iter()
+            .enumerate()
+            .map(|(i, name)| godwit_core::server_settings::ServerEmoji {
+                id: format!("E{i}").into(),
+                name: (*name).into(),
+                url: Some(format!("preview://emoji/{}", i % 4).into()),
+                creator: person(i % 3 + 1).into(),
+            })
+            .collect(),
+        limit: Some(20),
+        max_file_bytes: Some(500_000),
+        rules: Default::default(),
+    };
     DemoAdmin {
+        emoji,
         invites,
         bans,
         roles: ServerRoles {
@@ -1415,6 +1433,33 @@ impl DemoAccount {
             A::LoadInvites => R::Invites(admin.invites.clone()),
             A::LoadBans => R::Bans(admin.bans.clone()),
             A::LoadRoles => R::Roles(admin.roles.clone()),
+            A::LoadEmoji => R::Emoji(admin.emoji.clone()),
+            A::CreateEmoji { name, file } => {
+                admin.emoji.check_new(name.trim(), file.size)?;
+                let n = admin.emoji.emoji.len();
+                admin.emoji.emoji.insert(
+                    0,
+                    godwit_core::server_settings::ServerEmoji {
+                        id: format!("E{}", n + 100).into(),
+                        name: name.trim().into(),
+                        url: Some(format!("preview://emoji/{}", n % 4).into()),
+                        creator: "You".into(),
+                    },
+                );
+                R::Emoji(admin.emoji.clone())
+            }
+            A::RenameEmoji { id, name } => {
+                admin.emoji.rules.validate_name(name.trim())?;
+                let Some(e) = admin.emoji.emoji.iter_mut().find(|e| e.id == id) else {
+                    return Err("That emoji is no longer here.".into());
+                };
+                e.name = name.trim().into();
+                R::Emoji(admin.emoji.clone())
+            }
+            A::DeleteEmoji(id) => {
+                admin.emoji.emoji.retain(|e| e.id != id);
+                R::Emoji(admin.emoji.clone())
+            }
             A::DeleteInvite(code) => {
                 admin.invites.retain(|i| i.code != code);
                 R::Invites(admin.invites.clone())
@@ -1546,7 +1591,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 let change = !op.is_load();
                 let result = self.server_admin(&server, op);
                 // A change answers with the new list, then its outcome, as Stoat does.
-                let listed = matches!(result, Ok(R::Invites(_) | R::Bans(_) | R::Roles(_)));
+                let listed = matches!(result, Ok(R::Invites(_) | R::Bans(_) | R::Roles(_) | R::Emoji(_)));
                 let mut out = vec![Event::ServerAdmin {
                     server: server.clone(),
                     result,
@@ -2070,6 +2115,82 @@ mod tests {
         let shown = app.state().profile.clone();
         assert!(shown.is_some_and(|(u, p)| u == friend
             && p.is_some_and(|p| p.relationship == godwit_core::members::Relationship::Blocked && p.can_block)));
+    }
+
+    #[test]
+    fn demo_emoji_can_be_added_renamed_and_deleted() {
+        use godwit_core::server_settings::{EmojiFile, ServerAdmin, ServerPage};
+        let (mut app, _, _) = world(Contacts::default());
+        let mut demo = DemoAccount::new(&app);
+        let server = ServerId::new(account(), "S");
+        run(&mut app, &mut demo, Action::OpenServerSettings(server.clone()));
+        run(&mut app, &mut demo, Action::ServerSettingsPage(ServerPage::Emoji));
+        let names = |app: &Application| -> Vec<String> {
+            let s = app.state().server_settings.as_ref().unwrap();
+            s.emoji
+                .as_ref()
+                .unwrap()
+                .emoji
+                .iter()
+                .map(|e| e.name.to_string())
+                .collect()
+        };
+        let before = names(&app).len();
+        assert!(before > 0);
+        let admin = |op| Action::ServerAdmin {
+            server: server.clone(),
+            op,
+        };
+        let file = EmojiFile {
+            path: "/demo/blorp.png".into(),
+            size: 1000,
+        };
+        // A bad name is refused by the core's rules and nothing changes.
+        run(
+            &mut app,
+            &mut demo,
+            admin(ServerAdmin::CreateEmoji {
+                name: "Bad Name".into(),
+                file: file.clone(),
+            }),
+        );
+        assert_eq!(names(&app).len(), before);
+        assert!(matches!(
+            app.state().server_settings.as_ref().unwrap().notice,
+            Some(Err(_))
+        ));
+        run(
+            &mut app,
+            &mut demo,
+            admin(ServerAdmin::CreateEmoji {
+                name: " blorp ".into(),
+                file,
+            }),
+        );
+        assert_eq!(names(&app)[0], "blorp");
+        assert!(!app.state().server_settings.as_ref().unwrap().admin_busy);
+        let id = app
+            .state()
+            .server_settings
+            .as_ref()
+            .unwrap()
+            .emoji
+            .as_ref()
+            .unwrap()
+            .emoji[0]
+            .id
+            .clone();
+        run(
+            &mut app,
+            &mut demo,
+            admin(ServerAdmin::RenameEmoji {
+                id: id.clone(),
+                name: "glonk".into(),
+            }),
+        );
+        assert_eq!(names(&app)[0], "glonk");
+        run(&mut app, &mut demo, admin(ServerAdmin::DeleteEmoji(id)));
+        assert_eq!(names(&app).len(), before);
     }
 
     #[test]

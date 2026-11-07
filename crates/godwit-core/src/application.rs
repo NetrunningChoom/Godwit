@@ -380,6 +380,7 @@ impl Application {
         let op = match page {
             ServerPage::Overview => return Vec::new(),
             ServerPage::Roles => ServerAdmin::LoadRoles,
+            ServerPage::Emoji => ServerAdmin::LoadEmoji,
             ServerPage::Invites => ServerAdmin::LoadInvites,
             ServerPage::Bans => ServerAdmin::LoadBans,
         };
@@ -431,6 +432,7 @@ impl Application {
             Ok(ServerAdminResult::Invites(list)) => s.invites = Some(list),
             Ok(ServerAdminResult::Bans(list)) => s.bans = Some(list),
             Ok(ServerAdminResult::Roles(roles)) => s.roles = Some(roles),
+            Ok(ServerAdminResult::Emoji(emoji)) => s.emoji = Some(emoji),
             Ok(ServerAdminResult::Done(message)) => {
                 s.admin_busy = false;
                 s.notice = Some(Ok(message));

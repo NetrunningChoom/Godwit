@@ -49,6 +49,27 @@ impl Application {
             if s.admin_busy {
                 return Vec::new();
             }
+            // Emoji changes: the capability, and the name and file rules,
+            // are checked before anything is sent.
+            let emoji_check = match &op {
+                crate::server_settings::ServerAdmin::CreateEmoji { name, file } => {
+                    Some(s.emoji.as_ref().map_or(Ok(()), |e| e.check_new(name.trim(), file.size)))
+                }
+                crate::server_settings::ServerAdmin::RenameEmoji { name, .. } => {
+                    Some(s.emoji.as_ref().map_or(Ok(()), |e| e.rules.validate_name(name.trim())))
+                }
+                crate::server_settings::ServerAdmin::DeleteEmoji(_) => Some(Ok(())),
+                _ => None,
+            };
+            if let Some(check) = emoji_check {
+                if !s.overview.as_ref().is_some_and(|o| o.can_manage_emoji) {
+                    return Vec::new();
+                }
+                if let Err(e) = check {
+                    s.notice = Some(Err(e.into()));
+                    return Vec::new();
+                }
+            }
             s.admin_busy = true;
             s.notice = None;
         }

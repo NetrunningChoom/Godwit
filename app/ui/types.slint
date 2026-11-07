@@ -604,6 +604,14 @@ export struct BanItem {
     has-avatar: bool,
 }
 
+// Server settings → Emoji: one custom emoji.
+export struct EmojiItem {
+    name: string,
+    creator: string,
+    image: image,
+    has-image: bool,
+}
+
 // Server settings → Roles: one role in the list (row 0 is Everyone).
 export struct AdminRoleItem {
     name: string,

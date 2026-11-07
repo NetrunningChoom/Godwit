@@ -164,7 +164,9 @@ impl StoatAccount {
                 self.autodelete_live(&v);
                 self.handle_socket_event(v, out);
                 self.sync_roles(out);
+                self.sync_emoji_page(out);
             }
+            Ev::EmojiSaved(result) => self.emoji_saved(result, out),
             Ev::ServerInvites { server, invites } => {
                 let list = invites.iter().filter_map(|v| self.invite(v)).collect();
                 self.admin_answer(&server, Ok(ServerAdminResult::Invites(list)), out);

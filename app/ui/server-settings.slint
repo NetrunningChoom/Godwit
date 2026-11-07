@@ -4,17 +4,18 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import { Section } from "settings.slint";
-import { AdminRoleItem, BanItem, PermissionItem, ServerInviteItem } from "types.slint";
-import { Avatar, Button, Dialog, IconButton, Select, TextArea, TextField, Toggle } from "widgets.slint";
+import { AdminRoleItem, BanItem, EmojiItem, PermissionItem, ServerInviteItem } from "types.slint";
+import { Avatar, Button, ConfirmDialog, Dialog, IconButton, Select, TextArea, TextField, Toggle } from "widgets.slint";
 
 // Server settings, as the official ServerSettings: a sidebar of pages
-// (Overview, Roles, Invites, Bans), each shown only with the permission it
+// (Overview, Roles, Emoji, Invites, Bans), each shown only with the permission it
 // needs, and Delete Server for the owner.
 export component ServerSettings inherits Rectangle {
     in property <string> server-name;
-    // 0 Overview, 1 Roles, 2 Invites, 3 Bans.
+    // 0 Overview, 1 Roles, 2 Emoji, 3 Invites, 4 Bans.
     in property <int> page;
     in property <bool> show-roles;
+    in property <bool> show-emoji;
     in property <bool> show-invites;
     in property <bool> show-bans;
     in property <bool> can-delete;
@@ -47,6 +48,14 @@ export component ServerSettings inherits Rectangle {
     in property <bool> invites-loaded;
     in property <[BanItem]> bans;
     in property <bool> bans-loaded;
+    in property <[EmojiItem]> emoji;
+    in property <bool> emoji-loaded;
+    in-out property <string> emoji-new-name;
+    // Why the name or picture can't be used yet (empty when fine).
+    in property <string> emoji-new-error;
+    in property <string> emoji-file-label;
+    in property <string> emoji-slots;
+    in property <bool> emoji-can-create;
     in property <[AdminRoleItem]> roles;
     in property <bool> roles-loaded;
     // The role being edited: 0 is Everyone, then the roles in order.
@@ -64,9 +73,15 @@ export component ServerSettings inherits Rectangle {
     callback unban(int);
     callback select-role(int); callback create-role(string); callback role-edited();
     callback toggle-permission(int); callback save-role(); callback delete-role();
+    callback pick-emoji-file(); callback emoji-name-edited(); callback create-emoji();
+    callback rename-emoji(int, string); callback delete-emoji(int);
     callback delete-server();
 
     property <bool> confirm-delete;
+    // The emoji being renamed or deleted (-1: none).
+    property <int> rename-row: -1;
+    property <string> rename-text;
+    property <int> delete-row: -1;
     property <string> new-role;
     background: Theme.surface-lowest;
     TouchArea { scroll-event(e) => { accept } }
@@ -82,8 +97,9 @@ export component ServerSettings inherits Rectangle {
                     Text { text: root.server-name; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; overflow: elide; }
                     Section { label: "Overview"; selected: root.page == 0; clicked => { root.select-page(0); } }
                     if root.show-roles: Section { label: "Roles"; selected: root.page == 1; clicked => { root.select-page(1); } }
-                    if root.show-invites: Section { label: "Invites"; selected: root.page == 2; clicked => { root.select-page(2); } }
-                    if root.show-bans: Section { label: "Bans"; selected: root.page == 3; clicked => { root.select-page(3); } }
+                    if root.show-emoji: Section { label: "Emojis"; selected: root.page == 2; clicked => { root.select-page(2); } }
+                    if root.show-invites: Section { label: "Invites"; selected: root.page == 3; clicked => { root.select-page(3); } }
+                    if root.show-bans: Section { label: "Bans"; selected: root.page == 4; clicked => { root.select-page(4); } }
                     if root.can-delete: Rectangle { height: 12px; }
                     if root.can-delete: Section { label: "Delete Server"; danger: true; clicked => { root.confirm-delete = true; } }
                 }
@@ -93,7 +109,7 @@ export component ServerSettings inherits Rectangle {
                 HorizontalLayout {
                     padding: Theme.space-5; spacing: Theme.space-4;
                     Text {
-                        text: root.page == 1 ? "Roles" : root.page == 2 ? "Invites" : root.page == 3 ? "Bans" : "Overview";
+                        text: root.page == 1 ? "Roles" : root.page == 2 ? "Emojis" : root.page == 3 ? "Invites" : root.page == 4 ? "Bans" : "Overview";
                         font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center;
                     }
                     Button { text: "Close"; kind: "text"; clicked => { root.close(); } }
@@ -231,8 +247,49 @@ export component ServerSettings inherits Rectangle {
                     }
                 }
 
+                // Emojis (official EmojiList): a form to add one, then the list
+                // with rename and delete.
+                if root.page == 2: emoji-scroll := ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        width: min(emoji-scroll.visible-width, 680px);
+                        padding: Theme.space-5; spacing: Theme.space-3; alignment: start;
+                        Text { text: "Add an emoji"; font-weight: 600; color: Theme.on-surface; }
+                        HorizontalLayout {
+                            spacing: Theme.space-3;
+                            Button { text: "Choose image"; enabled: root.emoji-can-create && !root.admin-busy; clicked => { root.pick-emoji-file(); } }
+                            Text { text: root.emoji-file-label; vertical-alignment: center; color: Theme.on-surface-variant; overflow: elide; horizontal-stretch: 1; }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.space-3;
+                            TextField { placeholder: "Emoji name"; text <=> root.emoji-new-name; enabled: root.emoji-can-create && !root.admin-busy; edited => { root.emoji-name-edited(); } accepted => { root.create-emoji(); } }
+                            Button { y: 4px; text: "Create"; kind: "filled"; enabled: root.emoji-can-create && !root.admin-busy && root.emoji-new-name != "" && root.emoji-file-label != "" && root.emoji-new-error == ""; clicked => { root.create-emoji(); } }
+                        }
+                        Text { text: "Lowercase letters, numbers and underscores only."; font-size: Theme.text-small; color: Theme.outline; wrap: word-wrap; }
+                        if root.emoji-new-error != "": Text { text: root.emoji-new-error; wrap: word-wrap; color: Theme.error; }
+                        if root.emoji-slots != "": Text { text: root.emoji-slots; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+                        Rectangle { height: Theme.space-3; }
+                        if !root.emoji-loaded: Text { text: "Loading emoji…"; color: Theme.on-surface-variant; }
+                        if root.emoji-loaded && root.emoji.length == 0: Text { text: "No emoji yet."; color: Theme.outline; }
+                        for e[i] in root.emoji: HorizontalLayout {
+                            spacing: Theme.space-4; height: 48px;
+                            Rectangle {
+                                y: 8px; width: 32px; height: 32px; border-radius: Theme.radius-sm; clip: true; background: Theme.surface-high;
+                                if e.has-image: Image { width: parent.width; height: parent.height; source: e.image; image-fit: contain; }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1; alignment: center;
+                                Text { text: ":" + e.name + ":"; color: Theme.on-surface; overflow: elide; }
+                                if e.creator != "": Text { text: e.creator; font-size: Theme.text-small; color: Theme.on-surface-variant; overflow: elide; }
+                            }
+                            if root.emoji-can-create: IconButton { y: 6px; glyph: Icons.edit; tooltip: "Edit Emoji"; enabled: !root.admin-busy; clicked => { root.rename-text = e.name; root.rename-row = i; } }
+                            if root.emoji-can-create: IconButton { y: 6px; glyph: Icons.delete; tooltip: "Delete Emoji"; enabled: !root.admin-busy; clicked => { root.delete-row = i; } }
+                        }
+                    }
+                }
+
                 // Invites: inviter and code, with copy and delete.
-                if root.page == 2: invite-list := ScrollView {
+                if root.page == 3: invite-list := ScrollView {
                     vertical-stretch: 1;
                     VerticalLayout {
                         width: min(invite-list.visible-width, 680px);
@@ -255,7 +312,7 @@ export component ServerSettings inherits Rectangle {
                 }
 
                 // Bans: user and reason, with Pardon.
-                if root.page == 3: ban-list := ScrollView {
+                if root.page == 4: ban-list := ScrollView {
                     vertical-stretch: 1;
                     VerticalLayout {
                         width: min(ban-list.visible-width, 680px);
@@ -273,6 +330,25 @@ export component ServerSettings inherits Rectangle {
                 }
             }
         }
+    }
+    // The official EditEmoji dialog.
+    if root.rename-row >= 0: Dialog {
+        title: "Rename emoji";
+        dismissed => { root.rename-row = -1; }
+        TextField { text <=> root.rename-text; autofocus: true; accepted => { root.rename-emoji(root.rename-row, root.rename-text); root.rename-row = -1; } }
+        HorizontalLayout {
+            alignment: end; spacing: Theme.gap-sm;
+            Button { text: "Close"; clicked => { root.rename-row = -1; } }
+            Button { text: "Change"; kind: "filled"; enabled: root.rename-text != ""; clicked => { root.rename-emoji(root.rename-row, root.rename-text); root.rename-row = -1; } }
+        }
+    }
+    // The official DeleteEmoji confirmation.
+    if root.delete-row >= 0: ConfirmDialog {
+        title: "Delete emoji";
+        message: "Delete this emoji? Messages that use it will show its name instead.";
+        confirm-text: "Delete"; danger: true;
+        cancelled => { root.delete-row = -1; }
+        confirmed => { root.delete-emoji(root.delete-row); root.delete-row = -1; }
     }
     // The official DeleteServer confirmation.
     if root.confirm-delete: Dialog {

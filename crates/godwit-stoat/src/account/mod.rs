@@ -17,8 +17,8 @@ mod server_admin;
 mod sign_in;
 
 use crate::backend::{
-    ChannelCmd, MediaCmd, MemberCmd, MessageCmd, PeopleCmd, RoleCmd, RoleEditCmd, ServerCmd, SessionCmd, SettingsCmd,
-    VoiceCmd as VoiceCommand,
+    ChannelCmd, EmojiCmd, MediaCmd, MemberCmd, MessageCmd, PeopleCmd, RoleCmd, RoleEditCmd, ServerCmd, SessionCmd,
+    SettingsCmd, VoiceCmd as VoiceCommand,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, mpsc};
@@ -117,6 +117,10 @@ pub struct StoatAccount {
     /// The server whose Roles page is open, and the roles last sent for it:
     /// role changes arrive by websocket, so they're sent again as they do.
     roles_watch: Option<(String, ServerRoles)>,
+    /// The open Emoji page's server and the list last sent for it.
+    emoji_watch: Option<(String, godwit_core::server_settings::ServerEmojis)>,
+    /// The emoji change on its way (one at a time: the page waits).
+    emoji_pending: Option<EmojiChange>,
     /// The server a requested invite or new channel is for: their answers
     /// don't say.
     invite_for: Option<String>,
@@ -136,6 +140,13 @@ pub struct StoatAccount {
 enum GroupMemberAction {
     Remove { channel: String, user: String },
     Transfer { channel: String, user: String },
+}
+
+/// What an emoji request was for, to update the store when it succeeds.
+enum EmojiChange {
+    Create { server: String },
+    Rename { server: String, id: String, name: String },
+    Delete { server: String, id: String },
 }
 
 /// Servers over this many members only fetch who's online, as officially.
@@ -509,6 +520,8 @@ impl StoatAccount {
             members_room: None,
             members_sent: None,
             roles_watch: None,
+            emoji_watch: None,
+            emoji_pending: None,
             invite_for: None,
             session_revoke_pending: false,
             channel_for: None,
@@ -559,6 +572,8 @@ impl StoatAccount {
             members_room: None,
             members_sent: None,
             roles_watch: None,
+            emoji_watch: None,
+            emoji_pending: None,
             invite_for: None,
             session_revoke_pending: false,
             channel_for: None,
@@ -710,6 +725,8 @@ mod tests {
             members_room: None,
             members_sent: None,
             roles_watch: None,
+            emoji_watch: None,
+            emoji_pending: None,
             invite_for: None,
             session_revoke_pending: false,
             channel_for: None,
@@ -1185,6 +1202,85 @@ mod tests {
             matches!(&events[0], Event::MessageConfirmed { nonce, message, .. } if &**nonce == "n1" && &*message.id.0 == "05")
         );
         assert!(matches!(&events[1], Event::MessageFailed { nonce, .. } if &**nonce == "n2"));
+    }
+
+    #[test]
+    fn emoji_manager_lists_validates_and_follows_changes() {
+        use godwit_core::ids::ServerId;
+        use godwit_core::server_settings::EmojiFile;
+        let (mut a, _tx, mut cmds, _) = connected();
+        while cmds.try_recv().is_ok() {}
+        let acc = a.account.clone().unwrap();
+        let server = ServerId::new(acc, "S");
+        let e: crate::api::Emoji = serde_json::from_value(
+            json!({ "_id": "E1", "name": "old", "creator_id": "ANN", "parent": { "type": "Server", "id": "S" } }),
+        )
+        .unwrap();
+        a.store.emojis.insert("E1".into(), e);
+        let out = a.run(Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::LoadEmoji,
+        });
+        let [
+            Event::ServerAdmin {
+                result: Ok(ServerAdminResult::Emoji(list)),
+                ..
+            },
+        ] = out.as_slice()
+        else {
+            panic!("expected the emoji list");
+        };
+        assert_eq!(list.emoji.len(), 1);
+        assert_eq!(list.emoji[0].creator.as_ref(), "Ann");
+        assert_eq!(list.emoji[0].url.as_deref(), Some("https://files.example/emojis/E1"));
+        // A bad name never reaches the network.
+        let out = a.run(Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::RenameEmoji {
+                id: "E1".into(),
+                name: "Bad Name".into(),
+            },
+        });
+        assert!(matches!(out.as_slice(), [Event::ServerAdmin { result: Err(_), .. }]));
+        assert!(cmds.try_recv().is_err());
+        let out = a.run(Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::CreateEmoji {
+                name: "new_one".into(),
+                file: EmojiFile {
+                    path: "/nonexistent/x.png".into(),
+                    size: 10,
+                },
+            },
+        });
+        assert!(out.is_empty());
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Emoji(EmojiCmd::CreateEmoji { name, .. })) if name == "new_one"));
+        a.emoji_saved(Ok(json!({ "_id": "E2", "name": "new_one", "creator_id": "ME", "parent": { "type": "Server", "id": "S" } })), &mut Vec::new());
+        a.run(Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::RenameEmoji {
+                id: "E1".into(),
+                name: "fresh".into(),
+            },
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Emoji(EmojiCmd::RenameEmoji { .. }))));
+        let mut out = Vec::new();
+        a.emoji_saved(Ok(json!({})), &mut out);
+        assert_eq!(a.store.emojis["E1"].name, "fresh");
+        // The watched list is resent, then the notice (the picker's groups go too).
+        out.retain(|e| matches!(e, Event::ServerAdmin { .. }));
+        assert!(matches!(
+            out.as_slice(),
+            [Event::ServerAdmin { result: Ok(ServerAdminResult::Emoji(l)), .. }, Event::ServerAdmin { result: Ok(ServerAdminResult::Done(_)), .. }]
+                if l.emoji.iter().any(|e| e.name.as_ref() == "fresh")
+        ));
+        a.run(Command::ServerAdmin {
+            server,
+            op: ServerAdmin::DeleteEmoji("E2".into()),
+        });
+        let mut out = Vec::new();
+        a.emoji_saved(Ok(Value::Null), &mut out);
+        assert!(!a.store.emojis.contains_key("E2"));
     }
 
     #[test]

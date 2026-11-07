@@ -3,13 +3,14 @@
 //! Server drafts stay local until Save; refreshes and failures preserve edits.
 use crate::{
     images::{AVATAR, Fit, Images},
-    ui::{AdminRoleItem, AppWindow, BanItem, PermissionItem, ServerInviteItem},
+    ui::{AdminRoleItem, AppWindow, BanItem, EmojiItem, PermissionItem, ServerInviteItem},
 };
 use godwit_core::application::{Action, AppState};
 use godwit_core::ids::ServerId;
 use godwit_core::own_profile::ProfileImage;
 use godwit_core::server_settings::{
-    RoleEdit, ServerAdmin, ServerOverview, ServerOverviewEdit, ServerPage, ServerRoles, ServerSettingsState,
+    EmojiFile, RoleEdit, ServerAdmin, ServerEmojis, ServerOverview, ServerOverviewEdit, ServerPage, ServerRoles,
+    ServerSettingsState,
 };
 use slint::{ModelRc, VecModel};
 
@@ -28,6 +29,11 @@ pub struct ServerEditor {
     role_allow: u64,
     role_dirty: bool,
     roles_seen: Option<ServerRoles>,
+    /// The Emoji page: the picture chosen for the next emoji, a problem with
+    /// picking it, and whether a create is waiting for its answer.
+    emoji_file: Option<EmojiFile>,
+    emoji_error: Option<String>,
+    emoji_creating: bool,
 }
 
 /// The core's page as the view's index, and back.
@@ -35,16 +41,18 @@ fn page_index(page: ServerPage) -> i32 {
     match page {
         ServerPage::Overview => 0,
         ServerPage::Roles => 1,
-        ServerPage::Invites => 2,
-        ServerPage::Bans => 3,
+        ServerPage::Emoji => 2,
+        ServerPage::Invites => 3,
+        ServerPage::Bans => 4,
     }
 }
 
 pub fn page_from_index(i: i32) -> ServerPage {
     match i {
         1 => ServerPage::Roles,
-        2 => ServerPage::Invites,
-        3 => ServerPage::Bans,
+        2 => ServerPage::Emoji,
+        3 => ServerPage::Invites,
+        4 => ServerPage::Bans,
         _ => ServerPage::Overview,
     }
 }
@@ -274,6 +282,81 @@ impl ServerEditor {
         })
     }
 
+    /// A picture was chosen for the next emoji (or picking failed).
+    pub fn emoji_picked(&mut self, token: &(ServerId, u64), result: Result<EmojiFile, String>) {
+        if self.token.as_ref() != Some(token) {
+            return;
+        }
+        match result {
+            Ok(file) => {
+                self.emoji_file = Some(file);
+                self.emoji_error = None;
+            }
+            Err(e) => self.emoji_error = Some(e),
+        }
+    }
+
+    /// Why the typed name or chosen picture can't make an emoji yet.
+    fn emoji_problem(&self, emoji: Option<&ServerEmojis>, name: &str) -> String {
+        if let Some(e) = &self.emoji_error {
+            return e.clone();
+        }
+        let (Some(emoji), name) = (emoji, name.trim()) else {
+            return String::new();
+        };
+        if name.is_empty() && self.emoji_file.is_none() {
+            return String::new();
+        }
+        let checked = match &self.emoji_file {
+            Some(f) => emoji.check_new(name, f.size),
+            None => emoji.rules.validate_name(name),
+        };
+        // An untouched name shouldn't scold before anything is typed.
+        match checked {
+            Err(_) if name.is_empty() => String::new(),
+            Err(e) => e,
+            Ok(()) => String::new(),
+        }
+    }
+
+    pub fn create_emoji(&mut self, ui: &AppWindow, state: &AppState) -> Option<Action> {
+        let s = state.server_settings.as_ref()?;
+        let file = self.emoji_file.clone()?;
+        let name = ui.get_server_edit_emoji_new_name();
+        if !self.emoji_problem(s.emoji.as_ref(), &name).is_empty() || name.trim().is_empty() {
+            return None;
+        }
+        self.emoji_creating = true;
+        Some(Action::ServerAdmin {
+            server: s.server.clone(),
+            op: ServerAdmin::CreateEmoji {
+                name: name.trim().into(),
+                file,
+            },
+        })
+    }
+
+    pub fn rename_emoji(&self, state: &AppState, row: i32, name: &str) -> Option<Action> {
+        let s = state.server_settings.as_ref()?;
+        let emoji = s.emoji.as_ref()?.emoji.get(usize::try_from(row).ok()?)?;
+        (name.trim() != emoji.name.as_ref()).then(|| Action::ServerAdmin {
+            server: s.server.clone(),
+            op: ServerAdmin::RenameEmoji {
+                id: emoji.id.clone(),
+                name: name.trim().into(),
+            },
+        })
+    }
+
+    pub fn delete_emoji(&self, state: &AppState, row: i32) -> Option<Action> {
+        let s = state.server_settings.as_ref()?;
+        let emoji = s.emoji.as_ref()?.emoji.get(usize::try_from(row).ok()?)?;
+        Some(Action::ServerAdmin {
+            server: s.server.clone(),
+            op: ServerAdmin::DeleteEmoji(emoji.id.clone()),
+        })
+    }
+
     /// The other pages' lists and the role editor.
     fn show_pages(&mut self, ui: &AppWindow, s: &ServerSettingsState, images: &mut Images) {
         let o = s.overview.as_ref();
@@ -286,6 +369,7 @@ impl ServerEditor {
         );
         ui.set_server_edit_page(page_index(s.page));
         ui.set_server_edit_show_roles(o.is_some_and(|o| o.can_manage_roles));
+        ui.set_server_edit_show_emoji(o.is_some_and(|o| o.can_manage_emoji));
         ui.set_server_edit_show_invites(o.is_some_and(|o| o.can_manage));
         ui.set_server_edit_show_bans(o.is_some_and(|o| o.can_ban));
         ui.set_server_edit_can_delete(o.is_some_and(|o| o.owner));
@@ -300,6 +384,51 @@ impl ServerEditor {
         let mut avatar = |url: Option<&str>| url.and_then(|u| images.get(u, AVATAR));
         match s.page {
             ServerPage::Overview => {}
+            ServerPage::Emoji => {
+                // A finished create clears the form; a failed one keeps it to retry.
+                if self.emoji_creating && !s.admin_busy {
+                    self.emoji_creating = false;
+                    if matches!(s.notice, Some(Ok(_))) {
+                        self.emoji_file = None;
+                        ui.set_server_edit_emoji_new_name("".into());
+                    }
+                }
+                ui.set_server_edit_emoji_loaded(s.emoji.is_some());
+                ui.set_server_edit_emoji_can_create(o.is_some_and(|o| o.can_manage_emoji));
+                let name = ui.get_server_edit_emoji_new_name();
+                ui.set_server_edit_emoji_new_error(self.emoji_problem(s.emoji.as_ref(), &name).into());
+                ui.set_server_edit_emoji_file_label(
+                    self.emoji_file
+                        .as_ref()
+                        .and_then(|f| f.path.file_name())
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                        .into(),
+                );
+                ui.set_server_edit_emoji_slots(
+                    s.emoji
+                        .as_ref()
+                        .and_then(ServerEmojis::slots_left)
+                        .map(|n| format!("{n} emoji slots remaining"))
+                        .unwrap_or_default()
+                        .into(),
+                );
+                let rows: Vec<EmojiItem> = s
+                    .emoji
+                    .iter()
+                    .flat_map(|e| &e.emoji)
+                    .map(|e| {
+                        let image = e.url.as_deref().and_then(|u| images.get(u, crate::images::EMOJI));
+                        EmojiItem {
+                            name: e.name.as_ref().into(),
+                            creator: e.creator.as_ref().into(),
+                            has_image: image.is_some(),
+                            image: image.unwrap_or_default(),
+                        }
+                    })
+                    .collect();
+                ui.set_server_edit_emoji(ModelRc::new(VecModel::from(rows)));
+            }
             ServerPage::Invites => {
                 ui.set_server_edit_invites_loaded(s.invites.is_some());
                 let rows: Vec<ServerInviteItem> = s
@@ -517,6 +646,7 @@ mod tests {
         for page in [
             ServerPage::Overview,
             ServerPage::Roles,
+            ServerPage::Emoji,
             ServerPage::Invites,
             ServerPage::Bans,
         ] {

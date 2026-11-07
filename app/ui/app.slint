@@ -12,7 +12,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, AdminRoleItem, PermissionItem, PinItem, StreamItem, GroupPersonItem
+    ProblemItem, RequestItem, ActiveItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, PermissionItem, PinItem, StreamItem, GroupPersonItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -120,6 +120,7 @@ export component AppWindow inherits Window {
     in property <string> server-edit-server-name;
     in property <int> server-edit-page;
     in property <bool> server-edit-show-roles;
+    in property <bool> server-edit-show-emoji;
     in property <bool> server-edit-show-invites;
     in property <bool> server-edit-show-bans;
     in property <bool> server-edit-can-delete;
@@ -130,6 +131,15 @@ export component AppWindow inherits Window {
     in property <bool> server-edit-invites-loaded;
     in property <[BanItem]> server-edit-bans;
     in property <bool> server-edit-bans-loaded;
+    in property <[EmojiItem]> server-edit-emoji;
+    in property <bool> server-edit-emoji-loaded;
+    in-out property <string> server-edit-emoji-new-name;
+    in property <string> server-edit-emoji-new-error;
+    in property <string> server-edit-emoji-file-label;
+    in property <string> server-edit-emoji-slots;
+    in property <bool> server-edit-emoji-can-create;
+    callback pick-server-emoji-file(); callback server-emoji-name-edited(); callback create-server-emoji();
+    callback rename-server-emoji(int, string); callback delete-server-emoji(int);
     in property <[AdminRoleItem]> server-edit-roles;
     in property <bool> server-edit-roles-loaded;
     in property <int> server-edit-role-index;
@@ -1222,7 +1232,7 @@ export component AppWindow inherits Window {
         changed => { root.server-overview-edited(); }
         pick-image(icon) => { root.pick-server-image(icon); } remove-image(icon) => { root.remove-server-image(icon); }
         server-name: root.server-edit-server-name; page: root.server-edit-page;
-        show-roles: root.server-edit-show-roles; show-invites: root.server-edit-show-invites; show-bans: root.server-edit-show-bans;
+        show-roles: root.server-edit-show-roles; show-emoji: root.server-edit-show-emoji; show-invites: root.server-edit-show-invites; show-bans: root.server-edit-show-bans;
         can-delete: root.server-edit-can-delete; admin-busy: root.server-edit-admin-busy;
         notice: root.server-edit-notice; notice-failed: root.server-edit-notice-failed;
         invites: root.server-edit-invites; invites-loaded: root.server-edit-invites-loaded;
@@ -1230,6 +1240,12 @@ export component AppWindow inherits Window {
         roles: root.server-edit-roles; roles-loaded: root.server-edit-roles-loaded; role-index: root.server-edit-role-index;
         role-name <=> root.server-edit-role-name; role-colour <=> root.server-edit-role-colour; role-hoist <=> root.server-edit-role-hoist;
         permissions: root.server-edit-permissions; role-dirty: root.server-edit-role-dirty;
+        emoji: root.server-edit-emoji; emoji-loaded: root.server-edit-emoji-loaded; emoji-new-name <=> root.server-edit-emoji-new-name;
+        emoji-new-error: root.server-edit-emoji-new-error; emoji-file-label: root.server-edit-emoji-file-label;
+        emoji-slots: root.server-edit-emoji-slots; emoji-can-create: root.server-edit-emoji-can-create;
+        pick-emoji-file => { root.pick-server-emoji-file(); } emoji-name-edited => { root.server-emoji-name-edited(); }
+        create-emoji => { root.create-server-emoji(); }
+        rename-emoji(i, n) => { root.rename-server-emoji(i, n); } delete-emoji(i) => { root.delete-server-emoji(i); }
         select-page(i) => { root.server-settings-page(i); }
         delete-invite(i) => { root.delete-server-invite(i); } copy-invite(i) => { root.copy-server-invite(i); }
         unban(i) => { root.unban-server-user(i); }

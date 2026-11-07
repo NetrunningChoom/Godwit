@@ -2927,6 +2927,63 @@ fn server_admin_pages_load_once_shown_and_report_changes() {
 }
 
 #[test]
+fn emoji_changes_need_the_capability_and_valid_names() {
+    use crate::server_settings::{EmojiFile, ServerAdmin, ServerAdminResult, ServerEmojis, ServerPage};
+    let mut app = Application::default();
+    let (server, request) = server_settings_open(&mut app);
+    let mut o = overview(true);
+    app.apply(Event::ServerOverview {
+        server: server.clone(),
+        request,
+        result: Ok(o.clone()),
+    });
+    let create = |name: &str| Action::ServerAdmin {
+        server: server.clone(),
+        op: ServerAdmin::CreateEmoji {
+            name: name.into(),
+            file: EmojiFile {
+                path: "/x/a.png".into(),
+                size: 10,
+            },
+        },
+    };
+    // Without the capability nothing is sent.
+    assert!(app.dispatch(create("ok")).is_empty());
+    o.can_manage_emoji = true;
+    let (server2, request2) = {
+        app.dispatch(Action::CloseServerSettings);
+        server_settings_open(&mut app)
+    };
+    app.apply(Event::ServerOverview {
+        server: server2,
+        request: request2,
+        result: Ok(o),
+    });
+    let effects = app.dispatch(Action::ServerSettingsPage(ServerPage::Emoji));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend {
+            command: Command::ServerAdmin {
+                op: ServerAdmin::LoadEmoji,
+                ..
+            },
+            ..
+        }]
+    ));
+    app.apply(Event::ServerAdmin {
+        server: server.clone(),
+        result: Ok(ServerAdminResult::Emoji(ServerEmojis::default())),
+    });
+    // A bad name is refused with a notice and isn't sent.
+    assert!(app.dispatch(create("Bad Name")).is_empty());
+    let s = app.state().server_settings.as_ref().unwrap();
+    assert!(matches!(s.notice, Some(Err(_))));
+    assert!(!s.admin_busy);
+    assert_eq!(app.dispatch(create("good_name")).len(), 1);
+    assert!(app.state().server_settings.as_ref().unwrap().admin_busy);
+}
+
+#[test]
 fn the_invite_dialog_waits_for_its_link_and_closes_on_failure() {
     use crate::server_settings::{ServerAdmin, ServerAdminResult};
     let mut app = Application::default();

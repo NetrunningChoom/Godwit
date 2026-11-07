@@ -209,6 +209,34 @@ impl Shell {
         self.server_editor.picked(ui, token, icon, result);
         self.show_server_settings(ui);
     }
+    pub fn server_emoji_file_picked(
+        &mut self,
+        ui: &AppWindow,
+        token: &(ServerId, u64),
+        result: Result<godwit_core::server_settings::EmojiFile, String>,
+    ) {
+        self.server_editor.emoji_picked(token, result);
+        self.show_server_settings(ui);
+    }
+    pub fn server_emoji_name_edited(&mut self, ui: &AppWindow) {
+        self.show_server_settings(ui);
+    }
+    pub fn create_server_emoji(&mut self, ui: &AppWindow) {
+        if let Some(action) = self.server_editor.create_emoji(ui, self.app.state()) {
+            self.act(ui, action);
+        }
+        self.show_server_settings(ui);
+    }
+    pub fn rename_server_emoji(&mut self, ui: &AppWindow, row: i32, name: &str) {
+        if let Some(action) = self.server_editor.rename_emoji(self.app.state(), row, name) {
+            self.act(ui, action);
+        }
+    }
+    pub fn delete_server_emoji(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(action) = self.server_editor.delete_emoji(self.app.state(), row) {
+            self.act(ui, action);
+        }
+    }
     pub(super) fn show_server_settings(&mut self, ui: &AppWindow) {
         self.server_editor.show(ui, self.app.state(), &mut self.images);
     }

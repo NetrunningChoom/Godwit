@@ -629,8 +629,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         ),
         server_admin_scene("server-roles", 1),
-        server_admin_scene("server-invites", 2),
-        server_admin_scene("server-bans", 3),
+        server_admin_scene("server-emoji", 2),
+        server_admin_scene("server-invites", 3),
+        server_admin_scene("server-bans", 4),
         // A banner wider and taller than its frame must stay inside it.
         Scene::new(
             "server-banner",

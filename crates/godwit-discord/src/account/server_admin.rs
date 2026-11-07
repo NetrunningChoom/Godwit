@@ -19,6 +19,8 @@ impl DiscordAccount {
             can_manage: perms & p::MANAGE_GUILD != 0,
             can_manage_roles: perms & p::MANAGE_ROLES != 0,
             can_ban: perms & p::BAN_MEMBERS != 0,
+            // Discord's emoji manager isn't wired yet; the core model is ready for it.
+            can_manage_emoji: false,
             owner: g.owner == self.me(),
             channels: g
                 .channels
@@ -95,6 +97,10 @@ impl DiscordAccount {
             | ServerAdmin::SetDefaultPermissions(_) => Some((p::MANAGE_ROLES, "Manage Roles")),
             ServerAdmin::CreateInvite => Some((p::CREATE_INSTANT_INVITE, "Create Invite")),
             ServerAdmin::CreateChannel { .. } => Some((p::MANAGE_CHANNELS, "Manage Channels")),
+            ServerAdmin::LoadEmoji
+            | ServerAdmin::CreateEmoji { .. }
+            | ServerAdmin::RenameEmoji { .. }
+            | ServerAdmin::DeleteEmoji(_) => return fail(server, "Emoji can't be managed here yet."),
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -109,6 +115,11 @@ impl DiscordAccount {
         let admin = match op {
             ServerAdmin::LoadInvites => Admin::Invites,
             ServerAdmin::DeleteInvite(code) => Admin::RevokeInvite(code.to_string()),
+            // Refused above until Discord's emoji endpoints are wired.
+            ServerAdmin::LoadEmoji
+            | ServerAdmin::CreateEmoji { .. }
+            | ServerAdmin::RenameEmoji { .. }
+            | ServerAdmin::DeleteEmoji(_) => return Vec::new(),
             ServerAdmin::LoadBans => Admin::Bans,
             ServerAdmin::Unban(user) => Admin::Unban(user.raw.to_string()),
             ServerAdmin::Kick(user) => Admin::Kick {

@@ -472,6 +472,46 @@ fn connect_callbacks(ui: &AppWindow) {
             });
         }
     });
+    callback!(ui.on_server_emoji_name_edited() => |sh, ui| sh.server_emoji_name_edited(ui));
+    callback!(ui.on_create_server_emoji() => |sh, ui| sh.create_server_emoji(ui));
+    callback!(ui.on_rename_server_emoji(row, name) => |sh, ui| sh.rename_server_emoji(ui, row, &name));
+    callback!(ui.on_delete_server_emoji(row) => |sh, ui| sh.delete_server_emoji(ui, row));
+    ui.on_pick_server_emoji_file({
+        let w = w.clone();
+        move || {
+            let w = w.clone();
+            with_shell(&w.clone(), move |sh, ui| {
+                let Some(token) = sh.server_edit_token() else {
+                    return;
+                };
+                let chosen_for = token.clone();
+                let spawned = std::thread::Builder::new()
+                    .name("emoji-file-picker".into())
+                    .spawn(move || {
+                        let Some(path) = rfd::FileDialog::new()
+                            .set_title("Choose an emoji image")
+                            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp"])
+                            .pick_file()
+                        else {
+                            return;
+                        };
+                        let result = std::fs::metadata(&path)
+                            .map(|m| godwit_core::server_settings::EmojiFile { path, size: m.len() })
+                            .map_err(|_| "That file couldn't be read.".to_string());
+                        let queued = slint::invoke_from_event_loop(move || {
+                            with_shell(&w, move |sh, ui| sh.server_emoji_file_picked(ui, &chosen_for, result))
+                        });
+                        if let Err(error) = queued {
+                            eprintln!("error: returning the emoji file selection: {error}");
+                        }
+                    });
+                if let Err(error) = spawned {
+                    eprintln!("error: opening the emoji file picker: {error}");
+                    sh.server_emoji_file_picked(ui, &token, Err("The file picker could not be opened.".into()));
+                }
+            });
+        }
+    });
     callback!(ui.on_clear_cache() => |sh, ui| sh.clear_cache(ui));
     callback!(ui.on_mic_test(on) => |sh, ui| sh.mic_test(ui, on));
     callback!(ui.on_list_devices() => |sh, ui| sh.settings_opened(ui));
