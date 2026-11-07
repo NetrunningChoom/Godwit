@@ -39,6 +39,11 @@ impl Network {
         matches!(self, Self::Stoat | Self::Discord | Self::Steam)
     }
 
+    /// Creates named group conversations from existing friends.
+    pub fn can_create_group(self) -> bool {
+        matches!(self, Self::Stoat)
+    }
+
     /// Rooms' member lists come from the network; on the others they're
     /// who has written lately.
     pub fn has_member_lists(self) -> bool {

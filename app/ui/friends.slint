@@ -3,13 +3,15 @@
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
-import { RequestItem, AccountItem } from "types.slint";
+import { RequestItem, AccountItem, GroupPersonItem } from "types.slint";
 import { Avatar, Button, TextField, PageHeader } from "widgets.slint";
 
 component AccountSelect inherits Rectangle {
     in property <[AccountItem]> accounts;
     in-out property <string> key;
     in-out property <string> label: "Choose network and account";
+    in-out property <bool> can-create-group;
+    callback selected(string);
     height: 48px;
     border-radius: Theme.radius-md;
     background: field.has-hover ? Theme.surface-highest : Theme.surface-high;
@@ -47,6 +49,8 @@ component AccountSelect inherits Rectangle {
                         clicked => {
                             root.key = a.key;
                             root.label = a.network + " · " + a.name;
+                            root.can-create-group = a.can-create-group;
+                            root.selected(a.key);
                         }
                     }
                 }
@@ -93,14 +97,21 @@ component RequestRow inherits Rectangle {
 // Send a friend request from a chosen account and manage pending requests.
 export component Friends inherits Rectangle {
     in property <[AccountItem]> accounts;
-    property <string> account-key;
     in property <[RequestItem]> requests;
+    in property <[GroupPersonItem]> group-people;
+    in property <int> group-selected-count;
+    in-out property <string> account-key;
+    in-out property <string> group-name;
+    in-out property <bool> group-capable;
     // The last request sent from here: what happened ("" for nothing yet).
     in property <string> request-status;
     in property <bool> request-failed;
     callback send-request(string, string);
     callback accept-request(int);
     callback decline-request(int);
+    callback account-selected(string);
+    callback toggle-group-person(int);
+    callback create-group(string);
     property <string> name;
 
     VerticalLayout {
@@ -118,7 +129,12 @@ export component Friends inherits Rectangle {
             padding-bottom: Theme.gap-md;
             spacing: Theme.space-between;
             Text { text: "Add a friend — choose a network and account"; color: Theme.on-surface-variant; }
-            AccountSelect { accounts: root.accounts; key <=> root.account-key; }
+            AccountSelect {
+                accounts: root.accounts;
+                key <=> root.account-key;
+                can-create-group <=> root.group-capable;
+                selected(key) => { root.account-selected(key); }
+            }
             HorizontalLayout {
                 spacing: Theme.gap-md;
                 TextField {
@@ -139,6 +155,34 @@ export component Friends inherits Rectangle {
                 font-size: Theme.text-small;
                 wrap: word-wrap;
                 color: root.request-failed ? Theme.error : Theme.on-surface-variant;
+            }
+        }
+        if root.group-capable && root.account-key != "": VerticalLayout {
+            vertical-stretch: 0;
+            padding-left: Theme.gap-lg;
+            padding-right: Theme.gap-lg;
+            spacing: Theme.space-2;
+            Text { text: "Create a group"; font-weight: 600; color: Theme.on-surface; }
+            TextField { placeholder: "Group name"; text <=> root.group-name; }
+            Text { text: "Select at least two friends"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+            group-friends := ScrollView {
+                height: 180px;
+                VerticalLayout {
+                    width: group-friends.visible-width;
+                    alignment: start;
+                    for person[i] in root.group-people: Button {
+                        visible: person.account-key == root.account-key;
+                        text: (person.selected ? "✓  " : "○  ") + person.name;
+                        kind: person.selected ? "tonal" : "text";
+                        clicked => { root.toggle-group-person(i); }
+                    }
+                }
+            }
+            Button {
+                text: "Create group";
+                kind: "filled";
+                enabled: root.group-name != "" && root.group-selected-count >= 2;
+                clicked => { root.create-group(root.group-name); }
             }
         }
         // Friends and pending requests share one scroll range, so a long

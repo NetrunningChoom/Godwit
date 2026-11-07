@@ -426,6 +426,7 @@ export struct AccountItem {
     key: string,
     // Its network takes friend requests (others list who you have DMs with).
     can-befriend: bool,
+    can-create-group: bool,
     network: string,
     name: string,
     username: string,
@@ -448,6 +449,14 @@ export struct AccountItem {
     // Whether its connection can be taken down, and whether it is.
     can-offline: bool,
     offline: bool,
+}
+
+// A person who can be selected for a new group conversation.
+export struct GroupPersonItem {
+    account-key: string,
+    name: string,
+    initials: string,
+    selected: bool,
 }
 
 // A member list row: a group heading, or a member.

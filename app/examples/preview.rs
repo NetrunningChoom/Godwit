@@ -182,6 +182,14 @@ fn friends_scene(app: &mut Application, _: &AppWindow, _: &RoomId, _: &RoomId) -
     Screen::Main
 }
 
+fn friends_create_group_scene(app: &mut Application, ui: &AppWindow, a: &RoomId, b: &RoomId) -> Screen {
+    friends_scene(app, ui, a, b);
+    ui.set_friend_account_key("stoat:me".into());
+    ui.set_friend_group_capable(true);
+    ui.set_group_name("Project crew".into());
+    Screen::Main
+}
+
 /// A name's first word (People suggests links by first name).
 fn first_name(name: &str) -> String {
     name.split(' ').next().unwrap_or(name).to_owned()
@@ -554,6 +562,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..Scene::new("people-linking", Box::new(people))
         },
         Scene::new("friends", Box::new(friends_scene)),
+        Scene::new("friends-create-group", Box::new(friends_create_group_scene)),
         Scene {
             scroll: Some((650.0, 300.0, -700.0)),
             size: Some((800, 480)),

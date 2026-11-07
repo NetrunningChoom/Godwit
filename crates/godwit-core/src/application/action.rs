@@ -221,6 +221,12 @@ pub enum Action {
     },
     /// Open (or start) the direct chat with someone.
     OpenDirect(UserId),
+    /// Create a named group conversation with these account's friends.
+    CreateGroup {
+        account: AccountId,
+        name: String,
+        users: Vec<UserId>,
+    },
     /// Talk to this person on `user`'s network from now on, and open that
     /// chat (the switcher in a merged person's chat).
     TalkOn(UserId),

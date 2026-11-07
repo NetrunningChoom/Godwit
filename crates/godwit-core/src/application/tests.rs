@@ -2298,6 +2298,33 @@ fn opening_a_direct_chat_reuses_or_asks_for_one() {
 }
 
 #[test]
+fn creating_a_group_requires_two_unique_users_on_a_supported_signed_in_account() {
+    let (mut app, _) = open_dm(&[]);
+    let account = account(Network::Stoat);
+    let users = vec![UserId::new(account.clone(), "ann"), UserId::new(account.clone(), "bo")];
+    let effects = app.dispatch(Action::CreateGroup {
+        account: account.clone(),
+        name: "  Project  ".into(),
+        users: users.clone(),
+    });
+    assert_eq!(
+        commands(&effects),
+        [&Command::CreateGroup {
+            name: "Project".into(),
+            users: users.clone(),
+        }]
+    );
+    assert!(
+        app.dispatch(Action::CreateGroup {
+            account,
+            name: "Project".into(),
+            users: vec![users[0].clone(), users[0].clone()],
+        })
+        .is_empty()
+    );
+}
+
+#[test]
 fn server_channels_load_members_and_the_list_toggles() {
     let mut app = Application::new(Contacts::default());
     let server = ServerId::new(account(Network::Stoat), "S");

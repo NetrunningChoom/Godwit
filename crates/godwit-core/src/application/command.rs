@@ -66,6 +66,11 @@ pub enum Command {
     OpenDirect {
         user: UserId,
     },
+    /// Create a named group conversation; answered by opening the new room.
+    CreateGroup {
+        name: String,
+        users: Vec<UserId>,
+    },
     /// Send a friend request (or accept one); the network's own update of
     /// the relationship follows.
     AddFriend {

@@ -12,7 +12,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, AdminRoleItem, PermissionItem, PinItem, StreamItem
+    ProblemItem, RequestItem, ActiveItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, AdminRoleItem, PermissionItem, PinItem, StreamItem, GroupPersonItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -324,6 +324,11 @@ export component AppWindow inherits Window {
     // Friends, People or Active now is open in place of a room.
     property <bool> page: root.showing-friends || root.showing-people || root.showing-active || root.showing-threads;
     in property <[PersonItem]> friends;
+    in property <[GroupPersonItem]> group-people;
+    in property <int> group-selected-count;
+    in-out property <string> friend-account-key;
+    in-out property <bool> friend-group-capable: false;
+    in-out property <string> group-name;
     in property <bool> in-call;
     in property <string> call-status;
     in property <int> call-quality: -1;
@@ -645,6 +650,9 @@ export component AppWindow inherits Window {
     callback people-filter(string);
     callback remove-file(int);
     callback show-friends();
+    callback toggle-group-person(int);
+    callback select-group-account(string);
+    callback create-group(string, string);
     callback show-people();
     callback show-active();
     callback active-open(int);
@@ -928,12 +936,23 @@ export component AppWindow inherits Window {
                                     if root.showing-friends: Friends {
                                         horizontal-stretch: 1;
                                         accounts: root.accounts;
+                                        group-people: root.group-people;
+                                        group-selected-count: root.group-selected-count;
+                                        account-key <=> root.friend-account-key;
+                                        group-name <=> root.group-name;
                                         requests: root.friend-requests;
                                         request-status: root.friend-request-status;
                                         request-failed: root.friend-request-failed;
                                         send-request(account, name) => { root.send-friend-request(account, name); }
                                         accept-request(i) => { root.answer-friend-request(i, true); }
                                         decline-request(i) => { root.answer-friend-request(i, false); }
+                                        group-capable <=> root.friend-group-capable;
+                                        account-selected(key) => {
+                                            root.friend-account-key = key;
+                                            root.select-group-account(key);
+                                        }
+                                        toggle-group-person(i) => { root.toggle-group-person(i); }
+                                        create-group(name) => { root.create-group(root.friend-account-key, name); }
                                     }
                                     // An invite: who asks, and the answer; nothing to read yet.
                                     if root.has-room && !root.page && root.invite-from != "": VerticalLayout {

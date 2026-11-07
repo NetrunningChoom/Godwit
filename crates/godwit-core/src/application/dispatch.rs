@@ -405,6 +405,24 @@ impl Application {
                 vec![Effect::SaveContacts]
             }
             Action::OpenDirect(user) => self.dispatch_open_direct(user),
+            Action::CreateGroup { account, name, users } => {
+                let name = name.trim().to_owned();
+                let valid_account =
+                    account.network.can_create_group() && self.state.accounts.iter().any(|a| a.id == account);
+                let unique: std::collections::HashSet<_> = users.iter().collect();
+                if !valid_account
+                    || name.is_empty()
+                    || users.len() < 2
+                    || unique.len() != users.len()
+                    || users.iter().any(|u| u.account != account)
+                {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account,
+                    command: Command::CreateGroup { name, users },
+                }]
+            }
             Action::AddFriend(user) => vec![Effect::Backend {
                 account: user.account.clone(),
                 command: Command::AddFriend { user },

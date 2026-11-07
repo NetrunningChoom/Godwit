@@ -19,8 +19,8 @@ use slint::{ModelRc, SharedString, VecModel};
 use crate::images::Images;
 use crate::inline_player::InlinePlayers;
 use crate::ui::{
-    AccountItem, ActiveItem, AppWindow, CallMemberItem, ContactItem, DirectoryItem, FileItem, MemberItem, MessageItem,
-    PersonItem, RequestItem, RoomItem, ServerItem,
+    AccountItem, ActiveItem, AppWindow, CallMemberItem, ContactItem, DirectoryItem, FileItem, GroupPersonItem,
+    MemberItem, MessageItem, PersonItem, RequestItem, RoomItem, ServerItem,
 };
 use crate::view;
 
@@ -83,6 +83,9 @@ pub struct Presenter {
     pub accounts: Rc<VecModel<AccountItem>>,
     /// The person each friends row is.
     pub friend_rows: Vec<UserId>,
+    pub group_people: Rc<VecModel<GroupPersonItem>>,
+    pub group_person_rows: Vec<UserId>,
+    pub group_person_selected: HashSet<UserId>,
     pub request_rows: Vec<UserId>,
     pub server_rows: Vec<view::RailRow>,
     /// The account whose profile was opened from the rail: the "you" views
@@ -156,6 +159,33 @@ fn set_frames(model: &VecModel<slint::Image>, pictures: Vec<slint::Image>) {
 }
 
 impl Presenter {
+    pub fn toggle_group_person(&mut self, index: i32) -> Option<usize> {
+        use slint::Model;
+        let index = usize::try_from(index).ok()?;
+        let user = self.group_person_rows.get(index)?.clone();
+        if self.group_person_selected.remove(&user) {
+            if let Some(mut row) = self.group_people.row_data(index) {
+                row.selected = false;
+                self.group_people.set_row_data(index, row);
+            }
+        } else {
+            self.group_person_selected.insert(user);
+            if let Some(mut row) = self.group_people.row_data(index) {
+                row.selected = true;
+                self.group_people.set_row_data(index, row);
+            }
+        }
+        Some(self.group_person_selected.len())
+    }
+
+    pub fn selected_group_users(&self, account: &AccountId) -> Vec<UserId> {
+        self.group_person_selected
+            .iter()
+            .filter(|u| &u.account == account)
+            .cloned()
+            .collect()
+    }
+
     /// The video sid of the call tile at `index`, as last shown.
     /// Keeps the fullscreen view on its video after the list changed, or
     /// leaves fullscreen when that video ended (a stream stopped, the call
@@ -314,6 +344,7 @@ impl Presenter {
                 AccountItem {
                     key: a.id.to_string().into(),
                     can_befriend: a.id.network.has_friends(),
+                    can_create_group: a.id.network.can_create_group(),
                     network: a.id.network.name().into(),
                     name: a.display_name.to_string().into(),
                     username: a.username.to_string().into(),
@@ -729,6 +760,28 @@ impl Presenter {
             let (rows, people) = view::friends(state, images);
             view::sync(&self.friends, rows);
             self.friend_rows = people;
+            self.group_person_selected
+                .retain(|u| state.friends.iter().any(|p| &p.id == u));
+            let group_people: Vec<_> = state
+                .friends
+                .iter()
+                .filter(|p| p.id.account.network.can_create_group())
+                .map(|p| GroupPersonItem {
+                    account_key: p.id.account.to_string().into(),
+                    name: p.name.to_string().into(),
+                    initials: view::initials(&p.name).into(),
+                    selected: self.group_person_selected.contains(&p.id),
+                })
+                .collect();
+            self.group_person_rows = state
+                .friends
+                .iter()
+                .filter(|p| p.id.account.network.can_create_group())
+                .map(|p| p.id.clone())
+                .collect();
+            view::sync(&self.group_people, group_people);
+            ui.set_group_people(ModelRc::from(self.group_people.clone()));
+            ui.set_group_selected_count(i32::try_from(self.group_person_selected.len()).unwrap_or(i32::MAX));
             let (rows, who) = view::requests(state, images);
             view::sync(&self.requests, rows);
             self.request_rows = who;

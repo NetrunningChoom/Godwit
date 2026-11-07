@@ -798,6 +798,13 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_show_friends() => |sh, ui| sh.act(ui, Action::ShowFriends));
+    callback!(ui.on_toggle_group_person(row) => |sh, ui| sh.toggle_group_person(ui, row));
+    callback!(ui.on_select_group_account(key) => |sh, ui| {
+        sh.select_group_account(ui, key.as_str());
+    });
+    callback!(ui.on_create_group(account, name) => |sh, ui| {
+        sh.create_group(ui, account.as_str(), name.as_str());
+    });
     callback!(ui.on_set_presence(i) => |sh, ui| {
         let presence = [
             Presence::Online,

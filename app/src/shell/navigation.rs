@@ -3,8 +3,47 @@
 //! Moving around: rooms, servers and accounts on the rail, Home, people, profiles, invites and joining servers.
 
 use super::*;
+use slint::Model as _;
 
 impl Shell {
+    pub fn select_group_account(&mut self, ui: &AppWindow, account_key: &str) {
+        let supported = crate::settings::parse_account_key(account_key).is_some_and(|id| id.network.can_create_group());
+        ui.set_friend_group_capable(supported);
+    }
+
+    pub fn toggle_group_person(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(count) = self.presenter.toggle_group_person(row) {
+            ui.set_group_selected_count(i32::try_from(count).unwrap_or(i32::MAX));
+        }
+    }
+
+    pub fn create_group(&mut self, ui: &AppWindow, account_key: &str, name: &str) {
+        let Some(account) = crate::settings::parse_account_key(account_key) else {
+            return;
+        };
+        let users = self.presenter.selected_group_users(&account);
+        if name.trim().is_empty() || users.len() < 2 {
+            return;
+        }
+        self.presenter.group_person_selected.clear();
+        for i in 0..self.presenter.group_people.row_count() {
+            if let Some(mut row) = self.presenter.group_people.row_data(i) {
+                row.selected = false;
+                self.presenter.group_people.set_row_data(i, row);
+            }
+        }
+        ui.set_group_selected_count(0);
+        ui.set_group_name(String::new().into());
+        self.act(
+            ui,
+            Action::CreateGroup {
+                account,
+                name: name.to_owned(),
+                users,
+            },
+        );
+    }
+
     pub fn toggle_people_favourites(&mut self, ui: &AppWindow) {
         self.presenter.people_favourites_filter = !self.presenter.people_favourites_filter;
         self.refresh(ui);

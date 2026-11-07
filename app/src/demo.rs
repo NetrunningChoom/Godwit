@@ -1708,6 +1708,13 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 Some(n) if n < 14 => vec![Event::RoomOpened(RoomId::new(self.id.clone(), format!("dm{n}")))],
                 _ => Vec::new(),
             },
+            Command::CreateGroup { name, .. } => {
+                let id = format!("group-{}", self.sent);
+                vec![
+                    Event::RoomUpdated(room(&id, &name, RoomKind::Group, false, 0)),
+                    Event::RoomOpened(RoomId::new(self.id.clone(), id)),
+                ]
+            }
             // Any room's members: a few made-up people, seeded by the room.
             Command::LoadMembers { room } => {
                 let seed = room.raw.bytes().map(u64::from).sum::<u64>();

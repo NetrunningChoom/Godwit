@@ -755,6 +755,22 @@ mod tests {
     }
 
     #[test]
+    fn group_creation_routes_selected_friends_and_name_to_the_backend() {
+        let (mut account, _, mut commands, _) = connected();
+        while commands.try_recv().is_ok() {}
+        let owner = AccountId::new(Network::Stoat, "ME");
+        account.run(Command::CreateGroup {
+            name: "Project".into(),
+            users: vec![UserId::new(owner.clone(), "ANN"), UserId::new(owner, "BO")],
+        });
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(Cmd::Server(ServerCmd::CreateGroup { name, users }))
+                if name == "Project" && users == ["ANN", "BO"]
+        ));
+    }
+
+    #[test]
     fn stoat_sessions_load_from_the_official_session_endpoint() {
         let (mut a, _tx, mut cmds, _) = connected();
         while cmds.try_recv().is_ok() {}

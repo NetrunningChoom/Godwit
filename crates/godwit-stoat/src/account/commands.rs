@@ -365,6 +365,17 @@ impl StoatAccount {
                 }));
                 Vec::new()
             }
+            Command::CreateGroup { name, users } => {
+                let Some(account) = self.account.as_ref() else { return Vec::new() };
+                if users.len() < 2 || users.iter().any(|u| &u.account != account) {
+                    return Vec::new();
+                }
+                self.net.send(Cmd::Server(ServerCmd::CreateGroup {
+                    name,
+                    users: users.into_iter().map(|u| u.raw.to_string()).collect(),
+                }));
+                Vec::new()
+            }
             Command::SendMessage {
                 room,
                 text,
