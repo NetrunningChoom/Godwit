@@ -1169,6 +1169,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }),
             )
         },
+        Scene {
+            late: true,
+            // The tile's eye button, bottom right beside fullscreen.
+            click: Some((CALL_STREAM_EYE.0, CALL_STREAM_EYE.1)),
+            ..Scene::new("call-stream-viewers", Box::new(|app, _, _, _| call_with_stream(app)))
+        },
+        Scene {
+            late: true,
+            ..Scene::new(
+                "call-stream-fullscreen",
+                Box::new(|app, ui, _, _| {
+                    let screen = call_with_stream(app);
+                    ui.set_fullscreen_video(0);
+                    screen
+                }),
+            )
+        },
         Scene::new(
             "signin",
             Box::new(|_, ui, _, _| {
@@ -1714,6 +1731,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// A call in the voice channel: three people, one speaking, one muted, and a
 /// camera.
+/// A call where u2 streams and we watch with u1: the tile's eye shows two viewers.
+/// Where the stream tile's eye button lands in the default 1280x800 window
+/// (found from a first render).
+const CALL_STREAM_EYE: (f32, f32) = (940.0, 219.0);
+
+fn call_with_stream(app: &mut Application) -> Screen {
+    let screen = call_with_camera(app);
+    let lounge = RoomId::new(account(), "voice");
+    let sid = "demo:camera".to_owned();
+    app.apply(Event::CallVideos {
+        room: lounge.clone(),
+        videos: vec![godwit_core::call::CallVideo {
+            sid,
+            user: user("u2"),
+            screen_share: true,
+        }],
+    });
+    app.apply(Event::CallStreams {
+        room: lounge,
+        streams: vec![godwit_core::call::CallStream {
+            user: user("u2"),
+            watching: true,
+            viewers: Some(vec![user("me"), user("u1")]),
+            note: None,
+        }],
+    });
+    screen
+}
+
 fn call_with_camera(app: &mut Application) -> Screen {
     let lounge = RoomId::new(account(), "voice");
     app.dispatch(Action::SelectRoom(lounge.clone()));

@@ -78,6 +78,9 @@ struct Watched {
     opening: Opening,
     /// What the media was last told to connect to.
     sent: Option<StreamServer>,
+    /// Who watches it, from STREAM_CREATE/STREAM_UPDATE's `viewer_ids`
+    /// (the official client's ApplicationStreamingStore); None until told.
+    viewers: Option<Vec<String>>,
 }
 
 impl DiscordAccount {
@@ -292,6 +295,9 @@ impl DiscordAccount {
                 Changed::new()
             }
             "STREAM_CREATE" | "STREAM_UPDATE" | "STREAM_SERVER_UPDATE" => {
+                if self.stream_viewers(d) {
+                    self.send_streams(out);
+                }
                 self.stream_server(event, d);
                 return;
             }
@@ -622,6 +628,7 @@ impl DiscordAccount {
                     user,
                     opening: Opening::default(),
                     sent: None,
+                    viewers: None,
                 },
             );
             self.net.send(Cmd::Gateway {
@@ -724,6 +731,22 @@ impl DiscordAccount {
     /// STREAM_CREATE/UPDATE (the stream's RTC server) and
     /// STREAM_SERVER_UPDATE (its endpoint and token) for a stream we watch:
     /// where to connect, or where Discord moved it.
+    /// Takes a watched stream's `viewer_ids`; true when they changed.
+    fn stream_viewers(&mut self, d: &Value) -> bool {
+        let (Some(key), Some(ids)) = (d["stream_key"].as_str(), d["viewer_ids"].as_array()) else {
+            return false;
+        };
+        let Some(watched) = self.call.as_mut().and_then(|c| c.watching.get_mut(key)) else {
+            return false;
+        };
+        let ids: Vec<String> = ids.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect();
+        if watched.viewers.as_ref() == Some(&ids) {
+            return false;
+        }
+        watched.viewers = Some(ids);
+        true
+    }
+
     fn stream_server(&mut self, event: &str, d: &Value) {
         let Some(key) = d["stream_key"].as_str() else { return };
         let me = self.me().to_owned();
@@ -797,9 +820,8 @@ impl DiscordAccount {
     /// Tells the media whether the call is on screen: its video is asked
     /// for and decoded only then, as LiveKit calls watch only while shown.
     pub(super) fn call_visibility(&self) {
-        if let Some(call) = &self.call {
-            let shown = self.viewing.as_deref() == Some(call.channel.as_str());
-            self.net.send(Cmd::CallCmd(CallCmd::Visible(shown)));
+        if self.call.is_some() {
+            self.net.send(Cmd::CallCmd(CallCmd::Visible(self.call_shown)));
         }
     }
 
@@ -815,15 +837,12 @@ impl DiscordAccount {
             .map(|s| CallStream {
                 user: UserId::new(account.clone(), s.user.as_str()),
                 watching: call.watching.values().any(|w| w.user == s.user),
-                // Discord voice states include the other sessions watching a Go Live stream.
-                viewers: self
-                    .voice
-                    .in_channel(&call.channel)
-                    .iter()
-                    .filter(|watcher| watcher.user != s.user && watcher.self_video)
-                    .count()
-                    .try_into()
-                    .ok(),
+                // Only a stream's viewers hear who watches it (viewer_ids).
+                viewers: call.watching.values().find(|w| w.user == s.user).and_then(|w| {
+                    w.viewers
+                        .as_ref()
+                        .map(|ids| ids.iter().map(|id| UserId::new(account.clone(), id.as_str())).collect())
+                }),
                 note: call.stream_notes.get(&s.user).cloned(),
             })
             .collect()
@@ -1211,6 +1230,8 @@ mod tests {
         a.run(Command::Focus {
             room: Some(lounge.clone()),
         });
+        // The app says the call's video is on screen.
+        a.run(Command::SetCallShown(true));
         a.run(Command::JoinCall { room: lounge.clone() });
         dispatch(
             &mut a,
@@ -1275,6 +1296,26 @@ mod tests {
             ("900", "ours", "100")
         );
 
+        // Who watches comes with STREAM_UPDATE's viewer_ids, us included.
+        let out = dispatch(
+            &mut a,
+            "STREAM_UPDATE",
+            json!({"stream_key": "guild:10:15:200", "viewer_ids": ["100", "300"]}),
+        );
+        let viewers = out.iter().find_map(|e| match e {
+            Event::CallStreams { streams, .. } => streams[0].viewers.clone(),
+            _ => None,
+        });
+        let viewers: Vec<String> = viewers.expect("viewers").iter().map(|u| u.raw.to_string()).collect();
+        assert_eq!(viewers, ["100", "300"]);
+        // The same list again sends nothing new.
+        let again = dispatch(
+            &mut a,
+            "STREAM_UPDATE",
+            json!({"stream_key": "guild:10:15:200", "viewer_ids": ["100", "300"]}),
+        );
+        assert!(!again.iter().any(|e| matches!(e, Event::CallStreams { .. })));
+
         // Cameras come in from the media, beside the stream.
         let mut out = Vec::new();
         a.on_call(tag, CallEvent::Cameras(vec!["200".into()]), &mut out);
@@ -1289,8 +1330,8 @@ mod tests {
             [("discord:camera:200", false), ("discord:stream:200", true)]
         );
 
-        // Away from the call, video stops; back, it starts again.
-        a.run(Command::Focus { room: None });
+        // Off screen (no room nor pop-out shows it), video stops.
+        a.run(Command::SetCallShown(false));
         assert!(matches!(
             sent(&mut cmds).as_slice(),
             [Cmd::CallCmd(CallCmd::Visible(false))]

@@ -561,6 +561,13 @@ impl Application {
                 command: Command::DeclineCall { room },
             }],
             Action::LeaveCall => self.leave_call(),
+            Action::SetCallShown(shown) => match &self.state.call {
+                Some(call) => vec![Effect::Backend {
+                    account: call.room.account.clone(),
+                    command: Command::SetCallShown(shown),
+                }],
+                None => Vec::new(),
+            },
             Action::SetCamera(active) | Action::SetScreenShare(active) => {
                 let Some(call) = self.state.call.as_ref() else {
                     return Vec::new();

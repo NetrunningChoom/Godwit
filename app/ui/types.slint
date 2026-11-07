@@ -412,7 +412,9 @@ export struct PresenceChoice {
 export struct StreamItem {
     name: string,
     watching: bool,
+    // How many watch it ("" when the network doesn't say), and who, one per line.
     viewers: string,
+    viewer-names: string,
     // Why watching stopped or failed; empty when there's nothing to say.
     note: string,
     // Its sound (0..2, 1 as sent) and whether it's muted here.

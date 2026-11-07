@@ -148,12 +148,16 @@ impl StoatAccount {
             | Command::JoinRoom { .. } => Vec::new(),
             Command::Focus { room } => {
                 self.viewing = room.map(|r| r.raw.to_string());
+                Vec::new()
+            }
+            Command::SetCallShown(shown) => {
+                self.call_shown = shown;
                 if let Some(call) = &self.call {
-                    self.net.send(Cmd::Voice(VoiceCommand::Voice(VoiceCmd::Watch(
-                        if self.viewing.as_deref() == Some(&call.channel) {
-                            call.video_sids.clone()
-                        } else { Vec::new() }
-                    ))));
+                    self.net.send(Cmd::Voice(VoiceCommand::Voice(VoiceCmd::Watch(if shown {
+                        call.video_sids.clone()
+                    } else {
+                        Vec::new()
+                    }))));
                 }
                 Vec::new()
             }

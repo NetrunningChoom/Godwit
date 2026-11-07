@@ -167,6 +167,8 @@ pub struct Shell {
     report: Option<godwit_core::report::ReportTarget>,
     report_submitted: bool,
     channel_editor: crate::channel_settings::ChannelEditor,
+    /// The call's account, and whether its video was last said to be on screen.
+    call_shown: Option<(AccountId, bool)>,
 }
 
 #[derive(Clone)]
@@ -399,6 +401,7 @@ impl Shell {
             report: None,
             report_submitted: false,
             channel_editor: crate::channel_settings::ChannelEditor::default(),
+            call_shown: None,
             profile_editor: Default::default(),
             autodelete_page: Default::default(),
             account_pages: Default::default(),
@@ -958,6 +961,20 @@ impl Shell {
             }
         };
         ui.set_screen(screen);
+        // On the main screen a call's video always shows: in its room, or in
+        // the pop-out over any other. The network fetches video only then.
+        let call_shown = self
+            .app
+            .state()
+            .call
+            .as_ref()
+            .map(|c| (c.room.account.clone(), screen == Screen::Main));
+        if call_shown.is_some() && call_shown != self.call_shown {
+            let shown = call_shown.as_ref().is_some_and(|(_, s)| *s);
+            let effects = self.app.dispatch(Action::SetCallShown(shown));
+            self.run(effects);
+        }
+        self.call_shown = call_shown;
         ui.set_login_busy(status == Status::LoggingIn);
         self.show_steam_login(ui);
         ui.set_login_network(

@@ -48,8 +48,9 @@ pub struct Call {
 pub struct CallStream {
     pub user: UserId,
     pub watching: bool,
-    /// Number of other call members watching this stream, when the network reports it.
-    pub viewers: Option<u32>,
+    /// Who watches this stream, us included, when the network says
+    /// (Discord tells only a stream's viewers who its viewers are).
+    pub viewers: Option<Vec<UserId>>,
     /// Why watching it stopped or failed, shown beside it until it's
     /// watched again ("No video arrived.", "The stream ended.").
     pub note: Option<Arc<str>>,

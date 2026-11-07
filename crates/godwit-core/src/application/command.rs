@@ -206,6 +206,9 @@ pub enum Command {
         room: RoomId,
     },
     LeaveCall,
+    /// The call's video is on screen (see `Action::SetCallShown`): fetch and
+    /// decode it only while true.
+    SetCallShown(bool),
     SetMuted(bool),
     SetDeafened(bool),
     SetCamera(bool),

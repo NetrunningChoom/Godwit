@@ -299,6 +299,9 @@ pub enum Action {
     /// Turn down the call ringing us in a room (it stops ringing for us).
     DeclineCall(RoomId),
     LeaveCall,
+    /// Whether the call's video is on screen: its room is open, or the
+    /// pop-out shows it over another room. Video is fetched only then.
+    SetCallShown(bool),
     ToggleMute,
     /// Our mute and deafen as last saved (at start).
     RestoreVoiceFlags {

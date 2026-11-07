@@ -89,6 +89,8 @@ pub struct DiscordAccount {
     emoji_sent: Option<Vec<godwit_core::message::EmojiGroup>>,
     /// The channel on screen.
     viewing: Option<String>,
+    /// The call's video is on screen (its room, or the app's pop-out).
+    call_shown: bool,
     /// Guilds whose typing we subscribed to this session.
     subscribed: std::collections::HashSet<String>,
     typing_sent: HashMap<String, Instant>,
@@ -169,6 +171,7 @@ impl DiscordAccount {
             activities: Vec::new(),
             emoji_sent: None,
             viewing: None,
+            call_shown: false,
             subscribed: Default::default(),
             typing_sent: HashMap::new(),
             typing: HashMap::new(),
@@ -690,7 +693,6 @@ impl NetworkAccount for DiscordAccount {
         match command {
             Command::Focus { room } => {
                 self.viewing = room.as_ref().and_then(|r| self.channel_of(r));
-                self.call_visibility();
                 // Subscribing, as opening a channel in the web client does,
                 // brings the server's typing notices and the channel's
                 // member list (its first hundred rows).
@@ -1241,6 +1243,10 @@ impl NetworkAccount for DiscordAccount {
             }
             Command::JoinCall { room } => self.join_call(room, &mut out),
             Command::LeaveCall => self.leave_call(&mut out),
+            Command::SetCallShown(shown) => {
+                self.call_shown = shown;
+                self.call_visibility();
+            }
             Command::SetMuted(muted) => self.set_call_muted(Some(muted), None),
             Command::SetDeafened(deafened) => self.set_call_muted(None, Some(deafened)),
             Command::DeclineCall { room } => self.decline_call(room, &mut out),

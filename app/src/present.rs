@@ -654,24 +654,38 @@ impl Presenter {
             let streams: Vec<crate::ui::StreamItem> = call
                 .streams
                 .iter()
-                .map(|s| crate::ui::StreamItem {
-                    name: call
-                        .members
-                        .iter()
-                        .find(|m| m.user == s.user)
-                        .map_or_else(|| "Someone".to_owned(), |m| m.name.to_string())
-                        .into(),
-                    watching: s.watching,
-                    viewers: s.viewers.map_or_else(String::new, |n| n.to_string()).into(),
-                    note: s.note.as_deref().unwrap_or_default().into(),
-                    volume: self.stream_sound.screen_share_volume(&s.user.raw),
-                    // Discord's streams are heard until muted (godwit-voice's `push_heard`).
-                    muted: self
-                        .stream_sound
-                        .screen_share_mutes
-                        .get(s.user.raw.as_ref())
-                        .copied()
-                        .unwrap_or(false),
+                .map(|s| {
+                    let name_of = |user: &godwit_core::ids::UserId| {
+                        call.members
+                            .iter()
+                            .find(|m| &m.user == user)
+                            .map_or_else(|| "Someone".to_owned(), |m| m.name.to_string())
+                    };
+                    let viewer_names: Vec<String> = s.viewers.iter().flatten().map(name_of).collect();
+                    crate::ui::StreamItem {
+                        name: call
+                            .members
+                            .iter()
+                            .find(|m| m.user == s.user)
+                            .map_or_else(|| "Someone".to_owned(), |m| m.name.to_string())
+                            .into(),
+                        watching: s.watching,
+                        viewers: s
+                            .viewers
+                            .as_ref()
+                            .map_or_else(String::new, |v| v.len().to_string())
+                            .into(),
+                        viewer_names: viewer_names.join("\n").into(),
+                        note: s.note.as_deref().unwrap_or_default().into(),
+                        volume: self.stream_sound.screen_share_volume(&s.user.raw),
+                        // Discord's streams are heard until muted (godwit-voice's `push_heard`).
+                        muted: self
+                            .stream_sound
+                            .screen_share_mutes
+                            .get(s.user.raw.as_ref())
+                            .copied()
+                            .unwrap_or(false),
+                    }
                 })
                 .collect();
             view::sync(&self.call_streams, streams);

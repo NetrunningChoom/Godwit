@@ -50,13 +50,12 @@ impl StoatAccount {
                 });
             }
         }
-        self.net.send(Cmd::Voice(VoiceCommand::Voice(VoiceCmd::Watch(
-            if self.viewing.as_deref() == Some(&call.channel) {
+        self.net
+            .send(Cmd::Voice(VoiceCommand::Voice(VoiceCmd::Watch(if self.call_shown {
                 call.video_sids.clone()
             } else {
                 Vec::new()
-            },
-        ))));
+            }))));
         out.push(Event::CallVideos {
             room: room.clone(),
             videos: tiles,

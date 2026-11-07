@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { Slider } from "std-widgets.slint";
-import { Theme, Icons } from "theme.slint";
+import { Theme, Icons, Icon } from "theme.slint";
 import { CallMemberItem, StreamItem, CallVideoItem, CallFrames } from "types.slint";
 import { Avatar, IconButton, ImageIconButton } from "widgets.slint";
 
@@ -32,9 +32,10 @@ export component FullscreenVideo inherits Rectangle {
         // The controls hide after a while without the mouse moving, and
         // come back when it moves (as the official client's player).
         property <bool> controls: true;
-        // The call's people along the bottom (theater with people).
+        // The call's people along the bottom ("Show people"). They
+        // stay when the controls hide: only the controls get out of the way.
         property <bool> people: false;
-        property <length> strip: fs.controls && fs.people && root.call-members.length > 0 ? 112px : 0px;
+        property <length> strip: fs.people && root.call-members.length > 0 ? 112px : 0px;
         function reveal-controls() {
             fs.controls = true;
             hide-controls.restart();
@@ -111,14 +112,53 @@ export component FullscreenVideo inherits Rectangle {
         if fs.controls: Rectangle {
             x: 16px;
             y: 16px;
-            width: fs-label.preferred-width + 24px;
+            width: fs-label.preferred-width;
             height: 32px;
             border-radius: Theme.radius-lg;
             background: Theme.scrim;
-            fs-label := Text { text: root.call-videos[root.fullscreen-video].label + " · Esc to leave"; color: white; font-size: Theme.text-label; }
+            fs-label := HorizontalLayout {
+                padding-left: Theme.space-4;
+                padding-right: Theme.space-4;
+                spacing: Theme.space-3;
+                Text { text: root.call-videos[root.fullscreen-video].label + " · Esc to leave"; color: white; font-size: Theme.text-label; vertical-alignment: center; }
+                // Who watches it: an eye with the count; click lists them.
+                if fs.has-viewers: Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: fs-viewers.preferred-width + 12px;
+                    height: 24px;
+                    border-radius: self.height / 2;
+                    background: fs-viewers-touch.has-hover || fs.show-viewers ? Theme.on-media-hover : transparent;
+                    fs-viewers := HorizontalLayout {
+                        x: 6px;
+                        spacing: Theme.space-1;
+                        Icon { text: Icons.visibility; color: white; font-size: Theme.text-label; }
+                        Text { text: root.call-streams[fs.stream].viewers; color: white; font-size: Theme.text-label; vertical-alignment: center; }
+                    }
+                    fs-viewers-touch := TouchArea { mouse-cursor: pointer; clicked => { fs.show-viewers = !fs.show-viewers; } }
+                }
+            }
         }
         // A watched stream's sound, as beside its LIVE pill.
         property <int> stream: root.call-videos[root.fullscreen-video].stream;
+        // Who watches it (the eye in the label opens this list).
+        property <bool> show-viewers;
+        property <bool> has-viewers: fs.stream >= 0 && fs.stream < root.call-streams.length
+            && root.call-streams[fs.stream].viewers != "";
+        if fs.controls && fs.has-viewers && fs.show-viewers: Rectangle {
+            x: 16px;
+            y: 56px;
+            width: max(160px, fs-viewer-list.preferred-width + 24px);
+            height: fs-viewer-list.preferred-height + 16px;
+            border-radius: Theme.radius-sm;
+            background: Theme.scrim-strong;
+            fs-viewer-list := VerticalLayout {
+                padding: Theme.space-2;
+                padding-left: Theme.space-4;
+                spacing: Theme.space-1;
+                Text { text: "Watching"; color: Theme.on-media-variant; font-size: Theme.text-tiny; font-weight: 600; }
+                Text { text: root.call-streams[fs.stream].viewer-names; color: white; font-size: Theme.text-small; }
+            }
+        }
         if fs.controls && fs.stream >= 0 && fs.stream < root.call-streams.length: Rectangle {
             x: (parent.width - self.width) / 2;
             y: parent.height - fs.strip - self.height - 24px;
@@ -154,13 +194,13 @@ export component FullscreenVideo inherits Rectangle {
         if fs.controls: Rectangle {
             x: 16px;
             y: parent.height - fs.strip - self.height - 24px;
-            width: fs-call.preferred-width + 16px;
-            height: 60px;
+            width: fs-call.preferred-width;
+            height: fs-call.preferred-height;
             border-radius: self.height / 2;
             background: Theme.scrim-strong;
             fs-call := HorizontalLayout {
-                x: 8px;
-                spacing: Theme.space-2;
+                padding: Theme.space-2;
+                spacing: Theme.space-1;
                 ImageIconButton {
                     icon: root.call-muted ? @image-url("../../assets/icons/yapfast/mic-off.svg") : @image-url("../../assets/icons/yapfast/mic.svg");
                     tooltip: root.call-muted ? "Unmute" : "Mute";
@@ -192,8 +232,11 @@ export component FullscreenVideo inherits Rectangle {
                     fill: root.call-screen-share ? Theme.primary-container : Theme.on-media-faint;
                     clicked => { root.set-screen-share(!root.call-screen-share); }
                 }
+                // Fixed width: a ticking timer mustn't move the buttons.
                 if root.call-time != "": Text {
                     text: root.call-time;
+                    width: 56px;
+                    horizontal-alignment: center;
                     vertical-alignment: center;
                     font-size: Theme.text-label;
                     color: white;
@@ -207,7 +250,23 @@ export component FullscreenVideo inherits Rectangle {
                 }
             }
         }
-        // Theater with people: show or hide who's in the call.
+        // With the controls hidden, a small mic still shows that we're heard
+        // (or that we're muted), so talking never goes unnoticed.
+        if !fs.controls && (root.call-speaking || root.call-muted): Rectangle {
+            x: 16px;
+            y: parent.height - fs.strip - self.height - 16px;
+            width: 32px;
+            height: 32px;
+            border-radius: self.height / 2;
+            background: Theme.scrim-strong;
+            Image {
+                width: 18px;
+                height: 18px;
+                source: root.call-muted ? @image-url("../../assets/icons/yapfast/mic-off.svg") : @image-url("../../assets/icons/yapfast/mic.svg");
+                colorize: root.call-muted ? Theme.error : Theme.online;
+            }
+        }
+        // "Show people": show or hide who's in the call.
         if fs.controls && root.call-members.length > 0: Rectangle {
             x: parent.width - self.width - 16px - 40px - 8px;
             y: 16px;

@@ -95,6 +95,8 @@ pub struct StoatAccount {
     servers: Vec<CoreServer>,
     /// The channel on screen (core `Focus`).
     viewing: Option<String>,
+    /// The call's video is on screen (its room, or the app's pop-out).
+    call_shown: bool,
     /// Keep the session in `session.json` (off in tests).
     persist_session: bool,
     /// When we last told each channel we're typing.
@@ -508,6 +510,7 @@ impl StoatAccount {
             rooms: Default::default(),
             servers: Vec::new(),
             viewing: None,
+            call_shown: false,
             persist_session: true,
             autodelete: Default::default(),
             typing_sent: HashMap::new(),
@@ -560,6 +563,7 @@ impl StoatAccount {
             rooms: Default::default(),
             servers: Vec::new(),
             viewing: None,
+            call_shown: false,
             persist_session: false,
             autodelete: Default::default(),
             typing_sent: HashMap::new(),
@@ -713,6 +717,7 @@ mod tests {
             rooms: Default::default(),
             servers: Vec::new(),
             viewing: None,
+            call_shown: false,
             persist_session: false,
             autodelete: Default::default(),
             typing_sent: HashMap::new(),

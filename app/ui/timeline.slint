@@ -109,12 +109,6 @@ export component Timeline inherits Rectangle {
     property <length> sound-y;
     // The call stage and chat share this view; its bottom edge can be dragged
     // whether the call has video, streams, or audio-only participants.
-    in-out property <bool> theater;
-    // Theater ends with the last video (its button went with it).
-    property <bool> any-video: root.call-here && root.call-videos.length > 0;
-    changed any-video => {
-        if !root.any-video { root.theater = false; }
-    }
     in-out property <bool> call-panel-dragged;
     in-out property <length> call-panel-h: 420px;
     in-out property <length> sidebar-width;
@@ -123,7 +117,7 @@ export component Timeline inherits Rectangle {
     property <length> call-panel-shown-h;
     property <length> call-panel-min:
         (root.call-extra-videos ? 140px : 0px)
-        + min(288px, max(136px, ceil(root.call-members.length / max(1, floor((root.width - Theme.gap-md) / 176px))) * 124px + 12px))
+        + min(root.call-extra-videos ? 136px : 288px, max(136px, ceil(root.call-members.length / max(1, floor((root.width - Theme.gap-md) / 176px))) * 124px + 12px))
         + (root.call-streams.length > 0 ? Theme.row-header : 0px) + 72px;
     property <bool> has-screen-video: root.call-videos.length > 0 && root.screen-videos > 0;
     in property <int> screen-videos;
@@ -383,7 +377,7 @@ export component Timeline inherits Rectangle {
         if root.call-here: call-panel := Rectangle {
             min-height: root.call-panel-dragged ? root.call-panel-h : root.call-panel-min;
             max-height: root.call-panel-dragged ? root.call-panel-h : 100000px;
-            vertical-stretch: root.theater ? 8 : 0.6;
+            vertical-stretch: 0.6;
             background: Theme.surface-low;
             border-radius: Theme.radius-md;
             clip: true;
@@ -391,8 +385,7 @@ export component Timeline inherits Rectangle {
             changed height => { root.call-panel-shown-h = self.height; }
             VerticalLayout {
                 spacing: 0px;
-        // The call's video: tiles share the width. Theater mode gives it
-        // extra room within the same call panel; a tile can go fullscreen.
+        // The call's video: tiles share the width; a tile can go fullscreen.
         if root.call-here && root.call-extra-videos: Rectangle {
             min-height: 140px;
             preferred-height: 140px;
@@ -408,6 +401,10 @@ export component Timeline inherits Rectangle {
                     background: Theme.media-stage;
                     border-radius: Theme.radius-sm;
                     clip: true;
+                    // Who watches this stream, opened from its eye button.
+                    property <bool> show-viewers;
+                    property <bool> has-viewers: video.stream >= 0 && video.stream < root.call-streams.length
+                        && root.call-streams[video.stream].viewers != "";
                     Image { width: parent.width; height: parent.height; source: vi < CallFrames.frames.length ? CallFrames.frames[vi] : video.frame; image-fit: contain; }
                     // Until the first frame: say it's coming rather than show black.
                     if !video.has-frame: Text {
@@ -427,26 +424,46 @@ export component Timeline inherits Rectangle {
                             padding-right: Theme.space-2;
                             spacing: Theme.space-2;
                             Text { text: video.label; color: white; font-size: Theme.text-small; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                            if has-viewers: Rectangle {
+                                y: (parent.height - self.height) / 2;
+                                width: tile-viewers.preferred-width + 12px;
+                                height: 24px;
+                                border-radius: self.height / 2;
+                                background: tile-viewers-touch.has-hover || show-viewers ? Theme.on-media-hover : transparent;
+                                tile-viewers := HorizontalLayout {
+                                    x: 6px;
+                                    spacing: Theme.space-1;
+                                    Icon { text: Icons.visibility; color: white; font-size: Theme.text-small; vertical-alignment: center; }
+                                    Text { text: root.call-streams[video.stream].viewers; color: white; font-size: Theme.text-small; vertical-alignment: center; }
+                                }
+                                tile-viewers-touch := TouchArea { mouse-cursor: pointer; clicked => { show-viewers = !show-viewers; } }
+                            }
                             IconButton { y: (parent.height - self.height) / 2; glyph: Icons.fullscreen; tooltip: "Fullscreen"; tint: white; clicked => { root.video-fullscreen(vi); } }
                         }
                     }
                     TouchArea {
                         height: parent.height - 32px;
                         y: 0;
+                        clicked => { show-viewers = false; }
                         double-clicked => { root.video-fullscreen(vi); }
                     }
+                    if show-viewers && has-viewers: Rectangle {
+                        x: parent.width - self.width - Theme.space-2;
+                        y: parent.height - 32px - self.height - Theme.space-1;
+                        width: min(parent.width - 2 * Theme.space-2, max(160px, viewer-list.preferred-width + 24px));
+                        height: min(parent.height - 40px, viewer-list.preferred-height + 16px);
+                        border-radius: Theme.radius-sm;
+                        background: Theme.scrim-strong;
+                        clip: true;
+                        viewer-list := VerticalLayout {
+                            padding: Theme.space-2;
+                            padding-left: Theme.space-4;
+                            spacing: Theme.space-1;
+                            Text { text: "Watching"; color: Theme.on-media-variant; font-size: Theme.text-tiny; font-weight: 600; }
+                            Text { text: root.call-streams[video.stream].viewer-names; color: white; font-size: Theme.text-small; }
+                        }
+                    }
                 }
-            }
-            // Theater mode: the video gets nearly the whole view.
-            Rectangle {
-                x: parent.width - self.width - 8px;
-                y: 8px;
-                width: theater-label.preferred-width + 20px;
-                height: 28px;
-                border-radius: self.height / 2;
-                background: theater-touch.has-hover ? Theme.on-media-hover : Theme.on-media-overlay;
-                theater-label := Text { text: root.theater ? "Exit theater" : "Theater"; color: white; font-size: Theme.text-small; }
-                theater-touch := TouchArea { mouse-cursor: pointer; clicked => { root.theater = !root.theater; } }
             }
         }
         // Streams in the call (Discord's Go Live): watching opens its tile above.
@@ -461,11 +478,13 @@ export component Timeline inherits Rectangle {
                 for s[i] in root.call-streams: Rectangle {
                     y: (parent.height - self.height) / 2;
                     height: 36px;
-                    width: stream-row.preferred-width + 24px;
+                    // Padding inside the row (not an x offset), so it ends where the pill does.
+                    width: stream-row.preferred-width;
                     border-radius: self.height / 2;
                     background: Theme.surface-high;
                     stream-row := HorizontalLayout {
-                        x: 12px;
+                        padding-left: Theme.space-4;
+                        padding-right: Theme.space-4;
                         spacing: Theme.space-3;
                         Rectangle {
                             y: (parent.height - self.height) / 2;
@@ -522,7 +541,9 @@ export component Timeline inherits Rectangle {
             // Material's ScrollView keeps 12px (8px bar + 4px gap) under and
             // beside its content whether a bar shows or not: add it, or the
             // tiles come up just short and scroll.
-            height: min(288px, self.needed + 12px);
+            // With video on, the people keep one row (more scroll) and the
+            // video takes the rest of the height.
+            height: min(root.call-extra-videos ? 124px + Theme.gap-md + 12px : 288px, self.needed + 12px);
             content-width: self.visible-width;
             content-height: self.needed;
             Rectangle {
@@ -592,7 +613,8 @@ export component Timeline inherits Rectangle {
                 }
             }
         }
-        Rectangle { vertical-stretch: 1; background: Theme.surface-low; }
+        // Fills an audio-only call; with video, the video gets all the room.
+        Rectangle { vertical-stretch: root.call-extra-videos ? 0 : 1; background: Theme.surface-low; }
         // Call controls under the stage, in YapFast's filled icon buttons.
         if root.call-here: Rectangle {
             height: 72px;
@@ -652,7 +674,7 @@ export component Timeline inherits Rectangle {
         }
         // Resize the whole call against the channel timeline, including
         // audio-only calls. Double-click restores the automatic split.
-        if root.call-here && !root.theater: Rectangle {
+        if root.call-here: Rectangle {
             height: 8px;
             background: call-panel-handle.has-hover || call-panel-handle.pressed || root.combined-resize-hover
                 ? Theme.outline-variant : transparent;
