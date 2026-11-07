@@ -813,6 +813,15 @@ mod tests {
     fn pins_and_search_go_through_stoats_search() {
         let (mut a, tx, mut cmds, _) = connected();
         while cmds.try_recv().is_ok() {}
+        a.run(Command::SetPinned {
+            room: room("D"),
+            message: MessageId("01M".into()),
+            pinned: false,
+        });
+        assert!(
+            matches!(cmds.try_recv(), Ok(Cmd::Message(MessageCmd::Pin { channel, id, pin: false }))
+            if channel == "D" && id == "01M")
+        );
         a.run(Command::LoadPins { room: room("D") });
         let Ok(Cmd::Message(MessageCmd::SearchMessages { key, body, .. })) = cmds.try_recv() else {
             panic!("pins ask Stoat's search")

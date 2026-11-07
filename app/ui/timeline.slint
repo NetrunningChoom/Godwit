@@ -75,7 +75,7 @@ export component Timeline inherits Rectangle {
     in property <bool> can-pin;
     in property <bool> can-moderate-reactions;
     callback open-pins();
-    callback pin(int);
+    callback pin(int, bool);
     in property <bool> members-shown;
     callback toggle-members();
     // We're in this room's call: show its members.
@@ -890,7 +890,7 @@ export component Timeline inherits Rectangle {
                     can-delete-others: root.can-delete-others;
                     can-pin: root.can-pin;
                     can-moderate-reactions: root.can-moderate-reactions;
-                    pin => { root.pin(i); }
+                    pin(pinned) => { root.pin(i, pinned); }
                     can-thread: root.can-thread && !root.is-forum;
                     create-thread => { root.create-thread(i); }
                     reply => { root.reply(i); }

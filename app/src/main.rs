@@ -395,7 +395,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_search_jump(i) => |sh, ui| sh.search_jump(ui, i));
     callback!(ui.on_open_pins() => |sh, ui| sh.act(ui, Action::OpenPins));
     callback!(ui.on_close_pins() => |sh, ui| sh.act(ui, Action::ClosePins));
-    callback!(ui.on_pin(row) => |sh, ui| sh.pin_row(ui, row));
+    callback!(ui.on_pin(row, pinned) => |sh, ui| sh.pin_row(ui, row, pinned));
     callback!(ui.on_remove_reactions(row, reaction) => |sh, ui| sh.remove_reactions_row(ui, row, reaction));
     callback!(ui.on_remove_all_reactions(row) => |sh, ui| sh.remove_all_reactions_row(ui, row));
     callback!(ui.on_pin_jump(i) => |sh, ui| sh.pin_jump(ui, i));

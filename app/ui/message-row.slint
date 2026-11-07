@@ -59,7 +59,7 @@ export component MessageRow inherits Rectangle {
     callback react(int);
     callback remove-reactions(int);
     callback remove-all-reactions();
-    callback pin();
+    callback pin(bool);
     callback create-thread();
 
     callback open-attachment(int);
@@ -380,7 +380,11 @@ export component MessageRow inherits Rectangle {
             }
             if !root.message.system && root.message.mine && root.can-edit: MenuRow { glyph: Icons.edit; label: "Edit message"; clicked => { root.edit(); } }
             MenuRow { glyph: Icons.link; label: "Copy link"; clicked => { root.copy-link(); } }
-            if !root.message.system && root.can-pin: MenuRow { glyph: Icons.notes; label: "Pin message"; clicked => { root.pin(); } }
+            if !root.message.system && root.can-pin: MenuRow {
+                glyph: Icons.notes;
+                label: message.pinned ? "Unpin message" : "Pin message";
+                clicked => { root.pin(!message.pinned); }
+            }
             if !root.message.system && root.can-thread: MenuRow { glyph: Icons.chat; label: "Create thread"; clicked => { root.create-thread(); } }
             if root.deletable: MenuDivider { }
             if root.deletable: MenuRow { glyph: Icons.delete; label: "Delete message"; danger: true; clicked => { root.delete(false); } }

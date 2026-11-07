@@ -116,9 +116,9 @@ impl Shell {
     }
 
     /// "Pin message" in a message's menu.
-    pub fn pin_row(&mut self, ui: &AppWindow, row: i32) {
+    pub fn pin_row(&mut self, ui: &AppWindow, row: i32, pinned: bool) {
         if let Some(message) = self.message_at(row) {
-            self.act(ui, Action::SetPinned { message, pinned: true });
+            self.act(ui, Action::SetPinned { message, pinned });
         }
     }
 }

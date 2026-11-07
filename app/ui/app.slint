@@ -399,7 +399,7 @@ export component AppWindow inherits Window {
     callback search-jump(int);
     in property <bool> can-pin;
     callback open-pins();
-    callback pin(int);
+    callback pin(int, bool);
     callback remove-reactions(int, int);
     callback remove-all-reactions(int);
     // The pinned messages panel.
@@ -1020,7 +1020,7 @@ export component AppWindow inherits Window {
                                         open-search => { root.open-search(); }
                                         can-pin: root.can-pin;
                                         open-pins => { root.open-pins(); }
-                                        pin(i) => { root.pin(i); }
+                                        pin(i, pinned) => { root.pin(i, pinned); }
                                         remove-reactions(i, r) => { root.remove-reactions(i, r); }
                                         remove-all-reactions(i) => { root.remove-all-reactions(i); }
                                         members-shown: root.members-shown;
