@@ -4,7 +4,7 @@
 
 import { Theme, Icons, Icon } from "theme.slint";
 import { RoomItem, DirectoryItem } from "types.slint";
-import { Avatar, Badge, IconButton, ImageIconButton, Button, NetList, MenuPanel, MenuRow, MenuDivider, TextField, EmojiText, NetworkSelect } from "widgets.slint";
+import { Avatar, Badge, IconButton, Button, NetList, MenuPanel, MenuRow, MenuDivider, TextField, EmojiText, NetworkSelect } from "widgets.slint";
 
 // Rows as Godwit and the official sidebar draw them: 16 px corners,
 // secondary-container when selected, surface-highest on hover.
@@ -627,46 +627,36 @@ export component Sidebar inherits Rectangle {
                             TouchArea { mouse-cursor: pointer; clicked => { root.open-call-room(); } }
                         }
                     }
-                    ImageIconButton {
-                        icon: @image-url("../../assets/icons/yapfast/phone-off.svg");
+                    // One look for the whole panel: the account row's flat glyph
+                    // buttons, with colour for state (red to leave, primary when on).
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        glyph: Icons.call-end;
                         tooltip: "Leave call";
-                        tint: Theme.on-error;
-                        fill: Theme.error;
-                        width: 36px;
-                        height: 36px;
+                        tint: Theme.error;
                         clicked => { root.leave-call(); }
                     }
                 }
                 HorizontalLayout {
                     spacing: Theme.space-2;
-                    padding-left: Theme.space-7;
-                    if root.call-video-network || root.call-camera: ImageIconButton {
-                        icon: root.call-camera
-                            ? @image-url("../../assets/icons/yapfast/video.svg")
-                            : @image-url("../../assets/icons/yapfast/video-off.svg");
-                        width: 36px;
-                        height: 36px;
+                    alignment: start;
+                    if root.call-video-network || root.call-camera: IconButton {
+                        glyph: root.call-camera ? Icons.videocam : Icons.videocam-off;
                         enabled: root.call-can-video || root.call-camera;
                         tooltip: root.call-camera ? "Turn camera off"
                             : root.call-can-video ? "Turn camera on"
                             : "The camera isn't allowed in this call (no Video permission), or it's still connecting";
-                        tint: Theme.on-surface;
-                        fill: root.call-camera ? Theme.primary-container : Theme.surface-highest;
+                        tint: root.call-camera ? Theme.primary : Theme.on-surface-variant;
                         clicked => { root.set-camera(!root.call-camera); }
                     }
                     // Sharing the screen, where the call allows video.
-                    if root.call-video-network || root.call-screen-share: ImageIconButton {
-                        icon: root.call-screen-share
-                            ? @image-url("../../assets/icons/yapfast/screen-share-off.svg")
-                            : @image-url("../../assets/icons/yapfast/screen-share.svg");
-                        width: 36px;
-                        height: 36px;
+                    if root.call-video-network || root.call-screen-share: IconButton {
+                        glyph: root.call-screen-share ? Icons.stop-screen-share : Icons.screen-share;
                         enabled: root.call-can-video || root.call-screen-share;
                         tooltip: root.call-screen-share ? "Stop sharing"
                             : root.call-can-video ? "Share your screen"
                             : "Sharing isn't allowed in this call (no Video permission), or it's still connecting";
-                        tint: Theme.on-surface;
-                        fill: root.call-screen-share ? Theme.primary-container : Theme.surface-highest;
+                        tint: root.call-screen-share ? Theme.primary : Theme.on-surface-variant;
                         clicked => { root.set-screen-share(!root.call-screen-share); }
                     }
                 }
