@@ -858,7 +858,10 @@ impl Application {
             None => None,
         };
         self.sent += 1;
-        let nonce: Arc<str> = format!("pending-{}", self.sent).into();
+        // Unique across runs, not just within one: networks remember the
+        // nonce as an idempotency key for a while (Stoat answered a restarted
+        // app's `pending-1` with 409 Conflict). The official clients send a ULID.
+        let nonce: Arc<str> = format!("pending-{now_ms}-{}", self.sent).into();
         let account = room.account.clone();
         let me = self.state.accounts.iter().find(|a| a.id == account);
         let pending = Message {

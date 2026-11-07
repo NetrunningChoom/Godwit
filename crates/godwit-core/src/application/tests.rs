@@ -335,6 +335,25 @@ fn send(app: &mut Application, text: &str) -> Arc<str> {
 }
 
 #[test]
+fn nonces_are_unique_across_restarts() {
+    // A restarted app counts from one again; the send time keeps its nonce
+    // new, or the network refuses it as a repeat (Stoat: 409 Conflict).
+    let send_at = |now_ms: i64| {
+        let mut app = Application::default();
+        let r = dm(Network::Stoat, "r1", "them");
+        let id = r.id.clone();
+        ready(&mut app, Network::Stoat, vec![r]);
+        app.dispatch(Action::SelectRoom(id));
+        app.dispatch(Action::SetDraft("hi".into()));
+        match commands(&app.dispatch(Action::Send { now_ms }))[..] {
+            [Command::SendMessage { nonce, .. }] => nonce.clone(),
+            _ => panic!("expected a send"),
+        }
+    };
+    assert_ne!(send_at(1_000), send_at(2_000));
+}
+
+#[test]
 fn opening_a_room_focuses_it_and_loads_its_newest_page_once() {
     let mut app = Application::default();
     let r = dm(Network::Stoat, "r1", "them");
