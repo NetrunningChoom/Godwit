@@ -303,6 +303,8 @@ mod tests {
             unread_from: None,
             jump: None,
             revealed: &revealed,
+            blocked_runs: &Default::default(),
+            all: None,
             players: None,
             invites: &invites,
             servers: &[],

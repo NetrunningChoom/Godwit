@@ -516,10 +516,21 @@ fn a_failed_send_is_removed_and_reported() {
 fn late_results_after_sign_out_do_not_bring_its_state_back() {
     let (mut app, id) = open_dm(&["m1"]);
     let me = account(Network::Stoat);
+    app.apply(Event::Blocked {
+        account: me.clone(),
+        users: vec![UserId::new(me.clone(), "them")],
+    });
+    assert_eq!(app.state().blocked.len(), 1);
     app.apply(Event::AccountLost {
         account: me.clone(),
         reason: "".into(),
     });
+    assert!(app.state().blocked.is_empty(), "signing out clears the blocked list");
+    app.apply(Event::Blocked {
+        account: me.clone(),
+        users: vec![UserId::new(me.clone(), "them")],
+    });
+    assert!(app.state().blocked.is_empty(), "late lists are ignored");
     let them = Person {
         id: UserId::new(me.clone(), "them"),
         name: "Them".into(),
@@ -2388,6 +2399,7 @@ fn profiles_open_load_and_ignore_stale_answers() {
         has_friends: true,
         moderation: None,
         group_moderation: None,
+        can_block: false,
     };
     app.apply(Event::Profile(profile(&UserId::new(account(Network::Stoat), "bo"))));
     assert_eq!(
@@ -2421,6 +2433,26 @@ fn profiles_open_load_and_ignore_stale_answers() {
         })
         .is_empty()
     );
+    // Blocking needs the shown profile's capability.
+    assert!(app.dispatch(Action::BlockUser(ann.clone())).is_empty());
+    let mut blockable = profile(&ann);
+    blockable.can_block = true;
+    app.apply(Event::Profile(blockable));
+    assert_eq!(
+        commands(&app.dispatch(Action::BlockUser(ann.clone()))),
+        [&Command::BlockUser { user: ann.clone() }]
+    );
+    assert_eq!(
+        commands(&app.dispatch(Action::UnblockUser(ann.clone()))),
+        [&Command::UnblockUser { user: ann.clone() }]
+    );
+    let bo = UserId::new(account(Network::Stoat), "bo");
+    assert!(app.dispatch(Action::BlockUser(bo)).is_empty(), "only the shown profile");
+    app.apply(Event::Blocked {
+        account: account(Network::Stoat),
+        users: vec![ann.clone()],
+    });
+    assert!(app.state().blocked.contains(&ann));
     app.dispatch(Action::CloseProfile);
     assert!(app.state().profile.is_none());
     let refresh = app.dispatch(Action::OpenProfile(ann.clone()));

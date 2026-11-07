@@ -196,6 +196,7 @@ impl DiscordAccount {
             has_friends: true,
             moderation: guild.as_deref().and_then(|g| self.moderation(g, user)),
             group_moderation: None,
+            can_block: false,
         })
     }
 

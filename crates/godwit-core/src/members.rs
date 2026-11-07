@@ -92,6 +92,9 @@ pub struct Profile {
     /// A group conversation where this member may be removed.
     #[serde(default)]
     pub group_moderation: Option<GroupModeration>,
+    /// The card may block and unblock this person (never ourselves).
+    #[serde(default)]
+    pub can_block: bool,
 }
 
 /// What a profile card may do to a group member, and where.

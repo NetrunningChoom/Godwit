@@ -155,6 +155,7 @@ impl SteamAccount {
             has_friends: true,
             moderation: None,
             group_moderation: None,
+            can_block: false,
         })
     }
 

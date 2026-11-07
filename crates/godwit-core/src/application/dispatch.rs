@@ -5,6 +5,14 @@
 use super::*;
 
 impl Application {
+    /// The open profile card is `user`'s and allows blocking them.
+    fn shown_profile_can_block(&self, user: &UserId) -> bool {
+        self.state
+            .profile
+            .as_ref()
+            .is_some_and(|(shown, profile)| shown == user && profile.as_ref().is_some_and(|p| p.can_block && !p.me))
+    }
+
     pub fn dispatch(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::LoadPrivacy(account) => vec![Effect::Backend {
@@ -431,6 +439,24 @@ impl Application {
                 account: user.account.clone(),
                 command: Command::RemoveFriend { user },
             }],
+            Action::BlockUser(user) => {
+                if !self.shown_profile_can_block(&user) {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: user.account.clone(),
+                    command: Command::BlockUser { user },
+                }]
+            }
+            Action::UnblockUser(user) => {
+                if !self.shown_profile_can_block(&user) {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: user.account.clone(),
+                    command: Command::UnblockUser { user },
+                }]
+            }
             Action::RemoveGroupMember { room, user } => {
                 let permitted = room.account == user.account
                     && self.state.profile.as_ref().is_some_and(|(shown, profile)| {

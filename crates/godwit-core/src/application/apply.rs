@@ -287,6 +287,11 @@ impl Application {
             Event::MessageConfirmed { room, nonce, message } => self.receive_message_confirmed(room, nonce, message),
             Event::MessageFailed { room, nonce, error } => self.receive_message_failed(room, nonce, error),
             Event::Friends { account, people } => self.receive_friends(account, people),
+            Event::Blocked { account, users } => {
+                self.state.blocked.retain(|u| u.account != account);
+                self.state.blocked.extend(users);
+                Vec::new()
+            }
             Event::Presences { account, presence } => self.receive_presences(&account, presence),
             Event::VoiceSince { room, since_ms } => {
                 match since_ms {

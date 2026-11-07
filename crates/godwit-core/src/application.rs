@@ -332,6 +332,7 @@ impl Application {
         let signed_in = |account: &AccountId| self.state.accounts.iter().any(|a| a.id == *account);
         match event {
             Event::Friends { account, .. }
+            | Event::Blocked { account, .. }
             | Event::Authors { account, .. }
             | Event::PeopleDirectory { account, .. }
             | Event::Presences { account, .. }
@@ -710,6 +711,7 @@ impl Application {
             has_friends,
             moderation: None,
             group_moderation: None,
+            can_block: false,
         })
     }
 

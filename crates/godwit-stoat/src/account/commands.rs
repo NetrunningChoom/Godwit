@@ -5,6 +5,17 @@
 use super::*;
 
 impl StoatAccount {
+    /// Block or unblock someone else (the server refuses ourselves anyway).
+    fn relationship_command(&mut self, user: &UserId, action: RelationshipAction) -> Vec<Event> {
+        if self.store.me.as_deref() != Some(user.raw.as_ref()) {
+            self.net.send(Cmd::People(PeopleCmd::Relationship {
+                user: user.raw.to_string(),
+                action,
+            }));
+        }
+        Vec::new()
+    }
+
     pub(super) fn run_command(&mut self, command: Command) -> Vec<Event> {
         match command {
             Command::AutoDelete(command) => self.autodelete_command(command),
@@ -359,6 +370,8 @@ impl StoatAccount {
                 }));
                 Vec::new()
             }
+            Command::BlockUser { user } => self.relationship_command(&user, RelationshipAction::Block),
+            Command::UnblockUser { user } => self.relationship_command(&user, RelationshipAction::Unblock),
             Command::OpenDirect { user } => {
                 self.net.send(Cmd::People(PeopleCmd::OpenDm {
                     user: user.raw.to_string(),

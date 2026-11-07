@@ -80,6 +80,14 @@ pub enum Command {
     RemoveFriend {
         user: UserId,
     },
+    /// Block a user; the network's own update of the relationship follows.
+    BlockUser {
+        user: UserId,
+    },
+    /// Lift our block on a user.
+    UnblockUser {
+        user: UserId,
+    },
     /// Remove a member from a group conversation.
     RemoveGroupMember {
         room: RoomId,

@@ -149,6 +149,8 @@ export component AppWindow inherits Window {
     in property <bool> card-can-ban;
     in property <bool> card-can-remove-group-member;
     in property <bool> card-can-transfer-group-ownership;
+    in property <bool> card-can-block;
+    in property <bool> card-blocked;
     // Kept on the window and exposed for generated off-screen scenes.
     in-out property <int> confirm-moderate: 0;
     in-out property <string> ban-reason;
@@ -157,6 +159,9 @@ export component AppWindow inherits Window {
     callback remove-group-member();
     in-out property <bool> confirm-transfer-group-ownership: false;
     callback transfer-group-ownership();
+    in-out property <bool> confirm-block-user: false;
+    callback block-user();
+    callback unblock-user();
     // A new Discord account's one-time privacy question on first run: turn
     // off its data use and activity sharing, or keep them.
     in property <bool> discord-privacy-open;
@@ -1176,6 +1181,10 @@ export component AppWindow inherits Window {
         can-ban: root.card-can-ban;
         can-remove-group-member: root.card-can-remove-group-member;
         can-transfer-group-ownership: root.card-can-transfer-group-ownership;
+        can-block: root.card-can-block;
+        blocked: root.card-blocked;
+        block-user => { root.confirm-block-user = true; }
+        unblock-user => { root.unblock-user(); }
         kick => { root.confirm-moderate = 1; }
         ban => { root.confirm-moderate = 2; root.ban-reason = ""; }
         remove-group-member => { root.confirm-remove-group-member = true; }
@@ -1528,6 +1537,8 @@ export component AppWindow inherits Window {
         remove-group-member => { root.remove-group-member(); }
         confirm-transfer-group-ownership <=> root.confirm-transfer-group-ownership;
         transfer-group-ownership => { root.transfer-group-ownership(); }
+        confirm-block-user <=> root.confirm-block-user;
+        block-user => { root.block-user(); }
         confirm-delete <=> root.confirm-delete;
         delete(i) => { root.delete(i); }
     }

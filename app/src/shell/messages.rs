@@ -331,7 +331,14 @@ impl Shell {
     }
 
     pub fn link(&mut self, ui: &AppWindow, row: i32, url: &str) {
-        if url.starts_with(rich::SPOILER) {
+        if url == crate::view::REVEAL_BLOCKED {
+            // A collapsed run of blocked messages: show each of its messages.
+            if let Some(run) = self.message_at(row).and_then(|id| self.presenter.blocked_runs.get(&id)) {
+                let run = run.clone();
+                self.presenter.revealed_runs.extend(run);
+                self.refresh(ui);
+            }
+        } else if url.starts_with(rich::SPOILER) {
             if let Some(id) = self.message_at(row) {
                 self.presenter.revealed.insert(id);
                 self.refresh(ui);

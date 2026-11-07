@@ -302,6 +302,9 @@ export struct MessageItem {
     // Only emoji: shown large (96 px alone, 48 px several) in place of the text.
     jumbo: [EmojiCellItem],
     system: bool,
+    // Above zero: this row stands for that many consecutive messages from
+    // blocked people (click to show them), like the official BlockedMessage.
+    blocked-count: int,
     pending: bool,
     edited: bool,
     // Pinned in its room: a small pin under it, like "(edited)".

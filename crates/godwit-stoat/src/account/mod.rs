@@ -84,6 +84,8 @@ pub struct StoatAccount {
     account: Option<AccountId>,
     /// The rooms, servers and friends last sent to the core, to send only changes.
     friends: Vec<Person>,
+    /// The users we blocked, as last sent to the core.
+    blocked: Vec<UserId>,
     /// Invite previews read this session, by code (None: not valid).
     invites: HashMap<String, Option<godwit_core::message::InvitePreview>>,
     /// Pending requests last sent to the core: incoming, outgoing.
@@ -488,6 +490,7 @@ impl StoatAccount {
             mfa_ticket: None,
             account: None,
             friends: Vec::new(),
+            blocked: Vec::new(),
             requests: (Vec::new(), Vec::new()),
             invites: HashMap::new(),
             rooms: Default::default(),
@@ -537,6 +540,7 @@ impl StoatAccount {
             mfa_ticket: None,
             account: None,
             friends: Vec::new(),
+            blocked: Vec::new(),
             requests: (Vec::new(), Vec::new()),
             invites: HashMap::new(),
             rooms: Default::default(),
@@ -687,6 +691,7 @@ mod tests {
             mfa_ticket: None,
             account: None,
             friends: Vec::new(),
+            blocked: Vec::new(),
             requests: (Vec::new(), Vec::new()),
             invites: HashMap::new(),
             rooms: Default::default(),
@@ -1626,6 +1631,43 @@ mod tests {
             cmds.try_recv(),
             Ok(Cmd::People(PeopleCmd::Relationship { user, action: RelationshipAction::RemoveFriend })) if user == "ANN"
         ));
+    }
+
+    #[test]
+    fn blocking_maps_to_the_relationship_commands_and_lists_the_blocked() {
+        let (mut a, tx, mut cmds, _) = connected();
+        let _ = (cmds.try_recv(), cmds.try_recv());
+        use godwit_core::members::Relationship;
+        let ann = UserId::new(AccountId::new(Network::Stoat, "ME"), "ANN");
+        let _ = a.run(Command::LoadProfile {
+            user: ann.clone(),
+            room: Some(room("C1")),
+        });
+        let _ = cmds.try_recv();
+        a.run(Command::BlockUser { user: ann.clone() });
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::People(PeopleCmd::Relationship { user, action: RelationshipAction::Block })) if user == "ANN"
+        ));
+        a.run(Command::UnblockUser { user: ann.clone() });
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::People(PeopleCmd::Relationship { user, action: RelationshipAction::Unblock })) if user == "ANN"
+        ));
+        let mut user = a.store.users["ANN"].clone();
+        user.relationship = Some("Blocked".into());
+        tx.send(Ev::UserChanged(user)).unwrap();
+        let events = a.poll();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Blocked { users, .. } if users == std::slice::from_ref(&ann)))
+        );
+        let Some(Event::Profile(p)) = events.iter().find(|e| matches!(e, Event::Profile(_))) else {
+            panic!("{events:?}")
+        };
+        assert_eq!(p.relationship, Relationship::Blocked);
+        assert!(p.can_block, "anyone but us");
     }
 
     #[test]

@@ -239,6 +239,11 @@ pub enum Action {
     AddFriend(UserId),
     /// Unfriend `user`, cancel our request, or turn theirs down.
     RemoveFriend(UserId),
+    /// Block `user` (their messages collapse and they can't reach us), when
+    /// the shown profile allows it.
+    BlockUser(UserId),
+    /// Lift our block on `user`.
+    UnblockUser(UserId),
     /// Remove a member from a group conversation, when the shown profile allows it.
     RemoveGroupMember {
         room: RoomId,

@@ -65,7 +65,7 @@ fn people(app: &mut Application, _: &AppWindow, _: &RoomId, _: &RoomId) -> Scree
 }
 
 /// Ann's profile card, open.
-fn open_profile(app: &mut Application) -> Screen {
+fn open_profile(app: &mut Application, blocked: bool) -> Screen {
     app.dispatch(Action::OpenProfile(user("u0")));
     app.apply(Event::Profile(Profile {
         username: format!("{}#4242", first_name(&person(0)).to_lowercase()).into(),
@@ -92,6 +92,13 @@ fn open_profile(app: &mut Application) -> Screen {
             kick: true,
             ban: true,
         }),
+        // Block user (or Unblock, for `blocked`).
+        can_block: true,
+        relationship: if blocked {
+            godwit_core::members::Relationship::Blocked
+        } else {
+            Default::default()
+        },
         ..profile(user("u0"), &person(0))
     }));
     Screen::Main
@@ -535,7 +542,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }),
             )
         },
-        Scene::new("profile", Box::new(|app, _, _, _| open_profile(app))),
+        Scene::new("profile", Box::new(|app, _, _, _| open_profile(app, false))),
+        Scene::new("profile-blocked", Box::new(|app, _, _, _| open_profile(app, true))),
         Scene::new(
             "picker",
             Box::new(|_, ui, _, _| {
@@ -551,7 +559,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "people-from-card",
             Box::new(|app, ui, a, b| {
                 people(app, ui, a, b);
-                open_profile(app);
+                open_profile(app, false);
                 app.dispatch(Action::LinkFrom(user("u0")));
                 Screen::Main
             }),
@@ -1287,7 +1295,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Scene::new(
             "cleanup-ban",
             Box::new(|app, ui, _, _| {
-                open_profile(app);
+                open_profile(app, false);
                 ui.set_confirm_moderate(2);
                 ui.set_ban_reason("Example reason".into());
                 Screen::Main
@@ -1343,7 +1351,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         Scene::new("switcher", Box::new(|_, _, _, _| Screen::Main)),
         Scene::new("ctrl-k", Box::new(|_, _, _, _| Screen::Main)),
-        Scene::new("light-profile", Box::new(|app, _, _, _| open_profile(app))),
+        Scene::new("light-profile", Box::new(|app, _, _, _| open_profile(app, false))),
         Scene::new(
             "light-home",
             Box::new(|app, _, _, dm| {

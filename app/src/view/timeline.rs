@@ -3,6 +3,8 @@
 //! Timeline keys, message blocks, embeds and incremental row updates.
 
 use super::*;
+use std::borrow::Cow;
+use std::collections::HashMap;
 
 /// Messages from the same author within this gap share one header.
 const GROUP_GAP_MS: i64 = 7 * 60 * 1000;
@@ -26,6 +28,10 @@ pub(crate) fn time(ms: i64) -> String {
     }
 }
 
+/// What a click on a collapsed run of blocked messages sends as its link
+/// (timeline.slint repeats it: Slint can't share the constant).
+pub const REVEAL_BLOCKED: &str = "godwit://reveal-blocked";
+
 /// What a timeline row depends on. Rows whose key didn't change aren't
 /// rebuilt, which keeps hover, scrolling and sub-models intact.
 #[derive(Clone)]
@@ -42,6 +48,9 @@ pub struct RowKey {
     /// The "NEW" divider goes above it.
     new: bool,
     revealed: bool,
+    /// Above zero: this row stands for that many consecutive messages from
+    /// blocked people, this message being the first of them.
+    blocked_run: u32,
     reply: Option<Arc<Message>>,
     /// Every picture the row shows was ready when it was built.
     complete: bool,
@@ -155,6 +164,7 @@ impl RowKey {
             && self.new == other.new
             && self.jump == other.jump
             && self.revealed == other.revealed
+            && self.blocked_run == other.blocked_run
             && self.wanted == other.wanted
             && self.animation_live == other.animation_live
             && self.width == other.width
@@ -175,6 +185,81 @@ const KEEP_MARGIN: usize = 20;
 /// Rows given pictures before the list reports where it is.
 const OPENING_ROWS: usize = 20;
 
+/// The message the "NEW" divider goes above: the first one after `read` that
+/// isn't ours (as Godwit), if `read` is loaded.
+fn new_divider_at(list: &[Arc<Message>], read: Option<&MessageId>) -> Option<usize> {
+    let at = list.iter().position(|m| Some(&m.id) == read)?;
+    list.iter()
+        .enumerate()
+        .skip(at + 1)
+        .find(|(_, m)| m.author.raw != m.author.account.user)
+        .map(|(i, _)| i)
+}
+
+/// The timeline with blocked runs folded (see [`collapse_blocked`]).
+pub struct Collapsed<'a> {
+    /// The messages to show rows for.
+    pub list: Cow<'a, [Arc<Message>]>,
+    /// Each folded run by its first message (the one left in `list`): every
+    /// message of the run, that one included.
+    pub runs: HashMap<MessageId, Vec<MessageId>>,
+}
+
+/// Folds each run of consecutive messages from blocked people into its first
+/// message, as the official client's BlockedMessage does (packages/client/
+/// components/ui/components/messaging/elements/BlockedMessage.tsx): the rest
+/// of the run is left out. Messages in `revealed` stay shown. The messages
+/// the NEW divider and the jump point at are always shown (the run splits
+/// around them), or their markers would have nothing to sit on. Nothing is
+/// copied when no message is folded.
+pub fn collapse_blocked<'a>(
+    list: &'a [Arc<Message>],
+    blocked: &HashSet<UserId>,
+    revealed: &HashSet<MessageId>,
+    unread_from: Option<&MessageId>,
+    jump: Option<&MessageId>,
+) -> Collapsed<'a> {
+    let kept_always: Vec<&MessageId> = unread_from
+        .into_iter()
+        .chain(new_divider_at(list, unread_from).map(|i| &list[i].id))
+        .chain(jump)
+        .collect();
+    let hidden = |m: &Message| {
+        !m.system && blocked.contains(&m.author) && !revealed.contains(&m.id) && !kept_always.contains(&&m.id)
+    };
+    if blocked.is_empty() || !list.iter().any(|m| hidden(m)) {
+        return Collapsed {
+            list: Cow::Borrowed(list),
+            runs: HashMap::new(),
+        };
+    }
+    let mut kept: Vec<Arc<Message>> = Vec::with_capacity(list.len());
+    let mut runs = HashMap::new();
+    let mut run: Vec<MessageId> = Vec::new();
+    let mut close = |run: &mut Vec<MessageId>| {
+        if let Some(first) = run.first().cloned() {
+            runs.insert(first, std::mem::take(run));
+        }
+    };
+    for m in list {
+        if hidden(m) {
+            if run.is_empty() {
+                // The run's first message stands for it.
+                kept.push(m.clone());
+            }
+            run.push(m.id.clone());
+        } else {
+            close(&mut run);
+            kept.push(m.clone());
+        }
+    }
+    close(&mut run);
+    Collapsed {
+        list: Cow::Owned(kept),
+        runs,
+    }
+}
+
 /// What marks rows besides their messages.
 pub struct Marks<'a> {
     /// The "NEW" divider goes after this message.
@@ -183,6 +268,11 @@ pub struct Marks<'a> {
     pub jump: Option<&'a (MessageId, i32)>,
     /// Messages whose spoilers were clicked open.
     pub revealed: &'a HashSet<MessageId>,
+    /// The runs [`collapse_blocked`] folded, by first message.
+    pub blocked_runs: &'a HashMap<MessageId, Vec<MessageId>>,
+    /// The timeline before folding, where replies find their originals
+    /// (None: the list itself).
+    pub all: Option<&'a [Arc<Message>]>,
     pub players: Option<&'a InlinePlayers>,
     pub invites: &'a std::collections::HashMap<(godwit_core::ids::AccountId, Arc<str>), Invite>,
     /// Servers we're in (an invite card to one says Joined).
@@ -228,14 +318,8 @@ pub fn sync_timeline(
     let mut prev: Option<&Message> = None;
     // The NEW line goes before the first message after the last one read
     // that isn't ours (as Godwit), if that one is loaded.
-    let read_at = marks.unread_from.and_then(|id| list.iter().position(|m| &m.id == id));
-    let new_at = read_at.and_then(|at| {
-        list.iter()
-            .enumerate()
-            .skip(at + 1)
-            .find(|(_, m)| m.author.raw != m.author.account.user)
-            .map(|(i, _)| i)
-    });
+    let new_at = new_divider_at(list, marks.unread_from);
+    let originals = marks.all.unwrap_or(list);
     for (i, m) in list.iter().enumerate() {
         let date = day(m.sent_ms).filter(|d| prev.is_none_or(|p| day(p.sent_ms).as_ref() != Some(d)));
         let new = new_at == Some(i);
@@ -252,7 +336,7 @@ pub fn sync_timeline(
         let reply = m
             .reply_to
             .as_ref()
-            .and_then(|r| list.iter().find(|x| &x.id == r))
+            .and_then(|r| originals.iter().find(|x| &x.id == r))
             .cloned();
         let jump = marks.jump.filter(|(id, _)| *id == m.id).map_or(0, |(_, n)| *n);
         keys.push(RowKey {
@@ -263,6 +347,10 @@ pub fn sync_timeline(
             date,
             new,
             revealed: marks.revealed.contains(&m.id),
+            blocked_run: marks
+                .blocked_runs
+                .get(&m.id)
+                .map_or(0, |run| u32::try_from(run.len()).unwrap_or(u32::MAX)),
             reply,
             complete: false,
             jump,
@@ -332,6 +420,17 @@ pub fn sync_timeline(
 
 fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers>) -> (MessageItem, bool, Vec<usize>) {
     let m = &key.message;
+    if key.blocked_run > 0 {
+        // Nothing of the message is built: it is hidden until the run is clicked open.
+        let item = MessageItem {
+            blocked_count: i32::try_from(key.blocked_run).unwrap_or(i32::MAX),
+            divider_date: key.date.clone().unwrap_or_default().into(),
+            divider_new: key.new,
+            jump: key.jump,
+            ..MessageItem::default()
+        };
+        return (item, true, Vec::new());
+    }
     let mut complete = true;
     // The animation slots the row shows (anim.rs): they tick while it's near
     // the view, without the row being rebuilt.
@@ -591,6 +690,7 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
         blocks: ModelRc::new(VecModel::from(blocks)),
         jumbo: ModelRc::new(VecModel::from(jumbo)),
         system: m.system,
+        blocked_count: 0,
         pending: m.pending,
         edited: m.edited,
         pinned: m.pinned,
@@ -920,6 +1020,123 @@ mod timeline_tests {
             .collect()
     }
 
+    /// Messages from `who` per id letter, one minute apart.
+    fn thread(spec: &[(&str, &str)]) -> Vec<Arc<Message>> {
+        spec.iter()
+            .enumerate()
+            .map(|(i, (id, who))| Arc::new(crate::demo::msg(id, who, who, i as i64, "x")))
+            .collect()
+    }
+
+    fn mid(s: &str) -> MessageId {
+        MessageId(s.into())
+    }
+
+    fn shown(c: &Collapsed<'_>) -> Vec<String> {
+        c.list.iter().map(|m| m.id.0.to_string()).collect()
+    }
+
+    fn bad() -> HashSet<UserId> {
+        [crate::demo::user("bad")].into_iter().collect()
+    }
+
+    #[test]
+    fn runs_of_blocked_authors_collapse_into_their_first_message() {
+        let list = thread(&[
+            ("a", "u1"),
+            ("b", "bad"),
+            ("c", "bad"),
+            ("d", "bad"),
+            ("e", "u1"),
+            ("f", "bad"),
+            ("g", "u1"),
+        ]);
+        let none = HashSet::new();
+        let c = collapse_blocked(&list, &bad(), &none, None, None);
+        assert_eq!(shown(&c), ["a", "b", "e", "f", "g"]);
+        assert_eq!(c.runs[&mid("b")], [mid("b"), mid("c"), mid("d")]);
+        assert_eq!(c.runs[&mid("f")], [mid("f")]);
+        // Revealed messages stay shown, one by one.
+        let open: HashSet<MessageId> = [mid("b"), mid("c"), mid("d")].into_iter().collect();
+        let c = collapse_blocked(&list, &bad(), &open, None, None);
+        assert_eq!(shown(&c), ["a", "b", "c", "d", "e", "f", "g"]);
+        assert_eq!(
+            c.runs.keys().collect::<Vec<_>>(),
+            [&mid("f")],
+            "the other run stays folded"
+        );
+        // Nobody blocked: nothing is copied.
+        let c = collapse_blocked(&list, &HashSet::new(), &none, None, None);
+        assert!(matches!(c.list, Cow::Borrowed(_)) && c.runs.is_empty());
+    }
+
+    #[test]
+    fn runs_at_the_ends_fold_and_a_system_message_breaks_one() {
+        let mut list = thread(&[
+            ("a", "bad"),
+            ("b", "bad"),
+            ("sys", "bad"),
+            ("c", "bad"),
+            ("d", "u1"),
+            ("e", "bad"),
+        ]);
+        let mut sys = crate::demo::msg("sys", "bad", "bad", 2, "joined");
+        sys.system = true;
+        list[2] = Arc::new(sys);
+        let c = collapse_blocked(&list, &bad(), &HashSet::new(), None, None);
+        assert_eq!(shown(&c), ["a", "sys", "c", "d", "e"]);
+        assert_eq!(c.runs[&mid("a")].len(), 2, "a run at the start");
+        assert_eq!(c.runs[&mid("c")].len(), 1, "the system message split it");
+        assert_eq!(c.runs[&mid("e")].len(), 1, "a run at the end");
+    }
+
+    #[test]
+    fn the_new_divider_and_the_jump_target_split_a_run() {
+        let list = thread(&[
+            ("a", "u1"),
+            ("b", "bad"),
+            ("c", "bad"),
+            ("d", "bad"),
+            ("e", "bad"),
+            ("f", "bad"),
+        ]);
+        // Read up to "a": the NEW divider goes on "b", the jump target is "e".
+        let (read, jump) = (mid("a"), mid("e"));
+        let c = collapse_blocked(&list, &bad(), &HashSet::new(), Some(&read), Some(&jump));
+        assert_eq!(shown(&c), ["a", "b", "c", "e", "f"]);
+        assert_eq!(c.runs[&mid("c")], [mid("c"), mid("d")]);
+        assert!(!c.runs.contains_key(&mid("b")) && !c.runs.contains_key(&mid("e")));
+        // A hidden "read" message itself is kept too, so the divider is found.
+        let read = mid("c");
+        let c = collapse_blocked(&list, &bad(), &HashSet::new(), Some(&read), None);
+        assert!(shown(&c).contains(&"c".to_owned()) && shown(&c).contains(&"d".to_owned()));
+    }
+
+    #[test]
+    fn replies_find_their_original_in_the_unfolded_list() {
+        let mut list = thread(&[("a", "bad"), ("b", "bad"), ("c", "u1")]);
+        let mut reply = crate::demo::msg("c", "u1", "u1", 2, "re");
+        reply.reply_to = Some(mid("b"));
+        list[2] = Arc::new(reply);
+        let c = collapse_blocked(&list, &bad(), &HashSet::new(), None, None);
+        assert_eq!(shown(&c), ["a", "c"], "b is folded away");
+        let (revealed, invites) = (HashSet::new(), HashMap::new());
+        let marks = Marks {
+            unread_from: None,
+            jump: None,
+            revealed: &revealed,
+            blocked_runs: &c.runs,
+            all: Some(&list),
+            players: None,
+            invites: &invites,
+            servers: &[],
+            text_width: 600.0,
+        };
+        let model = VecModel::<MessageItem>::default();
+        let keys = sync_timeline(&model, &[], &c.list, &marks, &mut None, false, &mut Images::offline());
+        assert!(keys[1].reply.as_ref().is_some_and(|r| r.id == mid("b")));
+    }
+
     #[test]
     fn a_page_loaded_above_leaves_the_rows_near_the_view_alone() {
         let _ = AccountId::new(Network::Stoat, "me");
@@ -931,6 +1148,8 @@ mod timeline_tests {
             unread_from: None,
             jump: None,
             revealed: &revealed,
+            blocked_runs: &Default::default(),
+            all: None,
             players: None,
             invites: &invites,
             servers: &[],

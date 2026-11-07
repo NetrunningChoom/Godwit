@@ -577,6 +577,21 @@ impl Shell {
         }
     }
 
+    /// The card's Block user (after its confirmation) and Unblock user; the
+    /// card stays open and shows the new relationship.
+    pub fn block_profile(&mut self, ui: &AppWindow, block: bool) {
+        if let Some((user, _)) = self.app.state().profile.clone() {
+            self.act(
+                ui,
+                if block {
+                    Action::BlockUser(user)
+                } else {
+                    Action::UnblockUser(user)
+                },
+            );
+        }
+    }
+
     pub fn message_profile(&mut self, ui: &AppWindow) {
         if let Some((user, _)) = self.app.state().profile.clone() {
             self.act(ui, Action::CloseProfile);

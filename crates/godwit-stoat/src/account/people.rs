@@ -78,6 +78,8 @@ impl StoatAccount {
             },
             bot: u.is_some_and(|u| u.bot.is_some()),
             has_friends: true,
+            // The official UserContextMenu offers Block for anyone but us.
+            can_block: self.store.me.as_deref().is_some_and(|me| me != user.as_str()),
             moderation: server.and_then(|s| self.moderation(s, user)),
             group_moderation: group.as_ref().and_then(|channel| {
                 let c = self.store.channels.get(channel)?;
@@ -338,6 +340,21 @@ impl StoatAccount {
             out.push(Event::Friends {
                 account: account.clone(),
                 people: now,
+            });
+        }
+        let mut blocked: Vec<UserId> = self
+            .store
+            .users_with("Blocked")
+            .into_iter()
+            .map(|u| UserId::new(account.clone(), u.id.as_str()))
+            .collect();
+        // By id, not by name: a rename mustn't send the list again.
+        blocked.sort_by(|a, b| a.raw.cmp(&b.raw));
+        if blocked != self.blocked {
+            self.blocked = blocked.clone();
+            out.push(Event::Blocked {
+                account: account.clone(),
+                users: blocked,
             });
         }
         if requests != self.requests {

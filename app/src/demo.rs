@@ -99,6 +99,7 @@ pub fn profile(user: UserId, name: &str) -> godwit_core::members::Profile {
         has_friends: true,
         moderation: None,
         group_moderation: None,
+        can_block: false,
     }
 }
 
@@ -614,6 +615,14 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
     edited.edited = true;
     edited.author_colour = Some([0x79, 0xc0, 0xff]);
     history.push(edited);
+    // Two in a row from someone we blocked: one collapsed row.
+    let blocked_name = person(20);
+    history.push(msg("12", BLOCKED, &blocked_name, 18, &bogus.sentence(4)));
+    history.push(msg("13", BLOCKED, &blocked_name, 18, &bogus.sentence(6)));
+    app.apply(Event::Blocked {
+        account: account(),
+        users: vec![user(BLOCKED)],
+    });
 
     app.dispatch(Action::SelectRoom(general.clone()));
     app.apply(Event::History {
@@ -1166,10 +1175,17 @@ fn invite_preview(code: &str) -> godwit_core::message::InvitePreview {
     }
 }
 
+/// The demo user we start out having blocked, so the collapsed row of
+/// blocked messages can be seen (and tried: unblock shows them).
+const BLOCKED: &str = "u20";
+
 /// A made-up person's standing, so every profile card button can be tried:
 /// `u{n}` by n mod 4 is a friend, nobody, someone who asked, someone asked.
 fn relationship(raw: &str) -> godwit_core::members::Relationship {
     use godwit_core::members::Relationship;
+    if raw == BLOCKED {
+        return Relationship::Blocked;
+    }
     match raw
         .strip_prefix('u')
         .and_then(|n| n.parse::<usize>().ok())
@@ -1228,7 +1244,9 @@ impl DemoAccount {
             call: None,
             muted: false,
             deafened: false,
-            relationships: Default::default(),
+            relationships: [(BLOCKED.to_owned(), godwit_core::members::Relationship::Blocked)]
+                .into_iter()
+                .collect(),
             presence: Presence::Online,
             status: Some(filler(41, 3).to_lowercase().into()),
         }
@@ -1315,6 +1333,47 @@ impl DemoAccount {
             _ => {}
         }
         let mut out = self.friend_lists();
+        out.extend(self.run(godwit_core::application::Command::LoadProfile { user, room: None }));
+        out
+    }
+
+    /// A profile card's Block / Unblock: the person leaves the friend lists
+    /// when blocked and comes back as nobody; the card shows the result.
+    fn block(&mut self, user: UserId, block: bool) -> Vec<Event> {
+        use godwit_core::account::NetworkAccount;
+        use godwit_core::members::Relationship;
+        let raw = user.raw.to_string();
+        let now = self
+            .relationships
+            .get(&raw)
+            .copied()
+            .unwrap_or_else(|| relationship(&raw));
+        if block == (now == Relationship::Blocked) {
+            return Vec::new();
+        }
+        self.relationships.insert(
+            raw,
+            if block {
+                Relationship::Blocked
+            } else {
+                Relationship::None
+            },
+        );
+        if block {
+            self.friends.retain(|p| p.id != user);
+            self.incoming.retain(|p| p.id != user);
+            self.outgoing.retain(|p| p.id != user);
+        }
+        let mut out = self.friend_lists();
+        out.push(Event::Blocked {
+            account: self.id.clone(),
+            users: self
+                .relationships
+                .iter()
+                .filter(|(_, r)| **r == Relationship::Blocked)
+                .map(|(raw, _)| UserId::new(self.id.clone(), raw.as_str()))
+                .collect(),
+        });
         out.extend(self.run(godwit_core::application::Command::LoadProfile { user, room: None }));
         out
     }
@@ -1787,6 +1846,8 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
             }
             Command::AddFriend { user } => self.befriend(user, true),
             Command::RemoveFriend { user } => self.befriend(user, false),
+            Command::BlockUser { user } => self.block(user, true),
+            Command::UnblockUser { user } => self.block(user, false),
             Command::LoadProfile { user, room } => {
                 let raw = user.raw.to_string();
                 // Seen in a channel of a server we manage: the card offers Kick and Ban.
@@ -1810,6 +1871,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     .unwrap_or_else(|| relationship(&raw));
                 vec![Event::Profile(godwit_core::members::Profile {
                     relationship,
+                    can_block: raw != "me",
                     moderation,
                     ..profile(user, &name)
                 })]
@@ -1988,6 +2050,26 @@ mod tests {
         );
         run(&mut app, &mut demo, admin(ServerAdmin::DeleteRole(id)));
         assert_eq!(app_roles(&app).len(), before);
+    }
+
+    #[test]
+    fn demo_blocking_updates_the_card_and_the_blocked_list() {
+        let (mut app, _, _) = world(Contacts::default());
+        let mut demo = DemoAccount::new(&app);
+        let (friend, stranger) = (user("u0"), user(BLOCKED));
+        assert!(app.state().blocked.contains(&stranger), "starts blocked");
+        feed(&mut app, &mut demo, Command::UnblockUser { user: stranger.clone() });
+        assert!(app.state().blocked.is_empty());
+        app.dispatch(Action::OpenProfile(friend.clone()));
+        feed(&mut app, &mut demo, Command::BlockUser { user: friend.clone() });
+        assert!(app.state().blocked.contains(&friend));
+        assert!(
+            !app.state().friends.iter().any(|p| p.id == friend),
+            "no longer a friend"
+        );
+        let shown = app.state().profile.clone();
+        assert!(shown.is_some_and(|(u, p)| u == friend
+            && p.is_some_and(|p| p.relationship == godwit_core::members::Relationship::Blocked && p.can_block)));
     }
 
     #[test]

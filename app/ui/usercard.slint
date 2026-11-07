@@ -35,10 +35,16 @@ export component UserCard inherits Rectangle {
     in property <bool> can-ban;
     in property <bool> can-remove-group-member;
     in property <bool> can-transfer-group-ownership;
+    // The card may block them (the official UserContextMenu's safety group),
+    // and we have: Unblock instead.
+    in property <bool> can-block;
+    in property <bool> blocked;
     callback kick();
     callback ban();
     callback remove-group-member();
     callback transfer-group-ownership();
+    callback block-user();
+    callback unblock-user();
     callback close();
     callback message();
     callback add-friend();
@@ -185,6 +191,11 @@ export component UserCard inherits Rectangle {
                 if !root.me && root.can-remove-group-member: HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;
                     Button { text: "Remove member"; kind: "text"; danger: true; clicked => { root.remove-group-member(); } }
+                }
+                if !root.me && root.can-block: HorizontalLayout {
+                    spacing: Theme.space-3; alignment: start;
+                    if !root.blocked: Button { text: "Block user"; kind: "text"; danger: true; clicked => { root.block-user(); } }
+                    if root.blocked: Button { text: "Unblock user"; kind: "text"; clicked => { root.unblock-user(); } }
                 }
                 if !root.me && root.can-transfer-group-ownership: HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;

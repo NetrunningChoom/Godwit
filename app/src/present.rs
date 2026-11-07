@@ -134,6 +134,10 @@ pub struct Presenter {
     pub rows: Vec<view::RowKey>,
     /// Messages whose spoilers were clicked open.
     pub revealed: HashSet<MessageId>,
+    /// Blocked messages clicked open (not persisted; cleared with the room).
+    pub revealed_runs: HashSet<MessageId>,
+    /// The runs of blocked messages folded in the open room's rows, by first message.
+    pub blocked_runs: std::collections::HashMap<MessageId, Vec<MessageId>>,
 
     /// Pictures arrived since the window was last filled.
     pub images_changed: bool,
@@ -1012,6 +1016,8 @@ impl Presenter {
             self.messages.set_vec(Vec::new());
             self.rows.clear();
             self.timeline_of = Some(room.id.clone());
+            self.revealed_runs.clear();
+            self.blocked_runs.clear();
             // Its rows haven't said where the view is yet.
             self.window = None;
         }
@@ -1020,7 +1026,16 @@ impl Presenter {
             .jump
             .as_ref()
             .map(|(id, n)| (id.clone(), i32::try_from(*n).unwrap_or(i32::MAX)));
+        let folded = view::collapse_blocked(
+            &list,
+            &state.blocked,
+            &self.revealed_runs,
+            state.unread_from.as_ref(),
+            jump.as_ref().map(|(id, _)| id),
+        );
         let marks = view::Marks {
+            blocked_runs: &folded.runs,
+            all: Some(&list),
             unread_from: state.unread_from.as_ref(),
             jump: jump.as_ref(),
             revealed: &self.revealed,
@@ -1032,12 +1047,13 @@ impl Presenter {
         self.rows = view::sync_timeline(
             &self.messages,
             &self.rows,
-            &list,
+            &folded.list,
             &marks,
             &mut self.window,
             self.images_changed || self.frames_changed,
             images,
         );
+        self.blocked_runs = folded.runs;
         self.images_changed = false;
         self.frames_changed = false;
     }

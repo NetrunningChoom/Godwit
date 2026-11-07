@@ -209,6 +209,11 @@ pub enum Event {
         account: AccountId,
         people: Vec<Person>,
     },
+    /// The people the account has blocked, all of them.
+    Blocked {
+        account: AccountId,
+        users: Vec<UserId>,
+    },
     /// The account's pending friend requests, both ways.
     FriendRequests {
         account: AccountId,

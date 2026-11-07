@@ -355,6 +355,8 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_delete_server_role() => |sh, ui| sh.delete_server_role(ui));
     callback!(ui.on_moderate_member(ban, reason) => |sh, ui| sh.moderate_member(ui, ban, &reason));
     callback!(ui.on_remove_group_member() => |sh, ui| sh.remove_group_member(ui));
+    callback!(ui.on_block_user() => |sh, ui| sh.block_profile(ui, true));
+    callback!(ui.on_unblock_user() => |sh, ui| sh.block_profile(ui, false));
     callback!(ui.on_transfer_group_ownership() => |sh, ui| sh.transfer_group_ownership(ui));
     callback!(ui.on_server_menu_invite() => |sh, ui| sh.server_menu(ui, ServerAdmin::CreateInvite));
     ui.on_server_menu_notify({

@@ -879,7 +879,21 @@ export component Timeline inherits Rectangle {
                         new := Text { text: "NEW"; font-size: Theme.text-tiny; font-weight: 600; color: Theme.on-primary; }
                     }
                 }
-                MessageRow {
+                if message.blocked-count > 0: Rectangle {
+                    height: Theme.message-size * 2;
+                    Text {
+                        x: Theme.gap-lg;
+                        width: parent.width - 2 * Theme.gap-lg;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        text: message.blocked-count == 1 ? "1 blocked message" : message.blocked-count + " blocked messages";
+                        font-size: Theme.message-size;
+                        color: Theme.on-surface-variant;
+                    }
+                    TouchArea { mouse-cursor: pointer; clicked => { root.link-clicked(i, "godwit://reveal-blocked" /* view::REVEAL_BLOCKED */); } }
+                }
+                if message.blocked-count == 0: MessageRow {
                     flash: parent.flash;
                     message: message;
                     row-number: i;

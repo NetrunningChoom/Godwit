@@ -168,6 +168,8 @@ pub struct AppState {
     pub presence: HashMap<UserId, Presence>,
     /// Invite cards' states, by account and code.
     pub invites: HashMap<(AccountId, Arc<str>), crate::message::Invite>,
+    /// People we blocked: their messages collapse in the timeline.
+    pub blocked: std::collections::HashSet<UserId>,
     /// Pending friend requests: who, and whether they asked (not us).
     pub friend_requests: Vec<(Person, bool)>,
     /// The last "Add friend" from the friends list: sending (None after

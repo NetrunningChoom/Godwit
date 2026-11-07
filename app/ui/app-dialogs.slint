@@ -151,6 +151,8 @@ export component ManagementDialogs inherits Rectangle {
     callback remove-group-member();
     in-out property <bool> confirm-transfer-group-ownership;
     callback transfer-group-ownership();
+    in-out property <bool> confirm-block-user;
+    callback block-user();
     in-out property <int> confirm-delete: -1;
     callback delete(int);
 
@@ -256,6 +258,14 @@ export component ManagementDialogs inherits Rectangle {
         danger: true;
         cancelled => { root.confirm-remove-group-member = false; }
         confirmed => { root.remove-group-member(); root.confirm-remove-group-member = false; }
+    }
+    if root.confirm-block-user: ConfirmDialog {
+        title: "Block " + root.card-name + "?";
+        message: "You will no longer see their messages unless you choose to.";
+        confirm-text: "Block user";
+        danger: true;
+        cancelled => { root.confirm-block-user = false; }
+        confirmed => { root.block-user(); root.confirm-block-user = false; }
     }
     if root.confirm-transfer-group-ownership: ConfirmDialog {
         title: "Transfer group ownership to " + root.card-name + "?";
