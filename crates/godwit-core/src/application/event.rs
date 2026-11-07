@@ -39,6 +39,13 @@ pub enum Event {
         server: ServerId,
         result: Result<crate::server_settings::ServerAdminResult, Arc<str>>,
     },
+    /// A channel's settings: loaded, saved or failed. `Ok(None)` means the
+    /// channel was deleted.
+    ChannelOverview {
+        room: RoomId,
+        request: u64,
+        result: Result<Option<crate::channel_settings::ChannelOverview>, Arc<str>>,
+    },
     ServerOverview {
         server: ServerId,
         request: u64,

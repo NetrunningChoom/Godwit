@@ -231,6 +231,12 @@ pub enum ChannelCmd {
         category: Option<String>,
     },
 
+    /// Deletes a server channel (`DELETE /channels/{id}`); answers with
+    /// `ChannelDeleted`. The channel leaves the lists by its ChannelDelete event.
+    DeleteChannel {
+        channel: String,
+        request: u64,
+    },
     /// Leaves a group (or closes a DM).
     LeaveChannel {
         channel: String,
@@ -243,6 +249,8 @@ pub enum ChannelEditCmd {
     /// Edits a channel (`DataEditChannel`), uploading the icon first.
     EditChannel {
         channel: String,
+        /// Echoed in `ChannelSaved`, so the page can tell its own answer.
+        request: u64,
         body: Value,
         icon: Option<Upload>,
     },
@@ -250,6 +258,7 @@ pub enum ChannelEditCmd {
     /// is the `permissions` value (a number for groups, else allow/deny).
     SetChannelPermissions {
         channel: String,
+        request: u64,
         role: Option<String>,
         permissions: Value,
     },
@@ -671,8 +680,18 @@ pub enum Ev {
         result: Result<Value, String>,
         deleted: Option<String>,
     },
-    /// A channel edit or permission change finished.
-    ChannelSaved(Result<(), String>),
+    /// A channel edit or permission change finished; an edit answers with
+    /// the channel as the server now has it.
+    ChannelSaved {
+        channel: String,
+        request: u64,
+        result: Result<Option<crate::api::Channel>, String>,
+    },
+    ChannelDeleted {
+        channel: String,
+        request: u64,
+        result: Result<(), String>,
+    },
     RoleCreated {
         server: String,
         id: String,
@@ -1661,26 +1680,34 @@ impl Backend {
                 let autumn = config.features.autumn.url.clone();
                 tokio::spawn(async move {
                     // The change itself arrives as ChannelUpdate.
-                    let result: Result<()> = async {
+                    let (channel, request) = match &cmd {
+                        ChannelEditCmd::EditChannel { channel, request, .. }
+                        | ChannelEditCmd::SetChannelPermissions { channel, request, .. } => (channel.clone(), *request),
+                    };
+                    let result: Result<Option<crate::api::Channel>> = async {
                         match cmd {
                             ChannelEditCmd::EditChannel {
                                 channel,
                                 mut body,
                                 icon,
+                                ..
                             } => {
                                 if let Some(f) = icon {
                                     body["icon"] = json!(upload(&rest, &autumn, f, "icons").await?);
                                 }
-                                rest.send::<Value>(
-                                    rest.req(reqwest::Method::PATCH, &format!("/channels/{channel}"))
-                                        .json(&body),
-                                )
-                                .await?;
+                                let updated = rest
+                                    .send::<crate::api::Channel>(
+                                        rest.req(reqwest::Method::PATCH, &format!("/channels/{channel}"))
+                                            .json(&body),
+                                    )
+                                    .await?;
+                                return Ok(Some(updated));
                             }
                             ChannelEditCmd::SetChannelPermissions {
                                 channel,
                                 role,
                                 permissions,
+                                ..
                             } => {
                                 let target = role.as_deref().unwrap_or("default");
                                 let rb = rest
@@ -1692,10 +1719,27 @@ impl Backend {
                                 rest.send::<Value>(rb).await?;
                             }
                         }
-                        Ok(())
+                        Ok(None)
                     }
                     .await;
-                    out.emit(Ev::ChannelSaved(result.map_err(|e| crate::errors::describe(&e))));
+                    out.emit(Ev::ChannelSaved {
+                        channel,
+                        request,
+                        result: result.map_err(|e| crate::errors::describe(&e)),
+                    });
+                });
+            }
+            ChannelCmd::DeleteChannel { channel, request } => {
+                let rest = rest.clone();
+                let out = out.clone();
+                tokio::spawn(async move {
+                    let rb = rest.req(reqwest::Method::DELETE, &format!("/channels/{channel}"));
+                    let result = rest.send_empty(rb).await.map_err(|e| crate::errors::describe(&e));
+                    out.emit(Ev::ChannelDeleted {
+                        channel,
+                        request,
+                        result,
+                    });
                 });
             }
             ChannelCmd::LeaveChannel { channel, silent } => {

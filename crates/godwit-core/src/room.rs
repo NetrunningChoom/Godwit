@@ -65,6 +65,10 @@ pub struct Capabilities {
     /// it for our own and system messages).
     #[serde(default)]
     pub report: bool,
+    /// The channel's settings page opens, and the channel can be deleted
+    /// (Stoat: Manage Channel on a server channel).
+    #[serde(default)]
+    pub manage_channel: bool,
 }
 
 impl Capabilities {
@@ -93,6 +97,7 @@ impl Capabilities {
             gifs: true,
             max_upload: 0,
             pin_messages: false,
+            manage_channel: false,
             forum: false,
             report: false,
         };
@@ -279,6 +284,7 @@ mod tests {
                 c.external_emoji,
                 c.gifs,
                 c.pin_messages,
+                c.manage_channel,
             ]
             .into_iter()
             .all(|enabled| !enabled)

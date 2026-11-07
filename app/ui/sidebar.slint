@@ -62,7 +62,7 @@ component RoomRow inherits Rectangle {
             + (Math.mod(secs, 60) < 10 ? "0" : "") + Math.mod(secs, 60)
     }
     callback clicked;
-    // Its menu's choice: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide.
+    // Its menu's choice: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide, 6 channel settings.
     callback menu(int);
     callback toggle-hidden();
     // A category heading clicked: fold or unfold it.
@@ -116,6 +116,9 @@ component RoomRow inherits Rectangle {
             if !room.header: MenuRow { glyph: Icons.schedule; label: room.muzzled ? "Unmuzzle repeat messages" : "Muzzle repeat messages"; clicked => { root.menu(4); } }
             if room.kind != 2: MenuDivider { }
             if room.kind != 2: MenuRow { glyph: Icons.close; label: room.hidden ? "Unhide" : "Hide"; clicked => { root.menu(3); } }
+            // The official channel menu's "Open channel settings".
+            if room.can-manage: MenuDivider { }
+            if room.can-manage: MenuRow { glyph: Icons.settings; label: "Channel settings"; clicked => { root.menu(6); } }
         }
     }
     if !room.header: Entry {

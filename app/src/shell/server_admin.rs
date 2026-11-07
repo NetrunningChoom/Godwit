@@ -237,6 +237,38 @@ impl Shell {
             self.act(ui, action);
         }
     }
+    pub fn save_channel_overview(&mut self, ui: &AppWindow) {
+        if let Some(action) = self.channel_editor.save(ui) {
+            self.act(ui, action);
+        }
+    }
+    pub fn reset_channel_overview(&mut self, ui: &AppWindow) {
+        self.channel_editor.reset(ui, self.app.state());
+        self.show_channel_settings(ui);
+    }
+    pub fn channel_overview_edited(&mut self, ui: &AppWindow) {
+        self.channel_editor.edited();
+        self.show_channel_settings(ui);
+    }
+    pub fn remove_channel_icon(&mut self, ui: &AppWindow) {
+        self.channel_editor.remove_icon(ui);
+        self.show_channel_settings(ui);
+    }
+    pub fn channel_edit_token(&self) -> Option<(RoomId, u64)> {
+        self.channel_editor.token()
+    }
+    pub fn channel_image_picked(
+        &mut self,
+        ui: &AppWindow,
+        token: &(RoomId, u64),
+        result: Result<godwit_core::own_profile::ProfileImage, String>,
+    ) {
+        self.channel_editor.picked(ui, token, result);
+        self.show_channel_settings(ui);
+    }
+    pub(super) fn show_channel_settings(&mut self, ui: &AppWindow) {
+        self.channel_editor.show(ui, self.app.state(), &mut self.images);
+    }
     pub(super) fn show_server_settings(&mut self, ui: &AppWindow) {
         self.server_editor.show(ui, self.app.state(), &mut self.images);
     }

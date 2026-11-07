@@ -313,6 +313,7 @@ impl Shell {
                 crate::cropper::CropFor::Profile { avatar: false, .. } => "Crop your banner",
                 crate::cropper::CropFor::Server { icon: true, .. } => "Crop the server icon",
                 crate::cropper::CropFor::Server { icon: false, .. } => "Crop the server banner",
+                crate::cropper::CropFor::Channel { .. } => "Crop the channel icon",
             }
             .into(),
         );
@@ -360,6 +361,7 @@ impl Shell {
                 self.profile_image_picked(ui, &account, avatar, Ok(image))
             }
             crate::cropper::CropFor::Server { token, icon } => self.server_image_picked(ui, &token, icon, Ok(image)),
+            crate::cropper::CropFor::Channel { token } => self.channel_image_picked(ui, &token, Ok(image)),
         }
     }
 

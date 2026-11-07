@@ -178,6 +178,7 @@ pub(super) fn room_row(r: &Room, selected: bool, occupants: Option<&Vec<CallMemb
     let (icon, has_icon) = picture(images, r.icon_url.as_deref());
     RoomItem {
         thread: r.parent.is_some(),
+        can_manage: r.capabilities.manage_channel,
         header: false,
         name: r.name.as_ref().into(),
         name_runs: label_runs(&r.name, images),

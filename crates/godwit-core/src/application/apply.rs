@@ -57,6 +57,7 @@ impl Application {
                 self.apply_server_admin(server, result);
                 Vec::new()
             }
+            Event::ChannelOverview { room, request, result } => self.receive_channel_overview(room, request, result),
             Event::ServerOverview {
                 server,
                 request,

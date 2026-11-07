@@ -317,6 +317,33 @@ fn server_admin_scene(name: &'static str, page: i32) -> Scene<'static> {
     )
 }
 
+/// A server channel's settings, filled the way the app does it: the demo
+/// account answers the core, and the real editor shows the result.
+fn channel_settings_scene() -> Scene<'static> {
+    Scene::new(
+        "channel-settings",
+        Box::new(|app, ui, _, _| {
+            use godwit_core::account::NetworkAccount;
+            let mut demo = godwit::demo::DemoAccount::new(app);
+            for effect in app.dispatch(Action::OpenChannelSettings(RoomId::new(account(), "voice"))) {
+                if let godwit_core::application::Effect::Backend { command, .. } = effect {
+                    for event in demo.run(command) {
+                        app.apply(event);
+                    }
+                }
+            }
+            let mut images = Images::offline();
+            pictures(&mut images);
+            let mut editor = godwit::channel_settings::ChannelEditor::default();
+            editor.show(ui, app.state(), &mut images);
+            ui.set_channel_edit_mature(true);
+            editor.edited();
+            editor.show(ui, app.state(), &mut images);
+            Screen::Main
+        }),
+    )
+}
+
 /// A smooth test picture, `w`×`h`.
 fn gradient(w: u32, h: u32) -> slint::Image {
     let mut pixels = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
@@ -955,6 +982,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }),
             )
         },
+        channel_settings_scene(),
         Scene::new(
             "replying",
             Box::new(|app, _, _, _| {

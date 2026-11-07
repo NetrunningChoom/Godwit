@@ -8,6 +8,7 @@
 //! drives it through [`StoatAccount::log_in`] and [`StoatAccount::status`].
 
 mod calls;
+mod channel_admin;
 mod commands;
 mod events;
 mod messages;
@@ -764,7 +765,7 @@ mod tests {
         json!({ "_id": id, "channel": channel, "author": "ANN", "content": content })
     }
 
-    fn connected() -> (
+    pub(super) fn connected() -> (
         StoatAccount,
         mpsc::Sender<Ev>,
         tmpsc::UnboundedReceiver<Cmd>,
@@ -852,7 +853,7 @@ mod tests {
         );
     }
 
-    fn room(raw: &str) -> RoomId {
+    pub(super) fn room(raw: &str) -> RoomId {
         RoomId::new(AccountId::new(Network::Stoat, "ME"), raw)
     }
 

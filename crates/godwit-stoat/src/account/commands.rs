@@ -59,6 +59,9 @@ impl StoatAccount {
                 Vec::new()
             }
             Command::ServerAdmin { server, op } => self.server_admin(server, op),
+            Command::LoadChannelOverview { .. } | Command::SaveChannelOverview { .. } | Command::DeleteChannel { .. } => {
+                self.channel_command(command)
+            }
             Command::LoadServerOverview { server, request } => {
                 let result = self.server_overview(&server).ok_or_else(|| "This server is no longer available.".into());
                 vec![Event::ServerOverview { server, request, result }]

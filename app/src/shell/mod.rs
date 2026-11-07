@@ -166,6 +166,7 @@ pub struct Shell {
     /// What the open report dialog is about, and whether it was sent.
     report: Option<godwit_core::report::ReportTarget>,
     report_submitted: bool,
+    channel_editor: crate::channel_settings::ChannelEditor,
 }
 
 #[derive(Clone)]
@@ -397,6 +398,7 @@ impl Shell {
             server_editor: crate::server_settings::ServerEditor::default(),
             report: None,
             report_submitted: false,
+            channel_editor: crate::channel_settings::ChannelEditor::default(),
             profile_editor: Default::default(),
             autodelete_page: Default::default(),
             account_pages: Default::default(),
@@ -1019,6 +1021,7 @@ impl Shell {
         self.show_join_server(ui);
         self.show_own_profile(ui);
         self.show_server_settings(ui);
+        self.show_channel_settings(ui);
         self.show_share_dialog(ui);
         self.show_discord_privacy(ui);
         self.show_quiet_notice(ui);

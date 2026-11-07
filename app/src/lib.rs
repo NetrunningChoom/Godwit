@@ -8,6 +8,7 @@ pub mod alerts;
 pub mod anim;
 pub mod autodelete_page;
 pub mod cache;
+pub mod channel_settings;
 pub mod code;
 pub mod cropper;
 pub mod demo;

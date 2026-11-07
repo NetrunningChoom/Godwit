@@ -34,6 +34,35 @@ impl Application {
         Vec::new()
     }
 
+    pub(super) fn receive_channel_overview(
+        &mut self,
+        room: RoomId,
+        request: u64,
+        result: Result<Option<crate::channel_settings::ChannelOverview>, Arc<str>>,
+    ) -> Vec<Effect> {
+        let Some(s) = &mut self.state.channel_settings else {
+            return Vec::new();
+        };
+        if s.room != room || s.request != request || !s.busy {
+            return Vec::new();
+        }
+        s.busy = false;
+        match result {
+            Ok(Some(overview)) => {
+                s.saved = s.overview.is_some();
+                s.overview = Some(overview);
+                s.error = None;
+            }
+            // Deleted: nothing left to edit.
+            Ok(None) => self.state.channel_settings = None,
+            Err(error) => {
+                s.error = Some(error);
+                s.saved = false;
+            }
+        }
+        Vec::new()
+    }
+
     pub(super) fn receive_account_ready(
         &mut self,
         account: AccountId,
@@ -162,6 +191,14 @@ impl Application {
         {
             self.state.server_settings = None;
         }
+        if self
+            .state
+            .channel_settings
+            .as_ref()
+            .is_some_and(|s| s.room.account == account)
+        {
+            self.state.channel_settings = None;
+        }
         self.state.own_profiles.remove(&account);
         // Its friends and requests go with it (contacts stay, with any
         // merges, for when it signs in again; People hides them).
@@ -235,6 +272,9 @@ impl Application {
             Vec::new()
         };
         self.state.rooms.retain(|r| r.id != id);
+        if self.state.channel_settings.as_ref().is_some_and(|s| s.room == id) {
+            self.state.channel_settings = None;
+        }
         self.state.timelines.remove(&id);
         self.state.drafts.remove(&id);
         self.state.compose.remove(&id);

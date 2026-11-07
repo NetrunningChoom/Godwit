@@ -35,6 +35,11 @@ pub enum Action {
         room: RoomId,
         quality: crate::call::ScreenShareQuality,
     },
+    /// A server channel's settings page (see [`crate::channel_settings`]).
+    OpenChannelSettings(RoomId),
+    CloseChannelSettings,
+    SaveChannelOverview(crate::channel_settings::ChannelOverviewEdit),
+    DeleteChannel,
     OpenServerSettings(ServerId),
     CloseServerSettings,
     CloseInviteLink,

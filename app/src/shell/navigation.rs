@@ -279,7 +279,8 @@ impl Shell {
     }
 
     /// A Home row's menu: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide,
-    /// 4 muzzle mode on/off for this chat, 5 its notifications (cycles).
+    /// 4 muzzle mode on/off for this chat, 5 its notifications (cycles),
+    /// 6 its channel settings.
     pub fn room_menu(&mut self, ui: &AppWindow, row: i32, choice: i32) {
         let Some(room) = usize::try_from(row).ok().and_then(|r| self.room_at(r)) else {
             return;
@@ -307,6 +308,10 @@ impl Shell {
             self.presenter.muzzle = self.settings.clone();
             self.save_settings();
             self.refresh(ui);
+            return;
+        }
+        if choice == 6 {
+            self.act(ui, Action::OpenChannelSettings(room));
             return;
         }
         let state = self.app.state();

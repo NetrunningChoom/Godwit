@@ -36,6 +36,21 @@ pub enum Command {
     MarkRoomRead {
         room: RoomId,
     },
+    LoadChannelOverview {
+        room: RoomId,
+        request: u64,
+    },
+    SaveChannelOverview {
+        room: RoomId,
+        request: u64,
+        edit: Box<crate::channel_settings::ChannelOverviewEdit>,
+    },
+    /// Deletes a server channel; answered with [`Event::ChannelOverview`]
+    /// (`Ok(None)` once it is gone).
+    DeleteChannel {
+        room: RoomId,
+        request: u64,
+    },
     LoadServerOverview {
         server: ServerId,
         request: u64,

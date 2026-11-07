@@ -6,6 +6,7 @@ pub mod account;
 pub mod api;
 pub mod autodelete;
 pub mod backend;
+mod channel_edit;
 pub mod emoji;
 pub mod errors;
 pub mod markdown;

@@ -3188,3 +3188,164 @@ fn two_accounts_sharing_a_raw_dm_id_never_mix() {
     };
     assert!(has_m1(&ia) && !has_m1(&ib));
 }
+
+/// A signed-in Stoat account with one channel it may manage (`C`) and one
+/// it may not (`L`).
+fn channel_settings_app() -> Application {
+    let n = Network::Stoat;
+    let mut app = Application::default();
+    let kind = || RoomKind::Channel {
+        server: ServerId::new(account(n), "S"),
+    };
+    let mut managed = room(n, "C", kind());
+    managed.capabilities.manage_channel = true;
+    let locked = room(n, "L", kind());
+    ready(&mut app, n, vec![managed, locked]);
+    app
+}
+
+fn open_channel_settings(app: &mut Application, can_manage: bool) -> RoomId {
+    let room = RoomId::new(account(Network::Stoat), "C");
+    let effects = app.dispatch(Action::OpenChannelSettings(room.clone()));
+    let [
+        Effect::Backend {
+            command: Command::LoadChannelOverview { request, .. },
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("expected a load, got {effects:?}");
+    };
+    let request = *request;
+    app.apply(Event::ChannelOverview {
+        room: room.clone(),
+        request,
+        result: Ok(Some(crate::channel_settings::ChannelOverview {
+            name: "general".into(),
+            can_manage,
+            ..Default::default()
+        })),
+    });
+    room
+}
+
+#[test]
+fn channel_settings_open_only_for_managed_channels_and_load_once() {
+    let mut app = channel_settings_app();
+    let n = Network::Stoat;
+    assert!(
+        app.dispatch(Action::OpenChannelSettings(RoomId::new(account(n), "L")))
+            .is_empty()
+    );
+    assert!(app.state().channel_settings.is_none());
+    let effects = app.dispatch(Action::OpenChannelSettings(RoomId::new(account(n), "C")));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend {
+            command: Command::LoadChannelOverview { .. },
+            ..
+        }]
+    ));
+    // Loading: another open waits for it.
+    assert!(
+        app.dispatch(Action::OpenChannelSettings(RoomId::new(account(n), "C")))
+            .is_empty()
+    );
+    app.dispatch(Action::CloseChannelSettings);
+    assert!(app.state().channel_settings.is_none());
+}
+
+#[test]
+fn channel_settings_save_and_delete_are_gated_and_answered() {
+    use crate::channel_settings::{ChannelOverview, ChannelOverviewEdit};
+    let mut app = channel_settings_app();
+    open_channel_settings(&mut app, false);
+    let edit = ChannelOverviewEdit {
+        name: Some("lobby".into()),
+        ..Default::default()
+    };
+    assert!(
+        app.dispatch(Action::SaveChannelOverview(edit.clone())).is_empty(),
+        "no permission"
+    );
+    assert!(app.dispatch(Action::DeleteChannel).is_empty(), "no permission");
+
+    app.dispatch(Action::CloseChannelSettings);
+    let room = open_channel_settings(&mut app, true);
+    // An empty edit is a no-op that counts as saved.
+    assert!(app.dispatch(Action::SaveChannelOverview(Default::default())).is_empty());
+    let effects = app.dispatch(Action::SaveChannelOverview(edit));
+    let [
+        Effect::Backend {
+            command: Command::SaveChannelOverview { request, .. },
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("expected a save, got {effects:?}");
+    };
+    let request = *request;
+    assert!(app.state().channel_settings.as_ref().unwrap().busy);
+    // A stale answer is ignored; the right one shows the new overview.
+    app.apply(Event::ChannelOverview {
+        room: room.clone(),
+        request: request.wrapping_sub(1),
+        result: Err("old".into()),
+    });
+    assert!(app.state().channel_settings.as_ref().unwrap().busy);
+    app.apply(Event::ChannelOverview {
+        room: room.clone(),
+        request,
+        result: Ok(Some(ChannelOverview {
+            name: "lobby".into(),
+            can_manage: true,
+            ..Default::default()
+        })),
+    });
+    let s = app.state().channel_settings.as_ref().unwrap();
+    assert!(!s.busy && s.saved);
+    assert_eq!(&*s.overview.as_ref().unwrap().name, "lobby");
+
+    // A failed delete keeps the page open with the error; a good one closes it.
+    let effects = app.dispatch(Action::DeleteChannel);
+    let [
+        Effect::Backend {
+            command: Command::DeleteChannel { request, .. },
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("expected a delete, got {effects:?}");
+    };
+    app.apply(Event::ChannelOverview {
+        room: room.clone(),
+        request: *request,
+        result: Err("nope".into()),
+    });
+    let s = app.state().channel_settings.as_ref().unwrap();
+    assert_eq!(s.error.as_deref(), Some("nope"));
+    let effects = app.dispatch(Action::DeleteChannel);
+    let [
+        Effect::Backend {
+            command: Command::DeleteChannel { request, .. },
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("expected a delete, got {effects:?}");
+    };
+    app.apply(Event::ChannelOverview {
+        room,
+        request: *request,
+        result: Ok(None),
+    });
+    assert!(app.state().channel_settings.is_none());
+}
+
+#[test]
+fn channel_settings_close_when_the_channel_goes() {
+    let mut app = channel_settings_app();
+    let room = open_channel_settings(&mut app, true);
+    app.apply(Event::RoomRemoved(room));
+    assert!(app.state().channel_settings.is_none());
+}

@@ -32,6 +32,7 @@ import { People } from "people.slint";
 import { Active } from "active.slint";
 import { Threads } from "threads.slint";
 import { ServerSettings } from "server-settings.slint";
+import { ChannelSettings } from "channel-settings.slint";
 import { Settings } from "settings.slint";
 import { ProfileCard } from "profile.slint";
 import { Dialog, ConfirmDialog, Button, TextField, TextArea, ResizeHandle, Avatar, IconButton } from "widgets.slint";
@@ -94,6 +95,23 @@ export component AppWindow inherits Window {
     in property <bool> home-selected: true;
     in property <bool> server-settings-available;
     in property <bool> server-settings-open;
+    // A server channel's settings (see channel-settings.slint).
+    in property <bool> channel-settings-open;
+    in property <bool> channel-edit-loaded;
+    in property <bool> channel-edit-busy;
+    in property <bool> channel-edit-allowed;
+    in property <bool> channel-edit-dirty;
+    in property <bool> channel-edit-failed;
+    in property <string> channel-edit-status;
+    in property <string> channel-edit-title;
+    in-out property <string> channel-edit-name;
+    in-out property <string> channel-edit-description;
+    in-out property <bool> channel-edit-mature;
+    in property <image> channel-edit-icon;
+    in property <bool> channel-edit-has-icon;
+    in property <string> channel-edit-icon-label;
+    callback close-channel-settings(); callback save-channel-overview(); callback reset-channel-overview(); callback channel-overview-edited();
+    callback pick-channel-image(); callback remove-channel-image(); callback delete-channel();
     in property <bool> server-edit-loaded;
     in property <bool> server-edit-busy;
     in property <bool> server-edit-allowed;
@@ -1277,6 +1295,17 @@ export component AppWindow inherits Window {
         role-edited => { root.server-role-edited(); } toggle-permission(i) => { root.toggle-server-permission(i); }
         save-role => { root.save-server-role(); } delete-role => { root.delete-server-role(); }
         delete-server => { root.delete-server(); }
+    }
+    if root.channel-settings-open && screen == Screen.main: ChannelSettings {
+        title: root.channel-edit-title;
+        loaded: root.channel-edit-loaded; busy: root.channel-edit-busy; allowed: root.channel-edit-allowed;
+        dirty: root.channel-edit-dirty; failed: root.channel-edit-failed; status: root.channel-edit-status;
+        name <=> root.channel-edit-name; description <=> root.channel-edit-description; mature <=> root.channel-edit-mature;
+        icon: root.channel-edit-icon; has-icon: root.channel-edit-has-icon; icon-label: root.channel-edit-icon-label;
+        close => { root.close-channel-settings(); } save => { root.save-channel-overview(); }
+        reset => { root.reset-channel-overview(); } changed => { root.channel-overview-edited(); }
+        pick-image => { root.pick-channel-image(); } remove-image => { root.remove-channel-image(); }
+        delete-channel => { root.delete-channel(); }
     }
     if root.settings-open && screen == Screen.main: Settings {
         reset-panels => {

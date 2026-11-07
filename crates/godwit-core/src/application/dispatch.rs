@@ -58,6 +58,13 @@ impl Application {
                     command: Command::StartScreenShare { quality },
                 }]
             }
+            Action::OpenChannelSettings(room) => self.dispatch_open_channel_settings(room),
+            Action::CloseChannelSettings => {
+                self.state.channel_settings = None;
+                Vec::new()
+            }
+            Action::SaveChannelOverview(edit) => self.dispatch_save_channel_overview(edit),
+            Action::DeleteChannel => self.dispatch_delete_channel(),
             Action::OpenServerSettings(server) => self.dispatch_open_server_settings(server),
             Action::ServerSettingsPage(page) => {
                 let Some(s) = &mut self.state.server_settings else {

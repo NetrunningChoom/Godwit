@@ -337,6 +337,8 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             mentions,
         );
         r.capabilities.voice = raw == "voice";
+        // Server S is the one we manage (see `demo_overview`).
+        r.capabilities.manage_channel = true;
         r
     };
     let mut rooms = vec![room("notes", "Saved Notes", RoomKind::Notes, false, 0)];
@@ -1078,6 +1080,9 @@ pub struct DemoAccount {
     /// so a saved rename or icon comes back like a server's update would.
     servers: Vec<Server>,
     overviews: std::collections::HashMap<String, godwit_core::server_settings::ServerOverview>,
+    /// The channels we may manage, with their editable overview, so a save
+    /// or delete comes back as the room's update or removal.
+    channels: Vec<(Room, godwit_core::channel_settings::ChannelOverview)>,
     /// Each server's invites, bans and roles, changed as the pages ask.
     admin: std::collections::HashMap<String, DemoAdmin>,
     /// Friends and pending requests (theirs, ours), changed as the user
@@ -1239,6 +1244,23 @@ impl DemoAccount {
             .enumerate()
             .map(|(i, s)| (s.id.raw.to_string(), demo_overview(app, s, i)))
             .collect::<std::collections::HashMap<_, _>>();
+        let channels = app
+            .state()
+            .rooms
+            .iter()
+            .filter(|r| r.id.account == account() && r.capabilities.manage_channel)
+            .enumerate()
+            .map(|(i, r)| {
+                let overview = godwit_core::channel_settings::ChannelOverview {
+                    name: r.name.clone(),
+                    description: filler(300 + i as u64, 6).into(),
+                    icon_url: r.icon_url.clone(),
+                    mature: false,
+                    can_manage: true,
+                };
+                ((**r).clone(), overview)
+            })
+            .collect();
         let admin = overviews
             .iter()
             .map(|(raw, o)| (raw.clone(), demo_admin(o, raw.len() as u64 + 90)))
@@ -1260,6 +1282,7 @@ impl DemoAccount {
             names,
             servers,
             overviews,
+            channels,
             admin,
             friends,
             incoming,
@@ -1525,6 +1548,76 @@ impl DemoAccount {
         })
     }
 
+    /// A channel's edit or deletion the way the server would answer: the
+    /// room's update (or removal, with its server's list) comes first, then
+    /// the page's answer.
+    fn channel_command(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
+        use godwit_core::application::Command;
+        use godwit_core::own_profile::ProfileImage;
+        let (room, request) = match &command {
+            Command::LoadChannelOverview { room, request }
+            | Command::SaveChannelOverview { room, request, .. }
+            | Command::DeleteChannel { room, request } => (room.clone(), *request),
+            _ => return Vec::new(),
+        };
+        let answer = |result| {
+            vec![Event::ChannelOverview {
+                room: room.clone(),
+                request,
+                result,
+            }]
+        };
+        let Some(at) = self.channels.iter().position(|(r, _)| r.id == room) else {
+            return answer(Err("This channel is no longer available.".into()));
+        };
+        match command {
+            Command::SaveChannelOverview { edit, .. } => {
+                let edit = *edit;
+                let (r, o) = &mut self.channels[at];
+                if let Some(name) = edit.name {
+                    if name.trim().is_empty() || name.trim().chars().count() > 32 {
+                        return answer(Err("Channel names must contain 1–32 characters.".into()));
+                    }
+                    o.name = name.trim().into();
+                }
+                if let Some(description) = edit.description {
+                    o.description = description;
+                }
+                match edit.icon {
+                    ProfileImage::Keep => {}
+                    ProfileImage::Remove => o.icon_url = None,
+                    ProfileImage::File { .. } => o.icon_url = Some("preview://server".into()),
+                }
+                if let Some(mature) = edit.mature {
+                    o.mature = mature;
+                }
+                r.name = o.name.clone();
+                r.icon_url = o.icon_url.clone();
+                let mut out = vec![Event::RoomUpdated(r.clone())];
+                out.extend(answer(Ok(Some(o.clone()))));
+                out
+            }
+            Command::DeleteChannel { .. } => {
+                self.channels.remove(at);
+                for s in &mut self.servers {
+                    for c in &mut s.categories {
+                        c.rooms.retain(|id| *id != room);
+                    }
+                }
+                let mut out = vec![
+                    Event::ServersChanged {
+                        account: self.id.clone(),
+                        servers: self.servers.clone(),
+                    },
+                    Event::RoomRemoved(room.clone()),
+                ];
+                out.extend(answer(Ok(None)));
+                out
+            }
+            _ => answer(Ok(Some(self.channels[at].1.clone()))),
+        }
+    }
+
     /// Applies an overview edit the way the server would: refused without
     /// Manage Server, otherwise the overview and the rail entry both change.
     fn save_overview(
@@ -1611,6 +1704,9 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 }
                 out
             }
+            command @ (Command::LoadChannelOverview { .. }
+            | Command::SaveChannelOverview { .. }
+            | Command::DeleteChannel { .. }) => self.channel_command(command),
             Command::LoadServerOverview { server, request } => {
                 let result = self
                     .overviews
@@ -2003,6 +2099,52 @@ mod tests {
         assert_eq!(embed.title.as_deref(), Some("A landscape from the demo"));
         assert!(embed.image_thumbnail);
         assert_eq!(embed.image_url.as_deref(), Some("preview://photo"));
+    }
+
+    #[test]
+    fn demo_channel_settings_rename_toggle_and_delete() {
+        use godwit_core::channel_settings::ChannelOverviewEdit;
+        let (mut app, _, _) = world(Contacts::default());
+        let mut demo = DemoAccount::new(&app);
+        let id = RoomId::new(account(), "voice");
+        run(&mut app, &mut demo, Action::OpenChannelSettings(id.clone()));
+        let s = app.state().channel_settings.as_ref().unwrap();
+        assert!(s.overview.as_ref().unwrap().can_manage && !s.busy);
+        run(
+            &mut app,
+            &mut demo,
+            Action::SaveChannelOverview(ChannelOverviewEdit {
+                name: Some(" Lounge ".into()),
+                description: Some("Chill".into()),
+                mature: Some(true),
+                ..Default::default()
+            }),
+        );
+        let s = app.state().channel_settings.as_ref().unwrap();
+        let o = s.overview.as_ref().unwrap();
+        assert!(s.saved && s.error.is_none());
+        assert_eq!(
+            (o.name.as_ref(), o.description.as_ref(), o.mature),
+            ("Lounge", "Chill", true)
+        );
+        assert_eq!(
+            app.state().room(&id).unwrap().name.as_ref(),
+            "Lounge",
+            "the sidebar follows"
+        );
+        // A bad name is refused and kept as an error.
+        run(
+            &mut app,
+            &mut demo,
+            Action::SaveChannelOverview(ChannelOverviewEdit {
+                name: Some("x".repeat(40).into()),
+                ..Default::default()
+            }),
+        );
+        assert!(app.state().channel_settings.as_ref().unwrap().error.is_some());
+        run(&mut app, &mut demo, Action::DeleteChannel);
+        assert!(app.state().channel_settings.is_none());
+        assert!(app.state().room(&id).is_none(), "the channel is gone");
     }
 
     #[test]

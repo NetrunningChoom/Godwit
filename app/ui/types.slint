@@ -120,6 +120,8 @@ export struct RoomItem {
     muzzled: bool,
     // This chat's notifications: 0 the network's rules, 1 every message, 2 off.
     alerts: int,
+    // A server channel the account may manage (its menu opens the settings).
+    can-manage: bool,
     // A heading that opens or closes Home's hidden section.
     toggles-hidden: bool,
     // A thread (or forum post): indented under the channel it's in.

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use godwit_core::ids::{AccountId, ServerId};
+use godwit_core::ids::{AccountId, RoomId, ServerId};
 use godwit_core::network::{ImageKind, Network};
 
 const MB: u64 = 1024 * 1024;
@@ -23,6 +23,7 @@ const MAX_SOURCE: u32 = 2048;
 pub enum CropFor {
     Profile { account: AccountId, avatar: bool },
     Server { token: (ServerId, u64), icon: bool },
+    Channel { token: (RoomId, u64) },
 }
 
 impl CropFor {
@@ -30,6 +31,7 @@ impl CropFor {
         match self {
             Self::Profile { account, .. } => account.network,
             Self::Server { token, .. } => token.0.account.network,
+            Self::Channel { token } => token.0.account.network,
         }
     }
 
@@ -38,6 +40,7 @@ impl CropFor {
         match self {
             Self::Profile { avatar, .. } => *avatar,
             Self::Server { icon, .. } => *icon,
+            Self::Channel { .. } => true,
         }
     }
 
@@ -47,6 +50,7 @@ impl CropFor {
             _ if self.round() => ImageKind::Avatar,
             Self::Profile { .. } => ImageKind::ProfileBanner,
             Self::Server { .. } => ImageKind::ServerBanner,
+            Self::Channel { .. } => ImageKind::Avatar,
         };
         self.network().image_spec(kind)
     }

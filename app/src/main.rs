@@ -517,6 +517,52 @@ fn connect_callbacks(ui: &AppWindow) {
             });
         }
     });
+    callback!(ui.on_close_channel_settings() => |sh, ui| sh.act(ui, Action::CloseChannelSettings));
+    callback!(ui.on_save_channel_overview() => |sh, ui| sh.save_channel_overview(ui));
+    callback!(ui.on_reset_channel_overview() => |sh, ui| sh.reset_channel_overview(ui));
+    callback!(ui.on_channel_overview_edited() => |sh, ui| sh.channel_overview_edited(ui));
+    callback!(ui.on_remove_channel_image() => |sh, ui| sh.remove_channel_icon(ui));
+    callback!(ui.on_delete_channel() => |sh, ui| sh.act(ui, Action::DeleteChannel));
+    ui.on_pick_channel_image({
+        let w = w.clone();
+        move || {
+            let w = w.clone();
+            with_shell(&w.clone(), move |sh, ui| {
+                let Some(token) = sh.channel_edit_token() else {
+                    return;
+                };
+                let chosen_for = token.clone();
+                let spawned = std::thread::Builder::new()
+                    .name("channel-image-picker".into())
+                    .spawn(move || {
+                        let Some(path) = rfd::FileDialog::new()
+                            .set_title("Choose a channel icon")
+                            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp"])
+                            .pick_file()
+                        else {
+                            return;
+                        };
+                        let target = godwit::cropper::CropFor::Channel {
+                            token: chosen_for.clone(),
+                        };
+                        let loaded = godwit::cropper::load(target, &path);
+                        let queued = slint::invoke_from_event_loop(move || {
+                            with_shell(&w, move |sh, ui| match loaded {
+                                Ok(crop) => sh.open_crop(ui, crop),
+                                Err(e) => sh.channel_image_picked(ui, &chosen_for, Err(e)),
+                            })
+                        });
+                        if let Err(error) = queued {
+                            eprintln!("error: returning the channel image selection: {error}");
+                        }
+                    });
+                if let Err(error) = spawned {
+                    eprintln!("error: opening the channel image picker: {error}");
+                    sh.channel_image_picked(ui, &token, Err("The image picker could not be opened.".into()));
+                }
+            });
+        }
+    });
     callback!(ui.on_clear_cache() => |sh, ui| sh.clear_cache(ui));
     callback!(ui.on_mic_test(on) => |sh, ui| sh.mic_test(ui, on));
     callback!(ui.on_list_devices() => |sh, ui| sh.settings_opened(ui));

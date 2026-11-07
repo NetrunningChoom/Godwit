@@ -32,6 +32,75 @@ impl Application {
         effects
     }
 
+    pub(super) fn dispatch_open_channel_settings(&mut self, room: RoomId) -> Vec<Effect> {
+        // Only a room its network lets this account manage.
+        if !self.state.room(&room).is_some_and(|r| r.capabilities.manage_channel) {
+            return Vec::new();
+        }
+        if self.state.channel_settings.as_ref().is_some_and(|s| s.busy) {
+            return Vec::new();
+        }
+        self.state.channel_settings_sequence = self.state.channel_settings_sequence.wrapping_add(1);
+        let request = self.state.channel_settings_sequence;
+        self.state.channel_settings = Some(crate::channel_settings::ChannelSettingsState::new(
+            room.clone(),
+            request,
+        ));
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::LoadChannelOverview { room, request },
+        }]
+    }
+
+    pub(super) fn dispatch_save_channel_overview(
+        &mut self,
+        edit: crate::channel_settings::ChannelOverviewEdit,
+    ) -> Vec<Effect> {
+        let Some(s) = &mut self.state.channel_settings else {
+            return Vec::new();
+        };
+        if s.busy || !s.overview.as_ref().is_some_and(|o| o.can_manage) {
+            return Vec::new();
+        }
+        s.error = None;
+        s.saved = edit.is_empty();
+        if edit.is_empty() {
+            return Vec::new();
+        }
+        self.state.channel_settings_sequence = self.state.channel_settings_sequence.wrapping_add(1);
+        s.request = self.state.channel_settings_sequence;
+        s.busy = true;
+        vec![Effect::Backend {
+            account: s.room.account.clone(),
+            command: Command::SaveChannelOverview {
+                room: s.room.clone(),
+                request: s.request,
+                edit: Box::new(edit),
+            },
+        }]
+    }
+
+    pub(super) fn dispatch_delete_channel(&mut self) -> Vec<Effect> {
+        let Some(s) = &mut self.state.channel_settings else {
+            return Vec::new();
+        };
+        if s.busy || !s.overview.as_ref().is_some_and(|o| o.can_manage) {
+            return Vec::new();
+        }
+        self.state.channel_settings_sequence = self.state.channel_settings_sequence.wrapping_add(1);
+        s.request = self.state.channel_settings_sequence;
+        s.busy = true;
+        s.saved = false;
+        s.error = None;
+        vec![Effect::Backend {
+            account: s.room.account.clone(),
+            command: Command::DeleteChannel {
+                room: s.room.clone(),
+                request: s.request,
+            },
+        }]
+    }
+
     pub(super) fn dispatch_server_admin(
         &mut self,
         server: ServerId,

@@ -34,6 +34,7 @@ impl StoatAccount {
                     result,
                 });
             }
+            Ev::ChannelSaved { .. } | Ev::ChannelDeleted { .. } => self.channel_answer(ev, out),
             Ev::UserSaved(user) => {
                 self.store.users.insert(user.id.clone(), user);
                 self.sync_rooms(out);

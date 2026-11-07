@@ -10,6 +10,7 @@ pub mod application;
 pub mod autodelete;
 pub mod cache;
 pub mod call;
+pub mod channel_settings;
 pub mod config_dir;
 pub mod contacts;
 pub mod emoji_packs;

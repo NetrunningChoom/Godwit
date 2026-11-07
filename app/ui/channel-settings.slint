@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Section } from "settings.slint";
+import { Avatar, Button, ConfirmDialog, TextArea, TextField, Toggle } from "widgets.slint";
+
+// A server channel's settings, as the official ChannelSettings: a sidebar
+// with Overview and (with Manage Channel) Delete Channel, and the Overview's
+// icon, name, description and mature switch. Webhooks and Permissions
+// pages come later.
+export component ChannelSettings inherits Rectangle {
+    in property <string> title;
+    in property <bool> loaded;
+    in property <bool> busy;
+    in property <bool> allowed;
+    in property <bool> dirty;
+    in property <bool> failed;
+    in property <string> status;
+    in-out property <string> name;
+    in-out property <string> description;
+    in-out property <bool> mature;
+    in property <image> icon;
+    in property <bool> has-icon;
+    in property <string> icon-label;
+
+    callback close(); callback save(); callback reset(); callback changed();
+    callback pick-image(); callback remove-image();
+    callback delete-channel();
+
+    property <bool> confirm-delete;
+    background: Theme.surface-lowest;
+    TouchArea { scroll-event(e) => { accept } }
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(e) => { if e.text == Key.Escape { root.close(); return accept; } reject }
+        HorizontalLayout {
+            Rectangle {
+                width: 220px;
+                background: Theme.surface-low;
+                VerticalLayout {
+                    padding: Theme.space-4; spacing: Theme.space-1; alignment: start;
+                    Text { text: root.title; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; overflow: elide; }
+                    Section { label: "Overview"; selected: true; }
+                    if root.allowed: Rectangle { height: 12px; }
+                    if root.allowed: Section { label: "Delete Channel"; danger: true; clicked => { root.confirm-delete = true; } }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                HorizontalLayout {
+                    padding: Theme.space-5; spacing: Theme.space-4;
+                    Text { text: "Overview"; font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                    Button { text: "Close"; kind: "text"; clicked => { root.close(); } }
+                }
+                overview := ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        width: min(overview.visible-width, 680px);
+                        padding: Theme.space-7; spacing: Theme.space-4; alignment: start;
+                        if root.status != "": Text { text: root.status; wrap: word-wrap; color: root.failed ? Theme.error : Theme.on-surface-variant; }
+                        if root.loaded && !root.allowed: Text { text: "You need Manage Channel permission to change these settings."; wrap: word-wrap; color: Theme.on-surface-variant; }
+                        if root.loaded: VerticalLayout {
+                            spacing: Theme.space-4;
+                            Text { text: "Channel icon"; color: Theme.on-surface; }
+                            Avatar { size: 72px; source: root.icon; has-image: root.has-icon; initials: ""; }
+                            if root.icon-label != "": Text { text: root.icon-label; wrap: word-wrap; color: Theme.on-surface-variant; }
+                            HorizontalLayout {
+                                alignment: start; spacing: Theme.space-3;
+                                Button { text: "Change icon"; enabled: root.allowed && !root.busy; clicked => { root.pick-image(); } }
+                                Button { text: "Remove"; kind: "text"; enabled: root.allowed && !root.busy; clicked => { root.remove-image(); } }
+                            }
+                            Text { text: "Channel name"; color: Theme.on-surface; }
+                            TextField { text <=> root.name; enabled: root.allowed && !root.busy; edited => { root.changed(); } accepted => { root.save(); } }
+                            Text { text: "Channel description"; color: Theme.on-surface; }
+                            TextArea { height: 120px; text <=> root.description; enabled: root.allowed && !root.busy; edited => { root.changed(); } }
+                            Text { text: "Mark as mature"; font-weight: 600; color: Theme.on-surface; }
+                            HorizontalLayout {
+                                spacing: Theme.space-4;
+                                Text { text: "Users will be asked to confirm their age before opening this channel."; wrap: word-wrap; color: Theme.on-surface-variant; horizontal-stretch: 1; vertical-alignment: center; }
+                                Toggle { checked <=> root.mature; toggled => { root.changed(); } }
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding: Theme.space-5; spacing: Theme.space-3; alignment: end;
+                    Button { text: "Reset"; enabled: root.loaded && !root.busy; clicked => { root.reset(); } }
+                    Button { text: "Save"; kind: "filled"; enabled: root.loaded && root.allowed && !root.busy && root.dirty; clicked => { root.save(); } }
+                }
+            }
+        }
+    }
+    // The official DeleteChannel confirmation.
+    if root.confirm-delete: ConfirmDialog {
+        title: "Delete " + root.title + "?";
+        message: "Once it's deleted, there's no going back.";
+        confirm-text: "Delete";
+        confirm-kind: "filled";
+        danger: true;
+        cancelled => { root.confirm-delete = false; }
+        confirmed => { root.confirm-delete = false; root.delete-channel(); }
+    }
+}

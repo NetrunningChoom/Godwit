@@ -130,6 +130,7 @@ pub struct AppState {
     /// Each account's auto-delete page, as its network last sent it.
     pub autodelete: HashMap<AccountId, crate::autodelete::AutoDeleteView>,
     pub server_settings: Option<crate::server_settings::ServerSettingsState>,
+    pub channel_settings: Option<crate::channel_settings::ChannelSettingsState>,
     /// Home's pinned chats (at the top, in pin order) and hidden ones (in
     /// a collapsible section at the bottom; a new message brings one back).
     pub pinned_rooms: Vec<RoomId>,
@@ -140,6 +141,7 @@ pub struct AppState {
     /// The server menu's Invite dialog: its server and, once made, the link.
     pub invite_link: Option<(ServerId, Option<Arc<str>>)>,
     pub(super) server_settings_sequence: u64,
+    pub(super) channel_settings_sequence: u64,
     pub own_profiles: HashMap<AccountId, OwnProfileState>,
     pub accounts: Vec<Account>,
     /// Every account's rooms; direct messages in each account's order.
