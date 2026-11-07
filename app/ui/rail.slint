@@ -136,6 +136,8 @@ export component Rail inherits Rectangle {
     in property <bool> menu-can-invite;
     in property <bool> menu-settings;
     in property <bool> menu-can-leave;
+    in property <bool> menu-can-report;
+    callback server-report();
     callback server-invite();
     callback server-mark-read();
     callback server-settings();
@@ -292,7 +294,9 @@ export component Rail inherits Rectangle {
             MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.move-server(root.menu-row, -1); } }
             MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.move-server(root.menu-row, 1); } }
             MenuRow { glyph: Icons.arrow-forward; label: "Move to top"; clicked => { root.move-server(root.menu-row, 0); } }
-            if root.menu-can-leave: MenuDivider { }
+            if root.menu-can-report: MenuDivider { }
+            if root.menu-can-report: MenuRow { glyph: Icons.error; label: "Report server"; danger: true; clicked => { root.server-report(); } }
+            if root.menu-can-leave && !root.menu-can-report: MenuDivider { }
             if root.menu-can-leave: MenuRow { glyph: Icons.logout; label: "Leave server"; danger: true; clicked => { root.server-leave(); } }
         }
     }

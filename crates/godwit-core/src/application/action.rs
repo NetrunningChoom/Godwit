@@ -127,6 +127,13 @@ pub enum Action {
     /// Show the selected room's pinned messages (loading them).
     OpenPins,
     ClosePins,
+    /// Report something to the network, with the reason chosen and the
+    /// reporter's own words (may be empty). Answered with [`Event::Reported`].
+    Report {
+        target: crate::report::ReportTarget,
+        reason: crate::report::ReportReason,
+        detail: String,
+    },
     /// Pin or unpin a message of the selected room.
     SetPinned {
         message: MessageId,

@@ -370,6 +370,53 @@ impl Application {
         }]
     }
 
+    /// A report, only where the capability says the network takes it, and
+    /// only with a reason from the target's own list.
+    pub(super) fn dispatch_report(
+        &mut self,
+        target: crate::report::ReportTarget,
+        reason: crate::report::ReportReason,
+        detail: String,
+    ) -> Vec<Effect> {
+        use crate::report::ReportTarget as T;
+        let refused = |this: &mut Self| {
+            this.state.report_outcome = Some(Err("Reporting isn't available here.".into()));
+            Vec::new()
+        };
+        if !target.reasons().contains(&reason) {
+            return refused(self);
+        }
+        let (account, allowed) = match &target {
+            T::User { user, .. } => {
+                let known = self
+                    .state
+                    .profile
+                    .as_ref()
+                    .filter(|(u, _)| u == user)
+                    .and_then(|(_, p)| p.as_ref())
+                    .or_else(|| self.state.profiles.get(user));
+                (user.account.clone(), known.is_some_and(|p| p.can_report && !p.me))
+            }
+            T::Message { room, .. } => (room.account.clone(), self.allows(room, |c| c.report)),
+            T::Server { server } => (
+                server.account.clone(),
+                self.state.server(server).is_some_and(|s| s.rights.report),
+            ),
+        };
+        if !allowed {
+            return refused(self);
+        }
+        self.state.report_outcome = None;
+        vec![Effect::Backend {
+            account,
+            command: Command::Report {
+                target,
+                reason,
+                detail: detail.trim().to_owned(),
+            },
+        }]
+    }
+
     pub(super) fn dispatch_set_pinned(&mut self, message: MessageId, pinned: bool) -> Vec<Effect> {
         let Some(room) = self
             .state

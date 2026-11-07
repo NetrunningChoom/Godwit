@@ -61,6 +61,10 @@ pub struct Capabilities {
     /// Messages can be pinned and unpinned here (`pins`: the list can be seen).
     #[serde(default)]
     pub pin_messages: bool,
+    /// The network takes reports about messages here (the menu still hides
+    /// it for our own and system messages).
+    #[serde(default)]
+    pub report: bool,
 }
 
 impl Capabilities {
@@ -90,6 +94,7 @@ impl Capabilities {
             max_upload: 0,
             pin_messages: false,
             forum: false,
+            report: false,
         };
         match network {
             // Autumn takes attachments up to 20 MB (Stoat's own limit).

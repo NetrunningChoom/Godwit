@@ -197,6 +197,8 @@ impl DiscordAccount {
             moderation: guild.as_deref().and_then(|g| self.moderation(g, user)),
             group_moderation: None,
             can_block: false,
+            // Discord's report flow isn't wired yet.
+            can_report: false,
         })
     }
 

@@ -236,6 +236,7 @@ impl Application {
                 self.state.pins = None;
                 Vec::new()
             }
+            Action::Report { target, reason, detail } => self.dispatch_report(target, reason, detail),
             Action::SetPinned { message, pinned } => self.dispatch_set_pinned(message, pinned),
             Action::JumpToPresent => self.dispatch_jump_to_present(),
             Action::CancelCompose => {

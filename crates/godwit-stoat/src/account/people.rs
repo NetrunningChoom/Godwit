@@ -100,6 +100,9 @@ impl StoatAccount {
                         && c.recipients.iter().any(|u| u == user),
                 })
             }),
+            // Reports about other people, except the network's own staff
+            // (official UserContextMenu: "Report user" needs !user.privileged).
+            can_report: !u.is_some_and(|u| u.privileged) && self.store.me.as_deref() != Some(user),
         })
     }
 

@@ -10,6 +10,7 @@ mod keep_awake;
 mod media;
 mod messages;
 mod navigation;
+mod report;
 mod server_admin;
 mod settings_pages;
 mod threads;
@@ -162,6 +163,9 @@ pub struct Shell {
     /// muted), so a refresh only re-sends them when they change.
     pushed_voice: Option<godwit_voice::call::VoiceSettings>,
     server_editor: crate::server_settings::ServerEditor,
+    /// What the open report dialog is about, and whether it was sent.
+    report: Option<godwit_core::report::ReportTarget>,
+    report_submitted: bool,
 }
 
 #[derive(Clone)]
@@ -391,6 +395,8 @@ impl Shell {
             join_submitted: false,
             join_finished: false,
             server_editor: crate::server_settings::ServerEditor::default(),
+            report: None,
+            report_submitted: false,
             profile_editor: Default::default(),
             autodelete_page: Default::default(),
             account_pages: Default::default(),
@@ -907,6 +913,7 @@ impl Shell {
             self.autodelete_page.show(ui, view.as_ref(), &label);
         }
         self.account_pages.show(ui, self.app.state());
+        self.show_report(ui);
         self.show_devices(ui);
         let signed_in = !self.app.state().accounts.is_empty();
         let status = self.sign_in_status();

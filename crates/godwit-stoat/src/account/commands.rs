@@ -363,6 +363,10 @@ impl StoatAccount {
                 self.net.send(Cmd::People(PeopleCmd::FriendRequest { request: Some(request), username: name }));
                 Vec::new()
             }
+            Command::Report { target, reason, detail } => {
+                self.net.send(Cmd::Settings(SettingsCmd::Report(crate::report::body(&target, reason, &detail))));
+                Vec::new()
+            }
             Command::RemoveFriend { user } => {
                 self.net.send(Cmd::People(PeopleCmd::Relationship {
                     user: user.raw.to_string(),

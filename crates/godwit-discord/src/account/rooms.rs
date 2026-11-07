@@ -273,6 +273,7 @@ impl DiscordAccount {
                         owner: g.owner == self.me(),
                         notify_levels: true,
                         notify: self.store.notify_level(&g.id),
+                        report: false,
                     },
                 }
             })

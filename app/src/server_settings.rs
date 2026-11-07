@@ -532,6 +532,7 @@ impl ServerEditor {
         ui.set_server_notify(i32::from(rights.notify));
         ui.set_server_can_create_channel(rights.create_channels);
         ui.set_server_can_leave(!rights.owner);
+        ui.set_server_can_report(rights.report);
         ui.set_invite_open(state.invite_link.is_some());
         ui.set_invite_link(
             state

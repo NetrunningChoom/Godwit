@@ -353,6 +353,11 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_toggle_server_permission(row) => |sh, ui| sh.toggle_server_permission(ui, row));
     callback!(ui.on_save_server_role() => |sh, ui| sh.save_server_role(ui));
     callback!(ui.on_delete_server_role() => |sh, ui| sh.delete_server_role(ui));
+    callback!(ui.on_report_profile() => |sh, ui| sh.report_profile(ui));
+    callback!(ui.on_report_message(row) => |sh, ui| sh.report_message(ui, row));
+    callback!(ui.on_report_server() => |sh, ui| sh.report_server(ui));
+    callback!(ui.on_submit_report(reason, detail) => |sh, ui| sh.submit_report(ui, reason, &detail));
+    callback!(ui.on_close_report() => |sh, ui| sh.close_report(ui));
     callback!(ui.on_moderate_member(ban, reason) => |sh, ui| sh.moderate_member(ui, ban, &reason));
     callback!(ui.on_remove_group_member() => |sh, ui| sh.remove_group_member(ui));
     callback!(ui.on_block_user() => |sh, ui| sh.block_profile(ui, true));

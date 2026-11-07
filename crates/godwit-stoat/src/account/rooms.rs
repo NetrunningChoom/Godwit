@@ -89,6 +89,8 @@ impl StoatAccount {
             external_emoji: c.server.is_none() || can(USE_EXTERNAL_EMOJIS),
             // The official GIF button needs SendEmbeds.
             gifs: can(SEND_MESSAGE) && can(SEND_EMBEDS),
+            // Any message can be reported (official MessageContextMenu).
+            report: true,
             ..Capabilities::of(Network::Stoat)
         };
         Room {
@@ -168,6 +170,8 @@ impl StoatAccount {
                                 _ => 1,
                             }
                         },
+                        // Official ServerContextMenu: "Report server" always.
+                        report: true,
                     }
                 },
             })

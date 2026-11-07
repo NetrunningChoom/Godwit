@@ -3,7 +3,7 @@
 
 import { Theme } from "theme.slint";
 import { Screen } from "types.slint";
-import { Dialog, ConfirmDialog, Button, TextField } from "widgets.slint";
+import { Dialog, ConfirmDialog, Button, TextField, TextArea, Select } from "widgets.slint";
 
 // These stay below the fullscreen viewer, as in AppWindow's original stack.
 export component CallDialogs inherits Rectangle {
@@ -153,6 +153,18 @@ export component ManagementDialogs inherits Rectangle {
     callback transfer-group-ownership();
     in-out property <bool> confirm-block-user;
     callback block-user();
+    // The report dialog (the official ReportContent modal): a required reason
+    // from the target's own list, and the reporter's words.
+    // report-status: 0 the form, 1 sending, 2 sent, 3 refused (report-notice says why).
+    in-out property <bool> report-open;
+    in property <string> report-title;
+    in property <[string]> report-reasons;
+    in-out property <int> report-reason: -1;
+    in-out property <string> report-detail;
+    in property <int> report-status;
+    in property <string> report-notice;
+    callback submit-report(int, string);
+    callback close-report();
     in-out property <int> confirm-delete: -1;
     callback delete(int);
 
@@ -274,6 +286,44 @@ export component ManagementDialogs inherits Rectangle {
         danger: true;
         cancelled => { root.confirm-transfer-group-ownership = false; }
         confirmed => { root.transfer-group-ownership(); root.confirm-transfer-group-ownership = false; }
+    }
+    if root.report-open: Dialog {
+        title: root.report-title;
+        card-width: 440px;
+        dismissed => { root.close-report(); }
+        if root.report-status == 2: Text {
+            text: "Thanks, your report was sent.";
+            wrap: word-wrap; color: Theme.on-surface-variant;
+        }
+        if root.report-status != 2: Text {
+            text: "Pick the reason that fits best. Add details if they help.";
+            wrap: word-wrap; color: Theme.on-surface-variant;
+        }
+        if root.report-status != 2: Select {
+            model: root.report-reasons;
+            current-index <=> root.report-reason;
+            enabled: root.report-status != 1;
+        }
+        if root.report-status != 2: TextArea {
+            height: 96px;
+            text <=> root.report-detail;
+            enabled: root.report-status != 1;
+        }
+        if root.report-status == 3: Text {
+            text: root.report-notice;
+            wrap: word-wrap; color: Theme.error;
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.gap-sm;
+            Button { text: root.report-status == 2 ? "Close" : "Cancel"; clicked => { root.close-report(); } }
+            if root.report-status != 2: Button {
+                text: root.report-status == 1 ? "Sending…" : "Report";
+                danger: true;
+                enabled: root.report-reason >= 0 && root.report-status != 1;
+                clicked => { root.submit-report(root.report-reason, root.report-detail); }
+            }
+        }
     }
     if root.confirm-delete >= 0: ConfirmDialog {
         title: "Delete message";

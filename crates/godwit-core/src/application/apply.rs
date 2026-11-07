@@ -519,6 +519,13 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::Reported { result, .. } => {
+                if let Err(e) = &result {
+                    self.state.errors.push(format!("Report failed: {e}").into());
+                }
+                self.state.report_outcome = Some(result);
+                Vec::new()
+            }
             Event::Error(e) => {
                 self.state.errors.push(e);
                 Vec::new()

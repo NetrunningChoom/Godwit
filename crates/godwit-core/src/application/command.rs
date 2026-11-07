@@ -71,6 +71,12 @@ pub enum Command {
         name: String,
         users: Vec<UserId>,
     },
+    /// Report `target`; answered with [`Event::Reported`].
+    Report {
+        target: crate::report::ReportTarget,
+        reason: crate::report::ReportReason,
+        detail: String,
+    },
     /// Send a friend request (or accept one); the network's own update of
     /// the relationship follows.
     AddFriend {

@@ -24,6 +24,7 @@ pub mod message;
 pub mod network;
 pub mod own_profile;
 pub mod privacy;
+pub mod report;
 pub mod rich;
 pub mod room;
 pub mod room_sync;

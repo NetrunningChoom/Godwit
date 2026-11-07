@@ -469,6 +469,15 @@ impl StoatAccount {
                     out.push(Event::Error(error.into()));
                 }
             }
+            // The dialog shows the outcome; a failure is logged too.
+            Ev::Reported(result) => {
+                if let Some(account) = self.account.clone() {
+                    out.push(Event::Reported {
+                        account,
+                        result: result.map_err(Into::into),
+                    });
+                }
+            }
             // A friend request or removal went through: the user as they
             // stand with us now.
             Ev::UserChanged(user) => {

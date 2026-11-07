@@ -223,6 +223,9 @@ pub struct AppState {
     pub members: HashMap<RoomId, Arc<Vec<MemberGroup>>>,
     /// Most recent last; the UI shows them until [`Action::ClearErrors`].
     pub errors: Vec<Arc<str>>,
+    /// The last report's outcome (None while it is on its way, or none was
+    /// sent since the last [`Action::Report`]); the report dialog shows it.
+    pub report_outcome: Option<Result<(), Arc<str>>>,
     /// The pinned messages panel, for the selected room.
     pub pins: Option<Pins>,
     /// The message search, for the selected room.

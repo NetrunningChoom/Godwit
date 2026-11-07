@@ -95,6 +95,10 @@ pub struct Profile {
     /// The card may block and unblock this person (never ourselves).
     #[serde(default)]
     pub can_block: bool,
+    /// The network takes reports about this person (never about us, nor
+    /// about the network's own staff).
+    #[serde(default)]
+    pub can_report: bool,
 }
 
 /// What a profile card may do to a group member, and where.

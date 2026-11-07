@@ -30,6 +30,11 @@ pub enum Event {
         account: AccountId,
         view: crate::autodelete::AutoDeleteView,
     },
+    /// How a report went: the network took it, or why not.
+    Reported {
+        account: AccountId,
+        result: Result<(), Arc<str>>,
+    },
     ServerAdmin {
         server: ServerId,
         result: Result<crate::server_settings::ServerAdminResult, Arc<str>>,

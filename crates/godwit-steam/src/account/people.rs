@@ -156,6 +156,7 @@ impl SteamAccount {
             moderation: None,
             group_moderation: None,
             can_block: false,
+            can_report: false,
         })
     }
 

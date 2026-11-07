@@ -161,6 +161,7 @@ export component AppWindow inherits Window {
     in property <bool> card-can-transfer-group-ownership;
     in property <bool> card-can-block;
     in property <bool> card-blocked;
+    in property <bool> card-can-report;
     // Kept on the window and exposed for generated off-screen scenes.
     in-out property <int> confirm-moderate: 0;
     in-out property <string> ban-reason;
@@ -262,6 +263,20 @@ export component AppWindow inherits Window {
     callback server-menu-notify(int);
     in property <bool> server-can-create-channel;
     in property <bool> server-can-leave;
+    in property <bool> server-can-report;
+    callback report-server();
+    callback report-profile();
+    callback report-message(int);
+    // The report dialog (see ManagementDialogs).
+    in-out property <bool> report-open;
+    in property <string> report-title;
+    in property <[string]> report-reasons;
+    in-out property <int> report-reason: -1;
+    in-out property <string> report-detail;
+    in property <int> report-status;
+    in property <string> report-notice;
+    callback submit-report(int, string);
+    callback close-report();
     // The Invite dialog: open, and its link once made ("" while it's made).
     in property <bool> invite-open;
     in property <string> invite-link;
@@ -424,6 +439,7 @@ export component AppWindow inherits Window {
     callback close-search();
     callback search-jump(int);
     in property <bool> can-pin;
+    in property <bool> can-report;
     callback open-pins();
     callback pin(int, bool);
     in-out property <int> confirm-pin: -1;
@@ -803,6 +819,8 @@ export component AppWindow inherits Window {
                 menu-can-invite: root.server-can-invite;
                 menu-settings: root.server-settings-available;
                 menu-can-leave: root.server-can-leave;
+                menu-can-report: root.server-can-report;
+                server-report => { root.report-server(); }
                 server-invite => { root.server-menu-invite(); }
                 server-mark-read => { root.server-menu-mark-read(); }
                 server-settings => { root.open-server-settings(); }
@@ -846,6 +864,8 @@ export component AppWindow inherits Window {
                             set-notify(level) => { root.server-menu-notify(level); }
                             can-create-channel: root.server-can-create-channel;
                             can-leave: root.server-can-leave;
+                            can-report: root.server-can-report;
+                            report-server => { root.report-server(); }
                             invite-people => { root.server-menu-invite(); }
                             mark-server-read => { root.server-menu-mark-read(); }
                             create-channel => { root.new-channel-name = ""; root.new-channel-voice = false; root.creating-channel = true; }
@@ -1061,6 +1081,8 @@ export component AppWindow inherits Window {
                                         new-post => { root.new-post(); }
                                         open-search => { root.open-search(); }
                                         can-pin: root.can-pin;
+                                        can-report: root.can-report;
+                                        report(i) => { root.report-message(i); }
                                         open-pins => { root.open-pins(); }
                                         pin(i, pinned) => { root.confirm-pin = i; root.confirm-pin-value = pinned; }
                                         remove-reactions(i, r) => { root.remove-reactions(i, r); }
@@ -1195,6 +1217,8 @@ export component AppWindow inherits Window {
         blocked: root.card-blocked;
         block-user => { root.confirm-block-user = true; }
         unblock-user => { root.unblock-user(); }
+        can-report: root.card-can-report;
+        report => { root.report-profile(); }
         kick => { root.confirm-moderate = 1; }
         ban => { root.confirm-moderate = 2; root.ban-reason = ""; }
         remove-group-member => { root.confirm-remove-group-member = true; }
@@ -1555,6 +1579,15 @@ export component AppWindow inherits Window {
         transfer-group-ownership => { root.transfer-group-ownership(); }
         confirm-block-user <=> root.confirm-block-user;
         block-user => { root.block-user(); }
+        report-open <=> root.report-open;
+        report-title: root.report-title;
+        report-reasons: root.report-reasons;
+        report-reason <=> root.report-reason;
+        report-detail <=> root.report-detail;
+        report-status: root.report-status;
+        report-notice: root.report-notice;
+        submit-report(r, d) => { root.submit-report(r, d); }
+        close-report => { root.close-report(); }
         confirm-delete <=> root.confirm-delete;
         delete(i) => { root.delete(i); }
     }

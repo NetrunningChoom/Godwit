@@ -49,6 +49,8 @@ export component MessageRow inherits Rectangle {
     in property <bool> can-delete-others;
     in property <bool> can-pin;
     in property <bool> can-moderate-reactions;
+    // Others' messages can be reported here (the official MessageContextMenu).
+    in property <bool> can-report;
     in property <bool> can-thread;
     property <bool> deletable: (message.mine && root.can-delete) || root.can-delete-others;
     // Jumped to: Godwit's highlight, primary-container at half strength.
@@ -60,6 +62,7 @@ export component MessageRow inherits Rectangle {
     callback remove-reactions(int);
     callback remove-all-reactions();
     callback pin(bool);
+    callback report();
     callback create-thread();
 
     callback open-attachment(int);
@@ -386,6 +389,8 @@ export component MessageRow inherits Rectangle {
                 clicked => { root.pin(!message.pinned); }
             }
             if !root.message.system && root.can-thread: MenuRow { glyph: Icons.chat; label: "Create thread"; clicked => { root.create-thread(); } }
+            if !root.message.system && !root.message.mine && root.can-report: MenuDivider { }
+            if !root.message.system && !root.message.mine && root.can-report: MenuRow { glyph: Icons.error; label: "Report message"; danger: true; clicked => { root.report(); } }
             if root.deletable: MenuDivider { }
             if root.deletable: MenuRow { glyph: Icons.delete; label: "Delete message"; danger: true; clicked => { root.delete(false); } }
         }

@@ -87,6 +87,7 @@ fn open_profile(app: &mut Application, blocked: bool) -> Screen {
             ("Members".into(), None),
         ],
         // Seen in our server, so the card shows Kick and Ban.
+        can_report: true,
         moderation: Some(godwit_core::members::Moderation {
             server: ServerId::new(account(), "S"),
             kick: true,
@@ -1299,6 +1300,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 open_profile(app, false);
                 ui.set_confirm_moderate(2);
                 ui.set_ban_reason("Example reason".into());
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "report-user",
+            Box::new(|app, ui, _, _| {
+                open_profile(app, false);
+                let reasons: Vec<slint::SharedString> = godwit_core::report::ReportReason::USER
+                    .iter()
+                    .map(|r| r.label().into())
+                    .collect();
+                ui.set_report_title("Report user".into());
+                ui.set_report_reasons(slint::ModelRc::new(slint::VecModel::from(reasons)));
+                ui.set_report_reason(3);
+                ui.set_report_detail(filler(92, 6).into());
+                ui.set_report_open(true);
                 Screen::Main
             }),
         ),

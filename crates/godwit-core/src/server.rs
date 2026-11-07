@@ -48,6 +48,9 @@ pub struct ServerRights {
     /// The level now: 0 all messages, 1 only @mentions, 2 nothing.
     #[serde(default)]
     pub notify: u8,
+    /// The network takes reports about this server.
+    #[serde(default)]
+    pub report: bool,
 }
 
 /// A room of a server we haven't joined, from its directory.

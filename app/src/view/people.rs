@@ -566,6 +566,7 @@ pub fn profile(ui: &AppWindow, p: &Profile, images: &mut Images) {
     ui.set_card_can_block(p.can_block);
     ui.set_card_blocked(p.relationship == Relationship::Blocked);
     ui.set_card_can_transfer_group_ownership(p.group_moderation.as_ref().is_some_and(|m| m.transfer_ownership));
+    ui.set_card_can_report(p.can_report);
     // The official ProfileActions: what we can do depends on where we stand.
     ui.set_card_relationship(match (p.has_friends, p.relationship) {
         (false, _) => 1,

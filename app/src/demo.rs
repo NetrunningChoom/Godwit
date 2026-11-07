@@ -31,7 +31,10 @@ pub fn room(raw: &str, name: &str, kind: RoomKind, unread: bool, mentions: u32) 
         name: name.into(),
         kind,
         icon_url: None,
-        capabilities: Capabilities::of(Network::Stoat),
+        capabilities: Capabilities {
+            report: true,
+            ..Capabilities::of(Network::Stoat)
+        },
         encryption: RoomEncryption::Unencrypted,
         unread,
         mentions,
@@ -85,6 +88,7 @@ pub fn member(raw: &str, name: &str, presence: Presence, status: Option<&str>, c
 pub fn profile(user: UserId, name: &str) -> godwit_core::members::Profile {
     godwit_core::members::Profile {
         me: user.raw.as_ref() == "me",
+        can_report: user.raw.as_ref() != "me",
         username: format!("{}#0001", name.to_lowercase().replace(' ', "")).into(),
         avatar_url: Some(format!("preview://avatar/{}", user.raw).into()),
         banner_url: None,
@@ -413,6 +417,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
                 create_channels: true,
                 settings: true,
                 owner: true,
+                report: true,
                 ..Default::default()
             },
         },
@@ -425,6 +430,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             muted: false,
             rights: godwit_core::server::ServerRights {
                 invite: true,
+                report: true,
                 ..Default::default()
             },
         },
@@ -437,6 +443,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             muted: false,
             rights: godwit_core::server::ServerRights {
                 invite: true,
+                report: true,
                 ..Default::default()
             },
         },
@@ -1889,6 +1896,11 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 out.extend(self.friend_lists());
                 out
             }
+            // Nobody reads demo reports: say it went through.
+            Command::Report { .. } => vec![Event::Reported {
+                account: self.id.clone(),
+                result: Ok(()),
+            }],
             Command::AddFriend { user } => self.befriend(user, true),
             Command::RemoveFriend { user } => self.befriend(user, false),
             Command::BlockUser { user } => self.block(user, true),
@@ -2253,6 +2265,33 @@ mod tests {
                 .iter()
                 .any(|(p, i)| !*i && &*p.name == "zorp")
         );
+    }
+
+    #[test]
+    fn reports_are_gated_and_answered() {
+        use godwit_core::report::{ReportReason, ReportTarget};
+        let (mut app, general, _) = world(Contacts::default());
+        let mut demo = DemoAccount::new(&app);
+        app.dispatch(Action::SelectRoom(general.clone()));
+        let message = MessageId("m1".into());
+        let report = |reason| Action::Report {
+            target: ReportTarget::Message {
+                message: message.clone(),
+                room: general.clone(),
+            },
+            reason,
+            detail: "spam".into(),
+        };
+        // A user-only reason is refused for a message, with an outcome.
+        let effects = app.dispatch(report(ReportReason::Underage));
+        assert!(effects.is_empty());
+        assert!(matches!(app.state().report_outcome, Some(Err(_))));
+        for effect in app.dispatch(report(ReportReason::ScamsFraud)) {
+            if let Effect::Backend { command, .. } = effect {
+                feed(&mut app, &mut demo, command);
+            }
+        }
+        assert_eq!(app.state().report_outcome, Some(Ok(())));
     }
 
     #[test]

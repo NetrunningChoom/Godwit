@@ -1951,6 +1951,49 @@ fn search_without_network_support_filters_loaded_messages_locally() {
 }
 
 #[test]
+fn reports_need_the_capability_and_a_reason_of_the_targets_list() {
+    use crate::report::{ReportReason, ReportTarget};
+    let mut app = Application::default();
+    let mut allowed = dm(Network::Stoat, "c1", "them");
+    allowed.capabilities.report = true;
+    let denied = dm(Network::Stoat, "c2", "else");
+    let (yes, no) = (allowed.id.clone(), denied.id.clone());
+    ready(&mut app, Network::Stoat, vec![allowed, denied]);
+    let message = |room: &RoomId| ReportTarget::Message {
+        message: MessageId("m".into()),
+        room: room.clone(),
+    };
+    let report = |target, reason| Action::Report {
+        target,
+        reason,
+        detail: " why ".into(),
+    };
+
+    let effects = app.dispatch(report(message(&yes), ReportReason::Malware));
+    assert!(matches!(
+        commands(&effects)[..],
+        [Command::Report { reason: ReportReason::Malware, detail, .. }] if detail == "why"
+    ));
+    assert!(app.state().report_outcome.is_none());
+    app.apply(Event::Reported {
+        account: yes.account.clone(),
+        result: Ok(()),
+    });
+    assert_eq!(app.state().report_outcome, Some(Ok(())));
+
+    // No capability, or a user-only reason for a message: refused, and the dialog is told.
+    assert!(app.dispatch(report(message(&no), ReportReason::Malware)).is_empty());
+    assert!(matches!(app.state().report_outcome, Some(Err(_))));
+    assert!(app.dispatch(report(message(&yes), ReportReason::Underage)).is_empty());
+    // Nobody we have no profile for.
+    let stranger = ReportTarget::User {
+        user: UserId::new(yes.account.clone(), "x"),
+        message: None,
+    };
+    assert!(app.dispatch(report(stranger, ReportReason::Impersonation)).is_empty());
+}
+
+#[test]
 fn pins_open_load_unpin_and_close_with_the_room() {
     let mut app = Application::default();
     let mut r = dm(Network::Discord, "c1", "them");
@@ -2400,6 +2443,7 @@ fn profiles_open_load_and_ignore_stale_answers() {
         moderation: None,
         group_moderation: None,
         can_block: false,
+        can_report: false,
     };
     app.apply(Event::Profile(profile(&UserId::new(account(Network::Stoat), "bo"))));
     assert_eq!(

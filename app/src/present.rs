@@ -947,6 +947,7 @@ impl Presenter {
         ui.set_can_thread(room.capabilities.threads);
         ui.set_is_forum(room.capabilities.forum);
         ui.set_can_pin(room.capabilities.pin_messages);
+        ui.set_can_report(room.capabilities.report);
         ui.set_can_call(room.capabilities.voice);
         ui.set_call_unavailable(if room.capabilities.voice_unavailable {
             "Calls don't work in Godwit yet".into()

@@ -39,6 +39,9 @@ export component UserCard inherits Rectangle {
     // and we have: Unblock instead.
     in property <bool> can-block;
     in property <bool> blocked;
+    // The network takes reports about them (never about us or its staff).
+    in property <bool> can-report;
+    callback report();
     callback kick();
     callback ban();
     callback remove-group-member();
@@ -182,6 +185,10 @@ export component UserCard inherits Rectangle {
                     // Godwit never links on its own: this is how the user says
                     // "this is the same person as…".
                     Button { text: "Same person as…"; kind: "tonal"; clicked => { root.link(); } }
+                }
+                if !root.me && root.can-report: HorizontalLayout {
+                    alignment: start;
+                    Button { text: "Report user"; kind: "text"; danger: true; clicked => { root.report(); } }
                 }
                 if !root.me && (root.can-kick || root.can-ban): HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;
