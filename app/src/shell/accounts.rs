@@ -41,24 +41,17 @@ impl Shell {
     /// default network's while nothing is signed in (or one is being added).
     pub(super) fn prune(&mut self) {
         let signed_in = self.live.iter().any(|a| a.id().is_some());
-        let mut kept: HashSet<Network> = registry::NETWORKS
-            .iter()
-            .filter(|e| {
-                let form = if e.default {
-                    !signed_in || self.adding
-                } else {
-                    self.login_network == Some(e.network)
-                };
-                !form
-            })
-            .map(|e| e.network)
-            .collect();
-        self.live.retain(|a| {
-            if a.id().is_some() || !a.signed_out() {
-                return true;
+        let (adding, login_network) = (self.adding, self.login_network);
+        let needs_form = |n: Network| {
+            if registry::entry(n).default {
+                !signed_in || adding
+            } else {
+                login_network == Some(n)
             }
-            !kept.insert(a.network())
-        });
+        };
+        let gone = self.live.iter().map(|a| a.id().is_none() && a.signed_out());
+        let mut keep = keep_signed_out(self.live.iter().map(|a| a.network()).zip(gone), needs_form).into_iter();
+        self.live.retain(|_| keep.next().unwrap_or(true));
     }
 
     /// The account `network`'s sign-in form drives: one not signed in and not
@@ -392,5 +385,35 @@ impl Shell {
     /// One of our accounts is `account` and it's signed in.
     pub fn signed_in(&self, account: &AccountId) -> bool {
         self.app.state().accounts.iter().any(|a| a.id == *account)
+    }
+}
+
+/// Which accounts stay, given each one's network and whether it's signed out
+/// (and not signed in): every signed-out one goes except the first of each
+/// network whose sign-in form needs it.
+fn keep_signed_out(accounts: impl Iterator<Item = (Network, bool)>, needs_form: impl Fn(Network) -> bool) -> Vec<bool> {
+    let mut formed = HashSet::new();
+    accounts
+        .map(|(network, gone)| !gone || (needs_form(network) && formed.insert(network)))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_form_keeps_one_signed_out_account() {
+        let stoat = |n: Network| n == Network::Stoat;
+        // Adding a second Stoat account: the new form's account stays
+        // (it was pruned, so the form fell back to the signed-in one).
+        let kept = keep_signed_out(
+            [(Network::Stoat, false), (Network::Stoat, true), (Network::Stoat, true)].into_iter(),
+            stoat,
+        );
+        assert_eq!(kept, [true, true, false]);
+        // A network without a form open keeps no signed-out account.
+        let kept = keep_signed_out([(Network::Steam, true), (Network::Steam, false)].into_iter(), stoat);
+        assert_eq!(kept, [false, true]);
     }
 }

@@ -2995,3 +2995,63 @@ fn embeds_arriving_alone_replace_only_the_embeds() {
     assert_eq!(now.embeds.len(), 1);
     assert_eq!(now.source, first.source, "the rest stays");
 }
+
+/// Two Stoat accounts that DM each other share the DM's raw id: each side's
+/// draft, send and history stay on the account whose room is open.
+#[test]
+fn two_accounts_sharing_a_raw_dm_id_never_mix() {
+    let mut app = Application::default();
+    let (a, b) = (AccountId::new(Network::Stoat, "A"), AccountId::new(Network::Stoat, "B"));
+    let side = |me: &AccountId, them: &str| Room {
+        id: RoomId::new(me.clone(), "SHARED"),
+        kind: RoomKind::Direct {
+            with: UserId::new(me.clone(), them),
+        },
+        ..dm(Network::Stoat, "SHARED", them)
+    };
+    let (ra, rb) = (side(&a, "B"), side(&b, "A"));
+    let (ia, ib) = (ra.id.clone(), rb.id.clone());
+    for (account, room) in [(&a, ra), (&b, rb)] {
+        app.apply(Event::AccountReady {
+            account: account.clone(),
+            display_name: "Me".into(),
+            username: "me".into(),
+            avatar_url: None,
+            rooms: vec![room],
+            servers: Vec::new(),
+        });
+    }
+    assert_eq!(app.state().rooms.len(), 2);
+
+    // A draft typed in A's side isn't B's.
+    app.dispatch(Action::SelectRoom(ia.clone()));
+    app.dispatch(Action::SetDraft("from A".into()));
+    app.dispatch(Action::SelectRoom(ib.clone()));
+    assert_eq!(app.state().drafts.get(&ib), None);
+
+    // Sending from B's side goes to B's connection, B's room.
+    app.dispatch(Action::SetDraft("from B".into()));
+    let effects = app.dispatch(Action::Send { now_ms: 1 });
+    let sent: Vec<_> = effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Backend {
+                account,
+                command: Command::SendMessage { room, text, .. },
+            } => Some((account.clone(), room.clone(), text.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sent, [(b.clone(), ib.clone(), "from B".to_string())]);
+    assert_eq!(app.state().drafts.get(&ia).map(String::as_str), Some("from A"));
+
+    // History for A's side lands only there.
+    app.apply(page(&ia, None, &["m1"], true));
+    let has_m1 = |id: &RoomId| {
+        app.state()
+            .timelines
+            .get(id)
+            .is_some_and(|t| t.messages.iter().any(|m| &*m.id.0 == "m1"))
+    };
+    assert!(has_m1(&ia) && !has_m1(&ib));
+}
