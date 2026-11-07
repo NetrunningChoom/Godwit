@@ -32,6 +32,9 @@
 > Early and in active development: test builds work day to day, with rough
 > edges. Vibe coded with AI assistance. Use at own risk.
 
+Godwit is heavily based on [Yapfast](https://github.com/yapfast/yapfast) for
+its memory efficiency, and aims to keep up with that project.
+
 > **Disclaimer.** Godwit is an independent, unofficial project. It is not
 > affiliated with, endorsed by or sponsored by Stoat, Discord, Steam, Fluxer,
 > Microsoft Teams, Slack, Google Chat, or any other network or company it
@@ -131,7 +134,15 @@ MB). Windows builds can also be made from Linux with `cargo xwin`.
 
 ## Contributing
 
-[AGENTS.md](AGENTS.md) has the rules for contributors and AI agents.
+Godwit is my own side project for having a neat little client. I might accept
+code contributions at some point, but for now I develop it at my own pace,
+whenever I have time.
+
+### Why aren't the agent docs shared?
+
+I believe everyone has their own workflow, and I don't want to poison the well,
+so to speak. Feel free to use the codebase however you want, as much as the
+license permits.
 
 ## Thanks
 
