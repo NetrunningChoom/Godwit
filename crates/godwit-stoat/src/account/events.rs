@@ -163,9 +163,17 @@ impl StoatAccount {
             Ev::AutoDeleteTick => self.autodelete_tick(),
             Ev::Event(v) => {
                 self.autodelete_live(&v);
+                // Only these can change an open Emoji page; skip rebuilding
+                // its list for every other socket message.
+                let emoji_event = matches!(
+                    v.get("type").and_then(serde_json::Value::as_str),
+                    Some("EmojiCreate" | "EmojiDelete" | "ServerDelete")
+                );
                 self.handle_socket_event(v, out);
                 self.sync_roles(out);
-                self.sync_emoji_page(out);
+                if emoji_event {
+                    self.sync_emoji_page(out);
+                }
             }
             Ev::EmojiSaved(result) => self.emoji_saved(result, out),
             Ev::ServerInvites { server, invites } => {

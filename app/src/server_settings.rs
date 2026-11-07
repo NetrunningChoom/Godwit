@@ -554,6 +554,8 @@ impl ServerEditor {
         // Reopening the same server starts with no overview; it must discard the old draft too.
         if identity_changed || (s.overview.is_none() && self.original.is_some()) {
             *self = Self::default();
+            // The emoji name field lives on the window; don't carry it over.
+            ui.set_server_edit_emoji_new_name("".into());
         }
         self.token = Some((s.server.clone(), s.request));
         if let Some(o) = &s.overview
