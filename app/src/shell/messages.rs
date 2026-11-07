@@ -438,4 +438,28 @@ impl Shell {
             self.act(ui, Action::ToggleReaction { message: id, emoji });
         }
     }
+
+    pub fn remove_reactions_row(&mut self, ui: &AppWindow, row: i32, reaction: i32) {
+        let Some(id) = self.message_at(row) else { return };
+        let emoji = self.app.state().selected_message(&id).and_then(|m| {
+            m.reactions
+                .get(usize::try_from(reaction).ok()?)
+                .map(|r| r.emoji.clone())
+        });
+        if let Some(emoji) = emoji {
+            self.act(
+                ui,
+                Action::RemoveReactions {
+                    message: id,
+                    emoji: Some(emoji),
+                },
+            );
+        }
+    }
+
+    pub fn remove_all_reactions_row(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(message) = self.message_at(row) {
+            self.act(ui, Action::RemoveReactions { message, emoji: None });
+        }
+    }
 }

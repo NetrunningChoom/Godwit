@@ -19,6 +19,16 @@ pub enum Action {
         account: AccountId,
         session: Arc<str>,
     },
+    LogOutSessionWithProof {
+        account: AccountId,
+        target: crate::privacy::SessionTarget,
+        proof: crate::privacy::SessionProof,
+    },
+    RenameSession {
+        account: AccountId,
+        session: Arc<str>,
+        name: Arc<str>,
+    },
     /// Auto-delete for an account: open its page, or change its rules.
     AutoDelete(AccountId, crate::autodelete::AutoDeleteCommand),
     StartScreenShare {
@@ -132,6 +142,11 @@ pub enum Action {
     ToggleReaction {
         message: MessageId,
         emoji: Arc<str>,
+    },
+    /// Remove one emoji's reactions (Some) or all reactions (None) as a moderator.
+    RemoveReactions {
+        message: MessageId,
+        emoji: Option<Arc<str>>,
     },
     /// Files to send with the selected room's next message.
     AddFiles(Vec<Outgoing>),

@@ -44,6 +44,39 @@ impl AccountPages {
         Some(Action::LogOutSession { account, session })
     }
 
+    pub fn log_out_with_proof(&self, state: &AppState, index: usize, method: usize, response: &str) -> Option<Action> {
+        let account = self.account.clone()?;
+        let session = state.sessions.get(&account)?.sessions.get(index)?.id.clone();
+        Some(Action::LogOutSessionWithProof {
+            account,
+            target: godwit_core::privacy::SessionTarget::One(session),
+            proof: session_proof(method, response)?,
+        })
+    }
+
+    pub fn log_out_others_with_proof(&self, method: usize, response: &str) -> Option<Action> {
+        let account = self.account.clone()?;
+        Some(Action::LogOutSessionWithProof {
+            account,
+            target: godwit_core::privacy::SessionTarget::Others,
+            proof: session_proof(method, response)?,
+        })
+    }
+
+    pub fn rename_session(&self, state: &AppState, index: usize, name: &str) -> Option<Action> {
+        let account = self.account.clone()?;
+        let session = state.sessions.get(&account)?.sessions.get(index)?.id.clone();
+        let name = name.trim();
+        if name.is_empty() {
+            return None;
+        }
+        Some(Action::RenameSession {
+            account,
+            session,
+            name: name.into(),
+        })
+    }
+
     /// Fills both pages from the account's latest answers.
     pub fn show(&self, ui: &AppWindow, state: &AppState) {
         let Some(account) = &self.account else { return };
@@ -68,6 +101,13 @@ impl AccountPages {
                 .sessions
                 .iter()
                 .map(|s| {
+                    let created = s.created_ms.and_then(|ms| {
+                        use chrono::TimeZone;
+                        chrono::Local
+                            .timestamp_millis_opt(ms)
+                            .single()
+                            .map(|t| format!("created {}", t.format("%b %-d")))
+                    });
                     let used = s.last_used_ms.and_then(|ms| {
                         use chrono::TimeZone;
                         chrono::Local
@@ -75,7 +115,7 @@ impl AccountPages {
                             .single()
                             .map(|t| format!("last used {}", t.format("%b %-d")))
                     });
-                    let detail: Vec<String> = [Some(s.location.to_string()).filter(|l| !l.is_empty()), used]
+                    let detail: Vec<String> = [Some(s.location.to_string()).filter(|l| !l.is_empty()), created, used]
                         .into_iter()
                         .flatten()
                         .collect();
@@ -88,6 +128,17 @@ impl AccountPages {
         ))));
         pages.set_sessions_loading(sessions.loading);
         pages.set_sessions_error(sessions.error.as_deref().unwrap_or_default().into());
+    }
+}
+
+fn session_proof(method: usize, response: &str) -> Option<godwit_core::privacy::SessionProof> {
+    use godwit_core::{application::Secret, privacy::SessionProof};
+    let value = Secret(response.to_owned());
+    match method {
+        0 => Some(SessionProof::Password(value)),
+        1 => Some(SessionProof::Authenticator(value)),
+        2 => Some(SessionProof::Recovery(value)),
+        _ => None,
     }
 }
 
@@ -120,6 +171,7 @@ mod tests {
                     id: "h1".into(),
                     device: "Linux".into(),
                     location: "".into(),
+                    created_ms: None,
                     last_used_ms: None,
                 }],
                 ..SessionsView::default()
@@ -140,5 +192,28 @@ mod tests {
             pages.log_out(&state, 0),
             Some(Action::LogOutSession { session, .. }) if &*session == "h1"
         ));
+        assert!(matches!(
+            pages.log_out_with_proof(&state, 0, 1, "123456"),
+            Some(Action::LogOutSessionWithProof {
+                target: godwit_core::privacy::SessionTarget::One(session),
+                proof: godwit_core::privacy::SessionProof::Authenticator(_),
+                ..
+            }) if &*session == "h1"
+        ));
+        assert!(pages.log_out_with_proof(&state, 0, 9, "x").is_none());
+        assert!(matches!(
+            pages.log_out_others_with_proof(2, "recovery-code"),
+            Some(Action::LogOutSessionWithProof {
+                target: godwit_core::privacy::SessionTarget::Others,
+                proof: godwit_core::privacy::SessionProof::Recovery(_),
+                ..
+            })
+        ));
+        assert!(matches!(
+            pages.rename_session(&state, 0, "  Work laptop  "),
+            Some(Action::RenameSession { session, name, .. })
+                if &*session == "h1" && &*name == "Work laptop"
+        ));
+        assert!(pages.rename_session(&state, 0, "  ").is_none());
     }
 }

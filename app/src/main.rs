@@ -264,6 +264,8 @@ fn connect_callbacks(ui: &AppWindow) {
         let pages = ui.global::<godwit::ui::AccountPages>();
         callback!(pages.on_toggle_privacy(i) => |sh, ui| sh.toggle_privacy(ui, i));
         callback!(pages.on_log_out_session(i) => |sh, ui| sh.log_out_session(ui, i));
+        callback!(pages.on_log_out_session_with_proof(i, method, value) => |sh, ui| sh.log_out_session_with_proof(ui, i, method, &value));
+        callback!(pages.on_submit_session_rename(i, name) => |sh, ui| sh.rename_session(ui, i, &name));
     }
     callback!(ui.on_settings_open_autodelete() => |sh, ui| sh.open_autodelete(ui));
     {
@@ -394,6 +396,8 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_open_pins() => |sh, ui| sh.act(ui, Action::OpenPins));
     callback!(ui.on_close_pins() => |sh, ui| sh.act(ui, Action::ClosePins));
     callback!(ui.on_pin(row) => |sh, ui| sh.pin_row(ui, row));
+    callback!(ui.on_remove_reactions(row, reaction) => |sh, ui| sh.remove_reactions_row(ui, row, reaction));
+    callback!(ui.on_remove_all_reactions(row) => |sh, ui| sh.remove_all_reactions_row(ui, row));
     callback!(ui.on_pin_jump(i) => |sh, ui| sh.pin_jump(ui, i));
     callback!(ui.on_pin_unpin(i) => |sh, ui| sh.pin_unpin(ui, i));
     callback!(ui.on_crop_done(original) => |sh, ui| sh.crop_done(ui, original));

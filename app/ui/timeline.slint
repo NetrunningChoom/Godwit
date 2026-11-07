@@ -73,6 +73,7 @@ export component Timeline inherits Rectangle {
     callback create-thread(int);
     callback new-post();
     in property <bool> can-pin;
+    in property <bool> can-moderate-reactions;
     callback open-pins();
     callback pin(int);
     in property <bool> members-shown;
@@ -148,6 +149,8 @@ export component Timeline inherits Rectangle {
     callback edit(int);
     callback delete(int);
     callback react(int, int);
+    callback remove-reactions(int, int);
+    callback remove-all-reactions(int);
     callback open-picker(int);
     // The emoji picker (for row's reactions, or the composer when -1).
     in property <bool> picker-open;
@@ -886,6 +889,7 @@ export component Timeline inherits Rectangle {
                     can-delete: root.can-delete;
                     can-delete-others: root.can-delete-others;
                     can-pin: root.can-pin;
+                    can-moderate-reactions: root.can-moderate-reactions;
                     pin => { root.pin(i); }
                     can-thread: root.can-thread && !root.is-forum;
                     create-thread => { root.create-thread(i); }
@@ -894,6 +898,8 @@ export component Timeline inherits Rectangle {
                     // Shift skips the question, as officially.
                     delete(skip) => { if skip { root.delete(i); } else { root.confirm-delete = i; } }
                     react(r) => { root.react(i, r); }
+                    remove-reactions(r) => { root.remove-reactions(i, r); }
+                    remove-all-reactions => { root.remove-all-reactions(i); }
                     open-picker => { root.open-picker(i); }
                     jump-to-reply => { root.jump-to-reply(i); }
                     open-attachment(a) => { root.open-attachment(i, a); }

@@ -74,6 +74,7 @@ impl StoatAccount {
         let can = |p: u64| self.store.can(&c.id, p);
         let capabilities = Capabilities {
             delete_others: can(MANAGE_MESSAGES),
+            moderate_reactions: can(MANAGE_MESSAGES),
             // The pinned list is readable by anyone who reads the channel;
             // pinning takes Manage Messages in servers (anyone in DMs).
             pins: can(crate::permissions::READ_MESSAGE_HISTORY),

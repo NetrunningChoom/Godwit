@@ -118,6 +118,7 @@ pub struct StoatAccount {
     /// The server a requested invite or new channel is for: their answers
     /// don't say.
     invite_for: Option<String>,
+    session_revoke_pending: bool,
     channel_for: Option<String>,
     /// The open profile card: the user and the server it's seen from.
     profile_for: Option<(String, Option<String>)>,
@@ -500,6 +501,7 @@ impl StoatAccount {
             members_sent: None,
             roles_watch: None,
             invite_for: None,
+            session_revoke_pending: false,
             channel_for: None,
             profile_for: None,
             emoji_sent: None,
@@ -547,6 +549,7 @@ impl StoatAccount {
             members_sent: None,
             roles_watch: None,
             invite_for: None,
+            session_revoke_pending: false,
             channel_for: None,
             profile_for: None,
             emoji_sent: None,
@@ -695,6 +698,7 @@ mod tests {
             members_sent: None,
             roles_watch: None,
             invite_for: None,
+            session_revoke_pending: false,
             channel_for: None,
             profile_for: None,
             emoji_sent: None,
@@ -741,6 +745,66 @@ mod tests {
         (a, tx, cmds, events)
     }
 
+    #[test]
+    fn stoat_sessions_load_from_the_official_session_endpoint() {
+        let (mut a, _tx, mut cmds, _) = connected();
+        while cmds.try_recv().is_ok() {}
+        a.run(Command::LoadSessions);
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Settings(SettingsCmd::FetchSessions))));
+    }
+
+    #[test]
+    fn stoat_session_revocation_requires_and_forwards_the_selected_mfa_proof() {
+        let (mut a, _tx, mut cmds, _) = connected();
+        while cmds.try_recv().is_ok() {}
+        a.run(Command::LogOutSessionWithProof {
+            target: godwit_core::privacy::SessionTarget::One("01ARZ3NDEKTSV4RRFFQ69G5FAV".into()),
+            proof: godwit_core::privacy::SessionProof::Authenticator(godwit_core::application::Secret("123456".into())),
+        });
+        let Ok(Cmd::Settings(SettingsCmd::RevokeSessions { target, response })) = cmds.try_recv() else {
+            panic!("session revocation must use the MFA-gated API path");
+        };
+        assert!(matches!(target, crate::backend::RevokeTarget::One(id) if id == "01ARZ3NDEKTSV4RRFFQ69G5FAV"));
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            json!({ "totp_code": "123456" })
+        );
+    }
+
+    #[test]
+    fn stoat_session_rename_uses_the_official_friendly_name_request() {
+        let (mut a, _tx, mut cmds, _) = connected();
+        while cmds.try_recv().is_ok() {}
+        a.run(Command::RenameSession {
+            session: "01ARZ3NDEKTSV4RRFFQ69G5FAV".into(),
+            name: "Work laptop".into(),
+        });
+        let Ok(Cmd::Settings(SettingsCmd::RenameSession { id, name })) = cmds.try_recv() else {
+            panic!("session rename must use Stoat's official settings command");
+        };
+        assert_eq!(id, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        assert_eq!(name, "Work laptop");
+    }
+
+    #[test]
+    fn stoat_bulk_session_revocation_excludes_the_current_device() {
+        let (mut a, _tx, mut cmds, _) = connected();
+        while cmds.try_recv().is_ok() {}
+        let events = a.run(Command::LogOutSessionWithProof {
+            target: godwit_core::privacy::SessionTarget::Others,
+            proof: godwit_core::privacy::SessionProof::Password(godwit_core::application::Secret("password".into())),
+        });
+        assert!(matches!(events.as_slice(), [Event::SessionActionPending { .. }]));
+        let Ok(Cmd::Settings(SettingsCmd::RevokeSessions { target, response })) = cmds.try_recv() else {
+            panic!("bulk revocation must use the MFA-gated API path");
+        };
+        assert!(matches!(target, crate::backend::RevokeTarget::Others));
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            json!({ "password": "password" })
+        );
+    }
+
     fn room(raw: &str) -> RoomId {
         RoomId::new(AccountId::new(Network::Stoat, "ME"), raw)
     }
@@ -784,6 +848,31 @@ mod tests {
             events
                 .iter()
                 .any(|e| matches!(e, Event::SearchResults { query, .. } if query == "lunch"))
+        );
+    }
+
+    #[test]
+    fn reaction_moderation_routes_one_emoji_or_all_to_stoat_api_commands() {
+        let (mut a, _tx, mut cmds, _) = connected();
+        while cmds.try_recv().is_ok() {}
+        a.run(Command::RemoveReactions {
+            room: room("D"),
+            message: MessageId("M".into()),
+            emoji: Some("👍".into()),
+        });
+        assert!(
+            matches!(cmds.try_recv(), Ok(Cmd::Message(MessageCmd::RemoveReaction { channel, id, emoji }))
+            if channel == "D" && id == "M" && emoji == "👍")
+        );
+
+        a.run(Command::RemoveReactions {
+            room: room("D"),
+            message: MessageId("M".into()),
+            emoji: None,
+        });
+        assert!(
+            matches!(cmds.try_recv(), Ok(Cmd::Message(MessageCmd::ClearReactions { channel, id }))
+            if channel == "D" && id == "M")
         );
     }
 

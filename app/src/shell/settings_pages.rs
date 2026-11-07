@@ -3,6 +3,7 @@
 //! Settings: the pages, problems, privacy and sessions, auto-delete, own profiles and the cache.
 
 use super::*;
+use slint::ComponentHandle;
 
 impl Shell {
     /// Moves the core's new errors into the log; the rail's dot and Settings
@@ -199,6 +200,9 @@ impl Shell {
         };
         ui.set_settings_section(10);
         ui.set_settings_account(index);
+        let account_pages = ui.global::<crate::ui::AccountPages>();
+        account_pages.set_confirm_session(-1);
+        account_pages.set_rename_session(-1);
         ui.set_settings_data_policy_url(id.network.privacy_url().into());
         ui.set_settings_data_policy_label(format!("Open {} privacy information", id.network.name()).into());
         let row = self.profile_editor.row_of(&id);
@@ -209,7 +213,11 @@ impl Shell {
         self.autodelete_page.account = stoat.then(|| id.clone());
         let discord = pages.contains(&godwit_core::network::AccountPage::PrivacyAndSessions);
         ui.set_settings_account_discord(discord);
-        self.account_pages.account = discord.then(|| id.clone());
+        let sessions = pages.contains(&godwit_core::network::AccountPage::Sessions);
+        ui.set_settings_account_sessions(sessions);
+        ui.set_settings_account_rename_sessions(pages.contains(&godwit_core::network::AccountPage::RenameSessions));
+        ui.set_settings_account_log_out_others(pages.contains(&godwit_core::network::AccountPage::LogOutOtherSessions));
+        self.account_pages.account = (discord || sessions).then(|| id.clone());
         ui.set_settings_account_tab(if row.is_some() { 0 } else { 1 });
         if let Some(row) = row {
             self.select_profile_account(ui, i32::try_from(row).unwrap_or(0));
@@ -243,6 +251,32 @@ impl Shell {
         let action = usize::try_from(index)
             .ok()
             .and_then(|i| self.account_pages.log_out(self.app.state(), i));
+        if let Some(action) = action {
+            self.act(ui, action);
+        }
+    }
+
+    pub fn rename_session(&mut self, ui: &AppWindow, index: i32, name: &str) {
+        let action = usize::try_from(index)
+            .ok()
+            .and_then(|i| self.account_pages.rename_session(self.app.state(), i, name));
+        if let Some(action) = action {
+            self.act(ui, action);
+        }
+    }
+
+    pub fn log_out_session_with_proof(&mut self, ui: &AppWindow, index: i32, method: i32, response: &str) {
+        let method = usize::try_from(method).ok();
+        let action = method.and_then(|method| {
+            if index == -1 {
+                self.account_pages.log_out_others_with_proof(method, response)
+            } else {
+                usize::try_from(index).ok().and_then(|index| {
+                    self.account_pages
+                        .log_out_with_proof(self.app.state(), index, method, response)
+                })
+            }
+        });
         if let Some(action) = action {
             self.act(ui, action);
         }

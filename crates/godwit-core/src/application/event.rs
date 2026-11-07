@@ -16,6 +16,15 @@ pub enum Event {
         account: AccountId,
         view: crate::privacy::SessionsView,
     },
+    /// A session revocation is being confirmed; keep the current list visible.
+    SessionActionPending {
+        account: AccountId,
+    },
+    /// Signing out a session failed; keep the list visible so it can be retried.
+    SessionActionFailed {
+        account: AccountId,
+        error: Arc<str>,
+    },
     /// An account's auto-delete page, after any change.
     AutoDelete {
         account: AccountId,

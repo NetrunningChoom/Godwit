@@ -882,6 +882,7 @@ impl Presenter {
         ui.set_can_edit(room.capabilities.edit);
         ui.set_can_delete(room.capabilities.delete);
         ui.set_can_delete_others(room.capabilities.delete_others);
+        ui.set_can_moderate_reactions(room.capabilities.moderate_reactions);
         ui.set_has_pins(room.capabilities.pins);
         // Every conversation has search: networks without a search API use
         // the messages Godwit has loaded locally.

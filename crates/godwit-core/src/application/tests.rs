@@ -75,6 +75,34 @@ fn cache_models_round_trip_through_json() {
 }
 
 #[test]
+fn a_failed_session_action_keeps_the_loaded_sessions_for_retry() {
+    let mut app = Application::new(Contacts::default());
+    let account = account(Network::Stoat);
+    app.state.sessions.insert(
+        account.clone(),
+        crate::privacy::SessionsView {
+            sessions: vec![crate::privacy::Session {
+                id: "session".into(),
+                device: "Linux".into(),
+                location: "".into(),
+                created_ms: None,
+                last_used_ms: None,
+            }],
+            loading: true,
+            error: None,
+        },
+    );
+    app.apply(Event::SessionActionFailed {
+        account: account.clone(),
+        error: "The code didn't match.".into(),
+    });
+    let sessions = &app.state.sessions[&account];
+    assert_eq!(sessions.sessions.len(), 1);
+    assert!(!sessions.loading);
+    assert_eq!(sessions.error.as_deref(), Some("The code didn't match."));
+}
+
+#[test]
 fn cached_history_displays_immediately_and_refreshes_when_opened() {
     let room = dm(Network::Stoat, "cached-room", "friend");
     let account = room.id.account.clone();
@@ -1774,6 +1802,63 @@ fn reactions_toggle_and_deletes_go_out() {
         commands(&app.dispatch(Action::Delete(MessageId("m1".into()))))[..],
         [Command::DeleteMessage { .. }]
     ));
+}
+
+#[test]
+fn reaction_moderation_requires_capability_and_targets_the_requested_emoji() {
+    let mut app = Application::default();
+    let mut r = dm(Network::Stoat, "moderate", "them");
+    r.capabilities.moderate_reactions = true;
+    let room = r.id.clone();
+    ready(&mut app, Network::Stoat, vec![r]);
+    app.dispatch(Action::SelectRoom(room.clone()));
+    let mut message = mine("with-reactions");
+    message.reactions = vec![Reaction {
+        emoji: "👍".into(),
+        image_url: None,
+        count: 2,
+        me: false,
+    }];
+    app.apply(Event::MessageAdded { room, message });
+
+    let remove_one = app.dispatch(Action::RemoveReactions {
+        message: MessageId("with-reactions".into()),
+        emoji: Some("👍".into()),
+    });
+    assert!(matches!(commands(&remove_one)[..], [Command::RemoveReactions { emoji: Some(e), .. }] if &**e == "👍"));
+    let remove_all = app.dispatch(Action::RemoveReactions {
+        message: MessageId("with-reactions".into()),
+        emoji: None,
+    });
+    assert!(matches!(
+        commands(&remove_all)[..],
+        [Command::RemoveReactions { emoji: None, .. }]
+    ));
+
+    let mut denied = Application::default();
+    let r = dm(Network::Stoat, "no-moderate", "them");
+    let room = r.id.clone();
+    ready(&mut denied, Network::Stoat, vec![r]);
+    denied.dispatch(Action::SelectRoom(room.clone()));
+    let mut denied_message = mine("with-reactions");
+    denied_message.reactions = vec![Reaction {
+        emoji: "👍".into(),
+        image_url: None,
+        count: 2,
+        me: false,
+    }];
+    denied.apply(Event::MessageAdded {
+        room,
+        message: denied_message,
+    });
+    assert!(
+        denied
+            .dispatch(Action::RemoveReactions {
+                message: MessageId("with-reactions".into()),
+                emoji: None,
+            })
+            .is_empty()
+    );
 }
 
 #[test]

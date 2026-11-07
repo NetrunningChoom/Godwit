@@ -313,6 +313,45 @@ impl StoatAccount {
                 self.sync_members(out);
             }
             Ev::AudioDevices(d) => self.devices = Some(d),
+            Ev::MfaFailed(error) => {
+                if !self.session_revoke_pending {
+                    out.push(Event::Error(
+                        format!("Stoat, confirming account security: {error}").into(),
+                    ));
+                    return;
+                }
+                self.session_revoke_pending = false;
+                if let Some(account) = self.account.clone() {
+                    out.push(Event::SessionActionFailed {
+                        account,
+                        error: error.into(),
+                    });
+                }
+            }
+            Ev::Sessions(sessions) => {
+                self.session_revoke_pending = false;
+                let Some(account) = self.account.clone() else { return };
+                let mut sessions: Vec<_> = sessions
+                    .into_iter()
+                    .map(|session| godwit_core::privacy::Session {
+                        id: session.id.clone().into(),
+                        device: session.name.into(),
+                        location: "".into(),
+                        created_ms: crate::api::ulid_timestamp_ms(&session.id),
+                        last_used_ms: None,
+                    })
+                    .collect();
+                sessions.sort_by_key(|session| std::cmp::Reverse(session.created_ms));
+                let view = godwit_core::privacy::SessionsView {
+                    sessions,
+                    ..Default::default()
+                };
+                out.push(Event::Sessions { account, view });
+            }
+            Ev::SessionRenamed(_) => {
+                // Refresh names from Stoat's authoritative session list.
+                self.net.send(Cmd::Settings(SettingsCmd::FetchSessions));
+            }
             Ev::GifCategories(result) => {
                 let Some(account) = self.account.clone() else { return };
                 match result {

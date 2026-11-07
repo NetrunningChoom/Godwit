@@ -2205,6 +2205,7 @@ fn sessions_of(v: &Value) -> Vec<godwit_core::privacy::Session> {
                 id: id.into(),
                 device: device.into(),
                 location: part("location").unwrap_or_default().into(),
+                created_ms: None,
                 last_used_ms: s["approx_last_used_time"]
                     .as_str()
                     .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())

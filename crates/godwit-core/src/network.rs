@@ -133,7 +133,13 @@ impl Network {
     pub fn account_pages(self) -> &'static [AccountPage] {
         match self {
             // Auto-delete is a Godwit extra on Stoat (from Godwit).
-            Self::Stoat => &[AccountPage::AutoDelete],
+            Self::Stoat => &[
+                AccountPage::AutoDelete,
+                AccountPage::Sessions,
+                // Stoat's official Settings → Sessions page supports renaming each session.
+                AccountPage::RenameSessions,
+                AccountPage::LogOutOtherSessions,
+            ],
             Self::Discord => &[AccountPage::PrivacyAndSessions],
             _ => &[],
         }
@@ -441,6 +447,12 @@ pub enum ThreadStyle {
 pub enum AccountPage {
     AutoDelete,
     PrivacyAndSessions,
+    /// Signed-in devices (Stoat requires MFA before revoking one).
+    Sessions,
+    /// Session display names can be changed in the official client.
+    RenameSessions,
+    /// The official sessions page can revoke every other device at once.
+    LogOutOtherSessions,
 }
 
 /// A picture someone uploads ([`Network::image_spec`]).
@@ -486,7 +498,15 @@ mod tests {
         assert_eq!(settings, [Stoat, Discord]);
         assert!(!Steam.has_status_text() && Stoat.has_status_text() && !Fluxer.has_status_text());
         assert!(!Discord.has_profile_banner() && Stoat.has_profile_banner());
-        assert_eq!(Stoat.account_pages(), [AccountPage::AutoDelete]);
+        assert_eq!(
+            Stoat.account_pages(),
+            [
+                AccountPage::AutoDelete,
+                AccountPage::Sessions,
+                AccountPage::RenameSessions,
+                AccountPage::LogOutOtherSessions,
+            ]
+        );
         assert_eq!(Discord.account_pages(), [AccountPage::PrivacyAndSessions]);
         assert!(Steam.account_pages().is_empty());
         assert_eq!(GoogleChat.readers(), Some("Google and Workspace admins"));

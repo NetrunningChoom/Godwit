@@ -10,8 +10,43 @@ impl StoatAccount {
             Command::AutoDelete(command) => self.autodelete_command(command),
             // Stoat's privacy switches aren't offered here (yet).
             Command::LoadPrivacy | Command::SetPrivacy { .. } => Vec::new(),
-            // Stoat's sessions page isn't wired to this yet (roadmap: its Sessions tab).
-            Command::LoadSessions | Command::LogOutSession(_) => Vec::new(),
+            Command::LoadSessions => {
+                let Some(account) = self.account.clone() else { return Vec::new() };
+                self.net.send(Cmd::Settings(SettingsCmd::FetchSessions));
+                vec![Event::Sessions {
+                    account,
+                    view: godwit_core::privacy::SessionsView { loading: true, ..Default::default() },
+                }]
+            }
+            // Stoat requires an MFA ticket before revoking a session. The
+            // simple action cannot provide that proof.
+            Command::LogOutSession(_) => Vec::new(),
+            Command::LogOutSessionWithProof { target, proof } => {
+                self.session_revoke_pending = true;
+                let response = match proof {
+                    godwit_core::privacy::SessionProof::Password(value) => crate::api::MfaResponse::Password(value.0),
+                    godwit_core::privacy::SessionProof::Authenticator(value) => crate::api::MfaResponse::Totp(value.0),
+                    godwit_core::privacy::SessionProof::Recovery(value) => crate::api::MfaResponse::Recovery(value.0),
+                };
+                let target = match target {
+                    godwit_core::privacy::SessionTarget::One(session) => {
+                        crate::backend::RevokeTarget::One(session.to_string())
+                    }
+                    godwit_core::privacy::SessionTarget::Others => crate::backend::RevokeTarget::Others,
+                };
+                self.net.send(Cmd::Settings(SettingsCmd::RevokeSessions {
+                    target,
+                    response,
+                }));
+                self.account.clone().map(|account| Event::SessionActionPending { account }).into_iter().collect()
+            }
+            Command::RenameSession { session, name } => {
+                self.net.send(Cmd::Settings(SettingsCmd::RenameSession {
+                    id: session.to_string(),
+                    name: name.to_string(),
+                }));
+                Vec::new()
+            }
             Command::ServerAdmin { server, op } => self.server_admin(server, op),
             Command::LoadServerOverview { server, request } => {
                 let result = self.server_overview(&server).ok_or_else(|| "This server is no longer available.".into());
@@ -342,6 +377,21 @@ impl StoatAccount {
                     emoji: emoji.to_string(),
                     add,
                 }));
+                Vec::new()
+            }
+            Command::RemoveReactions { room, message, emoji } => {
+                let cmd = match emoji {
+                    Some(emoji) => Cmd::Message(MessageCmd::RemoveReaction {
+                        channel: room.raw.to_string(),
+                        id: message.0.to_string(),
+                        emoji: emoji.to_string(),
+                    }),
+                    None => Cmd::Message(MessageCmd::ClearReactions {
+                        channel: room.raw.to_string(),
+                        id: message.0.to_string(),
+                    }),
+                };
+                self.net.send(cmd);
                 Vec::new()
             }
             Command::Typing { room } => {

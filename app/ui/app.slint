@@ -296,6 +296,7 @@ export component AppWindow inherits Window {
     in property <bool> can-edit;
     in property <bool> can-delete;
     in property <bool> can-delete-others;
+    in property <bool> can-moderate-reactions;
     in property <string> compose-label;
     in property <string> typing;
     in property <bool> can-attach;
@@ -399,6 +400,8 @@ export component AppWindow inherits Window {
     in property <bool> can-pin;
     callback open-pins();
     callback pin(int);
+    callback remove-reactions(int, int);
+    callback remove-all-reactions(int);
     // The pinned messages panel.
     in property <bool> pins-open;
     in property <bool> pins-loading;
@@ -463,6 +466,9 @@ export component AppWindow inherits Window {
     in property <bool> settings-account-autodelete;
     callback settings-open-autodelete();
     in property <bool> settings-account-discord;
+    in property <bool> settings-account-sessions;
+    in property <bool> settings-account-rename-sessions;
+    in property <bool> settings-account-log-out-others;
     in property <string> settings-data-policy-url;
     in property <string> settings-data-policy-label;
     callback settings-open-privacy();
@@ -975,6 +981,7 @@ export component AppWindow inherits Window {
                                         can-edit: root.can-edit;
                                         can-delete: root.can-delete;
                                         can-delete-others: root.can-delete-others;
+                                        can-moderate-reactions: root.can-moderate-reactions;
                                         compose-label: root.compose-label;
                                         typing: root.typing;
                                         can-attach: root.can-attach;
@@ -1014,6 +1021,8 @@ export component AppWindow inherits Window {
                                         can-pin: root.can-pin;
                                         open-pins => { root.open-pins(); }
                                         pin(i) => { root.pin(i); }
+                                        remove-reactions(i, r) => { root.remove-reactions(i, r); }
+                                        remove-all-reactions(i) => { root.remove-all-reactions(i); }
                                         members-shown: root.members-shown;
                                         toggle-members => { root.toggle-members(); }
                                         join-call => { root.join-call(); }
@@ -1202,6 +1211,9 @@ export component AppWindow inherits Window {
         account-autodelete: root.settings-account-autodelete;
         open-autodelete => { root.settings-open-autodelete(); }
         account-discord: root.settings-account-discord;
+        account-sessions: root.settings-account-sessions;
+        account-rename-sessions: root.settings-account-rename-sessions;
+        account-log-out-others: root.settings-account-log-out-others;
         account-data: true;
         data-policy-url: root.settings-data-policy-url;
         data-policy-label: root.settings-data-policy-label;

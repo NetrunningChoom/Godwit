@@ -48,6 +48,7 @@ export component MessageRow inherits Rectangle {
     in property <bool> can-delete;
     in property <bool> can-delete-others;
     in property <bool> can-pin;
+    in property <bool> can-moderate-reactions;
     in property <bool> can-thread;
     property <bool> deletable: (message.mine && root.can-delete) || root.can-delete-others;
     // Jumped to: Godwit's highlight, primary-container at half strength.
@@ -56,6 +57,8 @@ export component MessageRow inherits Rectangle {
     callback edit();
     callback delete(bool);
     callback react(int);
+    callback remove-reactions(int);
+    callback remove-all-reactions();
     callback pin();
     callback create-thread();
 
@@ -361,6 +364,20 @@ export component MessageRow inherits Rectangle {
             MenuRow { glyph: Icons.copy; label: "Copy text"; clicked => { root.copy-text(); } }
             MenuDivider { }
             if !root.message.system && root.can-react: MenuRow { glyph: Icons.emoji; label: "React"; clicked => { root.open-picker(); } }
+            if root.can-moderate-reactions && message.reactions.length > 0: MenuDivider { }
+            for reaction[i] in message.reactions: MenuRow {
+                visible: root.can-moderate-reactions;
+                glyph: Icons.delete;
+                label: "Remove " + reaction.emoji;
+                danger: true;
+                clicked => { root.remove-reactions(i); }
+            }
+            if root.can-moderate-reactions && message.reactions.length > 0: MenuRow {
+                glyph: Icons.delete;
+                label: "Remove all reactions";
+                danger: true;
+                clicked => { root.remove-all-reactions(); }
+            }
             if !root.message.system && root.message.mine && root.can-edit: MenuRow { glyph: Icons.edit; label: "Edit message"; clicked => { root.edit(); } }
             MenuRow { glyph: Icons.link; label: "Copy link"; clicked => { root.copy-link(); } }
             if !root.message.system && root.can-pin: MenuRow { glyph: Icons.notes; label: "Pin message"; clicked => { root.pin(); } }

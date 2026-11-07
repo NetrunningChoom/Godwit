@@ -4,7 +4,7 @@
 // switches and signed-in devices, as its official client's pages.
 
 import { Theme } from "theme.slint";
-import { Button, Toggle, SurfaceCard as Card, SettingsRow } from "widgets.slint";
+import { Button, Toggle, SurfaceCard as Card, SettingsRow, Select, TextField } from "widgets.slint";
 
 export struct PrivItem {
     label: string,
@@ -14,7 +14,7 @@ export struct PrivItem {
 
 export struct SessItem {
     device: string,
-    // "Amsterdam, NL · last used Nov 4", or less when the network doesn't say.
+    // "Amsterdam, NL · created Nov 4 · last used Nov 5", as available.
     detail: string,
 }
 
@@ -27,9 +27,12 @@ export global AccountPages {
     in property <[SessItem]> sessions;
     in property <bool> sessions-loading;
     in property <string> sessions-error;
-    // A device waiting for "Sign out" to be confirmed (-1 none).
+    // A device waiting for sign-out confirmation (-1 none, -2 all other devices).
     in-out property <int> confirm-session: -1;
+    in-out property <int> rename-session: -1;
     callback log-out-session(int);
+    callback log-out-session-with-proof(int, int, string);
+    callback submit-session-rename(int, string);
 }
 
 export component PrivacyPage inherits VerticalLayout {
@@ -62,15 +65,76 @@ export component PrivacyPage inherits VerticalLayout {
 }
 
 export component SessionsPage inherits VerticalLayout {
+    in property <string> session-network: "Discord";
+    in property <bool> can-log-out-session: true;
+    in property <bool> can-log-out-others: false;
+    in property <bool> can-rename-session: false;
+    in property <bool> requires-mfa: false;
+    // Stoat OpenAPI's MFAResponse alternatives.
+    in property <[string]> proof-methods: ["Password", "Authenticator code", "Recovery code"];
+    in-out property <int> proof-method-index: 0;
+    in-out property <string> proof-value;
+    in-out property <string> rename-value;
     spacing: Theme.space-5;
     alignment: start;
     Text {
-        text: "Where this account is signed in, as Discord's Devices page lists it. Signing a device out ends its session there.";
+        text: "Where this account is signed in, as the official " + root.session-network + " client lists it.";
         wrap: word-wrap;
         color: Theme.on-surface-variant;
     }
-    if AccountPages.sessions-loading: Text { text: "Asking Discord…"; color: Theme.on-surface-variant; }
+    if AccountPages.sessions-loading: Text { text: "Loading " + root.session-network + " sessions…"; color: Theme.on-surface-variant; }
     if AccountPages.sessions-error != "": Text { text: AccountPages.sessions-error; wrap: word-wrap; color: Theme.error; }
+    if root.can-log-out-others && AccountPages.sessions.length > 1 && AccountPages.confirm-session != -2: Button {
+        text: "Log Out Other Sessions";
+        kind: "text";
+        danger: true;
+        enabled: !AccountPages.sessions-loading;
+        clicked => {
+            AccountPages.confirm-session = -2;
+            AccountPages.rename-session = -1;
+        }
+    }
+    if root.can-log-out-others && AccountPages.confirm-session == -2: VerticalLayout {
+        spacing: Theme.space-3;
+        Text {
+            text: "Sign out of every other session? This device will stay signed in.";
+            wrap: word-wrap;
+            color: Theme.on-surface-variant;
+        }
+        Select {
+            width: 300px;
+            model: root.proof-methods;
+            current-index <=> root.proof-method-index;
+        }
+        TextField {
+            width: 360px;
+            text <=> root.proof-value;
+            placeholder: "Password or code";
+            password: true;
+            autofocus: true;
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-3;
+            Button {
+                text: "Cancel";
+                clicked => {
+                    AccountPages.confirm-session = -1;
+                    root.proof-value = "";
+                }
+            }
+            Button {
+                text: "Log Out Other Sessions";
+                danger: true;
+                enabled: root.proof-value != "";
+                clicked => {
+                    AccountPages.log-out-session-with-proof(-1, root.proof-method-index, root.proof-value);
+                    root.proof-value = "";
+                    AccountPages.confirm-session = -1;
+                }
+            }
+        }
+    }
     for s[i] in AccountPages.sessions: Card {
         SettingsRow {
             spacing: Theme.space-4;
@@ -80,19 +144,60 @@ export component SessionsPage inherits VerticalLayout {
             label-weight: 600;
             wrap-label: true;
             label-spacing: Theme.space-1;
-            if AccountPages.confirm-session != i: Button {
+            if root.can-rename-session && AccountPages.rename-session != i && AccountPages.confirm-session != -2: Button {
+                y: (parent.height - self.height) / 2;
+                text: "Rename";
+                kind: "text";
+                enabled: !AccountPages.sessions-loading;
+                clicked => {
+                    AccountPages.confirm-session = -1;
+                    AccountPages.rename-session = i;
+                    root.rename-value = s.device;
+                }
+            }
+            if root.can-log-out-session && AccountPages.confirm-session != i && AccountPages.confirm-session != -2: Button {
                 y: (parent.height - self.height) / 2;
                 text: "Sign out";
                 kind: "text";
                 danger: true;
-                clicked => { AccountPages.confirm-session = i; }
+                enabled: !AccountPages.sessions-loading;
+                clicked => {
+                    AccountPages.rename-session = -1;
+                    AccountPages.confirm-session = i;
+                }
+            }
+        }
+        if root.can-rename-session && AccountPages.rename-session == i: VerticalLayout {
+            spacing: Theme.space-3;
+            TextField {
+                width: 360px;
+                text <=> root.rename-value;
+                placeholder: "Session name";
+                autofocus: true;
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: Theme.space-3;
+                Button {
+                    text: "Cancel";
+                    clicked => { AccountPages.rename-session = -1; }
+                }
+                Button {
+                    text: "Save";
+                    enabled: root.rename-value != "" && root.rename-value != s.device;
+                    clicked => {
+                        AccountPages.submit-session-rename(i, root.rename-value);
+                        AccountPages.rename-session = -1;
+                        root.rename-value = "";
+                    }
+                }
             }
         }
         // It may be this very session: say so, as signing it out ends Godwit's.
-        if AccountPages.confirm-session == i: VerticalLayout {
+        if root.can-log-out-session && !root.requires-mfa && AccountPages.confirm-session == i: VerticalLayout {
             spacing: Theme.space-3;
             Text {
-                text: "Sign this device out? If it's this one, Godwit's Discord sign-in ends too and you'll need to scan a new QR code.";
+                text: "Sign this device out? If it's this one, Godwit's sign-in ends too.";
                 wrap: word-wrap;
                 color: Theme.on-surface-variant;
             }
@@ -106,6 +211,47 @@ export component SessionsPage inherits VerticalLayout {
                     clicked => {
                         AccountPages.confirm-session = -1;
                         AccountPages.log-out-session(i);
+                    }
+                }
+            }
+        }
+        if root.can-log-out-session && root.requires-mfa && AccountPages.confirm-session == i: VerticalLayout {
+            spacing: Theme.space-3;
+            Text {
+                text: "Confirm your identity to sign this session out. Stoat requires a password, authenticator code, or recovery code.";
+                wrap: word-wrap;
+                color: Theme.on-surface-variant;
+            }
+            Select {
+                width: 300px;
+                model: root.proof-methods;
+                current-index <=> root.proof-method-index;
+            }
+            TextField {
+                width: 360px;
+                text <=> root.proof-value;
+                placeholder: "Password or code";
+                password: true;
+                autofocus: true;
+            }
+            HorizontalLayout {
+                alignment: start;
+                spacing: Theme.space-3;
+                Button {
+                    text: "Cancel";
+                    clicked => {
+                        AccountPages.confirm-session = -1;
+                        root.proof-value = "";
+                    }
+                }
+                Button {
+                    text: "Sign out";
+                    danger: true;
+                    enabled: root.proof-value != "";
+                    clicked => {
+                        AccountPages.log-out-session-with-proof(i, root.proof-method-index, root.proof-value);
+                        root.proof-value = "";
+                        AccountPages.confirm-session = -1;
                     }
                 }
             }

@@ -15,6 +15,14 @@ pub enum Command {
     /// The account's signed-in devices (Settings → Sessions), and signing one out.
     LoadSessions,
     LogOutSession(Arc<str>),
+    LogOutSessionWithProof {
+        target: crate::privacy::SessionTarget,
+        proof: crate::privacy::SessionProof,
+    },
+    RenameSession {
+        session: Arc<str>,
+        name: Arc<str>,
+    },
     /// Auto-delete's page for this account (networks that have it).
     AutoDelete(crate::autodelete::AutoDeleteCommand),
     StartScreenShare {
@@ -172,6 +180,12 @@ pub enum Command {
         message: MessageId,
         emoji: Arc<str>,
         add: bool,
+    },
+    /// Remove one emoji's reactions (Some) or all reactions (None) as a moderator.
+    RemoveReactions {
+        room: RoomId,
+        message: MessageId,
+        emoji: Option<Arc<str>>,
     },
     /// We're typing in `room` (sent as the draft changes; networks throttle it).
     Typing {

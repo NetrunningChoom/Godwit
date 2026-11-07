@@ -23,6 +23,14 @@ impl Application {
                 account,
                 command: Command::LogOutSession(session),
             }],
+            Action::LogOutSessionWithProof { account, target, proof } => vec![Effect::Backend {
+                account,
+                command: Command::LogOutSessionWithProof { target, proof },
+            }],
+            Action::RenameSession { account, session, name } => vec![Effect::Backend {
+                account,
+                command: Command::RenameSession { session, name },
+            }],
             Action::AutoDelete(account, command) => vec![Effect::Backend {
                 account,
                 command: Command::AutoDelete(command),
@@ -529,6 +537,7 @@ impl Application {
             }
             Action::MarkUnread(message) => self.dispatch_mark_unread(message),
             Action::ToggleReaction { message, emoji } => self.dispatch_toggle_reaction(message, emoji),
+            Action::RemoveReactions { message, emoji } => self.dispatch_remove_reactions(message, emoji),
         }
     }
 }

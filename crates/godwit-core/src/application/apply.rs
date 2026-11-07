@@ -37,6 +37,18 @@ impl Application {
                 self.state.sessions.insert(account, view);
                 Vec::new()
             }
+            Event::SessionActionPending { account } => {
+                let view = self.state.sessions.entry(account).or_default();
+                view.loading = true;
+                view.error = None;
+                Vec::new()
+            }
+            Event::SessionActionFailed { account, error } => {
+                let view = self.state.sessions.entry(account).or_default();
+                view.loading = false;
+                view.error = Some(error);
+                Vec::new()
+            }
             Event::AutoDelete { account, view } => {
                 self.state.autodelete.insert(account, view);
                 Vec::new()

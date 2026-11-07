@@ -6,6 +6,24 @@
 
 use std::sync::Arc;
 
+/// Proof requested by a network before it revokes a signed-in session. The
+/// three forms match Stoat OpenAPI's `MFAResponse` schema.
+/// Values are redacted in debug output and are never kept in application state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SessionProof {
+    Password(crate::application::Secret),
+    Authenticator(crate::application::Secret),
+    Recovery(crate::application::Secret),
+}
+
+/// Which sessions a user asked to revoke.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SessionTarget {
+    One(Arc<str>),
+    /// Every session except the current device.
+    Others,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivacyItem {
     /// The network's own name for it (what `SetPrivacy` names).
@@ -31,6 +49,8 @@ pub struct Session {
     pub device: Arc<str>,
     /// Where it was last used from, roughly, if the network says.
     pub location: Arc<str>,
+    /// When it was created (ms since the epoch), if known.
+    pub created_ms: Option<i64>,
     /// When it was last used (ms since the epoch), if known.
     pub last_used_ms: Option<i64>,
 }

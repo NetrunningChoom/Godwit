@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { AutoDeletePage, AdState } from "autodelete.slint";
-import { PrivacyPage, SessionsPage, DataPrivacyPage } from "account-pages.slint";
+import { PrivacyPage, SessionsPage, DataPrivacyPage, AccountPages } from "account-pages.slint";
 import { ProfileSettings } from "profile-settings.slint";
 import { BrandBanner } from "brand-banner.slint";
 import { ScrollView } from "std-widgets.slint";
@@ -45,6 +45,9 @@ export component Settings inherits Rectangle {
     callback open-autodelete();
     // A Discord account: its Privacy and Sessions tabs.
     in property <bool> account-discord;
+    in property <bool> account-sessions;
+    in property <bool> account-rename-sessions;
+    in property <bool> account-log-out-others;
     in property <bool> account-data;
     in property <string> data-policy-url;
     in property <string> data-policy-label;
@@ -245,7 +248,7 @@ export component Settings inherits Rectangle {
                         }
                     }
                 }
-                if root.section == 10 && (root.account-profile || root.account-autodelete || root.account-discord || root.account-data): HorizontalLayout {
+                if root.section == 10 && (root.account-profile || root.account-autodelete || root.account-discord || root.account-sessions || root.account-data): HorizontalLayout {
                     alignment: start;
                     spacing: Theme.space-2;
                     if root.account-profile: Button { text: "Profile"; kind: root.account-tab == 0 ? "tonal" : "text"; clicked => { root.account-tab = 0; } }
@@ -263,7 +266,7 @@ export component Settings inherits Rectangle {
                         kind: root.account-tab == 5 ? "tonal" : "text";
                         clicked => { root.account-tab = 5; }
                     }
-                    if root.account-discord: Button {
+                    if root.account-discord || root.account-sessions: Button {
                         text: "Sessions";
                         kind: root.account-tab == 4 ? "tonal" : "text";
                         clicked => {
@@ -283,7 +286,13 @@ export component Settings inherits Rectangle {
                 }
                 if root.section == 10 && root.account-autodelete && root.account-tab == 2: AutoDeletePage { }
                 if root.section == 10 && root.account-discord && root.account-tab == 3: PrivacyPage { }
-                if root.section == 10 && root.account-discord && root.account-tab == 4: SessionsPage { }
+                if root.section == 10 && (root.account-discord || root.account-sessions) && root.account-tab == 4: SessionsPage {
+                    session-network: root.accounts[root.account-index].network;
+                    can-log-out-session: true;
+                    can-log-out-others: root.account-log-out-others;
+                    can-rename-session: root.account-rename-sessions;
+                    requires-mfa: root.account-sessions;
+                }
                 if root.section == 10 && root.account-data && root.account-tab == 5: DataPrivacyPage {
                     policy-url: root.data-policy-url;
                     policy-label: root.data-policy-label;

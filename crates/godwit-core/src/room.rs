@@ -20,6 +20,9 @@ pub struct Capabilities {
     /// Delete others' messages, including system messages, as a moderator.
     #[serde(default)]
     pub delete_others: bool,
+    /// Remove one or all reactions from a message as a moderator.
+    #[serde(default)]
+    pub moderate_reactions: bool,
     pub react: bool,
     pub reply: bool,
     pub attachments: bool,
@@ -68,6 +71,7 @@ impl Capabilities {
             edit: true,
             delete: true,
             delete_others: false,
+            moderate_reactions: false,
             react: true,
             reply: true,
             attachments: true,

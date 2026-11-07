@@ -407,6 +407,24 @@ impl Application {
         }]
     }
 
+    pub(super) fn dispatch_remove_reactions(&mut self, message: MessageId, emoji: Option<Arc<str>>) -> Vec<Effect> {
+        let Some(room) = self.state.selected.clone() else {
+            return Vec::new();
+        };
+        if !self.allows(&room, |c| c.moderate_reactions)
+            || !self
+                .state
+                .selected_message(&message)
+                .is_some_and(|m| !m.pending && !m.reactions.is_empty())
+        {
+            return Vec::new();
+        }
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::RemoveReactions { room, message, emoji },
+        }]
+    }
+
     pub(super) fn dispatch_add_files(&mut self, files: Vec<Outgoing>) -> Vec<Effect> {
         let Some(room) = self.state.selected.clone() else {
             return Vec::new();
