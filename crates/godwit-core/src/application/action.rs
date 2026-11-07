@@ -238,6 +238,11 @@ pub enum Action {
         room: RoomId,
         user: UserId,
     },
+    /// Make a group member the owner, when the shown profile allows it.
+    TransferGroupOwnership {
+        room: RoomId,
+        user: UserId,
+    },
     /// An invite card came on screen: fetch what it leads to (once).
     LoadInvite {
         account: AccountId,

@@ -2342,7 +2342,7 @@ fn profiles_open_load_and_ignore_stale_answers() {
         commands(&effects),
         [&Command::LoadProfile {
             user: ann.clone(),
-            room: Some(id)
+            room: Some(id.clone())
         }]
     );
     let profile = |user: &UserId| Profile {
@@ -2370,6 +2370,30 @@ fn profiles_open_load_and_ignore_stale_answers() {
     );
     app.apply(Event::Profile(profile(&ann)));
     assert!(app.state().profile.as_ref().is_some_and(|(_, p)| p.is_some()));
+    let mut owner_profile = profile(&ann);
+    owner_profile.group_moderation = Some(crate::members::GroupModeration {
+        room: id.clone(),
+        remove_member: false,
+        transfer_ownership: true,
+    });
+    app.apply(Event::Profile(owner_profile));
+    assert_eq!(
+        commands(&app.dispatch(Action::TransferGroupOwnership {
+            room: id.clone(),
+            user: ann.clone(),
+        })),
+        [&Command::TransferGroupOwnership {
+            room: id.clone(),
+            user: ann.clone(),
+        }],
+    );
+    assert!(
+        app.dispatch(Action::TransferGroupOwnership {
+            room: dm(Network::Stoat, "other", "someone").id,
+            user: ann.clone(),
+        })
+        .is_empty()
+    );
     app.dispatch(Action::CloseProfile);
     assert!(app.state().profile.is_none());
     let refresh = app.dispatch(Action::OpenProfile(ann.clone()));

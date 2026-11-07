@@ -163,6 +163,26 @@ impl Shell {
         }
     }
 
+    /// Transfer group ownership to the profile's member after confirmation.
+    pub fn transfer_group_ownership(&mut self, ui: &AppWindow) {
+        let Some((user, Some(profile))) = self.app.state().profile.clone() else {
+            return;
+        };
+        let Some(moderation) = profile.group_moderation else {
+            return;
+        };
+        if moderation.transfer_ownership {
+            self.act(
+                ui,
+                Action::TransferGroupOwnership {
+                    room: moderation.room,
+                    user,
+                },
+            );
+            self.act(ui, Action::CloseProfile);
+        }
+    }
+
     /// A server menu entry, for the selected server.
     pub fn server_menu(&mut self, ui: &AppWindow, op: godwit_core::server_settings::ServerAdmin) {
         if let Some(server) = self.app.state().selected_server.clone() {

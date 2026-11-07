@@ -173,8 +173,31 @@ impl StoatAccount {
                             || self.store.can(&channel, crate::permissions::MANAGE_CHANNEL))
                 });
                 if allowed {
-                    self.group_member_pending = Some((channel.clone(), target.clone()));
+                    self.group_member_pending = Some(GroupMemberAction::Remove {
+                        channel: channel.clone(),
+                        user: target.clone(),
+                    });
                     self.net.send(Cmd::Member(MemberCmd::RemoveRecipient { channel, user: target }));
+                }
+                Vec::new()
+            }
+            Command::TransferGroupOwnership { room, user } => {
+                let channel = room.raw.to_string();
+                let target = user.raw.to_string();
+                let allowed = self.profile_for.as_ref().is_some_and(|(shown, _, group)| {
+                    shown == &target && group.as_deref() == Some(channel.as_str())
+                }) && self.store.channels.get(&channel).is_some_and(|c| {
+                    c.channel_type == "Group"
+                        && c.owner.as_deref() == self.store.me.as_deref()
+                        && self.store.me.as_deref() != Some(target.as_str())
+                        && c.recipients.iter().any(|u| u == &target)
+                });
+                if allowed {
+                    self.group_member_pending = Some(GroupMemberAction::Transfer {
+                        channel: channel.clone(),
+                        user: target.clone(),
+                    });
+                    self.net.send(Cmd::Member(MemberCmd::TransferGroup { channel, user: target }));
                 }
                 Vec::new()
             }

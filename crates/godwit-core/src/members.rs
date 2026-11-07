@@ -99,6 +99,7 @@ pub struct Profile {
 pub struct GroupModeration {
     pub room: crate::ids::RoomId,
     pub remove_member: bool,
+    pub transfer_ownership: bool,
 }
 
 /// What a profile card may do to its member, and where.

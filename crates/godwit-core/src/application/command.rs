@@ -80,6 +80,11 @@ pub enum Command {
         room: RoomId,
         user: UserId,
     },
+    /// Transfer ownership of a group conversation.
+    TransferGroupOwnership {
+        room: RoomId,
+        user: UserId,
+    },
     /// The GIF categories; answered with [`Event::GifCategories`].
     LoadGifCategories,
     /// GIFs for `query` ([`crate::gifs::TRENDING`]: trending), from

@@ -431,6 +431,24 @@ impl Application {
                     command: Command::RemoveGroupMember { room, user },
                 }]
             }
+            Action::TransferGroupOwnership { room, user } => {
+                let permitted = room.account == user.account
+                    && self.state.profile.as_ref().is_some_and(|(shown, profile)| {
+                        shown == &user
+                            && profile.as_ref().is_some_and(|p| {
+                                p.group_moderation
+                                    .as_ref()
+                                    .is_some_and(|m| m.transfer_ownership && m.room == room)
+                            })
+                    });
+                if !permitted {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::TransferGroupOwnership { room, user },
+                }]
+            }
             Action::LoadInvite { account, code } => self.dispatch_load_invite(account, code),
             Action::JoinInvite { account, code } => {
                 let key = (account.clone(), code.clone());

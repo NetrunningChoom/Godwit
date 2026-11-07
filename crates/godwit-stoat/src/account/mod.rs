@@ -122,13 +122,18 @@ pub struct StoatAccount {
     channel_for: Option<String>,
     /// The open profile card: the user and the server it's seen from.
     profile_for: Option<(String, Option<String>, Option<String>)>,
-    group_member_pending: Option<(String, String)>,
+    group_member_pending: Option<GroupMemberAction>,
     /// Custom emoji as last sent to the core.
     /// Our presence as last sent to the core.
     own_presence: Option<Presence>,
     /// Our status text as last sent to the core.
     own_status: Option<Arc<str>>,
     emoji_sent: Option<Vec<EmojiGroup>>,
+}
+
+enum GroupMemberAction {
+    Remove { channel: String, user: String },
+    Transfer { channel: String, user: String },
 }
 
 /// Servers over this many members only fetch who's online, as officially.

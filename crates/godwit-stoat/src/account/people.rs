@@ -88,9 +88,14 @@ impl StoatAccount {
                     && c.recipients.iter().any(|u| u == user)
                     && (c.owner.as_deref() == Some(me) || self.store.can(channel, crate::permissions::MANAGE_CHANNEL));
                 let account = self.account.as_ref()?.clone();
+                // The official UserContextMenu offers transfer only to the
+                // current owner for another group recipient.
                 remove_member.then(|| godwit_core::members::GroupModeration {
                     room: RoomId::new(account, channel.as_str()),
                     remove_member,
+                    transfer_ownership: c.owner.as_deref() == Some(me)
+                        && user != me
+                        && c.recipients.iter().any(|u| u == user),
                 })
             }),
         })

@@ -309,13 +309,22 @@ impl StoatAccount {
                 }
             }
             Ev::MemberSaved(result) => {
-                let Some((channel, user)) = self.group_member_pending.take() else {
+                let Some(action) = self.group_member_pending.take() else {
                     return;
                 };
                 match result {
                     Ok(()) => {
-                        if let Some(c) = self.store.channels.get_mut(&channel) {
-                            c.recipients.retain(|u| u != &user);
+                        match action {
+                            GroupMemberAction::Remove { channel, user } => {
+                                if let Some(c) = self.store.channels.get_mut(&channel) {
+                                    c.recipients.retain(|u| u != &user);
+                                }
+                            }
+                            GroupMemberAction::Transfer { channel, user } => {
+                                if let Some(c) = self.store.channels.get_mut(&channel) {
+                                    c.owner = Some(user);
+                                }
+                            }
                         }
                         self.sync_rooms(out);
                         self.sync_members(out);

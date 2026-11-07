@@ -148,12 +148,15 @@ export component AppWindow inherits Window {
     in property <bool> card-can-kick;
     in property <bool> card-can-ban;
     in property <bool> card-can-remove-group-member;
+    in property <bool> card-can-transfer-group-ownership;
     // Kept on the window and exposed for generated off-screen scenes.
     in-out property <int> confirm-moderate: 0;
     in-out property <string> ban-reason;
     callback moderate-member(bool, string);
     in-out property <bool> confirm-remove-group-member: false;
     callback remove-group-member();
+    in-out property <bool> confirm-transfer-group-ownership: false;
+    callback transfer-group-ownership();
     // A new Discord account's one-time privacy question on first run: turn
     // off its data use and activity sharing, or keep them.
     in property <bool> discord-privacy-open;
@@ -1153,9 +1156,11 @@ export component AppWindow inherits Window {
         can-kick: root.card-can-kick;
         can-ban: root.card-can-ban;
         can-remove-group-member: root.card-can-remove-group-member;
+        can-transfer-group-ownership: root.card-can-transfer-group-ownership;
         kick => { root.confirm-moderate = 1; }
         ban => { root.confirm-moderate = 2; root.ban-reason = ""; }
         remove-group-member => { root.confirm-remove-group-member = true; }
+        transfer-group-ownership => { root.confirm-transfer-group-ownership = true; }
         close => { root.close-profile(); }
         copy(t) => { root.copy-string(t); }
         message => { root.message-profile(); }
@@ -1502,6 +1507,8 @@ export component AppWindow inherits Window {
         moderate-member(ban, reason) => { root.moderate-member(ban, reason); }
         confirm-remove-group-member <=> root.confirm-remove-group-member;
         remove-group-member => { root.remove-group-member(); }
+        confirm-transfer-group-ownership <=> root.confirm-transfer-group-ownership;
+        transfer-group-ownership => { root.transfer-group-ownership(); }
         confirm-delete <=> root.confirm-delete;
         delete(i) => { root.delete(i); }
     }
