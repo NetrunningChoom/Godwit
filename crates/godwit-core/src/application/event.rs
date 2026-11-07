@@ -265,6 +265,11 @@ pub enum Event {
     CallConnected {
         room: RoomId,
     },
+    /// Latest voice transport round trip; `None` when the network can't measure it.
+    CallLatency {
+        room: RoomId,
+        milliseconds: Option<u16>,
+    },
     CallVideos {
         room: RoomId,
         videos: Vec<crate::call::CallVideo>,

@@ -176,20 +176,28 @@ fn offer_updates(ui: &AppWindow) {
             return; // Already downloading.
         }
         ui.set_update_status("Downloading…".into());
+        ui.set_update_progress(0.0);
         let weak = weak.clone();
-        godwit::update::install(move |result| {
-            let _ = weak.upgrade_in_event_loop(move |ui| {
-                match result.and_then(|()| godwit::update::restart().map_err(|e| format!("restarting: {e}"))) {
-                    Ok(()) => {
-                        let _ = slint::quit_event_loop();
+        let progress_ui = weak.clone();
+        godwit::update::install(
+            move |progress| {
+                let _ = progress_ui.upgrade_in_event_loop(move |ui| ui.set_update_progress(progress));
+            },
+            move |result| {
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    match result.and_then(|()| godwit::update::restart().map_err(|e| format!("restarting: {e}"))) {
+                        Ok(()) => {
+                            let _ = slint::quit_event_loop();
+                        }
+                        Err(e) => {
+                            eprintln!("update: {e}");
+                            ui.set_update_progress(-1.0);
+                            ui.set_update_status(format!("Couldn't update: {e}").into());
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("update: {e}");
-                        ui.set_update_status(format!("Couldn't update: {e}").into());
-                    }
-                }
-            });
-        });
+                });
+            },
+        );
     });
 }
 
@@ -611,7 +619,11 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_edit_last() => |sh, ui| sh.act(ui, Action::EditLast));
     callback!(ui.on_people_search(q) => |sh, ui| sh.people_search(ui, q.to_string(), None));
     callback!(ui.on_people_filter(n) => |sh, ui| {
-        sh.people_search(ui, String::new(), Some(n.to_string()))
+        if n == "favourites-only" {
+            sh.toggle_people_favourites(ui);
+        } else {
+            sh.people_search(ui, String::new(), Some(n.to_string()));
+        }
     });
     // Files dropped on the window attach to the open chat. winit delivers
     // drops on Windows, macOS and X11; on Wayland (winit 0.30) it doesn't yet.
@@ -645,6 +657,14 @@ fn connect_callbacks(ui: &AppWindow) {
                         delta_x,
                         delta_y,
                     });
+                    return EventResult::PreventDefault;
+                }
+                winit::event::WindowEvent::MouseInput {
+                    state: winit::event::ElementState::Released,
+                    button: winit::event::MouseButton::Back,
+                    ..
+                } => {
+                    with_shell(&w, |sh, ui| sh.navigate_back(ui));
                     return EventResult::PreventDefault;
                 }
                 _ => {}
@@ -816,6 +836,7 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_show_people() => |sh, ui| sh.act(ui, Action::ShowPeople));
+    callback!(ui.on_favourite_person(row) => |sh, ui| sh.toggle_person_favourite(ui, row));
     callback!(ui.on_show_threads() => |sh, ui| sh.act(ui, Action::ShowThreads));
     callback!(ui.on_threads_load_more() => |sh, ui| sh.act(ui, Action::LoadMoreThreads));
     callback!(ui.on_overview_thread_open(row) => |sh, ui| {

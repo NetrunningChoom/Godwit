@@ -45,6 +45,7 @@ impl StoatAccount {
                 streams.push(godwit_core::call::CallStream {
                     user: UserId::new(account.clone(), v.identity.as_str()),
                     watching: call.watching.contains(&v.identity),
+                    viewers: None,
                     note: None,
                 });
             }
@@ -71,6 +72,10 @@ impl StoatAccount {
         match e {
             VoiceEvent::Connected { .. } => {
                 out.push(Event::CallConnected { room });
+                return;
+            }
+            VoiceEvent::Latency(milliseconds) => {
+                out.push(Event::CallLatency { room, milliseconds });
                 return;
             }
             VoiceEvent::Disconnected { reason } => {

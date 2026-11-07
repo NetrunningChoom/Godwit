@@ -180,6 +180,19 @@ pub fn identity_label(state: &AppState, user: &UserId) -> String {
     label
 }
 
+/// The DM account picker names both the platform identity and the person on it.
+pub fn dm_account_label(state: &AppState, user: &UserId) -> String {
+    let name = identity_name(state, user).unwrap_or_else(|| "Unknown person".to_owned());
+    let mut label = format!("{}: {name}", user.network().name());
+    let own_accounts = state.accounts.iter().filter(|a| a.id.network == user.network());
+    if own_accounts.count() > 1
+        && let Some(account) = state.accounts.iter().find(|a| a.id == user.account)
+    {
+        label.push_str(&format!(" (via {})", account.display_name));
+    }
+    label
+}
+
 /// The friends list: one row per person (identities merged under People
 /// are one row), online first, each group by name, saying which networks
 /// they're on; and who each row opens: the identity Godwit would talk to
@@ -274,7 +287,11 @@ pub fn requests(state: &AppState, images: &mut Images) -> (Vec<RequestItem>, Vec
 /// Each People row's contact and its accounts, in chip order.
 pub type PeopleRows = Vec<(ContactId, Vec<UserId>)>;
 
-pub fn people(state: &AppState, images: &mut Images) -> (Vec<ContactItem>, PeopleRows, Vec<MergeItem>) {
+pub fn people(
+    state: &AppState,
+    images: &mut Images,
+    favourites: &[String],
+) -> (Vec<ContactItem>, PeopleRows, Vec<MergeItem>) {
     // Only identities on accounts signed in now: a signed-out account's
     // contacts (and merges) wait, hidden, until it signs in again.
     let signed_in = |u: &UserId| state.accounts.iter().any(|a| a.id == u.account);
@@ -348,6 +365,7 @@ pub fn people(state: &AppState, images: &mut Images) -> (Vec<ContactItem>, Peopl
                 .unwrap_or_default()
                 .into(),
             no_nudges: c.no_nudges,
+            favourite: c.identities.iter().any(|u| favourites.contains(&u.to_string())),
             nickname: c.nickname.clone().unwrap_or_default().into(),
         });
         who.push((c.id, c.identities.clone()));

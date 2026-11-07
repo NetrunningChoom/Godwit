@@ -490,6 +490,10 @@ impl DiscordAccount {
                 self.send_members(out);
                 self.send_streams(out);
             }
+            CallEvent::Latency(milliseconds) => out.push(Event::CallLatency {
+                room: call.room.clone(),
+                milliseconds: Some(milliseconds),
+            }),
             CallEvent::Speaking { me, users } => {
                 call.speaking = (me, users);
                 self.send_members(out);
@@ -811,6 +815,15 @@ impl DiscordAccount {
             .map(|s| CallStream {
                 user: UserId::new(account.clone(), s.user.as_str()),
                 watching: call.watching.values().any(|w| w.user == s.user),
+                // Discord voice states include the other sessions watching a Go Live stream.
+                viewers: self
+                    .voice
+                    .in_channel(&call.channel)
+                    .iter()
+                    .filter(|watcher| watcher.user != s.user && watcher.self_video)
+                    .count()
+                    .try_into()
+                    .ok(),
                 note: call.stream_notes.get(&s.user).cloned(),
             })
             .collect()

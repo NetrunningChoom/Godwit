@@ -4,28 +4,11 @@
 import { ListView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { ContactItem, MergeItem } from "types.slint";
-import { Avatar, Button, TextField, EmojiText, PageHeader, EmptyState, ChoiceChip } from "widgets.slint";
+import { Avatar, Button, TextField, EmojiText, PageHeader, EmptyState, ChoiceChip, NetworkSelect, MenuPanel, MenuRow, MenuDivider } from "widgets.slint";
 
 // One account as a chip: the network's name; clicking talks to them there,
 // the ✕ says "this account isn't them".
 export component Chip inherits ChoiceChip { }
-
-// A small text button for the suggestion line.
-component SmallLink inherits Rectangle {
-    in property <string> text;
-    callback clicked();
-    width: label.preferred-width + 16px;
-    height: 22px;
-    border-radius: self.height / 2;
-    background: touch.has-hover ? Theme.surface-highest : transparent;
-    label := Text {
-        text: root.text;
-        font-size: Theme.text-small;
-        font-weight: 600;
-        color: Theme.primary;
-    }
-    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
-}
 
 // Everyone as one person across networks. Godwit never links accounts on
 // its own: the user picks "Link" on one person, then who they also are.
@@ -41,6 +24,8 @@ export component People inherits Rectangle {
     callback unlink(int, int);
     callback choose(int, int);
     callback message(int);
+    callback favourite(int);
+    in-out property <bool> favourites-only: false;
     // Back to their own name (drops our nickname for them).
     callback reset-nickname(int);
     // Search by name and a network filter ("" for all), applied by the app.
@@ -50,6 +35,9 @@ export component People inherits Rectangle {
     in-out property <string> query;
     callback search(string);
     callback filtered(string);
+    property <int> menu-person: -1;
+    property <length> menu-x;
+    property <length> menu-y;
 
     VerticalLayout {
         PageHeader {
@@ -69,6 +57,11 @@ export component People inherits Rectangle {
             padding-right: Theme.gap-lg;
             padding-bottom: Theme.gap-md;
             spacing: Theme.gap-sm;
+            Button {
+                text: root.favourites-only ? "★ Favourites" : "☆ Favourites";
+                kind: root.favourites-only ? "tonal" : "text";
+                clicked => { root.filtered("favourites-only"); }
+            }
             TextField {
                 horizontal-stretch: 1;
                 text <=> root.query;
@@ -81,21 +74,14 @@ export component People inherits Rectangle {
                 kind: "text";
                 clicked => { root.query = ""; root.search(""); people-list.content-y = 0; }
             }
-            if root.networks.length > 1: Chip {
-                y: (parent.height - self.height) / 2;
-                label: "All";
-                chosen: root.filter == "";
-                choose => { root.filter = ""; root.filtered(""); people-list.content-y = 0; }
-            }
-            for n in (root.networks.length > 1 ? root.networks : []): Chip {
-                y: (parent.height - self.height) / 2;
-                label: n;
-                chosen: root.filter == n;
-                choose => { root.filter = n; root.filtered(n); people-list.content-y = 0; }
+            if root.networks.length > 0: NetworkSelect {
+                networks: root.networks;
+                selected-network: root.filter;
+                selected(n) => { root.filter = n; root.filtered(n); people-list.content-y = 0; }
             }
         }
         if root.people.length == 0: EmptyState {
-            text: root.filter != "" ? "Nobody here matches." : "People you add as friends show up here.";
+            text: root.filter != "" ? "Nobody here matches." : "Your people will appear here. Add a friend to get started.";
         }
         // Suggested merges, above everyone: names nearly the same on
         // different networks. Godwit never merges on its own.
@@ -153,6 +139,14 @@ export component People inherits Rectangle {
                 // While linking, a click anywhere on someone picks them.
                 touch := TouchArea {
                     mouse-cursor: parent.pickable ? pointer : default;
+                    pointer-event(e) => {
+                        if e.button == PointerEventButton.right && e.kind == PointerEventKind.down && root.linking < 0 {
+                            root.menu-person = i;
+                            root.menu-x = self.absolute-position.x + self.mouse-x - root.absolute-position.x;
+                            root.menu-y = self.absolute-position.y + self.mouse-y - root.absolute-position.y;
+                            person-menu.show();
+                        }
+                    }
                     clicked => {
                         if parent.pickable {
                             root.link(root.linking, i);
@@ -202,23 +196,8 @@ export component People inherits Rectangle {
                                 overflow: elide;
                                 color: Theme.on-surface-variant;
                             }
-                            if person.nickname != "" && root.linking < 0: SmallLink {
-                                text: "Reset nickname";
-                                clicked => { root.reset-nickname(i); }
-                            }
-                            // Undoes "Don't suggest again" from the chat's bar.
-                            if person.no-nudges && person.identities.length > 1 && root.linking < 0: SmallLink {
-                                text: "Suggest switching again";
-                                clicked => { root.nudges(i, true); }
-                            }
                             Rectangle { horizontal-stretch: 1; }
                         }
-                    }
-                    if root.linking < 0: Button {
-                        y: (parent.height - self.height) / 2;
-                        text: "Link";
-                        kind: "text";
-                        clicked => { root.linking = i; }
                     }
                     if root.linking < 0: Button {
                         y: (parent.height - self.height) / 2;
@@ -228,6 +207,37 @@ export component People inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+    person-menu := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        MenuPanel {
+            if root.menu-person >= 0 && root.menu-person < root.people.length: MenuRow {
+                glyph: Icons.link;
+                label: "Link another account";
+                clicked => { root.linking = root.menu-person; }
+            }
+            if root.menu-person >= 0 && root.menu-person < root.people.length: MenuRow {
+                glyph: Icons.star-icon;
+                label: root.people[root.menu-person].favourite ? "Remove from favourites" : "Add to favourites";
+                clicked => { root.favourite(root.menu-person); }
+            }
+            if root.menu-person >= 0 && root.menu-person < root.people.length
+                && root.people[root.menu-person].nickname != "": MenuRow {
+                glyph: Icons.edit;
+                label: "Reset nickname";
+                clicked => { root.reset-nickname(root.menu-person); }
+            }
+            if root.menu-person >= 0 && root.menu-person < root.people.length
+                && root.people[root.menu-person].no-nudges
+                && root.people[root.menu-person].identities.length > 1: MenuRow {
+                glyph: Icons.link;
+                label: "Suggest switching again";
+                clicked => { root.nudges(root.menu-person, true); }
+            }
+            MenuDivider { }
+            MenuRow { glyph: Icons.chat; label: "Message"; clicked => { root.message(root.menu-person); } }
         }
     }
 }

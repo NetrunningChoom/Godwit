@@ -302,6 +302,42 @@ export component IconButton inherits Rectangle {
     }
 }
 
+// Image-based call controls, using the same filled icons as YapFast.
+export component ImageIconButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> tooltip;
+    in property <color> tint: Theme.on-surface;
+    in property <color> fill: Theme.surface-high;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: 48px;
+    height: 48px;
+    border-radius: self.width / 2;
+    background: !root.enabled ? Theme.surface-high
+        : touch.has-hover ? Theme.surface-highest : root.fill;
+    Image {
+        width: 22px;
+        height: 22px;
+        source: root.icon;
+        image-fit: contain;
+        colorize: root.enabled ? root.tint : Theme.outline;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+    if root.tooltip != "": Tooltip {
+        Rectangle {
+            width: tip-label.preferred-width + 16px;
+            height: tip-label.preferred-height + 8px;
+            border-radius: Theme.radius-xs;
+            background: Theme.surface-highest;
+            tip-label := Text { text: root.tooltip; color: Theme.on-surface; font-size: Theme.text-small; }
+        }
+    }
+}
+
 // Buttons in Material 3's shapes, as Godwit and the official client:
 // 40 px tall, 20 px corners. "filled" is the main action, "tonal" a
 // secondary one, "text" a dialog action; `danger` turns the text red.
@@ -388,6 +424,8 @@ export component ResizeHandle inherits Rectangle {
     // narrows it (-1).
     in property <length> value;
     in property <float> direction: 1;
+    // Another resize grip can share this edge and drive its hover highlight.
+    in property <bool> linked-hover: false;
     // The width the pointer asks for now (unclamped).
     callback dragged(length);
     callback released();
@@ -395,7 +433,7 @@ export component ResizeHandle inherits Rectangle {
     property <length> start-value;
     property <length> start-x;
     width: 6px;
-    background: touch.has-hover || touch.pressed ? Theme.outline-variant : transparent;
+    background: touch.has-hover || touch.pressed || root.linked-hover ? Theme.outline-variant : transparent;
     touch := TouchArea {
         mouse-cursor: col-resize;
         moved => {
@@ -519,20 +557,83 @@ export component Select inherits Rectangle {
                 padding-bottom: Theme.space-2;
                 for item[i] in root.model: Rectangle {
                     height: 36px;
-                    background: option.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
+                    background: all-option.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
                     Text {
                         x: 15px;
                         text: item;
                         color: Theme.on-surface;
                         font-weight: i == root.current-index ? 600 : 400;
                     }
-                    option := TouchArea {
+                    all-option := TouchArea {
                         enabled: root.enabled;
                         clicked => {
                             root.current-index = i;
                             root.selected(i);
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// Network filter with a string value, including a stable "All networks" option.
+export component NetworkSelect inherits Rectangle {
+    in property <[string]> networks;
+    in property <string> selected-network;
+    callback selected(string);
+    height: 40px;
+    width: 176px;
+    border-radius: Theme.radius-md;
+    background: field.has-hover ? Theme.surface-highest : Theme.surface-high;
+    HorizontalLayout {
+        padding-left: Theme.space-4;
+        padding-right: Theme.space-3;
+        Text {
+            text: root.selected-network == "" ? "All networks" : root.selected-network;
+            color: Theme.on-surface;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Icon { text: Icons.expand; color: Theme.on-surface-variant; width: 24px; }
+    }
+    field := TouchArea { mouse-cursor: pointer; clicked => { menu.show(); } }
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: root.width;
+        Rectangle {
+            border-radius: Theme.radius-xs;
+            background: Theme.surface;
+            drop-shadow-blur: 3px;
+            drop-shadow-color: Theme.shadow;
+            VerticalLayout {
+                padding-top: Theme.space-2;
+                padding-bottom: Theme.space-2;
+                Rectangle {
+                    height: 36px;
+                    background: all-option.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
+                    Text {
+                        x: 15px;
+                        text: "All networks";
+                        color: Theme.on-surface;
+                        font-weight: root.selected-network == "" ? 600 : 400;
+                    }
+                    all-option := TouchArea {
+                        clicked => { root.selected(""); }
+                    }
+                }
+                for item in root.networks: Rectangle {
+                    height: 36px;
+                    background: network-option.has-hover ? Theme.on-surface.with-alpha(0.08) : transparent;
+                    Text {
+                        x: 15px;
+                        text: item;
+                        color: Theme.on-surface;
+                        font-weight: item == root.selected-network ? 600 : 400;
+                    }
+                    network-option := TouchArea { clicked => { root.selected(item); } }
                 }
             }
         }
@@ -589,12 +690,24 @@ export component ConfirmDialog inherits Dialog {
     in property <bool> dismiss-confirms;
     // Only the confirm button (a notice).
     in property <bool> single;
+    in property <float> progress: -1;
     callback cancelled();
     callback confirmed();
     dismissed => { if root.dismiss-confirms { root.confirmed(); } else { root.cancelled(); } }
     Text { text: root.message; wrap: word-wrap; color: Theme.on-surface-variant; }
     if root.detail != "": Text { text: root.detail; wrap: word-wrap; color: Theme.on-surface; }
     if root.note != "": Text { text: root.note; font-size: Theme.text-small; wrap: word-wrap; color: Theme.outline; }
+    if root.progress >= 0: Rectangle {
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.surface-low;
+        Rectangle {
+            width: parent.width * clamp(root.progress, 0, 1);
+            height: parent.height;
+            border-radius: 2px;
+            background: Theme.primary;
+        }
+    }
     HorizontalLayout {
         alignment: end;
         spacing: Theme.gap-sm;

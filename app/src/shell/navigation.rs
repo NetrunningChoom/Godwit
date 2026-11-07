@@ -5,6 +5,30 @@
 use super::*;
 
 impl Shell {
+    pub fn toggle_people_favourites(&mut self, ui: &AppWindow) {
+        self.presenter.people_favourites_filter = !self.presenter.people_favourites_filter;
+        self.refresh(ui);
+    }
+
+    /// Stars or unstars a person in the local People view.
+    pub fn toggle_person_favourite(&mut self, ui: &AppWindow, row: i32) {
+        let Some((_, identities)) = self.person_at(row).cloned() else {
+            return;
+        };
+        let keys: Vec<String> = identities.iter().map(ToString::to_string).collect();
+        let unstar = keys.iter().any(|key| self.settings.person_favourites.contains(key));
+        if unstar {
+            self.settings.person_favourites.retain(|key| !keys.contains(key));
+        } else {
+            self.settings.person_favourites.extend(keys);
+        }
+        self.settings.person_favourites.sort();
+        self.settings.person_favourites.dedup();
+        self.presenter.muzzle = self.settings.clone();
+        self.save_settings();
+        self.refresh(ui);
+    }
+
     /// Fetches the invite cards on screen, once each (as the official
     /// element's query, which never refetches).
     pub(super) fn load_invites(&mut self, ui: &AppWindow) {

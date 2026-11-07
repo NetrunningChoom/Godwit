@@ -2,13 +2,13 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { AutoDeletePage, AdState } from "autodelete.slint";
-import { PrivacyPage, SessionsPage } from "account-pages.slint";
+import { PrivacyPage, SessionsPage, DataPrivacyPage } from "account-pages.slint";
 import { ProfileSettings } from "profile-settings.slint";
 import { BrandBanner } from "brand-banner.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { AccountItem, ProblemItem } from "types.slint";
-import { Avatar, IconButton, Button, Toggle, Select, TextField, SectionHeading as Heading, SettingsRow as Row } from "widgets.slint";
+import { Avatar, IconButton, Button, Toggle, Select, TextField, ConfirmDialog, SectionHeading as Heading, SettingsRow as Row } from "widgets.slint";
 
 export component Section inherits Rectangle {
     in property <string> label;
@@ -31,6 +31,7 @@ export component Section inherits Rectangle {
 
 // Godwit's settings: accounts, notifications, voice, appearance, about.
 export component Settings inherits Rectangle {
+    property <bool> confirm-remove-app;
     // 1 Notifications, 2 Voice, 3 Appearance, 4 About, 5 Problems,
     // 7 Message cache, 10 an account's page (`account-index`).
     in-out property <int> section: 1;
@@ -44,6 +45,10 @@ export component Settings inherits Rectangle {
     callback open-autodelete();
     // A Discord account: its Privacy and Sessions tabs.
     in property <bool> account-discord;
+    in property <bool> account-data;
+    in property <string> data-policy-url;
+    in property <string> data-policy-label;
+    callback open-policy(string);
     callback open-privacy();
     callback open-sessions();
     callback open-account(int);
@@ -240,7 +245,7 @@ export component Settings inherits Rectangle {
                         }
                     }
                 }
-                if root.section == 10 && (root.account-profile || root.account-autodelete || root.account-discord): HorizontalLayout {
+                if root.section == 10 && (root.account-profile || root.account-autodelete || root.account-discord || root.account-data): HorizontalLayout {
                     alignment: start;
                     spacing: Theme.space-2;
                     if root.account-profile: Button { text: "Profile"; kind: root.account-tab == 0 ? "tonal" : "text"; clicked => { root.account-tab = 0; } }
@@ -253,6 +258,11 @@ export component Settings inherits Rectangle {
                             root.open-privacy();
                         }
                     }
+                    if root.account-data: Button {
+                        text: "Data & privacy";
+                        kind: root.account-tab == 5 ? "tonal" : "text";
+                        clicked => { root.account-tab = 5; }
+                    }
                     if root.account-discord: Button {
                         text: "Sessions";
                         kind: root.account-tab == 4 ? "tonal" : "text";
@@ -262,7 +272,7 @@ export component Settings inherits Rectangle {
                         }
                     }
                     if root.account-autodelete: Button {
-                        text: "Chat retention";
+                        text: "Auto-delete messages";
                         kind: root.account-tab == 2 ? "tonal" : "text";
                         clicked => {
                             root.account-tab = 2;
@@ -274,6 +284,11 @@ export component Settings inherits Rectangle {
                 if root.section == 10 && root.account-autodelete && root.account-tab == 2: AutoDeletePage { }
                 if root.section == 10 && root.account-discord && root.account-tab == 3: PrivacyPage { }
                 if root.section == 10 && root.account-discord && root.account-tab == 4: SessionsPage { }
+                if root.section == 10 && root.account-data && root.account-tab == 5: DataPrivacyPage {
+                    policy-url: root.data-policy-url;
+                    policy-label: root.data-policy-label;
+                    open-policy(url) => { root.open-policy(url); }
+                }
                 if root.section == 10 && root.account-profile && root.account-tab == 0: ProfileSettings {
                     accounts: root.edit-profile-accounts;
                     account-index <=> root.edit-profile-index;
@@ -645,7 +660,7 @@ export component Settings inherits Rectangle {
                         Button {
                             text: root.app-installed ? "Remove from apps" : "Add to apps";
                             kind: "tonal";
-                            clicked => { if root.app-installed { root.uninstall-app(); } else { root.install-app(); } }
+                            clicked => { if root.app-installed { root.confirm-remove-app = true; } else { root.install-app(); } }
                         }
                         Text { text: root.install-status; color: Theme.on-surface-variant; vertical-alignment: center; wrap: word-wrap; }
                     }
@@ -658,6 +673,19 @@ export component Settings inherits Rectangle {
             }
         }
     }
+    }
+    if root.confirm-remove-app: ConfirmDialog {
+        title: "Remove Godwit from your apps?";
+        card-width: 420px;
+        message: "This removes Godwit's app shortcut and system registration. Your settings and sign-ins will stay on this device.";
+        cancel-text: "Keep installed";
+        confirm-text: "Remove";
+        confirm-kind: "filled";
+        cancelled => { root.confirm-remove-app = false; }
+        confirmed => {
+            root.confirm-remove-app = false;
+            root.uninstall-app();
+        }
     }
     IconButton {
         x: parent.width - self.width - 16px;

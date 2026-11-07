@@ -3,8 +3,57 @@
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
-import { PersonItem, RequestItem, AccountItem } from "types.slint";
-import { Avatar, Button, TextField, NetList, EmojiText, PageHeader, EmptyState } from "widgets.slint";
+import { RequestItem, AccountItem } from "types.slint";
+import { Avatar, Button, TextField, PageHeader } from "widgets.slint";
+
+component AccountSelect inherits Rectangle {
+    in property <[AccountItem]> accounts;
+    in-out property <string> key;
+    in-out property <string> label: "Choose network and account";
+    height: 48px;
+    border-radius: Theme.radius-md;
+    background: field.has-hover ? Theme.surface-highest : Theme.surface-high;
+    HorizontalLayout {
+        padding-left: Theme.space-5;
+        padding-right: Theme.space-4;
+        Text { text: root.label; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+        Icon { text: Icons.expand; color: Theme.on-surface-variant; width: 24px; }
+    }
+    field := TouchArea { mouse-cursor: pointer; clicked => { menu.show(); } }
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: root.width;
+        Rectangle {
+            border-radius: Theme.radius-xs;
+            background: Theme.surface;
+            drop-shadow-blur: 3px;
+            drop-shadow-color: Theme.shadow;
+            VerticalLayout {
+                padding-top: Theme.space-2;
+                padding-bottom: Theme.space-2;
+                for a in root.accounts: Rectangle {
+                    height: 40px;
+                    background: option.has-hover && a.can-befriend ? Theme.on-surface.with-alpha(0.08) : transparent;
+                    opacity: a.can-befriend ? 1.0 : 0.45;
+                    VerticalLayout {
+                        x: Theme.space-4;
+                        alignment: center;
+                        Text { text: a.network + " · " + a.name; color: Theme.on-surface; }
+                        if !a.can-befriend: Text { text: "Friend requests unavailable"; font-size: Theme.text-small; color: Theme.outline; }
+                    }
+                    option := TouchArea {
+                        enabled: a.can-befriend;
+                        clicked => {
+                            root.key = a.key;
+                            root.label = a.network + " · " + a.name;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 // A pending request: theirs with Accept and Decline, ours with Cancel (the
 // official Pending list).
@@ -41,62 +90,35 @@ component RequestRow inherits Rectangle {
     }
 }
 
-// Your friends, online first, each with a button to message them; adding one
-// by name, and the requests waiting for an answer.
+// Send a friend request from a chosen account and manage pending requests.
 export component Friends inherits Rectangle {
-    in property <bool> management-only;
-    // On People the page splits it: the add form at the top (`form-only`),
-    // the pending requests at the bottom (`requests-only`).
-    in property <bool> form-only;
-    in property <bool> requests-only;
     in property <[AccountItem]> accounts;
     property <string> account-key;
-    in property <[PersonItem]> people;
     in property <[RequestItem]> requests;
     // The last request sent from here: what happened ("" for nothing yet).
     in property <string> request-status;
     in property <bool> request-failed;
-    callback open-direct(int);
     callback send-request(string, string);
     callback accept-request(int);
     callback decline-request(int);
     property <string> name;
 
     VerticalLayout {
-        if !root.management-only: PageHeader {
-            label: "Friends";
+        PageHeader {
+            label: "Add a friend";
             glyph: Icons.group;
-            end-padding: 0px;
-            label-stretch: 0;
         }
         // Add friend, as officially: their username and tag.
-        if !root.requests-only: VerticalLayout {
+        VerticalLayout {
             alignment: start;
             vertical-stretch: 0;
-            padding-top: Theme.gap-md;
+            padding-top: Theme.gap-lg;
             padding-left: Theme.gap-lg;
             padding-right: Theme.gap-lg;
             padding-bottom: Theme.gap-md;
             spacing: Theme.space-between;
             Text { text: "Add a friend — choose a network and account"; color: Theme.on-surface-variant; }
-            // The accounts, scrolling sideways if they don't fit (no scrollbar).
-            accounts-strip := Flickable {
-                height: 40px;
-                content-width: max(self.width, account-row.preferred-width);
-                account-row := HorizontalLayout {
-                    height: 40px;
-                    spacing: Theme.space-compact;
-                    alignment: start;
-                    // Networks without friend requests show, disabled: their
-                    // people are who you have direct chats with.
-                    for a in root.accounts: Button {
-                        text: a.network + " · " + a.name + (a.can-befriend ? "" : " (no friend requests)");
-                        kind: root.account-key == a.key ? "filled" : "tonal";
-                        enabled: a.can-befriend;
-                        clicked => { root.account-key = a.key; }
-                    }
-                }
-            }
+            AccountSelect { accounts: root.accounts; key <=> root.account-key; }
             HorizontalLayout {
                 spacing: Theme.gap-md;
                 TextField {
@@ -121,63 +143,17 @@ export component Friends inherits Rectangle {
         }
         // Friends and pending requests share one scroll range, so a long
         // pending list cannot squeeze the friends out of the page.
-        if !root.form-only: list := ScrollView {
+        list := ScrollView {
             vertical-stretch: 1;
             VerticalLayout {
                 width: list.visible-width;
                 alignment: start;
-                if !root.management-only && root.people.length == 0: Text {
-                    text: "No friends here yet.";
+                if root.requests.length == 0: Text {
+                    text: "Friend requests will appear here.";
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     height: 56px;
                     color: Theme.outline;
-                }
-                for person[i] in root.people: Rectangle {
-                    visible: !root.management-only;
-                    height: 56px;
-                    background: touch.has-hover ? Theme.surface-low : transparent;
-                    touch := TouchArea { }
-                    HorizontalLayout {
-                        padding-left: Theme.gap-lg;
-                        padding-right: Theme.gap-lg;
-                        spacing: Theme.gap-lg;
-                        Rectangle {
-                            width: Theme.avatar;
-                            Avatar {
-                                source: person.avatar;
-                                has-image: person.has-avatar;
-                                initials: person.initials;
-                            }
-                            Rectangle {
-                                x: parent.width - 12px;
-                                y: (parent.height + Theme.avatar) / 2 - 12px;
-                                width: 12px;
-                                height: 12px;
-                                border-radius: self.width / 2;
-                                border-width: 2px;
-                                border-color: Theme.surface-lowest;
-                                background: person.online ? Theme.online : Theme.outline;
-                            }
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            EmojiText {
-                                text: person.name;
-                                runs: person.name-runs;
-                                color: Theme.on-surface;
-                            }
-                            // Where they're a friend, and their status on each.
-                            if person.networks.length > 0: NetList { items: person.networks; }
-                        }
-                        Button {
-                            y: (parent.height - self.height) / 2;
-                            text: "Message";
-                            kind: "tonal";
-                            clicked => { root.open-direct(i); }
-                        }
-                    }
                 }
                 if root.requests.length > 0: Rectangle {
                     height: 28px;

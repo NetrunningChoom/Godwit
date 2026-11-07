@@ -96,6 +96,8 @@ pub struct Settings {
     pub self_deafened: bool,
     /// Starred GIFs, newest first: the picker's Favourites. Kept here only.
     pub gif_favourites: Vec<FavouriteGif>,
+    /// Network-scoped people starred in the local People view.
+    pub person_favourites: Vec<String>,
 }
 
 /// A starred GIF: what sending it posts, and the looping picture to show.
@@ -148,6 +150,7 @@ impl Default for Settings {
             self_muted: false,
             self_deafened: false,
             gif_favourites: Vec::new(),
+            person_favourites: Vec::new(),
         }
     }
 }
@@ -382,7 +385,7 @@ pub fn path() -> Option<PathBuf> {
 /// The saved settings; defaults if there's no file yet.
 pub fn load(path: &Path) -> io::Result<Settings> {
     match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(io::Error::other),
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Settings::default()),
         Err(e) => Err(e),
     }

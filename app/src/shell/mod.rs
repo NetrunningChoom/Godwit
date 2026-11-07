@@ -6,6 +6,7 @@
 mod accounts;
 mod alerting;
 mod calls;
+mod keep_awake;
 mod media;
 mod messages;
 mod navigation;
@@ -43,6 +44,8 @@ use crate::view;
 
 pub struct Shell {
     app: Application,
+    navigation_back: Vec<NavigationTarget>,
+    replaying_navigation: bool,
     /// Updated by native window focus events; selection alone is not attention.
     window_focused: bool,
     /// When each chat last alerted (see `alerted_lately`).
@@ -87,6 +90,8 @@ pub struct Shell {
     wake: Waker,
     /// Wakes the UI when the oldest "… is typing" runs out (see `pump`).
     typing_timer: slint::Timer,
+    /// Prevent idle lock/sleep only while a call video is being watched or sent.
+    media_awake: keep_awake::MediaAwake,
     /// The demo's stand-in network (`godwit --demo`).
     demo: Option<crate::demo::DemoAccount>,
     /// Networks' own media schemes and fetchers (for attachments to save).
@@ -159,6 +164,15 @@ pub struct Shell {
     server_editor: crate::server_settings::ServerEditor,
 }
 
+#[derive(Clone)]
+enum NavigationTarget {
+    Room(RoomId),
+    Friends,
+    People,
+    Active,
+    Threads,
+}
+
 impl Shell {
     /// `demo`: a made-up world and no accounts (`godwit --demo`): no session
     /// is read, nothing goes out, and settings and contacts aren't saved.
@@ -167,8 +181,21 @@ impl Shell {
         let contacts_path = if demo { None } else { contacts_store::path() };
         let contacts = match contacts_path.as_deref().map(contacts_store::load) {
             Some(Ok(c)) => c,
-            Some(Err(e)) => {
-                eprintln!("error: reading contacts: {e}");
+            Some(Err(e)) if e.kind() == std::io::ErrorKind::InvalidData => {
+                match contacts_path.as_deref().map(crate::local_recovery::preserve_corrupt) {
+                    Some(Ok(recovery)) => eprintln!(
+                        "warning: contacts were reset; the damaged file was preserved at {}",
+                        recovery.display()
+                    ),
+                    Some(Err(_)) => {
+                        eprintln!("error: contacts were invalid and could not be preserved; using empty contacts")
+                    }
+                    None => eprintln!("error: contacts were invalid; using empty contacts"),
+                }
+                Contacts::default()
+            }
+            Some(Err(_)) => {
+                eprintln!("error: could not read contacts; using empty contacts");
                 Contacts::default()
             }
             None => Contacts::default(),
@@ -176,8 +203,21 @@ impl Shell {
         let settings_path = if demo { None } else { settings::path() };
         let settings = match settings_path.as_deref().map(settings::load) {
             Some(Ok(s)) => s,
-            Some(Err(e)) => {
-                eprintln!("error: reading settings: {e}");
+            Some(Err(e)) if e.kind() == std::io::ErrorKind::InvalidData => {
+                match settings_path.as_deref().map(crate::local_recovery::preserve_corrupt) {
+                    Some(Ok(recovery)) => eprintln!(
+                        "warning: settings were reset; the damaged file was preserved at {}",
+                        recovery.display()
+                    ),
+                    Some(Err(_)) => {
+                        eprintln!("error: settings were invalid and could not be preserved; using defaults")
+                    }
+                    None => eprintln!("error: settings were invalid; using defaults"),
+                }
+                Settings::default()
+            }
+            Some(Err(_)) => {
+                eprintln!("error: could not read settings; using defaults");
                 Settings::default()
             }
             None => Settings::default(),
@@ -284,6 +324,8 @@ impl Shell {
         });
         let shell = Self {
             app,
+            navigation_back: Vec::new(),
+            replaying_navigation: false,
             window_focused: false,
             recent_alerts: std::collections::HashMap::new(),
             live,
@@ -305,6 +347,7 @@ impl Shell {
             mic_test: None,
             wake: wake.clone(),
             typing_timer: slint::Timer::default(),
+            media_awake: keep_awake::MediaAwake::new(),
             demo: demo_account,
             images,
             inline_players,
@@ -472,6 +515,35 @@ impl Shell {
     }
 
     pub fn act(&mut self, ui: &AppWindow, action: Action) {
+        if !self.replaying_navigation
+            && matches!(
+                action,
+                Action::SelectRoom(_)
+                    | Action::ShowFriends
+                    | Action::ShowPeople
+                    | Action::ShowActive
+                    | Action::ShowThreads
+            )
+        {
+            let state = self.app.state();
+            let current = if state.showing_threads {
+                Some(NavigationTarget::Threads)
+            } else if state.showing_active {
+                Some(NavigationTarget::Active)
+            } else if state.showing_people {
+                Some(NavigationTarget::People)
+            } else if state.showing_friends {
+                Some(NavigationTarget::Friends)
+            } else {
+                state.selected.clone().map(NavigationTarget::Room)
+            };
+            if let Some(current) = current {
+                self.navigation_back.push(current);
+                if self.navigation_back.len() > 32 {
+                    self.navigation_back.remove(0);
+                }
+            }
+        }
         // Leaving: its sound now. The core forgets the call at once, so the
         // network's later "call ended" no longer matches it.
         if matches!(action, Action::LeaveCall) && self.app.state().call.is_some() {
@@ -572,6 +644,23 @@ impl Shell {
             ui.set_composer_inserted_at(i32::MAX);
             ui.set_composer_insert_serial(ui.get_composer_insert_serial().wrapping_add(1));
         }
+    }
+
+    pub fn navigate_back(&mut self, ui: &AppWindow) {
+        let Some(target) = self.navigation_back.pop() else {
+            return;
+        };
+        let action = match target {
+            NavigationTarget::Room(room) if self.app.state().room(&room).is_some() => Action::SelectRoom(room),
+            NavigationTarget::Friends => Action::ShowFriends,
+            NavigationTarget::People => Action::ShowPeople,
+            NavigationTarget::Active => Action::ShowActive,
+            NavigationTarget::Threads => Action::ShowThreads,
+            NavigationTarget::Room(_) => return,
+        };
+        self.replaying_navigation = true;
+        self.act(ui, action);
+        self.replaying_navigation = false;
     }
 
     /// What the UI shows (for callbacks that look something up first).
@@ -775,6 +864,11 @@ impl Shell {
     }
 
     pub fn refresh(&mut self, ui: &AppWindow) {
+        let media_active =
+            self.app.state().call.as_ref().is_some_and(|call| {
+                call.camera || call.screen_share || call.streams.iter().any(|stream| stream.watching)
+            });
+        self.media_awake.set_active(media_active);
         // Streams start, stop and get watched: their sound follows.
         self.push_voice_settings();
         self.scale.apply(ui, self.settings.ui_scale);

@@ -145,12 +145,9 @@ impl Application {
 
     pub(super) fn dispatch_mark_room_read(&mut self, room: RoomId) -> Vec<Effect> {
         self.state.marked_unread.retain(|r| *r != room);
-        let Some(r) = self.state.room(&room) else {
+        let Some(_r) = self.state.room(&room) else {
             return Vec::new();
         };
-        if !r.unread && r.mentions == 0 {
-            return Vec::new();
-        }
         // The newest message known here, else the network's own.
         let last = self
             .state
@@ -165,6 +162,13 @@ impl Application {
             },
             None => Command::MarkRoomRead { room: room.clone() },
         };
+        self.mark_read_local(
+            &room,
+            match &command {
+                Command::MarkRead { last, .. } => Some(last.clone()),
+                _ => None,
+            },
+        );
         vec![Effect::Backend {
             account: room.account.clone(),
             command,
@@ -267,9 +271,10 @@ impl Application {
     }
 
     pub(super) fn dispatch_search(&mut self, query: String) -> Vec<Effect> {
-        let Some(room) = self.state.selected.clone().filter(|r| self.allows(r, |c| c.search)) else {
+        let Some(room) = self.state.selected.clone().filter(|r| self.state.room(r).is_some()) else {
             return Vec::new();
         };
+        let remote = self.allows(&room, |c| c.search);
         let query = query.trim().to_owned();
         let asked = !query.is_empty();
         // The same search again (Enter pressed twice) while it's
@@ -290,6 +295,28 @@ impl Application {
             failed: false,
         });
         if !asked {
+            return Vec::new();
+        }
+        if !remote {
+            let query = query.to_lowercase();
+            let messages = self
+                .state
+                .timelines
+                .get(&room)
+                .into_iter()
+                .flat_map(|timeline| timeline.messages.iter())
+                .filter(|message| {
+                    message.source.to_lowercase().contains(&query)
+                        || message
+                            .snippet
+                            .as_deref()
+                            .is_some_and(|snippet| snippet.to_lowercase().contains(&query))
+                })
+                .cloned()
+                .collect();
+            if let Some(search) = self.state.search.as_mut() {
+                search.messages = Some(messages);
+            }
             return Vec::new();
         }
         vec![Effect::Backend {
@@ -599,6 +626,7 @@ impl Application {
         self.state.call = Some(Call {
             room: room.clone(),
             status: CallStatus::Connecting,
+            latency_ms: None,
             members: Vec::new(),
             // Our own mute and deafen carry into the call.
             muted: self.state.self_muted,

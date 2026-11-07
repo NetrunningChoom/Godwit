@@ -87,7 +87,12 @@ impl Shell {
                 .filter(|a| a.network() == network)
                 .map(|a| a.slot())
                 .collect();
-            let slot = (0..entry.max_slots).find(|s| !used.contains(s))?;
+            // Session slots are persistent identifiers, not a cap on how
+            // many accounts can be added. Once the scanned range is full,
+            // keep allocating higher slots rather than silently stopping.
+            let slot = (0..entry.max_slots)
+                .find(|s| !used.contains(s))
+                .or_else(|| used.iter().copied().max().and_then(|s| s.checked_add(1)).or(Some(0)))?;
             match (entry.start)(self.wake.clone(), slot) {
                 Ok(mut account) => {
                     account.set_notifications(self.settings.notifications || self.settings.sounds);

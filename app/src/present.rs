@@ -69,6 +69,7 @@ pub struct Presenter {
     /// don't match are left out (the one being linked always stays).
     pub people_query: String,
     pub people_network: String,
+    pub people_favourites_filter: bool,
     pub call_members: Rc<VecModel<CallMemberItem>>,
     /// The call's videos and streams, kept and updated in place: a new
     /// model each refresh (many a second while video plays) rebuilt their
@@ -249,6 +250,9 @@ impl Presenter {
         ui.set_merges(ModelRc::from(p.merges.clone()));
         ui.set_call_members(ModelRc::from(p.call_members.clone()));
         ui.set_call_videos(ModelRc::from(p.call_videos.clone()));
+        ui.set_call_extra_videos(p.call_videos.iter().any(|v| !v.primary || v.participant < 0));
+        ui.set_call_quality(-1);
+        ui.set_call_latency(-1);
         {
             use slint::ComponentHandle;
             ui.global::<crate::ui::CallFrames>()
@@ -370,7 +374,13 @@ impl Presenter {
         );
         view::sync(&self.servers, servers);
         self.server_rows = server_rows;
-        ui.set_home_selected(state.selected_server.is_none());
+        ui.set_home_selected(
+            state.selected_server.is_none()
+                && !state.showing_friends
+                && !state.showing_people
+                && !state.showing_active
+                && !state.showing_threads,
+        );
 
         let (directory, directory_rows) = view::directory(state);
         view::sync(&self.directory, directory);
@@ -457,6 +467,17 @@ impl Presenter {
             elapsed.max(ui.get_call_elapsed())
         });
         if let Some(call) = &state.call {
+            let latency = call.latency_ms.map(i32::from).unwrap_or(-1);
+            ui.set_call_latency(latency);
+            ui.set_call_quality(if latency < 0 {
+                -1
+            } else if latency <= 250 {
+                0
+            } else if latency <= 500 {
+                1
+            } else {
+                2
+            });
             ui.set_call_camera(call.camera);
             ui.set_call_screen_share(call.screen_share);
             let mut displayed = call.videos.clone();
@@ -497,6 +518,7 @@ impl Presenter {
             };
             self.call_video_images
                 .retain(|sid, _| displayed.iter().any(|v| &v.sid == sid));
+            let mut seen_video_users = std::collections::HashSet::new();
             let videos: Vec<crate::ui::CallVideoItem> = displayed
                 .iter()
                 .map(|video| {
@@ -519,10 +541,18 @@ impl Presenter {
                         .iter()
                         .find(|m| m.user == video.user)
                         .map_or("Participant", |m| m.name.as_ref());
+                    let participant = call
+                        .members
+                        .iter()
+                        .position(|m| m.user == video.user)
+                        .unwrap_or(usize::MAX);
+                    let primary = !video.screen_share && seen_video_users.insert(video.user.clone());
                     let frame = self.call_video_images.get(&video.sid).map(|(_, image)| image.clone());
                     crate::ui::CallVideoItem {
                         label: format!("{name} · {}", if video.screen_share { "Screen" } else { "Camera" }).into(),
                         screen: video.screen_share,
+                        participant: i32::try_from(participant).unwrap_or(-1),
+                        primary,
                         stream: call
                             .streams
                             .iter()
@@ -549,7 +579,7 @@ impl Presenter {
                 .collect();
             set_frames(&self.call_frames, pictures);
             ui.set_call_screen_videos(i32::try_from(videos.iter().filter(|v| v.screen).count()).unwrap_or(0));
-            view::sync(&self.call_videos, videos);
+            ui.set_call_extra_videos(videos.iter().any(|v| !v.primary || v.participant < 0));
             ui.set_call_status(view::call_status(call.status).into());
             ui.set_call_room(
                 state
@@ -573,8 +603,19 @@ impl Presenter {
                 item.me = *member.user.raw == *call.room.account.user;
                 item.volume = self.stream_sound.user_volume(user);
                 item.local_muted = self.stream_sound.muted_users.iter().any(|u| u == user);
+                item.video_index = videos
+                    .iter()
+                    .position(|v| {
+                        v.primary
+                            && v.participant >= 0
+                            && usize::try_from(v.participant).ok()
+                                == call.members.iter().position(|m| m.user == member.user)
+                    })
+                    .and_then(|i| i32::try_from(i).ok())
+                    .unwrap_or(-1);
             }
             view::sync(&self.call_members, members);
+            view::sync(&self.call_videos, videos);
             let streams: Vec<crate::ui::StreamItem> = call
                 .streams
                 .iter()
@@ -586,6 +627,7 @@ impl Presenter {
                         .map_or_else(|| "Someone".to_owned(), |m| m.name.to_string())
                         .into(),
                     watching: s.watching,
+                    viewers: s.viewers.map_or_else(String::new, |n| n.to_string()).into(),
                     note: s.note.as_deref().unwrap_or_default().into(),
                     volume: self.stream_sound.screen_share_volume(&s.user.raw),
                     // Discord's streams are heard until muted (godwit-voice's `push_heard`).
@@ -599,11 +641,14 @@ impl Presenter {
                 .collect();
             view::sync(&self.call_streams, streams);
         } else {
+            ui.set_call_quality(-1);
+            ui.set_call_latency(-1);
             view::sync(&self.call_streams, Vec::new());
             self.call_video_images.clear();
             self.call_frame_sids.clear();
             set_frames(&self.call_frames, Vec::new());
             view::sync(&self.call_videos, Vec::new());
+            ui.set_call_extra_videos(false);
             self.follow_fullscreen(ui);
         }
         ui.set_card_open(state.profile.is_some());
@@ -697,7 +742,7 @@ impl Presenter {
         }
         ui.set_showing_people(state.showing_people);
         if state.showing_people || state.showing_friends {
-            let (rows, who, merges) = view::people(state, images);
+            let (rows, who, merges) = view::people(state, images, &self.muzzle.person_favourites);
             // The networks people are on, for the filter's chips.
             let mut networks: Vec<slint::SharedString> = Vec::new();
             // Labels may name an alt ("Discord · …"); the filter is by network.
@@ -729,6 +774,7 @@ impl Presenter {
                     };
                     Some(*contact) == linking
                         || ((query.is_empty() || named())
+                            && (!self.people_favourites_filter || row.favourite)
                             && (self.people_network.is_empty()
                                 || row
                                     .identities
@@ -785,7 +831,7 @@ impl Presenter {
         let items: Vec<crate::ui::TalkOnItem> = talk_on
             .iter()
             .map(|u| crate::ui::TalkOnItem {
-                label: view::identity_label(state, u).into(),
+                label: view::dm_account_label(state, u).into(),
                 current: Some(u) == with,
                 colour: view::identity_presence(state, u),
             })
@@ -837,7 +883,9 @@ impl Presenter {
         ui.set_can_delete(room.capabilities.delete);
         ui.set_can_delete_others(room.capabilities.delete_others);
         ui.set_has_pins(room.capabilities.pins);
-        ui.set_has_search(room.capabilities.search);
+        // Every conversation has search: networks without a search API use
+        // the messages Godwit has loaded locally.
+        ui.set_has_search(true);
         ui.set_can_thread(room.capabilities.threads);
         ui.set_is_forum(room.capabilities.forum);
         ui.set_can_pin(room.capabilities.pin_messages);

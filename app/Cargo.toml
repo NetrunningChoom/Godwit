@@ -44,6 +44,9 @@ slint.workspace = true
 syntect.workspace = true
 ureq.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5.19", features = ["blocking-api"] }
+
 # The console, and the AppUserModelID notifications go under (src/win32.rs).
 # Already in the tree through winit.
 [target.'cfg(windows)'.dependencies]

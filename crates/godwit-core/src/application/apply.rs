@@ -94,6 +94,7 @@ impl Application {
             }
             Event::AccountLost { account, reason } => self.receive_account_lost(account, reason),
             Event::RoomUpdated(mut room) => {
+                self.apply_local_read(&mut room);
                 if let RoomKind::Direct { with } = &room.kind
                     && room.presence.is_none()
                 {
@@ -422,6 +423,12 @@ impl Application {
                     command,
                 })
                 .collect()
+            }
+            Event::CallLatency { room, milliseconds } => {
+                if let Some(call) = self.state.call.as_mut().filter(|c| c.room == room) {
+                    call.latency_ms = milliseconds;
+                }
+                Vec::new()
             }
             Event::CallEnded { room, reason } => {
                 if self.state.call.as_ref().is_some_and(|c| c.room == room) {

@@ -485,6 +485,11 @@ impl Application {
             }
             Action::WatchStream { user, watch } => self.dispatch_watch_stream(user, watch),
             Action::ToggleMute => {
+                // Self-deafening also mutes the microphone. Keep that true
+                // while deafened; the user can unmute after undeafening.
+                if self.state.self_deafened && self.state.self_muted {
+                    return Vec::new();
+                }
                 self.state.self_muted = !self.state.self_muted;
                 let Some(call) = self.state.call.as_mut() else {
                     return Vec::new();
@@ -497,14 +502,25 @@ impl Application {
             }
             Action::ToggleDeafen => {
                 self.state.self_deafened = !self.state.self_deafened;
-                let Some(call) = self.state.call.as_mut() else {
-                    return Vec::new();
-                };
-                call.deafened = self.state.self_deafened;
-                vec![Effect::Backend {
-                    account: call.room.account.clone(),
-                    command: Command::SetDeafened(call.deafened),
-                }]
+                let mut effects = Vec::new();
+                if self.state.self_deafened && !self.state.self_muted {
+                    self.state.self_muted = true;
+                    if let Some(call) = self.state.call.as_mut() {
+                        call.muted = true;
+                        effects.push(Effect::Backend {
+                            account: call.room.account.clone(),
+                            command: Command::SetMuted(true),
+                        });
+                    }
+                }
+                if let Some(call) = self.state.call.as_mut() {
+                    call.deafened = self.state.self_deafened;
+                    effects.push(Effect::Backend {
+                        account: call.room.account.clone(),
+                        command: Command::SetDeafened(call.deafened),
+                    });
+                }
+                effects
             }
             Action::RestoreVoiceFlags { muted, deafened } => {
                 self.state.self_muted = muted;

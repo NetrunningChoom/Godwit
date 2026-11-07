@@ -4,8 +4,7 @@
 
 import { Theme, Icons, Icon } from "theme.slint";
 import { RoomItem, DirectoryItem } from "types.slint";
-import { Chip } from "people.slint";
-import { Avatar, Badge, IconButton, Button, NetList, MenuPanel, MenuRow, MenuDivider, TextField, EmojiText } from "widgets.slint";
+import { Avatar, Badge, IconButton, ImageIconButton, Button, NetList, MenuPanel, MenuRow, MenuDivider, TextField, EmojiText, NetworkSelect } from "widgets.slint";
 
 // Rows as Godwit and the official sidebar draw them: 16 px corners,
 // secondary-container when selected, surface-highest on hover.
@@ -315,16 +314,20 @@ export component Sidebar inherits Rectangle {
     in property <color> account-presence;
     in property <bool> account-has-avatar;
     in property <string> account-initials;
-    // Home shows Friends above the conversations.
+    // Home keeps these three destination buttons visible while one is open.
     in property <bool> home;
     in property <bool> friends-selected;
     in property <bool> people-selected;
     in property <bool> active-selected;
+    property <bool> home-navigation: root.home || root.people-selected || root.friends-selected || root.active-selected;
     in property <bool> can-show-threads;
     in property <bool> threads-selected;
     callback show-threads();
     in property <bool> in-call;
     in property <string> call-status;
+    // -1: not measured, 0: good, 1: fair, 2: poor.
+    in property <int> call-quality;
+    in property <int> call-latency;
     // How long the call has been connected ("" while connecting).
     in property <string> call-time;
     in property <bool> call-can-video;
@@ -388,7 +391,7 @@ export component Sidebar inherits Rectangle {
         // banner, the name sits on its lower edge.
         head := Rectangle {
             property <bool> banner-shown: root.has-banner && !root.home;
-            height: self.banner-shown ? 136px : 52px;
+            height: root.home-navigation ? 0px : self.banner-shown ? 136px : 52px;
             if head.banner-shown: Rectangle {
                 x: -Theme.gap-md;
                 width: parent.width + 2 * Theme.gap-md;
@@ -403,14 +406,14 @@ export component Sidebar inherits Rectangle {
                 }
             }
             header := Rectangle {
-                y: head.banner-shown ? head.height - 48px : 8px;
-                height: 40px;
+                y: head.banner-shown ? head.height - 48px : root.home-navigation ? 0px : 8px;
+                height: root.home-navigation ? 0px : 40px;
                 border-radius: Theme.radius-sm;
                 background: root.server-menu && header-touch.has-hover ? (head.banner-shown ? Theme.on-media-overlay : Theme.surface-highest) : transparent;
                 Text {
                     x: 12px;
                     width: parent.width - (root.server-menu ? 48px : 24px);
-                    text: root.home ? "Conversations" : root.title;
+                    text: root.home-navigation ? "" : root.title;
                     font-size: Theme.text-title;
                     font-weight: 600;
                     color: root.has-banner && !root.home ? Theme.on-media : Theme.on-surface;
@@ -461,14 +464,35 @@ export component Sidebar inherits Rectangle {
                 alignment: start;
                 spacing: Theme.space-1;
                 padding-bottom: Theme.gap-md;
-                // Finding a conversation by name (any of a person's names).
-                if root.home: TextField {
-                    height: 36px;
-                    placeholder: "Search conversations";
-                    text <=> root.home-query;
-                    edited(t) => { root.search-home(t); }
+                // Everyone as one person across networks.
+                if root.home-navigation: MenuButton {
+                    glyph: Icons.link;
+                    label: "People";
+                    selected: root.people-selected;
+                    clicked => { root.show-people(); }
                 }
-                if root.home: Rectangle { height: 4px; }
+                if root.home-navigation: MenuButton {
+                    glyph: Icons.group;
+                    label: "Add a friend";
+                    selected: root.friends-selected;
+                    clicked => { root.show-friends(); }
+                }
+                // Friends in calls and in games, across networks.
+                if root.home-navigation: MenuButton {
+                    glyph: Icons.group;
+                    label: "Active now";
+                    selected: root.active-selected;
+                    clicked => { root.show-active(); }
+                }
+                if root.home-navigation: Text {
+                    x: Theme.space-4;
+                    height: 34px;
+                    text: "Conversations";
+                    font-size: Theme.text-label;
+                    font-weight: 600;
+                    color: Theme.on-surface;
+                    vertical-alignment: bottom;
+                }
                 if root.can-show-threads: Rectangle {
                     height: 40px;
                     background: root.threads-selected || threads-touch.has-hover ? Theme.surface-high : transparent;
@@ -476,33 +500,21 @@ export component Sidebar inherits Rectangle {
                     Text { x: Theme.gap-md; text: "Threads"; color: Theme.on-surface; vertical-alignment: center; height: parent.height; }
                     threads-touch := TouchArea { mouse-cursor: pointer; clicked => { root.show-threads(); } }
                 }
-                // Chats on one network only; sideways if they don't fit.
-                if root.home && root.home-networks.length > 1: Flickable {
-                    height: 32px;
-                    content-width: max(self.width, chips.preferred-width);
-                    chips := HorizontalLayout {
-                        height: 28px;
-                        spacing: Theme.space-compact;
-                        alignment: start;
-                        Chip { label: "All"; chosen: root.home-network == ""; choose => { root.filter-home(""); } }
-                        for n in root.home-networks: Chip { label: n; chosen: root.home-network == n; choose => { root.filter-home(n); } }
-                    }
+                if root.home-navigation: Rectangle { height: 5px; }
+                // Search and network filtering apply only to the conversations below.
+                if root.home-navigation: TextField {
+                    height: 36px;
+                    placeholder: "Search conversations";
+                    text <=> root.home-query;
+                    edited(t) => { root.search-home(t); }
                 }
-                // Everyone as one person across networks.
-                if root.home: MenuButton {
-                    glyph: Icons.link;
-                    label: "People";
-                    selected: root.people-selected || root.friends-selected;
-                    clicked => { root.show-people(); }
+                if root.home-navigation && root.home-networks.length > 1: NetworkSelect {
+                    width: root.width - Theme.space-4;
+                    x: Theme.space-2;
+                    networks: root.home-networks;
+                    selected-network: root.home-network;
+                    selected(n) => { root.filter-home(n); }
                 }
-                // Friends in calls and in games, across networks.
-                if root.home: MenuButton {
-                    glyph: Icons.group;
-                    label: "Active now";
-                    selected: root.active-selected;
-                    clicked => { root.show-active(); }
-                }
-                if root.home: Rectangle { height: 5px; }
                 for room[i] in root.rooms: RoomRow {
                     room: room;
                     clock: root.clock;
@@ -535,24 +547,70 @@ export component Sidebar inherits Rectangle {
                 }
             }
         }
-        // The call: what and where on top (with leaving), its controls under
-        // it, so a narrow sidebar never squeezes the status.
+        // YapFast's voice dock: connection and room on one line, then video
+        // actions. Mute/deafen stay on the account controls below.
         if root.in-call: Rectangle {
             border-radius: Theme.radius-lg;
             background: Theme.surface-high;
             VerticalLayout {
-                padding: Theme.gap-md;
-                padding-left: Theme.space-4;
+                padding: Theme.space-3;
                 spacing: Theme.space-2;
                 HorizontalLayout {
                     spacing: Theme.space-2;
+                    Rectangle {
+                        width: 32px;
+                        Image {
+                            x: (parent.width - 24px) / 2;
+                            y: (parent.height - 24px) / 2;
+                            width: 24px;
+                            height: 24px;
+                            source: root.call-status != "Voice connected"
+                                ? @image-url("../../assets/icons/yapfast/volume-2.svg")
+                                : root.call-quality == 2
+                                    ? @image-url("../../assets/icons/yapfast/signal-low.svg")
+                                    : root.call-quality == 1
+                                        ? @image-url("../../assets/icons/yapfast/signal-medium.svg")
+                                        : @image-url("../../assets/icons/yapfast/signal-high.svg");
+                            image-fit: contain;
+                            colorize: root.call-status != "Voice connected" ? Theme.warning
+                                : root.call-quality == 2 ? Theme.error
+                                : root.call-quality == 1 ? Theme.warning : Theme.online;
+                        }
+                        if root.call-status == "Voice connected" && root.call-quality < 0: Rectangle {
+                            x: parent.width - 12px;
+                            y: 0px;
+                            width: 13px;
+                            height: 13px;
+                            border-radius: Theme.radius-dot;
+                            border-width: 1px;
+                            border-color: Theme.surface-high;
+                            background: Theme.surface-high;
+                            Text { text: "?"; color: Theme.on-surface-variant; font-size: Theme.text-caption; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        Tooltip {
+                            Rectangle {
+                                width: quality-tip.preferred-width + 16px;
+                                height: quality-tip.preferred-height + 8px;
+                                border-radius: Theme.radius-xs;
+                                background: Theme.surface-highest;
+                                quality-tip := Text {
+                                    text: root.call-status != "Voice connected" ? root.call-status
+                                        : root.call-quality < 0 ? "Connection quality unavailable"
+                                        : (root.call-quality == 0 ? "Fine" : root.call-quality == 1 ? "Average" : "Bad")
+                                            + " connection · " + root.call-latency + " ms";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.text-small;
+                                }
+                            }
+                        }
+                    }
                     VerticalLayout {
                         horizontal-stretch: 1;
                         alignment: center;
                         HorizontalLayout {
                             spacing: Theme.space-compact;
-                            Text { text: root.call-status; font-weight: 600; font-size: Theme.text-label; color: Theme.online; overflow: elide; horizontal-stretch: 1; }
-                            if root.call-time != "": Text { text: root.call-time; font-size: Theme.text-label; color: Theme.on-surface-variant; horizontal-stretch: 0; }
+                            Text { text: root.call-status; font-weight: 600; font-size: Theme.text-label; color: root.call-status == "Voice connected" ? Theme.online : Theme.warning; overflow: elide; horizontal-stretch: 1; }
+                            if root.call-time != "": Text { text: root.call-time; font-size: Theme.text-small; color: Theme.on-surface-variant; vertical-alignment: center; }
                         }
                         Text {
                             text: root.call-room;
@@ -562,36 +620,46 @@ export component Sidebar inherits Rectangle {
                             TouchArea { mouse-cursor: pointer; clicked => { root.open-call-room(); } }
                         }
                     }
-                    IconButton {
-                        y: (parent.height - self.height) / 2;
-                        glyph: Icons.call-end;
+                    ImageIconButton {
+                        icon: @image-url("../../assets/icons/yapfast/phone-off.svg");
                         tooltip: "Leave call";
-                        tint: Theme.error;
+                        tint: Theme.on-error;
+                        fill: Theme.error;
+                        width: 36px;
+                        height: 36px;
                         clicked => { root.leave-call(); }
                     }
                 }
                 HorizontalLayout {
-                    spacing: Theme.space-1;
-                    alignment: start;
-                    // (Mute and deafen sit on the account card below, as Discord's.)
-                    // The camera, where the call allows video (turning it on asks first).
-                    if root.call-video-network || root.call-camera: IconButton {
-                        glyph: root.call-camera ? Icons.videocam-off : Icons.videocam;
+                    spacing: Theme.space-2;
+                    padding-left: Theme.space-7;
+                    if root.call-video-network || root.call-camera: ImageIconButton {
+                        icon: root.call-camera
+                            ? @image-url("../../assets/icons/yapfast/video.svg")
+                            : @image-url("../../assets/icons/yapfast/video-off.svg");
+                        width: 36px;
+                        height: 36px;
                         enabled: root.call-can-video || root.call-camera;
                         tooltip: root.call-camera ? "Turn camera off"
                             : root.call-can-video ? "Turn camera on"
                             : "The camera isn't allowed in this call (no Video permission), or it's still connecting";
-                        tint: root.call-camera ? Theme.online : Theme.on-surface-variant;
+                        tint: Theme.on-surface;
+                        fill: root.call-camera ? Theme.primary-container : Theme.surface-highest;
                         clicked => { root.set-camera(!root.call-camera); }
                     }
                     // Sharing the screen, where the call allows video.
-                    if root.call-video-network || root.call-screen-share: IconButton {
-                        glyph: root.call-screen-share ? Icons.stop-screen-share : Icons.screen-share;
+                    if root.call-video-network || root.call-screen-share: ImageIconButton {
+                        icon: root.call-screen-share
+                            ? @image-url("../../assets/icons/yapfast/screen-share-off.svg")
+                            : @image-url("../../assets/icons/yapfast/screen-share.svg");
+                        width: 36px;
+                        height: 36px;
                         enabled: root.call-can-video || root.call-screen-share;
                         tooltip: root.call-screen-share ? "Stop sharing"
                             : root.call-can-video ? "Share your screen"
                             : "Sharing isn't allowed in this call (no Video permission), or it's still connecting";
-                        tint: root.call-screen-share ? Theme.online : Theme.on-surface-variant;
+                        tint: Theme.on-surface;
+                        fill: root.call-screen-share ? Theme.primary-container : Theme.surface-highest;
                         clicked => { root.set-screen-share(!root.call-screen-share); }
                     }
                 }
@@ -638,15 +706,16 @@ export component Sidebar inherits Rectangle {
                 IconButton {
                     y: (parent.height - self.height) / 2;
                     glyph: root.self-muted ? Icons.mic-off : Icons.mic;
-                    tooltip: root.self-muted ? "Unmute" : "Mute";
+                    enabled: !root.self-deafened;
                     tint: root.self-muted ? Theme.error : root.in-call && root.call-speaking ? Theme.online : Theme.on-surface-variant;
+                    tooltip: root.self-muted ? "Unmute" : "Mute";
                     clicked => { root.toggle-mute(); }
                 }
                 IconButton {
                     y: (parent.height - self.height) / 2;
                     glyph: root.self-deafened ? Icons.headset-off : Icons.headset;
-                    tooltip: root.self-deafened ? "Undeafen" : "Deafen";
                     tint: root.self-deafened ? Theme.error : Theme.on-surface-variant;
+                    tooltip: root.self-deafened ? "Undeafen" : "Deafen";
                     clicked => { root.toggle-deafen(); }
                 }
                 IconButton {

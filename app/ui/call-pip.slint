@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { CallVideoItem, CallFrames } from "types.slint";
+
+// Like YapFast's StreamPip: keep a call's video visible while browsing another
+// room, and return to the call when clicked. Drag it to reposition.
+export component CallPip inherits Rectangle {
+    in property <bool> shown;
+    in property <[CallVideoItem]> videos;
+    in property <length> left-bound;
+    in property <length> right-edge;
+    in property <length> bottom-edge;
+    callback open-call();
+
+    property <length> drag-x;
+    property <length> drag-y;
+    property <bool> dragging;
+    property <bool> moved-enough;
+    property <length> start-x;
+    property <length> start-y;
+    property <length> start-drag-x;
+    property <length> start-drag-y;
+    property <length> base-x: max(root.left-bound, root.right-edge - self.width - 16px);
+    property <length> base-y: 88px;
+
+    x: clamp(root.base-x + root.drag-x, root.left-bound, max(root.left-bound, root.right-edge - self.width));
+    y: clamp(root.base-y + root.drag-y, 64px, max(64px, root.bottom-edge - self.height - 16px));
+    width: 320px;
+    height: 180px;
+    visible: root.shown && root.videos.length > 0;
+    border-radius: Theme.radius-md;
+    background: Theme.media;
+    border-width: 1px;
+    border-color: Theme.outline-variant;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: Theme.shadow;
+    clip: true;
+
+    if root.videos.length > 0: Image {
+        width: parent.width;
+        height: parent.height;
+        source: CallFrames.frames.length > 0 ? CallFrames.frames[0] : root.videos[0].frame;
+        image-fit: contain;
+    }
+    if root.videos.length > 0 && !root.videos[0].has-frame: Text {
+        x: 16px;
+        width: parent.width - 32px;
+        height: parent.height;
+        text: root.videos[0].screen ? "Connecting to the stream…" : "Waiting for video…";
+        color: Theme.on-media-variant;
+        font-size: Theme.text-label;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+    touch := TouchArea {
+        mouse-cursor: root.dragging ? MouseCursor.grabbing : MouseCursor.pointer;
+        moved => {
+            if !self.pressed { return; }
+            if !root.dragging && (abs(self.absolute-position.x + self.mouse-x - root.start-x) > 4px || abs(self.absolute-position.y + self.mouse-y - root.start-y) > 4px) {
+                root.dragging = true;
+                root.moved-enough = true;
+            }
+            if root.dragging {
+                root.drag-x = root.start-drag-x + self.absolute-position.x + self.mouse-x - root.start-x;
+                root.drag-y = root.start-drag-y + self.absolute-position.y + self.mouse-y - root.start-y;
+            }
+        }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                root.start-x = self.absolute-position.x + self.mouse-x;
+                root.start-y = self.absolute-position.y + self.mouse-y;
+                root.start-drag-x = root.drag-x;
+                root.start-drag-y = root.drag-y;
+                root.moved-enough = false;
+            }
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                if !root.moved-enough { root.open-call(); }
+                root.dragging = false;
+                root.moved-enough = false;
+            }
+        }
+        if self.has-hover && root.videos.length > 0: Rectangle {
+            y: parent.height - self.height;
+            height: 36px;
+            background: @linear-gradient(180deg, transparent 0%, Theme.scrim-strong 100%);
+            HorizontalLayout {
+                padding-left: Theme.space-3;
+                padding-right: Theme.space-3;
+                Text {
+                    text: root.videos[0].label;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    color: white;
+                    font-size: Theme.text-small;
+                    font-weight: 600;
+                }
+                Icon { text: Icons.open-in-new; color: white; font-size: Theme.text-title; }
+            }
+        }
+    }
+}

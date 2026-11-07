@@ -123,12 +123,12 @@ export component AutoDeletePage inherits VerticalLayout {
     spacing: Theme.space-5;
     alignment: start;
 
-    // Turning chat retention on: say plainly what that means first.
+    // Turning auto-delete on: say plainly what that means first.
     if AdState.step == 0 && AdState.on-warning: Card {
-        Text { text: "Turn on chat retention?"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+        Text { text: "Turn on auto-delete?"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
         Text { text: "For this account: " + AdState.account-label; font-weight: 600; color: Theme.on-surface; wrap: word-wrap; }
         Text {
-            text: "Its active rules will start deleting this account's messages on their own, in the background, whenever Godwit runs. Other accounts aren't affected.";
+            text: "Enabled rules will automatically delete matching messages from this account while Godwit is running. Other accounts aren't affected.";
             wrap: word-wrap;
             color: Theme.on-surface;
         }
@@ -150,11 +150,10 @@ export component AutoDeletePage inherits VerticalLayout {
     }
     if AdState.step == 0 && !AdState.on-warning: VerticalLayout {
         spacing: Theme.space-5;
-        // The master switch, big and first: OFF should read as calm and
-        // certain, so nobody opening this page fears it's already deleting.
+        // Account switch and rule switches are separate: explain both states.
         Rectangle {
             border-radius: Theme.radius-lg;
-            background: AdState.on ? Theme.error : Theme.surface-high;
+            background: Theme.surface-high;
             HorizontalLayout {
                 padding: Theme.space-6;
                 spacing: Theme.space-5;
@@ -163,22 +162,22 @@ export component AutoDeletePage inherits VerticalLayout {
                     alignment: center;
                     spacing: Theme.space-2;
                     Text {
-                        text: AdState.on ? "Chat retention is ON" : "Chat retention is OFF";
+                        text: AdState.on ? "Auto-delete is ON" : "Auto-delete is OFF";
                         font-size: Theme.text-headline;
                         font-weight: 700;
-                        color: AdState.on ? Theme.on-error : Theme.on-surface;
+                        color: Theme.on-surface;
                     }
                     Text {
                         text: "For this account: " + AdState.account-label;
                         font-weight: 600;
                         wrap: word-wrap;
-                        color: AdState.on ? Theme.on-error : Theme.on-surface;
+                        color: Theme.on-surface;
                     }
                     Text {
-                        text: AdState.on ? "Active rules below delete this account's messages."
-                            : "Nothing is deleted or indexed. Rules below stay paused until you turn this on.";
+                        text: AdState.on ? "Enabled rules can delete matching messages for this account while Godwit is running."
+                            : "No messages are being deleted. Turn this on to run enabled rules.";
                         wrap: word-wrap;
-                        color: AdState.on ? Theme.on-error : Theme.on-surface-variant;
+                        color: Theme.on-surface-variant;
                     }
                 }
                 Rectangle {
@@ -200,34 +199,43 @@ export component AutoDeletePage inherits VerticalLayout {
             }
         }
         Card {
-            Text { text: "Chat retention and auto-delete rules"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+            Text { text: "How auto-delete works"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
             Text {
-                text: "Rules that delete your own messages: where, which kinds, and from how long ago.";
+                text: "Each rule selects whose messages to delete, where to look, which message types to include, and how old they must be.";
                 wrap: word-wrap;
                 color: Theme.on-surface;
             }
             Text {
-                text: "Godwit keeps a local index of your own messages in the channels your rules cover: only each message's id and whether it's text, a link or media; never what it says. It fills in as messages arrive and as you scroll, and slowly in the background for older history. Rules delete what the index knows.";
+                text: "Godwit keeps a local index of message IDs and types (text, link or media), not message contents. It updates as messages arrive or as you scroll, and gradually checks older history. A rule can only delete messages the index has found.";
                 wrap: word-wrap;
                 font-size: Theme.text-small;
                 color: Theme.on-surface-variant;
             }
             Text { text: "Deleted messages can't be brought back."; color: Theme.error; }
         }
+        Text { text: "Rules"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+        if AdState.rules.length == 0: Text { text: "No rules yet. Add a rule to choose which messages can be deleted."; color: Theme.on-surface-variant; wrap: word-wrap; }
         for r[i] in AdState.rules: Card {
             HorizontalLayout {
                 spacing: Theme.space-3;
                 Text { text: r.name; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; vertical-alignment: center; }
-                Text { text: r.enabled ? "Active" : "Paused"; color: Theme.on-surface-variant; vertical-alignment: center; }
+                Text { text: r.enabled ? "Rule ON" : "Rule OFF"; color: r.enabled && AdState.on ? Theme.primary : Theme.on-surface-variant; vertical-alignment: center; }
                 Toggle {
                     checked: r.enabled;
                     toggled => { AdState.toggle-rule(i, self.checked); }
                 }
             }
+            Text {
+                text: r.enabled
+                    ? (AdState.on ? "This rule can delete matching messages." : "This rule is enabled, but the account switch is OFF, so it will not delete messages.")
+                    : "This rule is paused and will not delete messages.";
+                color: Theme.on-surface-variant;
+                wrap: word-wrap;
+            }
             Text { text: "Where: " + r.where; color: Theme.on-surface; wrap: word-wrap; }
             Text { text: "What: " + r.what; color: Theme.on-surface; }
             Text { text: "When: " + r.when; color: Theme.on-surface; }
-            if r.everyone: Text { text: "Purge: deletes everyone's messages (Manage Messages)"; color: Theme.error; }
+            if r.everyone: Text { text: "Affects everyone: deletes other people's messages too, where you have Manage Messages."; color: Theme.error; wrap: word-wrap; }
             Text { text: r.progress; color: Theme.primary; wrap: word-wrap; }
             Text { text: r.deleted + " deleted so far"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
             if r.error != "": Text { text: "Last problem: " + r.error; font-size: Theme.text-small; color: Theme.error; wrap: word-wrap; }
@@ -295,7 +303,7 @@ export component AutoDeletePage inherits VerticalLayout {
 
     // The editor's form.
     if AdState.step == 1: Card {
-        Text { text: "Chat retention rule"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
+        Text { text: "Auto-delete rule"; font-size: Theme.text-heading; font-weight: 600; color: Theme.on-surface; }
         Text { text: "Name"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
         TextField { text <=> AdState.ed-name; placeholder: "Old messages"; }
         Text { text: "Whose messages"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
@@ -391,7 +399,7 @@ export component AutoDeletePage inherits VerticalLayout {
         }
         Check { checked: !AdState.ed-rolling; label: "Sent before a date (once)"; toggled => { AdState.ed-rolling = false; } }
         if !AdState.ed-rolling: TextField { width: 160px; text <=> AdState.ed-date; placeholder: "YYYY-MM-DD"; }
-        Check { checked: AdState.ed-enabled; toggled => { AdState.ed-enabled = !AdState.ed-enabled; } label: "Active"; }
+        Check { checked: AdState.ed-enabled; toggled => { AdState.ed-enabled = !AdState.ed-enabled; } label: "Rule on (eligible to run when account auto-delete is on)"; }
         if AdState.ed-error != "": Text { text: AdState.ed-error; color: Theme.error; wrap: word-wrap; }
         HorizontalLayout {
             alignment: start;

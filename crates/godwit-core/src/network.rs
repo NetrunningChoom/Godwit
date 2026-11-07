@@ -267,6 +267,20 @@ impl Network {
         }
     }
 
+    /// The service's official privacy information page, shown from its
+    /// account settings. URLs come from each service's published policy page.
+    pub const fn privacy_url(self) -> &'static str {
+        match self {
+            Self::Stoat => "https://stoat.chat/legal/privacy",
+            Self::Discord => "https://discord.com/privacy",
+            Self::Steam => "https://store.steampowered.com/privacy_agreement/",
+            Self::Fluxer => "https://fluxer.com/privacy",
+            Self::Teams => "https://privacy.microsoft.com/privacystatement",
+            Self::Slack => "https://slack.com/trust/privacy/privacy-policy",
+            Self::GoogleChat => "https://policies.google.com/privacy",
+        }
+    }
+
     pub fn from_key(key: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|n| n.key() == key)
     }
@@ -481,6 +495,11 @@ mod tests {
         assert_eq!(wip, [Fluxer, Teams, Slack, GoogleChat]);
         assert!(Steam.names_network_wide() && !Discord.names_network_wide());
         assert!(GoogleChat.refetch_on_open() && !Slack.refetch_on_open());
+        assert!(
+            Network::ALL
+                .into_iter()
+                .all(|network| network.privacy_url().starts_with("https://"))
+        );
         let apps: Vec<_> = Network::ALL
             .into_iter()
             .filter(|n| n.official_app().is_some())

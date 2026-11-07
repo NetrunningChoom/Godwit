@@ -220,7 +220,13 @@ impl Shell {
                 };
                 let before: Vec<_> = call.streams.iter().map(|s| &s.user).collect();
                 let now: Vec<_> = streams.iter().map(|s| &s.user).collect();
-                if now.len() != before.len() || now.iter().any(|u| !before.contains(u)) {
+                let viewers_changed = streams.iter().any(|stream| {
+                    call.streams
+                        .iter()
+                        .find(|old| old.user == stream.user)
+                        .is_some_and(|old| old.viewers != stream.viewers)
+                });
+                if now.len() != before.len() || now.iter().any(|u| !before.contains(u)) || viewers_changed {
                     self.alerts.sound(&self.settings, Sound::StreamChanged);
                 }
             }

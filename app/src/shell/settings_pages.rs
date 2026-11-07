@@ -199,6 +199,8 @@ impl Shell {
         };
         ui.set_settings_section(10);
         ui.set_settings_account(index);
+        ui.set_settings_data_policy_url(id.network.privacy_url().into());
+        ui.set_settings_data_policy_label(format!("Open {} privacy information", id.network.name()).into());
         let row = self.profile_editor.row_of(&id);
         ui.set_settings_account_profile(row.is_some());
         let pages = id.network.account_pages();

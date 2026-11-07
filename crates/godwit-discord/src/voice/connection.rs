@@ -551,6 +551,17 @@ impl Connection {
         send_json(&mut self.ws, op::HEARTBEAT, json!({"t": nonce, "seq_ack": seq_ack})).await
     }
 
+    /// Round trip carried by Discord's heartbeat ACK, or none if malformed.
+    pub fn acked(data: &Value) -> Option<u16> {
+        let sent = data["t"].as_u64()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis();
+        let elapsed = now.checked_sub(u128::from(sent))?;
+        Some(u16::try_from(elapsed.min(u128::from(u16::MAX))).unwrap_or(u16::MAX))
+    }
+
     /// Answers DAVE; other messages go back to the caller.
     pub(crate) async fn handle(&mut self, message: Incoming) -> Result<Option<(u64, Value)>> {
         match message {

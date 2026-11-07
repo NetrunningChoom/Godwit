@@ -17,6 +17,7 @@ pub mod gifs;
 pub mod images;
 pub mod inline_player;
 pub mod install;
+pub mod local_recovery;
 pub mod memory;
 pub mod picker;
 pub mod player_window;

@@ -44,7 +44,14 @@ impl Application {
         servers: Vec<Server>,
     ) -> Vec<Effect> {
         self.state.rooms.retain(|r| r.id.account != account);
-        self.state.rooms.extend(rooms.into_iter().map(Arc::new));
+        let rooms = rooms
+            .into_iter()
+            .map(|mut room| {
+                self.apply_local_read(&mut room);
+                Arc::new(room)
+            })
+            .collect::<Vec<_>>();
+        self.state.rooms.extend(rooms);
         self.set_servers(&account, servers);
         // Loads from before a reconnect may never answer (their results
         // are dropped): don't leave those rooms waiting.
@@ -104,6 +111,36 @@ impl Application {
                 ]
             }
             _ => Vec::new(),
+        }
+    }
+
+    pub(super) fn apply_local_read(&mut self, room: &mut Room) {
+        let Some(read) = self.local_reads.get(&room.id).cloned() else {
+            return;
+        };
+        let newest = self
+            .state
+            .timelines
+            .get(&room.id)
+            .and_then(|t| t.messages.iter().rev().find(|m| !m.pending))
+            .map(|m| m.id.clone());
+        if let Some(newest) = newest {
+            match read.as_ref() {
+                Some(read) if &newest != read => {
+                    self.local_reads.remove(&room.id);
+                    return;
+                }
+                None => {
+                    self.local_reads.insert(room.id.clone(), Some(newest.clone()));
+                    room.last_read = Some(newest);
+                }
+                _ => {}
+            }
+        }
+        room.unread = false;
+        room.mentions = 0;
+        if let Some(read) = read {
+            room.last_read = Some(read.clone());
         }
     }
 
@@ -250,10 +287,13 @@ impl Application {
             && !self.state.marked_unread.contains(&room);
         let unread = self.state.room(&room).is_some_and(|r| r.unread || r.mentions > 0);
         match last {
-            Some(last) if newest && open && unread => vec![Effect::Backend {
-                account: room.account.clone(),
-                command: Command::MarkRead { room, last },
-            }],
+            Some(last) if newest && open && unread && !self.state.marked_unread.contains(&room) => {
+                self.mark_read_local(&room, Some(last.clone()));
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::MarkRead { room, last },
+                }]
+            }
             _ => Vec::new(),
         }
     }
@@ -261,13 +301,20 @@ impl Application {
     pub(super) fn receive_message_added(&mut self, room: RoomId, message: Message) -> Vec<Effect> {
         self.touch_room(&room, &message);
         let mut effects = Vec::new();
-        if self.state.selected.as_ref() == Some(&room)
+        let message_id = message.id.clone();
+        let is_open = self.state.selected.as_ref() == Some(&room)
+            && !self.state.showing_friends
+            && !self.state.showing_people
+            && !self.state.showing_active
+            && !self.state.showing_threads;
+        if is_open
             && !message.pending
             && !self.state.showing_friends
             && !self.state.showing_people
             && !self.state.showing_active
             && !self.state.showing_threads
         {
+            self.mark_read_local(&room, Some(message_id.clone()));
             effects.push(Effect::Backend {
                 account: room.account.clone(),
                 command: Command::MarkRead {
@@ -299,6 +346,19 @@ impl Application {
             }
         }
         effects
+    }
+
+    pub(super) fn mark_read_local(&mut self, room: &RoomId, last: Option<MessageId>) {
+        self.local_reads.insert(room.clone(), last.clone());
+        if let Some(slot) = self.state.rooms.iter_mut().find(|r| r.id == *room) {
+            let mut updated = (**slot).clone();
+            updated.unread = false;
+            updated.mentions = 0;
+            if let Some(last) = last {
+                updated.last_read = Some(last);
+            }
+            *slot = Arc::new(updated);
+        }
     }
 
     pub(super) fn receive_message_confirmed(&mut self, room: RoomId, nonce: Arc<str>, message: Message) -> Vec<Effect> {

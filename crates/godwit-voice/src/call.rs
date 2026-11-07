@@ -133,6 +133,8 @@ pub enum VoiceEvent {
     Connected {
         channel: String,
     },
+    /// Latest ICE candidate-pair round trip in milliseconds, if available.
+    Latency(Option<u16>),
     Disconnected {
         reason: Option<String>,
     },
@@ -343,6 +345,9 @@ async fn call(
     let mut muted = controls.muted;
     let mut speaking_shown: Vec<String> = Vec::new();
     let mut tick = tokio::time::interval(Duration::from_millis(100));
+    let mut stats_tick = tokio::time::interval(Duration::from_secs(5));
+    stats_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut last_latency = None;
 
     // Media negotiation can wait on the server. Mute, deafen and Leave must
     // still take effect while a camera/share is being published or removed.
@@ -482,6 +487,26 @@ async fn call(
                 if speaking != speaking_shown {
                     speaking_shown = speaking.clone();
                     emit(VoiceEvent::Speaking(speaking));
+                }
+            }
+            _ = stats_tick.tick() => {
+                use livekit::webrtc::stats::{IceCandidatePairState, RtcStats};
+                let latency = room.get_stats().await.ok().and_then(|stats| {
+                    stats.publisher_stats.into_iter().chain(stats.subscriber_stats)
+                        .filter_map(|stat| match stat {
+                            RtcStats::CandidatePair(pair)
+                                if pair.candidate_pair.nominated
+                                    && pair.candidate_pair.state == Some(IceCandidatePairState::Succeeded)
+                                    && pair.candidate_pair.current_round_trip_time.is_finite()
+                                    && pair.candidate_pair.current_round_trip_time > 0.0 =>
+                                    Some((pair.candidate_pair.current_round_trip_time * 1000.0)
+                                        .round().clamp(1.0, f64::from(u16::MAX)) as u16),
+                            _ => None,
+                        }).min()
+                });
+                if latency != last_latency {
+                    last_latency = latency;
+                    emit(VoiceEvent::Latency(latency));
                 }
             }
             cmd = next_cmd(&mut early, cmds) => match cmd {

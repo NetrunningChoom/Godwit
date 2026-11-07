@@ -66,11 +66,33 @@ impl<T: Serialize + DeserializeOwned> Sessions<T> {
     fn kept(&self, slot: u32) -> bool {
         self.limit.is_none_or(|limit| slot < limit)
     }
+    /// Discover kept slots beyond the legacy range, stopping after eight
+    /// empty slots beyond the highest occupied one.
     pub fn slots(&self) -> Vec<u32> {
         let Some(store) = self.store() else { return Vec::new() };
-        (0..self.scan_slots)
-            .filter(|&slot| self.read_from(store, slot).is_some())
-            .collect()
+        self.discover(self.scan_slots, |slot| self.read_from(store, slot).is_some())
+    }
+    /// Discover slots from a custom range and existence check. This lets a
+    /// network preserve its old scan range while checking newly allocated slots.
+    pub fn discover(&self, minimum_scan_slots: u32, mut exists: impl FnMut(u32) -> bool) -> Vec<u32> {
+        self.discover_slots(minimum_scan_slots, &mut exists)
+    }
+    fn discover_slots(&self, minimum_scan_slots: u32, exists: &mut impl FnMut(u32) -> bool) -> Vec<u32> {
+        let mut slots = Vec::new();
+        let minimum = minimum_scan_slots.max(self.scan_slots);
+        let mut slot = 0_u32;
+        let mut empty_after_highest = 0_u32;
+        while slot < minimum || empty_after_highest < 8 {
+            if exists(slot) {
+                slots.push(slot);
+                empty_after_highest = 0;
+            } else if slot >= minimum {
+                empty_after_highest += 1;
+            }
+            let Some(next) = slot.checked_add(1) else { break };
+            slot = next;
+        }
+        slots
     }
     pub fn load(&self, slot: u32) -> Option<T> {
         if !self.kept(slot) {
@@ -114,5 +136,13 @@ mod tests {
         let unbounded = Sessions::<String>::new("test", 8, None, "unused", "unused");
         assert!(unbounded.kept(u32::MAX));
         assert_eq!(unbounded.name(u32::MAX), "test-4294967295");
+    }
+
+    #[test]
+    fn discovers_saved_slots_beyond_the_legacy_scan_range() {
+        let sessions = Sessions::<String>::new("test", 8, None, "unused", "unused");
+        let present = [12];
+        let slots = sessions.discover(8, |slot| present.contains(&slot));
+        assert_eq!(slots, [12]);
     }
 }

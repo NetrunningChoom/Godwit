@@ -644,6 +644,9 @@ impl Media {
                     }
                     message = receive(&mut connection.ws, &mut connection.seq) => {
                         if let Some((op, data)) = connection.handle(message?).await? {
+                            if op == 6 && let Some(latency) = Connection::acked(&data) {
+                                emit(CallEvent::Latency(latency));
+                            }
                             // Someone joined: announce our camera again, as
                             // the server may not pass the last one on.
                             if op == super::connection::op::CLIENTS_CONNECT

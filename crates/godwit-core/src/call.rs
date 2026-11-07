@@ -29,6 +29,8 @@ pub struct CallMember {
 pub struct Call {
     pub room: RoomId,
     pub status: CallStatus,
+    /// Latest voice transport round trip (ms), when the network exposes it.
+    pub latency_ms: Option<u16>,
     pub members: Vec<CallMember>,
     pub muted: bool,
     pub deafened: bool,
@@ -46,6 +48,8 @@ pub struct Call {
 pub struct CallStream {
     pub user: UserId,
     pub watching: bool,
+    /// Number of other call members watching this stream, when the network reports it.
+    pub viewers: Option<u32>,
     /// Why watching it stopped or failed, shown beside it until it's
     /// watched again ("No video arrived.", "The stream ended.").
     pub note: Option<Arc<str>>,

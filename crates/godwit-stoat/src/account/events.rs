@@ -41,6 +41,13 @@ impl StoatAccount {
                 self.sync_members(out);
                 self.sync_own(out);
             }
+            Ev::ServerJoined(server) => {
+                // Creation returns a complete server before its websocket
+                // events arrive; install it and refresh both sidebar models.
+                self.store.add_server(server);
+                self.sync_servers(out);
+                self.sync_rooms(out);
+            }
             Ev::OwnProfile { after_save, result } => {
                 let Some(account) = self.account.clone() else { return };
                 let result = match result {

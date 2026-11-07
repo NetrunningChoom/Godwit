@@ -74,6 +74,9 @@ pub struct Application {
     /// When each room's typing notice last came, so a notice whose stop
     /// never arrives (any network) still runs out: see `expire_typing`.
     typing_at: HashMap<RoomId, std::time::Instant>,
+    /// Locally acknowledged read positions. Network snapshots can lag or omit
+    /// read receipts; keep the UI consistent until a newer message arrives.
+    local_reads: HashMap<RoomId, Option<MessageId>>,
 }
 
 /// How long a typing notice lasts without being repeated. Networks repeat
@@ -86,6 +89,8 @@ impl Application {
             state: AppState {
                 contacts,
                 show_members: true,
+                // Home opens on Active now, including before the first account sync.
+                showing_active: true,
                 ..AppState::default()
             },
             sent: 0,
@@ -93,6 +98,7 @@ impl Application {
             recent: Vec::new(),
             last_room: HashMap::new(),
             typing_at: HashMap::new(),
+            local_reads: HashMap::new(),
         }
     }
 
@@ -575,6 +581,18 @@ impl Application {
         if r.invited_by.is_some() {
             return effects;
         }
+        let read_last = if r.unread || r.mentions > 0 {
+            self.state
+                .timelines
+                .get(&room)
+                .and_then(|t| t.messages.iter().rev().find(|m| !m.pending))
+                .map(|m| m.id.clone())
+        } else {
+            None
+        };
+        if (r.unread || r.mentions > 0) && read_last.is_some() {
+            self.mark_read_local(&room, read_last.clone());
+        }
         // Server channels always ask: their members name and colour the messages.
         if matches!(r.kind, RoomKind::Channel { .. }) || (self.state.show_members && self.has_members(&room)) {
             effects.push(Effect::Backend {
@@ -607,16 +625,21 @@ impl Application {
                 }
                 // A mention count without the unread flag is unread too
                 // (it stuck on the badge otherwise).
-                if (r.unread || r.mentions > 0)
-                    && let Some(last) = t.messages.iter().rev().find(|m| !m.pending)
-                {
-                    effects.push(Effect::Backend {
-                        account,
-                        command: Command::MarkRead {
-                            room: room.clone(),
-                            last: last.id.clone(),
-                        },
-                    });
+                if r.unread || r.mentions > 0 {
+                    if let Some(last) = read_last {
+                        effects.push(Effect::Backend {
+                            account,
+                            command: Command::MarkRead {
+                                room: room.clone(),
+                                last,
+                            },
+                        });
+                    } else {
+                        effects.push(Effect::Backend {
+                            account,
+                            command: Command::MarkRoomRead { room: room.clone() },
+                        });
+                    }
                 }
             }
             None => {

@@ -4,7 +4,9 @@ name: CI
 
 on:
   push:
-    tags: ['v*']
+    branches: ['**']
+    tags-ignore: ['v*']
+  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}

@@ -104,14 +104,14 @@ pub fn start(offer: impl FnOnce(String) + Send + 'static) {
 
 /// After the user said yes: downloads, checks and installs the release
 /// found; `done` hears how it went (on the update thread).
-pub fn install(done: impl FnOnce(Result<(), String>) + Send + 'static) {
+pub fn install(progress: impl Fn(f32) + Send + Sync + 'static, done: impl FnOnce(Result<(), String>) + Send + 'static) {
     let Some(release) = found().take() else {
         return done(Err("no update is waiting".into()));
     };
     let Some(key) = KEY.and_then(hex) else {
         return done(Err("this build can't update itself".into()));
     };
-    background(async move { done(fetch(&release, &key).await) });
+    background(async move { done(fetch(&release, &key, progress).await) });
 }
 
 /// Starts the (new) binary again with the same arguments; the caller quits.
@@ -182,10 +182,12 @@ async fn latest(asset: &str) -> Result<Option<Release>, String> {
 }
 
 /// Downloads the release, checks its signature and installs it.
-async fn fetch(release: &Release, key: &[u8]) -> Result<(), String> {
+async fn fetch(release: &Release, key: &[u8], progress: impl Fn(f32) + Send + Sync) -> Result<(), String> {
     let client = client()?;
-    let binary = download(&client, &release.binary).await?;
-    let signature = download(&client, &release.signature).await?;
+    let binary = download(&client, &release.binary, &progress, 0.0, 0.94).await?;
+    progress(0.95);
+    let signature = download(&client, &release.signature, &progress, 0.95, 0.02).await?;
+    progress(0.98);
     let signature = std::str::from_utf8(&signature)
         .ok()
         .and_then(|s| hex(s.trim()))
@@ -193,10 +195,17 @@ async fn fetch(release: &Release, key: &[u8]) -> Result<(), String> {
     ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, key)
         .verify(&binary, &signature)
         .map_err(|_| format!("{}: the signature doesn't match; not installed", release.version))?;
+    progress(0.99);
     replace(&binary).map_err(|e| format!("installing {}: {e}", release.version))
 }
 
-async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
+async fn download(
+    client: &reqwest::Client,
+    url: &str,
+    progress: &(impl Fn(f32) + Send + Sync),
+    start: f32,
+    span: f32,
+) -> Result<Vec<u8>, String> {
     let mut response = client
         .get(url)
         .send()
@@ -204,10 +213,14 @@ async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String
         .and_then(reqwest::Response::error_for_status)
         .map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
+    let total = response.content_length();
     while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
         bytes.extend_from_slice(&chunk);
         if bytes.len() > MAX_BYTES {
             return Err("the download is too big".into());
+        }
+        if let Some(total) = total.filter(|total| *total > 0) {
+            progress(start + span * (bytes.len() as f32 / total as f32).clamp(0.0, 1.0));
         }
     }
     Ok(bytes)

@@ -112,3 +112,21 @@ export component SessionsPage inherits VerticalLayout {
         }
     }
 }
+
+// The official privacy page for the selected account's platform.
+export component DataPrivacyPage inherits VerticalLayout {
+    in property <string> policy-url;
+    in property <string> policy-label;
+    callback open-policy(string);
+    spacing: Theme.space-5;
+    alignment: start;
+    Card {
+        Text { text: "Official platform information"; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
+        Text {
+            text: "For current details about account data, privacy controls, retention and data requests, check the platform's own information.";
+            wrap: word-wrap;
+            color: Theme.on-surface-variant;
+        }
+        Button { text: root.policy-label; kind: "text"; clicked => { root.open-policy(root.policy-url); } }
+    }
+}

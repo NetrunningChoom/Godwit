@@ -8,7 +8,7 @@ import { CallVideoItem } from "types.slint";
 import { EmojiPicker } from "picker.slint";
 import { TextBlock } from "textblock.slint";
 import { Gifs, GifPicker } from "gif-picker.slint";
-import { Avatar, IconButton, Button, MenuPanel, MenuRow, MenuDivider, TextField, Select as Dropdown, EmojiText, ChoiceChip } from "widgets.slint";
+import { Avatar, IconButton, ImageIconButton, Button, MenuPanel, MenuRow, MenuDivider, TextField, Select as Dropdown, EmojiText } from "widgets.slint";
 import { TalkOnItem } from "types.slint";
 import { MessageRow } from "message-row.slint";
 
@@ -79,12 +79,21 @@ export component Timeline inherits Rectangle {
     callback toggle-members();
     // We're in this room's call: show its members.
     in property <bool> call-here;
+    in property <string> call-status;
+    in property <bool> call-muted;
+    in property <bool> call-deafened;
+    in property <bool> call-speaking;
+    in property <string> call-time;
     in property <bool> call-camera;
     in property <bool> call-screen-share;
     in property <bool> call-can-video;
+    in property <bool> call-video-network;
     in property <[CallVideoItem]> call-videos;
     callback set-camera(bool);
     callback set-screen-share(bool);
+    callback toggle-mute();
+    callback toggle-deafen();
+    callback leave-call();
     in property <[CallMemberItem]> call-members;
     // Go Live streams in the call: Watch / Stop watching, and their sound.
     in property <[StreamItem]> call-streams;
@@ -95,20 +104,27 @@ export component Timeline inherits Rectangle {
     property <int> sound-member: -1;
     property <length> sound-x;
     property <length> sound-y;
-    // The video area: theater mode, and its height once dragged.
+    // The call stage and chat share this view; its bottom edge can be dragged
+    // whether the call has video, streams, or audio-only participants.
     in-out property <bool> theater;
     // Theater ends with the last video (its button went with it).
     property <bool> any-video: root.call-here && root.call-videos.length > 0;
     changed any-video => {
         if !root.any-video { root.theater = false; }
     }
-    in-out property <bool> video-dragged;
-    // The video area's height once dragged (it then stays exactly that).
-    in-out property <length> video-h: 140px;
-    // Its height as laid out now (where a drag starts from).
-    property <length> video-shown-h;
+    in-out property <bool> call-panel-dragged;
+    in-out property <length> call-panel-h: 420px;
+    in-out property <length> sidebar-width;
+    in-out property <bool> combined-resize-hover;
+    callback sidebar-width-committed();
+    property <length> call-panel-shown-h;
+    property <length> call-panel-min:
+        (root.call-extra-videos ? 140px : 0px)
+        + min(288px, max(136px, ceil(root.call-members.length / max(1, floor((root.width - Theme.gap-md) / 176px))) * 124px + 12px))
+        + (root.call-streams.length > 0 ? Theme.row-header : 0px) + 72px;
     property <bool> has-screen-video: root.call-videos.length > 0 && root.screen-videos > 0;
     in property <int> screen-videos;
+    in property <bool> call-extra-videos;
     callback video-fullscreen(int);
     callback join-call();
     in property <[FileItem]> files;
@@ -335,17 +351,15 @@ export component Timeline inherits Rectangle {
                 }
             }
             }
-        // A merged person's networks, on a strip of their own so none is cut
-        // off (four or more, alts included, don't fit the header): the current
-        // one marked; another opens the chat there.
-        // Many accounts (more than four): one dropdown naming them all.
-        if root.talk-on.length > 4: HorizontalLayout {
+        // Choose which identity and account this DM uses. A single dropdown
+        // keeps the control consistent as contacts gain more linked accounts.
+        if root.talk-on.length > 1: HorizontalLayout {
             height: Theme.row-member;
             alignment: start;
             padding-left: Theme.gap-md;
             padding-right: Theme.gap-md;
             spacing: Theme.gap-sm;
-            Text { text: "Talk on"; vertical-alignment: center; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+            Text { text: "Account:"; vertical-alignment: center; font-size: Theme.text-small; color: Theme.on-surface-variant; }
             Dropdown {
                 y: (parent.height - self.height) / 2;
                 height: 36px;
@@ -359,63 +373,31 @@ export component Timeline inherits Rectangle {
                 }
             }
         }
-        if root.talk-on.length > 1 && root.talk-on.length <= 4: talk-strip := Flickable {
-            height: 36px;
-            content-width: max(self.width, talk-row.preferred-width);
-            talk-row := HorizontalLayout {
-                height: 36px;
-                padding-left: Theme.gap-md;
-                padding-right: Theme.gap-md;
-                spacing: Theme.gap-sm;
-                alignment: start;
-                    for t[i] in root.talk-on: ChoiceChip {
-                        y: (parent.height - self.height) / 2;
-                        label: t.label;
-                        chosen: t.current;
-                        compact: true;
-                        presence: t.colour;
-                        choose => { root.talk-on-picked(i); }
-                    }
-            }
-        }
-
-        if root.call-here && (root.call-can-video || root.call-camera || root.call-screen-share): HorizontalLayout {
-            padding: Theme.gap-md;
-            spacing: Theme.gap-md;
-            alignment: start;
-            Button {
-                text: root.call-camera ? "Turn camera off" : "Turn camera on";
-                enabled: root.call-can-video || root.call-camera;
-                clicked => { root.set-camera(!root.call-camera); }
-            }
-            Button {
-                text: root.call-screen-share ? "Stop sharing" : "Share screen";
-                enabled: root.call-can-video || root.call-screen-share;
-                clicked => { root.set-screen-share(!root.call-screen-share); }
-            }
-        }
-        // The call's video: tiles sharing the width, as tall as the user
-        // dragged it (or, until then, half the view when a stream shows).
-        // Theater mode gives it nearly all the room; a tile can go fullscreen.
-        if root.call-here && root.call-videos.length > 0: Rectangle {
-            // Shares the height with the chat by stretch (a fixed height
-            // from the view's own would loop the layout): video : chat.
-            // Once dragged, pinned to the dragged height (clamped while
-            // dragging, so the chat keeps room).
-            min-height: root.video-dragged && !root.theater ? root.video-h : 140px;
-            max-height: root.video-dragged && !root.theater ? root.video-h : 100000px;
-            // Its own wish stays small, so the stretch alone sets its height:
-            // otherwise a 1080p frame's natural height made it want the whole
-            // view, and dragging the handle had no effect.
+        // One connected call panel: video, live streams, participant cards,
+        // and call controls stay together above the chat.
+        if root.call-here: call-panel := Rectangle {
+            min-height: root.call-panel-dragged ? root.call-panel-h : root.call-panel-min;
+            max-height: root.call-panel-dragged ? root.call-panel-h : 100000px;
+            vertical-stretch: root.theater ? 8 : 0.6;
+            background: Theme.surface-low;
+            border-radius: Theme.radius-md;
+            clip: true;
+            init => { root.call-panel-shown-h = self.height; }
+            changed height => { root.call-panel-shown-h = self.height; }
+            VerticalLayout {
+                spacing: 0px;
+        // The call's video: tiles share the width. Theater mode gives it
+        // extra room within the same call panel; a tile can go fullscreen.
+        if root.call-here && root.call-extra-videos: Rectangle {
+            min-height: 140px;
             preferred-height: 140px;
-            init => { root.video-shown-h = self.height; }
-            changed height => { root.video-shown-h = self.height; }
-            vertical-stretch: root.theater ? 8 : (root.has-screen-video ? 1 : 0.4);
-            background: Theme.media;
+            vertical-stretch: 1;
+            background: Theme.surface-low;
             HorizontalLayout {
                 padding: Theme.gap-sm;
                 spacing: Theme.gap-sm;
                 for video[vi] in root.call-videos: Rectangle {
+                    visible: !video.primary || video.participant < 0;
                     horizontal-stretch: 1;
                     min-width: 160px;
                     background: Theme.media-stage;
@@ -462,32 +444,6 @@ export component Timeline inherits Rectangle {
                 theater-touch := TouchArea { mouse-cursor: pointer; clicked => { root.theater = !root.theater; } }
             }
         }
-        // Drag to share the view between the video and the chat.
-        if root.call-here && root.call-videos.length > 0 && !root.theater: Rectangle {
-            height: 6px;
-            background: video-handle.has-hover || video-handle.pressed ? Theme.outline-variant : transparent;
-            video-handle := TouchArea {
-                mouse-cursor: row-resize;
-                // From where the drag began (the height then, and the pointer
-                // in window coordinates), so the edge stays under the pointer:
-                // the handle itself moves with the edge.
-                property <length> start-h;
-                property <length> start-y;
-                pointer-event(e) => {
-                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
-                        self.start-h = root.video-shown-h;
-                        self.start-y = self.absolute-position.y + self.mouse-y;
-                    }
-                }
-                moved => {
-                    if self.pressed {
-                        root.video-dragged = true;
-                        root.video-h = clamp(self.start-h + (self.absolute-position.y + self.mouse-y - self.start-y), 140px, max(140px, root.height - 220px));
-                    }
-                }
-                double-clicked => { root.video-dragged = false; }
-            }
-        }
         // Streams in the call (Discord's Go Live): watching opens its tile above.
         if root.call-here && root.call-streams.length > 0: Rectangle {
             height: Theme.row-header;
@@ -515,6 +471,11 @@ export component Timeline inherits Rectangle {
                             live-text := Text { text: "LIVE"; font-size: Theme.text-tiny; font-weight: 700; color: Theme.on-error; }
                         }
                         Text { text: s.name; vertical-alignment: center; color: Theme.on-surface; }
+                        if s.viewers != "": HorizontalLayout {
+                            spacing: Theme.space-1;
+                            Icon { text: Icons.visibility; color: Theme.on-surface-variant; font-size: Theme.text-small; }
+                            Text { text: s.viewers; vertical-alignment: center; color: Theme.on-surface-variant; font-size: Theme.text-small; }
+                        }
                         if !s.watching && s.note != "": Text {
                             text: s.note;
                             vertical-alignment: center;
@@ -573,17 +534,38 @@ export component Timeline inherits Rectangle {
                     background: Theme.surface-high;
                     border-width: m.speaking ? 2px : 0;
                     border-color: Theme.primary;
+                    if m.video-index >= 0: Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: m.video-index < CallFrames.frames.length
+                            ? CallFrames.frames[m.video-index]
+                            : root.call-videos[m.video-index].frame;
+                        image-fit: cover;
+                    }
+                    if m.video-index >= 0: Rectangle {
+                        y: parent.height - 36px;
+                        height: 36px;
+                        background: @linear-gradient(180deg, transparent 0%, Theme.scrim-strong 100%);
+                    }
+                    if m.video-index >= 0: IconButton {
+                        x: parent.width - self.width - Theme.space-2;
+                        y: parent.height - self.height - Theme.space-2;
+                        glyph: Icons.fullscreen;
+                        tooltip: "Fullscreen";
+                        tint: white;
+                        clicked => { root.video-fullscreen(m.video-index); }
+                    }
                     VerticalLayout {
                         alignment: center;
                         spacing: Theme.gap-sm;
                         HorizontalLayout {
                             alignment: center;
-                            Avatar { size: Theme.avatar-profile; source: m.avatar; has-image: m.has-avatar; initials: m.initials; }
+                            if m.video-index < 0: Avatar { size: Theme.avatar-profile; source: m.avatar; has-image: m.has-avatar; initials: m.initials; }
                         }
                         HorizontalLayout {
                             alignment: center;
                             spacing: Theme.space-2;
-                            Text { text: m.name; color: Theme.on-surface; overflow: elide; }
+                            Text { text: m.name; color: m.video-index >= 0 ? white : Theme.on-surface; overflow: elide; }
                             if m.muted: Icon { text: Icons.mic-off; font-size: Theme.text-body; color: Theme.error; }
                             if m.deafened: Icon { text: Icons.headset-off; font-size: Theme.text-body; color: Theme.error; }
                             // Muted here only: a speaker-off icon beside the others, as the
@@ -601,6 +583,142 @@ export component Timeline inherits Rectangle {
                                 member-sound.show();
                             }
                         }
+                    }
+                }
+            }
+        }
+        Rectangle { vertical-stretch: 1; background: Theme.surface-low; }
+        // Call controls under the stage, in YapFast's filled icon buttons.
+        if root.call-here: Rectangle {
+            height: 72px;
+            background: Theme.surface-low;
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.space-3;
+                padding: Theme.space-3;
+            ImageIconButton {
+                icon: root.call-muted
+                    ? @image-url("../../assets/icons/yapfast/mic-off.svg")
+                    : @image-url("../../assets/icons/yapfast/mic.svg");
+                tooltip: root.call-muted ? "Unmute" : "Mute";
+                enabled: !root.call-deafened;
+                tint: root.call-muted ? Theme.error : root.call-speaking ? Theme.online : Theme.on-surface;
+                fill: root.call-muted ? Theme.error.with-alpha(0.18) : Theme.surface-high;
+                clicked => { root.toggle-mute(); }
+            }
+            ImageIconButton {
+                icon: root.call-deafened
+                    ? @image-url("../../assets/icons/yapfast/headphone-off.svg")
+                    : @image-url("../../assets/icons/yapfast/headphones.svg");
+                tooltip: root.call-deafened ? "Undeafen" : "Deafen";
+                tint: root.call-deafened ? Theme.error : Theme.on-surface;
+                fill: root.call-deafened ? Theme.error.with-alpha(0.18) : Theme.surface-high;
+                clicked => { root.toggle-deafen(); }
+            }
+            if root.call-video-network || root.call-camera: ImageIconButton {
+                icon: root.call-camera
+                    ? @image-url("../../assets/icons/yapfast/video.svg")
+                    : @image-url("../../assets/icons/yapfast/video-off.svg");
+                tooltip: root.call-camera ? "Turn camera off" : "Turn camera on";
+                enabled: root.call-can-video || root.call-camera;
+                fill: root.call-camera ? Theme.primary-container : Theme.surface-high;
+                clicked => { root.set-camera(!root.call-camera); }
+            }
+            if root.call-video-network || root.call-screen-share: ImageIconButton {
+                icon: root.call-screen-share
+                    ? @image-url("../../assets/icons/yapfast/screen-share-off.svg")
+                    : @image-url("../../assets/icons/yapfast/screen-share.svg");
+                tooltip: root.call-screen-share ? "Stop sharing" : "Share your screen";
+                enabled: root.call-can-video || root.call-screen-share;
+                fill: root.call-screen-share ? Theme.primary-container : Theme.surface-high;
+                clicked => { root.set-screen-share(!root.call-screen-share); }
+            }
+            Rectangle { width: Theme.space-3; }
+            ImageIconButton {
+                icon: @image-url("../../assets/icons/yapfast/phone-off.svg");
+                tooltip: "Leave call";
+                tint: Theme.on-error;
+                fill: Theme.error;
+                clicked => { root.leave-call(); }
+            }
+            }
+        }
+            }
+        }
+        // Resize the whole call against the channel timeline, including
+        // audio-only calls. Double-click restores the automatic split.
+        if root.call-here && !root.theater: Rectangle {
+            height: 8px;
+            background: call-panel-handle.has-hover || call-panel-handle.pressed || root.combined-resize-hover
+                ? Theme.outline-variant : transparent;
+            call-panel-handle := TouchArea {
+                mouse-cursor: row-resize;
+                property <length> start-h;
+                property <length> start-y;
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                        self.start-h = root.call-panel-shown-h;
+                        self.start-y = self.absolute-position.y + self.mouse-y;
+                    }
+                }
+                moved => {
+                    if self.pressed {
+                        root.call-panel-dragged = true;
+                        root.call-panel-h = clamp(
+                            self.start-h + self.absolute-position.y + self.mouse-y - self.start-y,
+                            root.call-panel-min,
+                            max(root.call-panel-min, root.height - 240px)
+                        );
+                    }
+                }
+                double-clicked => { root.call-panel-dragged = false; }
+            }
+            // At the divider's junction, a diagonal drag resizes the call
+            // height and channel rail width together. The separate handles
+            // remain available for one-axis adjustments.
+            Rectangle {
+                x: -4px;
+                y: -5px;
+                width: 18px;
+                height: 18px;
+                background: transparent;
+                corner-grip := TouchArea {
+                    mouse-cursor: nwse-resize;
+                    changed has-hover => { root.combined-resize-hover = self.has-hover || self.pressed; }
+                    changed pressed => { root.combined-resize-hover = self.has-hover || self.pressed; }
+                    property <length> start-h;
+                    property <length> start-w;
+                    property <length> start-x;
+                    property <length> start-y;
+                    moved => {
+                        if self.pressed {
+                            root.sidebar-width = clamp(
+                                self.start-w + self.absolute-position.x + self.mouse-x - self.start-x,
+                                200px, 420px
+                            );
+                            root.call-panel-dragged = true;
+                            root.call-panel-h = clamp(
+                                self.start-h + self.absolute-position.y + self.mouse-y - self.start-y,
+                                root.call-panel-min,
+                                max(root.call-panel-min, root.height - 240px)
+                            );
+                        }
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                            self.start-h = root.call-panel-shown-h;
+                            self.start-w = root.sidebar-width;
+                            self.start-x = self.absolute-position.x + self.mouse-x;
+                            self.start-y = self.absolute-position.y + self.mouse-y;
+                        }
+                        if e.kind == PointerEventKind.up {
+                            root.sidebar-width-committed();
+                        }
+                    }
+                    double-clicked => {
+                        root.sidebar-width = Theme.sidebar-width;
+                        root.call-panel-dragged = false;
+                        root.sidebar-width-committed();
                     }
                 }
             }
@@ -904,6 +1022,7 @@ export component Timeline inherits Rectangle {
                 }
                 Rectangle {
                     horizontal-stretch: 1;
+                    y: (parent.height - self.height) / 2;
                     // Shrinks with the window down to this, never below (the
                     // buttons beside it stay on screen).
                     min-width: 120px;

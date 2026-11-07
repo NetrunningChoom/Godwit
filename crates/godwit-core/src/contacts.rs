@@ -423,7 +423,9 @@ pub mod store {
     /// The saved contacts; empty if there's no file yet.
     pub fn load(path: &Path) -> io::Result<Contacts> {
         match std::fs::read(path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(io::Error::other),
+            Ok(bytes) => {
+                serde_json::from_slice(&bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+            }
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Contacts::default()),
             Err(e) => Err(e),
         }

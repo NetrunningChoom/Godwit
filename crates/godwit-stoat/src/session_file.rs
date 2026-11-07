@@ -9,13 +9,14 @@ use godwit_secrets::{Secret, SecretStore};
 use crate::api::Session;
 
 const NAME: &str = "stoat-session";
-/// Stoat accounts signed in at once, at most (each keeps its session in a
-/// slot of its own).
-pub const MAX_SLOTS: u32 = 8;
+/// Number of existing session slots to scan when restoring accounts.
+const LEGACY_SCAN_SLOTS: u32 = 8;
+/// Per-account storage uses numeric names, so new slots need no migration.
+pub const MAX_SLOTS: u32 = u32::MAX;
 
 static SESSIONS: godwit_core::sessions::Sessions<Session> = godwit_core::sessions::Sessions::new(
     NAME,
-    MAX_SLOTS,
+    LEGACY_SCAN_SLOTS,
     None,
     "Could not save the Stoat login; sign in again after restarting",
     "Could not remove the saved Stoat login",
@@ -35,7 +36,7 @@ fn discard_old_session() {
 
 pub fn slots() -> Vec<u32> {
     discard_old_session();
-    SESSIONS.slots()
+    SESSIONS.discover(LEGACY_SCAN_SLOTS, |slot| SESSIONS.load(slot).is_some())
 }
 
 pub fn load(slot: u32) -> Option<Session> {
@@ -90,6 +91,20 @@ mod tests {
         store.delete(NAME).unwrap();
         assert!(SESSIONS.read_from(&store, 0).is_none());
         assert!(SESSIONS.read_from(&store, 3).is_some());
+    }
+
+    #[test]
+    fn higher_account_slots_are_supported_and_discovered() {
+        let store = Memory::default();
+        let session = Session {
+            id: "test-session".into(),
+            user_id: "test-user".into(),
+            token: "fake-test-token".into(),
+        };
+        assert!(SESSIONS.write_to(&store, 12, &session));
+        assert!(SESSIONS.read_from(&store, 12).is_some());
+        let discovered = SESSIONS.discover(LEGACY_SCAN_SLOTS, |slot| SESSIONS.read_from(&store, slot).is_some());
+        assert_eq!(discovered, [12]);
     }
 
     struct Unavailable;

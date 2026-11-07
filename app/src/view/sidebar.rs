@@ -288,7 +288,11 @@ fn category_header(title: &str, images: &mut Images) -> RoomItem {
 /// category key (headings only), for folding it.
 /// `network`: Home shows only chats on that network (its name; "" for all).
 pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, collapsed: &[String]) -> SidebarRows {
-    let selected = state.selected.as_ref();
+    // Non-room pages keep the last room in core state for context (drafts,
+    // profiles, returning to Home), but it isn't the currently open row.
+    let selected = (!state.showing_friends && !state.showing_people && !state.showing_active && !state.showing_threads)
+        .then_some(state.selected.as_ref())
+        .flatten();
     let mut rows = Vec::new();
     let mut ids = Vec::new();
     match state.selected_server.as_ref().and_then(|s| state.server(s)) {
@@ -670,7 +674,7 @@ mod multi_tests {
         assert!(friends.iter().any(|f| f.name == "Raid lead"));
 
         // People: the near-identical names on two networks are suggested.
-        let (_, _, merges) = people(app.state(), &mut images);
+        let (_, _, merges) = people(app.state(), &mut images, &[]);
         assert_eq!(merges.len(), 1, "one suggestion");
 
         // The Steam chat's markup: an emoticon picture and a sticker.

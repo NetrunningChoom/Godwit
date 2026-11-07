@@ -3143,7 +3143,7 @@ dependencies = [
 
 [[package]]
 name = "godwit"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "arboard",
  "chrono",
@@ -3182,11 +3182,12 @@ dependencies = [
  "unicode-segmentation",
  "ureq",
  "windows-sys 0.61.2",
+ "zbus",
 ]
 
 [[package]]
 name = "godwit-cache"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "blake3",
  "chacha20poly1305 0.11.0",
@@ -3197,7 +3198,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "directories",
  "godwit-secrets",
@@ -3211,7 +3212,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-discord"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3243,7 +3244,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-fluxer"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3266,7 +3267,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-gchat"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3284,7 +3285,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-media"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cc",
  "webrtc-sys",
@@ -3293,7 +3294,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-player"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "gtk",
  "image",
@@ -3311,7 +3312,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-secrets"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "apple-native-keyring-store",
  "getrandom 0.3.4",
@@ -3322,7 +3323,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-slack"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "emojis",
@@ -3340,7 +3341,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-steam"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -3364,7 +3365,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-stoat"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3385,7 +3386,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-teams"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3405,7 +3406,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-voice"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "async-trait",

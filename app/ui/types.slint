@@ -45,6 +45,10 @@ export struct CallVideoItem {
     screen: bool,
     // Its row in the call's streams (for its sound controls), or -1.
     stream: int,
+    // The participant represented by this tile, or -1 for an unlisted stream.
+    participant: int,
+    // First video tile for that participant, shown inside their profile card.
+    primary: bool,
 }
 
 // A piece of a short label: text, or an emoji drawn as its colour picture
@@ -70,6 +74,8 @@ export struct CallMemberItem {
     // How loud they play here (0..2, 1 as sent), and muted here only.
     volume: float,
     local-muted: bool,
+    // First live video tile for this participant, or -1.
+    video-index: int,
 }
 
 // kind: 0 direct message, 1 group, 2 channel, 3 notes.
@@ -401,6 +407,7 @@ export struct PresenceChoice {
 export struct StreamItem {
     name: string,
     watching: bool,
+    viewers: string,
     // Why watching stopped or failed; empty when there's nothing to say.
     note: string,
     // Its sound (0..2, 1 as sent) and whether it's muted here.
@@ -542,6 +549,7 @@ export struct ContactItem {
     talk-on: string,
     // The user turned off "switch to a better network" suggestions for them.
     no-nudges: bool,
+    favourite: bool,
     // Our own name for them ("" for none): it can be reset here.
     nickname: string,
     // `identities` in lines of a few, so any number of accounts fits.

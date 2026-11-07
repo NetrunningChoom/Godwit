@@ -901,6 +901,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         has_frame: true,
                         screen,
                         stream: -1,
+                        participant: -1,
+                        primary: false,
                     };
                     ui.set_call_videos(slint::ModelRc::new(slint::VecModel::from(vec![tile(
                         "Robin · Screen",

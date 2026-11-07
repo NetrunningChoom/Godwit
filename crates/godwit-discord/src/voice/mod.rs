@@ -96,6 +96,8 @@ pub enum CallCmd {
 pub enum CallEvent {
     /// Connected to the voice server; audio flows.
     Connected,
+    /// Voice gateway heartbeat round trip in milliseconds.
+    Latency(u16),
     /// Who sounds like speech now: us (while audible), and the others by user id.
     Speaking { me: bool, users: Vec<String> },
     /// Who has their camera on, by user id, as the voice server announced.

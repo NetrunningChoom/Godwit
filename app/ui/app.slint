@@ -39,6 +39,7 @@ import { IncomingCall } from "incoming-call.slint";
 import { Cropper } from "cropper.slint";
 import { ImageViewer } from "image-viewer.slint";
 import { FullscreenVideo } from "fullscreen-video.slint";
+import { CallPip } from "call-pip.slint";
 import { PinsDialog } from "pins-dialog.slint";
 import { SearchDialog } from "search-dialog.slint";
 import { ThreadDialog } from "thread-dialog.slint";
@@ -228,6 +229,7 @@ export component AppWindow inherits Window {
     // A newer release offered (empty: none), and how its download goes.
     in-out property <string> update-version;
     in property <string> update-status;
+    in-out property <float> update-progress: -1;
     callback update-now();
     in property <string> quiet-notice-account;
     callback quiet-notice(bool);
@@ -277,6 +279,7 @@ export component AppWindow inherits Window {
     callback rename-person(string);
     // People's "Reset nickname" on row `int`.
     callback reset-nickname(int);
+    callback favourite-person(int);
     // The open room is an invite from this person ("" when it isn't).
     in property <string> invite-from;
     in property <bool> room-is-channel;
@@ -316,6 +319,8 @@ export component AppWindow inherits Window {
     in property <[PersonItem]> friends;
     in property <bool> in-call;
     in property <string> call-status;
+    in property <int> call-quality: -1;
+    in property <int> call-latency: -1;
     // Seconds since the call connected (-1: not connected), counted on here
     // between refreshes; `call-time` shows it as 4:05 or 1:02:03.
     in-out property <int> call-elapsed: -1;
@@ -438,6 +443,7 @@ export component AppWindow inherits Window {
     callback user-sound(int, float, bool, bool);
     // How many of the call's videos are screens (the video area grows for them).
     in property <int> call-screen-videos;
+    in property <bool> call-extra-videos;
     // A call video filling the window (its index), or -1.
     in property <int> fullscreen-video: -1;
     callback video-fullscreen(int);
@@ -457,6 +463,8 @@ export component AppWindow inherits Window {
     in property <bool> settings-account-autodelete;
     callback settings-open-autodelete();
     in property <bool> settings-account-discord;
+    in property <string> settings-data-policy-url;
+    in property <string> settings-data-policy-label;
     callback settings-open-privacy();
     callback settings-open-sessions();
     callback open-settings-account(int);
@@ -613,6 +621,7 @@ export component AppWindow inherits Window {
     // sane limits; a double-click on a handle puts it back.
     in-out property <length> sidebar-w: Theme.sidebar-width;
     in-out property <length> members-w: Theme.sidebar-width;
+    in-out property <bool> combined-resize-hover;
     callback panels-resized(length, length);
     in property <[string]> tones;
     in-out property <int> tone-index;
@@ -748,7 +757,6 @@ export component AppWindow inherits Window {
             Rail {
                 servers: root.servers;
                 home-selected: root.home-selected;
-                has-problems: root.problems-unseen > 0;
                 // The account's profile, for that account (the popup and
                 // presence act on it): opened, or closed when open on it.
                 toggle-account(i) => { root.toggle-account(i); }
@@ -766,10 +774,6 @@ export component AppWindow inherits Window {
                     root.profile-open = !root.profile-open || root.focus-account != i;
                     root.focus-account = i;
                     root.open-account(i);
-                }
-                open-settings => {
-                    root.settings-open = true;
-                    root.settings-opened();
                 }
                 select-home => { root.select-home(); }
                 select-server(i) => { root.select-server(i); }
@@ -830,6 +834,8 @@ export component AppWindow inherits Window {
                             show-active => { root.show-active(); }
                             in-call: root.in-call;
                             call-status: root.call-status;
+                            call-quality: root.call-quality;
+                            call-latency: root.call-latency;
                             call-time: root.call-time;
                             call-can-video: root.call-can-video;
                             call-video-network: root.call-video-network;
@@ -857,6 +863,7 @@ export component AppWindow inherits Window {
                         }
                         ResizeHandle {
                             value: root.sidebar-w;
+                            linked-hover: root.combined-resize-hover;
                             dragged(w) => { root.sidebar-w = clamp(w, 200px, 420px); }
                             released => { root.panels-resized(root.sidebar-w, root.members-w); }
                             reset => { root.sidebar-w = Theme.sidebar-width; root.panels-resized(root.sidebar-w, root.members-w); }
@@ -886,8 +893,7 @@ export component AppWindow inherits Window {
                                         refresh => { root.show-threads(); }
                                         load-more => { root.threads-load-more(); }
                                     }
-                                    if root.page && !root.showing-active && !root.showing-threads: VerticalLayout {
-                                    People {
+                                    if root.showing-people: People {
                                         horizontal-stretch: 1;
                                         people: root.people;
                                         merges: root.merges;
@@ -899,39 +905,21 @@ export component AppWindow inherits Window {
                                         choose(a, b) => { root.choose-network(a, b); }
                                         message(i) => { root.message-person(i); }
                                         reset-nickname(i) => { root.reset-nickname(i); }
+                                        favourite(i) => { root.favourite-person(i); }
                                         networks: root.people-networks;
                                         query <=> root.people-query;
                                         search(t) => { root.people-search(t); }
                                         filtered(n) => { root.people-filter(n); }
                                     }
-                                    Friends {
-                                        // Just the add form, at its own height: under People, by the pending requests.
-                                        form-only: true;
-                                        vertical-stretch: 0;
-                                        management-only: true;
-                                        accounts: root.accounts;
+                                    if root.showing-friends: Friends {
                                         horizontal-stretch: 1;
-                                        people: [];
+                                        accounts: root.accounts;
                                         requests: root.friend-requests;
                                         request-status: root.friend-request-status;
                                         request-failed: root.friend-request-failed;
-                                        open-direct(i) => { root.open-direct(i); }
                                         send-request(account, name) => { root.send-friend-request(account, name); }
                                         accept-request(i) => { root.answer-friend-request(i, true); }
                                         decline-request(i) => { root.answer-friend-request(i, false); }
-                                    }
-                                    // Pending requests, at the bottom; capped so People keeps the room.
-                                    if root.friend-requests.length > 0: Friends {
-                                        requests-only: true;
-                                        management-only: true;
-                                        height: min(28px + root.friend-requests.length * 56px + 8px, max(120px, root.height * 0.3));
-                                        accounts: root.accounts;
-                                        horizontal-stretch: 1;
-                                        people: [];
-                                        requests: root.friend-requests;
-                                        accept-request(i) => { root.answer-friend-request(i, true); }
-                                        decline-request(i) => { root.answer-friend-request(i, false); }
-                                    }
                                     }
                                     // An invite: who asks, and the answer; nothing to read yet.
                                     if root.has-room && !root.page && root.invite-from != "": VerticalLayout {
@@ -960,6 +948,9 @@ export component AppWindow inherits Window {
                                     }
                                     if root.has-room && !root.page && root.invite-from == "": Timeline {
                                         horizontal-stretch: 1;
+                                        sidebar-width <=> root.sidebar-w;
+                                        combined-resize-hover <=> root.combined-resize-hover;
+                                        sidebar-width-committed => { root.panels-resized(root.sidebar-w, root.members-w); }
                                         title: root.room-title;
                                         as-account: root.room-account;
                                         talk-on: root.room-talk-on;
@@ -997,13 +988,21 @@ export component AppWindow inherits Window {
                                         stream-sound(i, v, m, d) => { root.stream-sound(i, v, m, d); }
                                         user-sound(i, v, m, d) => { root.user-sound(i, v, m, d); }
                                         screen-videos: root.call-screen-videos;
+                                        call-extra-videos: root.call-extra-videos;
                                         video-fullscreen(i) => { root.video-fullscreen(i); }
                                         call-videos: root.call-videos;
                                         call-camera: root.call-camera;
                                         call-screen-share: root.call-screen-share;
                                         call-can-video: root.call-can-video;
+                                        call-video-network: root.call-video-network;
+                                        call-muted: root.call-muted;
+                                        call-deafened: root.call-deafened;
+                                        call-speaking: root.call-speaking;
                                         set-camera(active) => { root.camera-asked(active); }
                                         set-screen-share(active) => { root.set-screen-share(active); }
+                                        toggle-mute => { root.toggle-mute(); }
+                                        toggle-deafen => { root.toggle-deafen(); }
+                                        leave-call => { root.leave-call(); }
                                         has-members: root.has-members;
                                         has-pins: root.has-pins;
                                         has-search: root.has-search;
@@ -1203,6 +1202,10 @@ export component AppWindow inherits Window {
         account-autodelete: root.settings-account-autodelete;
         open-autodelete => { root.settings-open-autodelete(); }
         account-discord: root.settings-account-discord;
+        account-data: true;
+        data-policy-url: root.settings-data-policy-url;
+        data-policy-label: root.settings-data-policy-label;
+        open-policy(url) => { root.login-open-link(url); }
         open-privacy => { root.settings-open-privacy(); }
         open-sessions => { root.settings-open-sessions(); }
         open-account(i) => { root.open-settings-account(i); }
@@ -1342,11 +1345,15 @@ export component AppWindow inherits Window {
         install-later => { root.install-later(); }
         update-version <=> root.update-version;
         update-status: root.update-status;
+        update-progress <=> root.update-progress;
         update-now => { root.update-now(); }
     }
     // A call video filling the window: double-click or Esc comes back.
     if root.fullscreen-video >= 0 && root.fullscreen-video < root.call-videos.length && screen == Screen.main: FullscreenVideo {
         call-deafened: root.call-deafened;
+        call-camera: root.call-camera;
+        call-can-video: root.call-can-video;
+        call-screen-share: root.call-screen-share;
         call-members: root.call-members;
         call-muted: root.call-muted;
         call-speaking: root.call-speaking;
@@ -1355,9 +1362,23 @@ export component AppWindow inherits Window {
         call-videos: root.call-videos;
         fullscreen-video: root.fullscreen-video;
         stream-sound(a0, a1, a2, a3) => { root.stream-sound(a0, a1, a2, a3); }
+        set-camera(on) => { root.camera-asked(on); }
+        set-screen-share(on) => { root.set-screen-share(on); }
         toggle-deafen() => { root.toggle-deafen(); }
         toggle-mute() => { root.toggle-mute(); }
+        leave-call() => { root.leave-call(); }
         video-fullscreen(a0) => { root.video-fullscreen(a0); }
+    }
+    // While browsing another room, keep a live call video in a draggable
+    // corner so the text channel and the call remain visible together.
+    CallPip {
+        shown: root.in-call && !root.call-here && screen == Screen.main;
+        videos: root.call-videos;
+        left-bound: Theme.rail-width + root.sidebar-w + 8px;
+        right-edge: root.wide && root.members-shown && root.has-members && root.has-room && !root.page
+            ? root.width - root.members-w - 8px : root.width - 8px;
+        bottom-edge: root.height;
+        open-call => { root.open-call-room(); }
     }
     if root.viewer-open && screen == Screen.main: ImageViewer {
         close-image() => { root.close-image(); }

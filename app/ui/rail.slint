@@ -113,7 +113,7 @@ component Divider inherits Rectangle {
 }
 
 // Home, then a section per account: its avatar (opens its profile), then its
-// servers in the user's order; Settings at the bottom.
+// servers in the user's order. Settings lives in the account card.
 export component Rail inherits Rectangle {
     in property <[ServerItem]> servers;
     in property <bool> home-selected;
@@ -121,10 +121,7 @@ export component Rail inherits Rectangle {
     // section, a right-click opens its profile (status, presence).
     callback toggle-account(int);
     callback open-account(int);
-    callback open-settings();
     callback select-home();
-    // Problems were logged since Settings → Problems was last looked at.
-    in property <bool> has-problems;
     callback select-server(int);
     callback join-server();
     // A server's right-click menu: move it (-1 up, 1 down, 0 to the top of
@@ -279,21 +276,6 @@ export component Rail inherits Rectangle {
             glyph: Icons.group;
             tooltip: "Join a server";
             clicked => { root.join-server(); }
-        }
-        Divider { }
-        SymbolEntry {
-            glyph: Icons.settings;
-            tooltip: root.has-problems ? "Settings (new problems logged)" : "Settings";
-            clicked => { root.open-settings(); }
-            // A calm dot, not a pop-up (Settings → Problems).
-            if root.has-problems: Rectangle {
-                x: parent.width / 2 + 10px;
-                y: 4px;
-                width: 10px;
-                height: 10px;
-                border-radius: self.width / 2;
-                background: Theme.error;
-            }
         }
         Rectangle { height: Theme.gap-md; }
     }

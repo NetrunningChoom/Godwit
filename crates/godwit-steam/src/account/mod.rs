@@ -441,6 +441,27 @@ impl NetworkAccount for SteamAccount {
                     self.net.send(Cmd::Ack { friend, time });
                 }
             }
+            Command::MarkRoomRead { room } => {
+                if let Some((group, chat)) = group_of(&room) {
+                    if let Some(c) = self.group_chats.get_mut(&(group, chat)) {
+                        let time = c.last;
+                        c.unread = false;
+                        c.mentions = 0;
+                        if time > 0 {
+                            self.net.send(Cmd::GroupAck { group, chat, time });
+                        }
+                    }
+                } else if let Some(friend) = Self::friend_of(&room)
+                    && let Some(c) = self.chats.get_mut(&friend)
+                {
+                    let time = c.last;
+                    c.unread = false;
+                    c.mentions = 0;
+                    if time > 0 {
+                        self.net.send(Cmd::Ack { friend, time });
+                    }
+                }
+            }
             Command::SetPresence(p) => {
                 let state = match p {
                     Presence::Idle => 3,

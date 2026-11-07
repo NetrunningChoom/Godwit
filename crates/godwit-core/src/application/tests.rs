@@ -1825,6 +1825,36 @@ fn search_asks_the_network_and_keeps_only_the_latest_answer() {
 }
 
 #[test]
+fn search_without_network_support_filters_loaded_messages_locally() {
+    let mut app = Application::default();
+    let room = dm(Network::Steam, "local-search", "them");
+    let id = room.id.clone();
+    ready(&mut app, Network::Steam, vec![room]);
+    app.dispatch(Action::SelectRoom(id.clone()));
+    let mut needle = msg("needle");
+    needle.source = "Needle in a haystack".into();
+    let other = msg("other");
+    app.apply(Event::History {
+        room: id.clone(),
+        before: None,
+        messages: vec![needle, other],
+        reached_start: true,
+    });
+    let effects = app.dispatch(Action::Search(" NEEDLE ".into()));
+    assert!(effects.is_empty());
+    let results = app
+        .state()
+        .search
+        .as_ref()
+        .and_then(|search| search.messages.as_ref())
+        .unwrap();
+    assert_eq!(
+        results.iter().map(|message| message.id.0.as_ref()).collect::<Vec<_>>(),
+        ["needle"]
+    );
+}
+
+#[test]
 fn pins_open_load_unpin_and_close_with_the_room() {
     let mut app = Application::default();
     let mut r = dm(Network::Discord, "c1", "them");
@@ -2289,6 +2319,7 @@ fn streams_in_a_call_can_be_watched() {
         streams: vec![crate::call::CallStream {
             user: zed.clone(),
             watching,
+            viewers: None,
             note: None,
         }],
     };
