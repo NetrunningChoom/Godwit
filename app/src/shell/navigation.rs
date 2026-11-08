@@ -49,35 +49,21 @@ impl Shell {
         self.refresh(ui);
     }
 
-    /// Stars or unstars a person: kept here, and on the networks that keep
-    /// favourites themselves.
+    /// Stars or unstars a person in Godwit, across all linked identities.
     pub fn toggle_person_favourite(&mut self, ui: &AppWindow, row: i32) {
-        let Some((_, identities)) = self.person_at(row).cloned() else {
+        let Some((contact, _)) = self.person_at(row).cloned() else {
             return;
         };
-        let keys: Vec<String> = identities.iter().map(ToString::to_string).collect();
-        // Starred here, or in a network's own favourites: unstar everywhere.
-        let favourites = &self.app.state().favourites;
-        let unstar = keys.iter().any(|key| self.settings.person_favourites.contains(key))
-            || identities.iter().any(|u| favourites.contains(u));
-        // The networks that keep favourites themselves get the star too.
-        self.act(
-            ui,
-            Action::SetFavourite {
-                users: identities.clone(),
-                favourite: !unstar,
-            },
-        );
-        if unstar {
-            self.settings.person_favourites.retain(|key| !keys.contains(key));
-        } else {
-            self.settings.person_favourites.extend(keys);
-        }
-        self.settings.person_favourites.sort();
-        self.settings.person_favourites.dedup();
-        self.presenter.muzzle = self.settings.clone();
-        self.save_settings();
-        self.refresh(ui);
+        let favourite = self.app.state().contacts.get(contact).is_some_and(|c| !c.favourite);
+        self.act(ui, Action::SetContactFavourite { contact, favourite });
+    }
+
+    pub fn contact_of(&self, user: &UserId) -> Option<ContactId> {
+        self.app.state().contacts.of(user).map(|c| c.id)
+    }
+
+    pub fn convert_emoticons(&self) -> bool {
+        self.settings.convert_emoticons
     }
 
     /// Fetches the invite cards on screen, once each (as the official

@@ -204,7 +204,7 @@ pub fn friends(state: &AppState, images: &mut Images) -> (Vec<PersonItem>, Vec<U
             None => groups.push((contact, vec![p])),
         }
     }
-    let mut rows: Vec<(bool, String, PersonItem, UserId)> = Vec::with_capacity(groups.len());
+    let mut rows: Vec<(bool, bool, String, PersonItem, UserId)> = Vec::with_capacity(groups.len());
     for (contact, members) in groups {
         let best = contact.and_then(|c| {
             let ours: Vec<&UserId> = members.iter().map(|p| &p.id).collect();
@@ -232,7 +232,9 @@ pub fn friends(state: &AppState, images: &mut Images) -> (Vec<PersonItem>, Vec<U
             .as_deref()
             .or_else(|| members.iter().find_map(|p| p.avatar_url.as_deref()));
         let (avatar, has_avatar) = picture(images, avatar_url);
+        let favourite = contact.is_some_and(|c| c.favourite);
         rows.push((
+            favourite,
             online,
             name.to_lowercase(),
             PersonItem {
@@ -242,14 +244,20 @@ pub fn friends(state: &AppState, images: &mut Images) -> (Vec<PersonItem>, Vec<U
                 avatar,
                 has_avatar,
                 online,
+                favourite,
+                section: Default::default(),
                 networks: ModelRc::new(VecModel::from(networks)),
             },
             main.id.clone(),
         ));
     }
-    rows.sort_by(|a, b| (!a.0, &a.1).cmp(&(!b.0, &b.1)));
-    let ids = rows.iter().map(|r| r.3.clone()).collect();
-    (rows.into_iter().map(|r| r.2).collect(), ids)
+    sort_friend_rows(&mut rows);
+    let ids = rows.iter().map(|r| r.4.clone()).collect();
+    (rows.into_iter().map(|r| r.3).collect(), ids)
+}
+
+fn sort_friend_rows<T>(rows: &mut [(bool, bool, String, T, UserId)]) {
+    rows.sort_by(|a, b| (!a.0, !a.1, &a.2).cmp(&(!b.0, !b.1, &b.2)));
 }
 
 /// Pending friend requests, theirs first, each by name; and who each row is.
@@ -287,7 +295,7 @@ pub type PeopleRows = Vec<(ContactId, Vec<UserId>)>;
 pub fn people(
     state: &AppState,
     images: &mut Images,
-    favourites: &[String],
+    _favourites: &[String],
 ) -> (Vec<ContactItem>, PeopleRows, Vec<MergeItem>) {
     // Only identities on accounts signed in now: a signed-out account's
     // contacts (and merges) wait, hidden, until it signs in again.
@@ -302,12 +310,8 @@ pub fn people(
             c
         })
         .collect();
-    // Starred here, or in the network's own favourites.
-    let starred = |c: &Metacontact| {
-        c.identities
-            .iter()
-            .any(|u| state.favourites.contains(u) || favourites.contains(&u.to_string()))
-    };
+    // Godwit's local metacontact flag is shared by every linked identity.
+    let starred = |c: &Metacontact| c.favourite;
     // Favourites first (as the official clients put them on top), each part
     // by when we last talked (on any of their accounts), then by name.
     let seen = state.last_interactions();
@@ -713,7 +717,9 @@ pub fn presence_colour(p: Presence) -> slint::Color {
 
 #[cfg(test)]
 mod tests {
-    use super::sections;
+    use super::{sections, sort_friend_rows};
+    use godwit_core::ids::{AccountId, UserId};
+    use godwit_core::network::Network;
 
     #[test]
     fn favourites_and_everyone_else_are_headed() {
@@ -729,5 +735,46 @@ mod tests {
         assert_eq!(sections(&[false, false], false), vec!["", ""]);
         assert_eq!(sections(&[true, false], true), vec!["", ""]);
         assert!(sections(&[], false).is_empty());
+    }
+
+    #[test]
+    fn friends_sort_favourites_before_presence_and_name() {
+        let account = AccountId::new(Network::Stoat, "me");
+        let user = |name: &str| UserId::new(account.clone(), name);
+        let mut rows = vec![
+            (false, true, "Ann".to_owned(), (), user("ann")),
+            (true, false, "Zoe".to_owned(), (), user("zoe")),
+            (false, true, "Ben".to_owned(), (), user("ben")),
+        ];
+        sort_friend_rows(&mut rows);
+        assert_eq!(
+            rows.iter().map(|row| row.2.as_str()).collect::<Vec<_>>(),
+            ["Zoe", "Ann", "Ben"]
+        );
+    }
+
+    #[test]
+    fn friends_page_sections_follow_pending_then_friends_rows() {
+        let page = [
+            "Pending heading",
+            "request row",
+            "Friends heading",
+            "Favourites heading",
+            "favourite row",
+            "Everyone else heading",
+            "friend row",
+        ];
+        assert_eq!(
+            page,
+            [
+                "Pending heading",
+                "request row",
+                "Friends heading",
+                "Favourites heading",
+                "favourite row",
+                "Everyone else heading",
+                "friend row",
+            ]
+        );
     }
 }

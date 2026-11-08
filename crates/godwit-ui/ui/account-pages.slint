@@ -9,6 +9,7 @@ import { Button, Toggle, SurfaceCard as Card, SettingsRow, Select, TextField } f
 // A claim in a network's privacy overview and the labels of its sources.
 export struct PrivPara {
     text: string,
+    why: string,
     sources: [string],
 }
 
@@ -277,25 +278,26 @@ export component DataPrivacyPage inherits VerticalLayout {
     callback open-source(int, int);
     spacing: Theme.space-5;
     alignment: start;
+    Card {
+        Text { text: "Official platform information"; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
+        Text {
+            text: "The platform's own privacy policy, which describes what it collects, how it uses and shares it, how long it keeps it and how to make data requests. Third-party sources follow below.";
+            wrap: word-wrap;
+            color: Theme.on-surface-variant;
+        }
+        Button { text: root.policy-label; kind: "text"; clicked => { root.open-policy(root.policy-url); } }
+    }
     if root.overview.length > 0: Card {
         Text { text: "Privacy overview · " + root.overview-title; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
         for para[p] in root.overview: VerticalLayout {
             spacing: Theme.space-2;
             Text { text: para.text; wrap: word-wrap; color: Theme.on-surface-variant; }
+            Text { text: para.why; wrap: word-wrap; font-size: Theme.text-label; color: Theme.outline; }
             HorizontalLayout {
                 alignment: start;
                 for label[s] in para.sources: Button { text: label; kind: "text"; clicked => { root.open-source(p, s); } }
             }
         }
         Text { text: root.overview-caveat; wrap: word-wrap; font-size: Theme.text-label; color: Theme.outline; }
-    }
-    Card {
-        Text { text: "Official platform information"; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
-        Text {
-            text: "For current details about account data, privacy controls, retention and data requests, check the platform's own information.";
-            wrap: word-wrap;
-            color: Theme.on-surface-variant;
-        }
-        Button { text: root.policy-label; kind: "text"; clicked => { root.open-policy(root.policy-url); } }
     }
 }

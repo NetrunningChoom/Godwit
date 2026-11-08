@@ -255,6 +255,12 @@ fn friends_scene(app: &mut Application, _: &AppWindow, _: &RoomId, _: &RoomId) -
         account: account(),
         people: (0..3).map(|i| person_row(i, false)).collect(),
     });
+    if let Some(contact) = app.state().contacts.of(&user("friend-0")).map(|c| c.id) {
+        app.dispatch(Action::SetContactFavourite {
+            contact,
+            favourite: true,
+        });
+    }
     app.apply(Event::FriendRequests {
         account: account(),
         incoming: (0..8).map(|i| person_row(i, true)).collect(),
@@ -1032,6 +1038,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             hover: Some((700.0, 140.0)),
             ..Scene::new("people", Box::new(people))
         },
+        Scene::new("people-favourites", Box::new(people)),
+        Scene::new("friends-favourites", Box::new(friends_scene)),
         Scene::new(
             "people-from-card",
             Box::new(|app, ui, a, b| {
@@ -1586,6 +1594,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_search_scope_server(true);
                 ui.set_search_total("2 results".into());
                 ui.set_search_more(true);
+                ui.set_search_suggestions(slint::ModelRc::new(slint::VecModel::from(vec![
+                    godwit::ui::SearchSuggestionItem {
+                        label: "from:".into(),
+                        detail: "Author".into(),
+                        query: "from:".into(),
+                    },
+                    godwit::ui::SearchSuggestionItem {
+                        label: "mentions:".into(),
+                        detail: "Mentioned user".into(),
+                        query: "mentions:".into(),
+                    },
+                    godwit::ui::SearchSuggestionItem {
+                        label: "in:".into(),
+                        detail: "Channel".into(),
+                        query: "in:".into(),
+                    },
+                    godwit::ui::SearchSuggestionItem {
+                        label: "has:".into(),
+                        detail: "Message content".into(),
+                        query: "has:".into(),
+                    },
+                ])));
                 ui.set_search_open(true);
                 Screen::Main
             }),
@@ -2172,12 +2202,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_settings_data_policy_url("https://discord.com/privacy".into());
                 ui.set_settings_data_policy_label("Open Discord privacy information".into());
                 ui.set_settings_overview_title(section.title.as_str().into());
-                ui.set_settings_overview_caveat(section.caveat.as_str().into());
+                ui.set_settings_overview_caveat(section.footer().into());
                 let paras: Vec<godwit::ui::PrivPara> = section
                     .paragraphs
                     .iter()
                     .map(|p| godwit::ui::PrivPara {
                         text: p.text.as_str().into(),
+                        why: p.why.as_str().into(),
                         sources: slint::ModelRc::new(slint::VecModel::from(
                             p.sources
                                 .iter()
@@ -2384,6 +2415,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // Person 0 is also on Signal (a merged contact), for the suggestion bar.
         let mut contacts = Contacts::default();
+        if scene.name == "friends-favourites" {
+            contacts.ensure(user("friend-0"), "Rakaïs 1");
+            contacts.ensure(user("friend-1"), "Rakaïs 2");
+            contacts.ensure(user("friend-2"), "Xamika 3");
+            if let Some(contact) = contacts.of(&user("friend-0")).map(|c| c.id)
+                && let Some(contact) = contacts.get_mut(contact)
+            {
+                contact.favourite = true;
+            }
+        }
         if scene.name == "nudge" || scene.name == "profile" || scene.name.starts_with("people") {
             let a = contacts.ensure(user("u0"), &person(0));
             let b = contacts.ensure(
@@ -2402,11 +2443,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             contacts.merge(bo, m);
             if let Some(c) = contacts.get_mut(bo) {
                 c.preferred = Some(Network::Stoat);
+                c.favourite = true;
             }
             // Person 0 said "Don't suggest again" once (not in the nudge scene).
             let ann = contacts.ensure(user("u0"), &person(0));
             if let Some(c) = contacts.get_mut(ann) {
                 c.no_nudges = true;
+            }
+            if scene.name == "people-favourites"
+                && let Some(c) = contacts.of(&user("u2")).map(|c| c.id)
+                && let Some(c) = contacts.get_mut(c)
+            {
+                c.favourite = true;
             }
         }
         let (mut app, general, dm) = world(contacts);

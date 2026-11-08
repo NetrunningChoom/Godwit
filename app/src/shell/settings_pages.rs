@@ -146,6 +146,7 @@ impl Shell {
         ui.set_muzzle_max_index(nearest(&crate::settings::MUZZLE_MAXES, s.muzzle_max_secs));
         ui.set_dnd(s.dnd);
         ui.set_dark(s.dark);
+        ui.set_convert_emoticons(s.convert_emoticons);
         ui.set_accent_index(
             theme::ACCENTS
                 .iter()
@@ -245,12 +246,13 @@ impl Shell {
         // The network's own privacy overview, if it has one.
         let section = self.account(&id).and_then(|a| a.privacy_section());
         ui.set_settings_overview_title(section.as_ref().map_or("", |s| s.title.as_str()).into());
-        ui.set_settings_overview_caveat(section.as_ref().map_or("", |s| s.caveat.as_str()).into());
+        ui.set_settings_overview_caveat(section.as_ref().map(|s| s.footer()).unwrap_or_default().into());
         let paras: Vec<crate::ui::PrivPara> = section
             .iter()
             .flat_map(|s| &s.paragraphs)
             .map(|p| crate::ui::PrivPara {
                 text: p.text.as_str().into(),
+                why: p.why.as_str().into(),
                 sources: ModelRc::new(VecModel::from(
                     p.sources
                         .iter()
@@ -530,6 +532,7 @@ impl Shell {
         );
         s.dnd = ui.get_dnd();
         s.dark = ui.get_dark();
+        s.convert_emoticons = ui.get_convert_emoticons();
         if self.devices_shown
             && let Some(devices) = devices
         {

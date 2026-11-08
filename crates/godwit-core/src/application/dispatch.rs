@@ -476,6 +476,16 @@ impl Application {
                 c.nickname = nickname;
                 vec![Effect::SaveContacts]
             }
+            Action::SetContactFavourite { contact, favourite } => {
+                let Some(c) = self.state.contacts.get_mut(contact) else {
+                    return Vec::new();
+                };
+                if c.favourite == favourite {
+                    return Vec::new();
+                }
+                c.favourite = favourite;
+                vec![Effect::SaveContacts]
+            }
             Action::OpenDirect(user) => self.dispatch_open_direct(user),
             Action::CreateGroup { account, name, users } => {
                 let name = name.trim().to_owned();

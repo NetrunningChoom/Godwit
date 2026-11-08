@@ -144,6 +144,19 @@ impl DiscordAccount {
             } else {
                 godwit_core::search::SearchFilters::DIRECT
             },
+            // Search values and order follow Discord's official client
+            // (Yapfast docs/discord.md, checked 2026-11-09).
+            search_has: godwit_core::search::SearchHasSet::new(&[
+                godwit_core::search::SearchHas::Link,
+                godwit_core::search::SearchHas::Embed,
+                godwit_core::search::SearchHas::File,
+                godwit_core::search::SearchHas::Video,
+                godwit_core::search::SearchHas::Image,
+                godwit_core::search::SearchHas::Sound,
+                godwit_core::search::SearchHas::Sticker,
+                godwit_core::search::SearchHas::Poll,
+                godwit_core::search::SearchHas::Forward,
+            ]),
             // In DMs anyone may pin; in servers it takes the permission.
             pin_messages: c.private() || can(p::PIN_MESSAGES) || can(p::MANAGE_MESSAGES),
             // Starting threads (from a message, or a forum's post); not inside a thread.

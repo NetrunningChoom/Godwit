@@ -22,6 +22,8 @@ pub const MUZZLE_MAX_LABELS: [&str; 5] = ["2 minutes", "5 minutes", "10 minutes"
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// Convert completed emoticons in the composer to Unicode emoji.
+    pub convert_emoticons: bool,
     pub dark: bool,
     /// The accent the colour scheme is built from (`theme::ACCENTS`; empty: the default).
     pub accent: String,
@@ -140,6 +142,7 @@ pub const MAX_GIF_FAVOURITES: usize = 500;
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            convert_emoticons: true,
             dark: true,
             accent: String::new(),
             style: 0,

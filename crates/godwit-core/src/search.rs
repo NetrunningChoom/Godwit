@@ -100,6 +100,178 @@ impl SearchHas {
             _ => return None,
         })
     }
+
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Link => "link",
+            Self::Embed => "embed",
+            Self::File => "file",
+            Self::Video => "video",
+            Self::Image => "image",
+            Self::Sound => "sound",
+            Self::Sticker => "sticker",
+            Self::Poll => "poll",
+            Self::Forward => "forward",
+        }
+    }
+}
+
+/// Which content kinds a network supports after `has:`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SearchHasSet(u16);
+
+impl SearchHasSet {
+    pub const NONE: Self = Self(0);
+
+    pub const fn new(values: &[SearchHas]) -> Self {
+        let mut bits = 0;
+        let mut i = 0;
+        while i < values.len() {
+            bits |= 1 << values[i] as u16;
+            i += 1;
+        }
+        Self(bits)
+    }
+
+    pub const fn has(self, value: SearchHas) -> bool {
+        self.0 & (1 << value as u16) != 0
+    }
+
+    pub fn words(self) -> Vec<&'static str> {
+        [
+            SearchHas::Link,
+            SearchHas::Embed,
+            SearchHas::File,
+            SearchHas::Video,
+            SearchHas::Image,
+            SearchHas::Sound,
+            SearchHas::Sticker,
+            SearchHas::Poll,
+            SearchHas::Forward,
+        ]
+        .into_iter()
+        .filter(|value| self.has(*value))
+        .map(SearchHas::word)
+        .collect()
+    }
+}
+
+/// One completion for a search box. `query` replaces the unfinished final
+/// token and includes a trailing space so the user can keep typing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Suggestion {
+    pub label: String,
+    pub detail: String,
+    pub query: String,
+}
+
+/// Suggest a filter, a locally known member, a channel, or a `has:` value.
+/// Candidates are supplied by the caller so this logic remains network-neutral
+/// and never performs a lookup while the user types.
+pub fn suggestions(
+    input: &str,
+    supported: SearchFilters,
+    people: &[(String, String)],
+    channels: &[(String, String)],
+    has_values: &[&str],
+) -> Vec<Suggestion> {
+    let mut split = 0;
+    let mut quoted = false;
+    for (i, c) in input.char_indices() {
+        if c == '"' {
+            quoted = !quoted;
+        } else if c.is_whitespace() && !quoted {
+            split = i + c.len_utf8();
+        }
+    }
+    let prefix = &input[split..];
+    let before = &input[..split];
+    let (key, value) = prefix.split_once(':').unwrap_or((prefix, ""));
+    let filter = match key.to_ascii_lowercase().as_str() {
+        "from" => Some(SearchFilter::From),
+        "mentions" => Some(SearchFilter::Mentions),
+        "has" => Some(SearchFilter::Has),
+        "before" => Some(SearchFilter::Before),
+        "after" => Some(SearchFilter::After),
+        "during" => Some(SearchFilter::During),
+        "in" => Some(SearchFilter::In),
+        "pinned" => Some(SearchFilter::Pinned),
+        _ => None,
+    };
+    let mut out = Vec::new();
+    if let Some(filter) = filter.filter(|_| prefix.contains(':')) {
+        if !supported.has(filter) {
+            return out;
+        }
+        let needle = value.trim_matches('"').trim_start_matches(['@', '#']).to_lowercase();
+        let mut add = |label: String, detail: String, insertion: String| {
+            let quoted = if insertion.chars().any(char::is_whitespace) {
+                format!("\"{insertion}\"")
+            } else {
+                insertion
+            };
+            out.push(Suggestion {
+                label,
+                detail,
+                query: format!("{before}{key}:{quoted} "),
+            });
+        };
+        match filter {
+            SearchFilter::From | SearchFilter::Mentions => {
+                let mut matching: Vec<&String> = people
+                    .iter()
+                    .map(|(_, name)| name)
+                    .filter(|name| name.to_lowercase().contains(&needle))
+                    .collect();
+                matching.sort_by_key(|name| !name.to_lowercase().starts_with(&needle));
+                for name in matching.into_iter().take(8) {
+                    add(name.clone(), String::new(), name.clone());
+                }
+            }
+            SearchFilter::In => {
+                let mut matching: Vec<&String> = channels
+                    .iter()
+                    .map(|(_, name)| name)
+                    .filter(|name| name.to_lowercase().contains(&needle))
+                    .collect();
+                matching.sort_by_key(|name| !name.to_lowercase().starts_with(&needle));
+                for name in matching.into_iter().take(8) {
+                    add(format!("#{name}"), "Channel".into(), name.clone());
+                }
+            }
+            SearchFilter::Has => {
+                for word in has_values {
+                    if word.starts_with(&needle) {
+                        add((*word).into(), "Message contains".into(), (*word).into());
+                    }
+                }
+            }
+            _ => {}
+        }
+        return out;
+    }
+
+    let filters = [
+        (SearchFilter::From, "from:", "Author"),
+        (SearchFilter::Mentions, "mentions:", "Mentioned user"),
+        (SearchFilter::In, "in:", "Channel"),
+        (SearchFilter::Has, "has:", "Message content"),
+        (SearchFilter::Before, "before:", "Before date"),
+        (SearchFilter::After, "after:", "After date"),
+        (SearchFilter::During, "during:", "On date"),
+        (SearchFilter::Pinned, "pinned:", "Pinned messages"),
+    ];
+    let needle = key.to_lowercase();
+    for (filter, token, detail) in filters {
+        if supported.has(filter) && token.trim_end_matches(':').starts_with(&needle) {
+            out.push(Suggestion {
+                label: token.into(),
+                detail: detail.into(),
+                query: format!("{before}{token}"),
+            });
+        }
+    }
+    out
 }
 
 /// Where a search looks, for a channel of a server.
@@ -386,6 +558,52 @@ mod tests {
         for word in ["video", "sound", "sticker", "poll", "forward", "embed", "file"] {
             assert!(SearchHas::parse(word).is_some(), "{word}");
         }
+    }
+
+    #[test]
+    fn suggestions_offer_filters_members_channels_and_has_values() {
+        let people = vec![("u1".into(), "Alice Example".into()), ("u2".into(), "Bob".into())];
+        let channels = vec![("c1".into(), "general".into()), ("c2".into(), "help desk".into())];
+        let filters = SearchFilters::ALL;
+        let has_values = [
+            "link", "embed", "file", "video", "image", "sound", "sticker", "poll", "forward",
+        ];
+        let filters_shown = suggestions("", filters, &people, &channels, &has_values);
+        assert!(filters_shown.iter().any(|s| s.label == "from:"));
+        assert!(filters_shown.iter().any(|s| s.label == "has:"));
+
+        let authors = suggestions("from:ali", filters, &people, &channels, &has_values);
+        assert_eq!(authors.len(), 1);
+        assert_eq!(authors[0].label, "Alice Example");
+        assert_eq!(authors[0].query, "from:\"Alice Example\" ");
+        assert_eq!(
+            suggestions("from:\"Alice Ex", filters, &people, &channels, &has_values)[0].label,
+            "Alice Example"
+        );
+
+        let channels_found = suggestions("in:hel", filters, &people, &channels, &has_values);
+        assert_eq!(channels_found[0].label, "#help desk");
+        assert_eq!(channels_found[0].query, "in:\"help desk\" ");
+
+        let kinds = suggestions("has:vi", filters, &people, &channels, &has_values);
+        assert_eq!(kinds.iter().map(|s| s.label.as_str()).collect::<Vec<_>>(), ["video"]);
+    }
+
+    #[test]
+    fn suggestions_respect_capabilities_and_replace_only_the_final_token() {
+        let people = vec![("u1".into(), "Alice".into())];
+        let filters = SearchFilters::DIRECT;
+        assert!(suggestions("in:", filters, &people, &[], &[]).is_empty());
+        let result = suggestions("some words fro", filters, &people, &[], &[]);
+        assert_eq!(result[0].query, "some words from:");
+    }
+
+    #[test]
+    fn content_suggestion_values_follow_the_neutral_capability_set() {
+        let values = SearchHasSet::new(&[SearchHas::Poll, SearchHas::Link]);
+        assert!(values.has(SearchHas::Poll));
+        assert!(!values.has(SearchHas::Image));
+        assert_eq!(values.words(), ["link", "poll"]);
     }
 
     #[test]

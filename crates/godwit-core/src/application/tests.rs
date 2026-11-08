@@ -2409,6 +2409,14 @@ fn friends_become_contacts_that_can_be_linked_unlinked_and_preferred() {
         vec![Effect::SaveContacts]
     );
     assert_eq!(app.state().contacts.iter().count(), 1);
+    assert_eq!(
+        app.dispatch(Action::SetContactFavourite {
+            contact: ids[0],
+            favourite: true
+        }),
+        vec![Effect::SaveContacts]
+    );
+    assert!(app.state().contacts.get(ids[0]).is_some_and(|c| c.favourite));
     app.dispatch(Action::SetPreferred {
         contact: ids[0],
         network: Some(Network::Stoat),

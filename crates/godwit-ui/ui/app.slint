@@ -14,7 +14,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -555,6 +555,7 @@ export component AppWindow inherits Window {
     in property <bool> search-failed;
     in property <bool> search-asked;
     in property <[PinItem]> search-results;
+    in property <[SearchSuggestionItem]> search-suggestions;
     // Filter hint line, filter errors or the network's word, the count.
     in property <string> search-hint;
     in property <string> search-notice;
@@ -566,6 +567,7 @@ export component AppWindow inherits Window {
     callback search-scope(bool);
     callback load-more-results();
     callback search(string);
+    callback search-edited(string);
     callback close-search();
     callback search-jump(int);
     in property <bool> can-pin;
@@ -634,6 +636,8 @@ export component AppWindow inherits Window {
     callback add-friend-profile();
     callback remove-friend-profile();
     in property <string> card-linked;
+    in property <bool> card-favourite;
+    callback toggle-card-favourite();
     in property <bool> call-here;
     in property <[CallMemberItem]> call-members;
     in property <[StreamItem]> call-streams;
@@ -725,6 +729,7 @@ export component AppWindow inherits Window {
     in-out property <bool> echo-cancellation;
     in-out property <bool> auto-gain;
     in-out property <bool> dark;
+    in-out property <bool> convert-emoticons;
     in-out property <int> accent-index;
     in-out property <int> style-index;
     in property <[EmojiPackItem]> emoji-packs;
@@ -893,6 +898,7 @@ export component AppWindow inherits Window {
     callback join-call();
     callback toggle-members();
     callback open-message-profile(int);
+    callback open-friend-profile(int);
     callback open-member-profile(int);
     callback close-profile();
     callback mark-unread(int);
@@ -1259,6 +1265,7 @@ export component AppWindow inherits Window {
                                     }
                                     if root.showing-friends: Friends {
                                         horizontal-stretch: 1;
+                                        people: root.friends;
                                         accounts: root.accounts;
                                         group-people: root.group-people;
                                         group-selected-count: root.group-selected-count;
@@ -1270,6 +1277,7 @@ export component AppWindow inherits Window {
                                         send-request(account, name) => { root.send-friend-request(account, name); }
                                         accept-request(i) => { root.answer-friend-request(i, true); }
                                         decline-request(i) => { root.answer-friend-request(i, false); }
+                                        open-person(i) => { root.open-friend-profile(i); }
                                         group-capable <=> root.friend-group-capable;
                                         account-selected(key) => {
                                             root.friend-account-key = key;
@@ -1327,6 +1335,7 @@ export component AppWindow inherits Window {
                                     detached: root.detached;
                                     jump-to-present => { root.jump-to-present(); }
                                         can-send: root.can-send;
+                                        convert-emoticons: root.convert-emoticons;
                                         can-react: root.can-react;
                                         can-mark-unread: root.can-mark-unread;
                                         can-forward: root.can-forward;
@@ -1519,6 +1528,8 @@ export component AppWindow inherits Window {
         add-friend => { root.add-friend-profile(); }
         remove-friend => { root.remove-friend-profile(); }
         linked: root.card-linked;
+        favourite: root.card-favourite;
+        toggle-favourite => { root.toggle-card-favourite(); }
         link => { root.link-profile(); }
         can-kick: root.card-can-kick;
         can-ban: root.card-can-ban;
@@ -1714,6 +1725,7 @@ export component AppWindow inherits Window {
         echo-cancellation <=> root.echo-cancellation;
         auto-gain <=> root.auto-gain;
         dark <=> root.dark;
+        convert-emoticons <=> root.convert-emoticons;
         accent-index <=> root.accent-index;
         style-index <=> root.style-index;
         emoji-packs: root.emoji-packs;
@@ -1890,6 +1902,8 @@ export component AppWindow inherits Window {
     if root.search-open && screen == Screen.main: SearchDialog {
         close-search() => { root.close-search(); }
         search(a0) => { root.search(a0); }
+        search-edited(a0) => { root.search-edited(a0); }
+        search-suggestions: root.search-suggestions;
         search-asked: root.search-asked;
         search-busy: root.search-busy;
         search-failed: root.search-failed;

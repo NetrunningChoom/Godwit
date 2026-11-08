@@ -5,6 +5,67 @@
 use super::*;
 
 impl Shell {
+    /// Refresh the local search completions as the field changes. Member and
+    /// channel candidates are state already loaded for this account; typing
+    /// never triggers a network lookup.
+    pub fn search_suggestions(&self, ui: &AppWindow, input: &str) {
+        let Some(search) = self.app.state().search.as_ref() else {
+            return;
+        };
+        let state = self.app.state();
+        let capabilities = state.room(&search.room).map(|r| r.capabilities);
+        let filters = capabilities.map(|c| c.search_filters).unwrap_or_default();
+        let has_values = capabilities.map(|c| c.search_has.words()).unwrap_or_default();
+        let mut people = Vec::new();
+        if let Some(groups) = state.members.get(&search.room) {
+            people.extend(
+                groups
+                    .iter()
+                    .flat_map(|g| &g.members)
+                    .map(|m| (m.user.to_string(), m.name.to_string())),
+            );
+        }
+        if let Some((room, _, found)) = &state.member_found
+            && room == &search.room
+        {
+            for member in found.iter() {
+                if !people.iter().any(|(id, _)| id == &member.user.to_string()) {
+                    people.push((member.user.to_string(), member.name.to_string()));
+                }
+            }
+        }
+        for profile in state
+            .profiles
+            .values()
+            .filter(|p| p.user.account == search.room.account)
+        {
+            if !people.iter().any(|(id, _)| id == &profile.user.to_string()) {
+                people.push((profile.user.to_string(), profile.name.to_string()));
+            }
+        }
+        let channels: Vec<(String, String)> = match state.room(&search.room).map(|r| &r.kind) {
+            Some(godwit_core::room::RoomKind::Channel { server }) => state
+                .rooms
+                .iter()
+                .filter(|r| {
+                    r.id.account == search.room.account
+                        && matches!(&r.kind, godwit_core::room::RoomKind::Channel { server: s } if s == server)
+                })
+                .map(|r| (r.id.to_string(), r.name.to_string()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let suggestions = godwit_core::search::suggestions(input, filters, &people, &channels, &has_values)
+            .into_iter()
+            .map(|s| crate::ui::SearchSuggestionItem {
+                label: s.label.into(),
+                detail: s.detail.into(),
+                query: s.query.into(),
+            })
+            .collect::<Vec<_>>();
+        ui.set_search_suggestions(ModelRc::new(VecModel::from(suggestions)));
+    }
+
     /// A message as the pins and search lists show it.
     pub(super) fn list_item(m: &godwit_core::message::Message) -> crate::ui::PinItem {
         crate::ui::PinItem {
@@ -69,6 +130,7 @@ impl Shell {
         ui.set_search_more(s.next_offset.is_some());
         ui.set_search_loading_more(s.loading_more);
         ui.set_search_open(true);
+        self.search_suggestions(ui, &s.query);
     }
 
     /// "Jump" on a search result: the dialog closes, the message shows.

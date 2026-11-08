@@ -317,6 +317,11 @@ pub enum Action {
         contact: ContactId,
         nickname: Option<String>,
     },
+    /// Star or unstar a person in Godwit only.
+    SetContactFavourite {
+        contact: ContactId,
+        favourite: bool,
+    },
     /// Star or unstar a person (all of `users`, their accounts) on the
     /// networks that keep favourites themselves. Godwit's local stars are
     /// kept by the app; this only reaches the networks.

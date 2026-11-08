@@ -458,6 +458,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_thread_confirm() => |sh, ui| sh.thread_confirm(ui));
     callback!(ui.on_open_search() => |sh, ui| sh.act(ui, Action::Search(String::new())));
     callback!(ui.on_search(query) => |sh, ui| sh.act(ui, Action::Search(query.to_string())));
+    callback!(ui.on_search_edited(query) => |sh, ui| sh.search_suggestions(ui, &query));
     callback!(ui.on_search_scope(server) => |sh, ui| {
         let scope = if server { godwit_core::search::SearchScope::Server } else { godwit_core::search::SearchScope::Channel };
         sh.act(ui, Action::SearchScope(scope));
@@ -693,7 +694,11 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_load_earlier() => |sh, ui| sh.act(ui, Action::LoadEarlier));
-    callback!(ui.on_draft_edited(text) => |sh, ui| sh.act(ui, Action::SetDraft(text.into())));
+    callback!(ui.on_draft_edited(text) => |sh, ui| {
+        let text = if sh.convert_emoticons() { godwit_core::emoticons::convert_completed(&text) } else { text.to_string() };
+        if text.as_str() != ui.get_draft().as_str() { ui.set_draft(text.as_str().into()); }
+        sh.act(ui, Action::SetDraft(text));
+    });
     // The timeline's text selection (selection.rs), through its global.
     {
         let select = ui.global::<godwit::ui::Select>();
@@ -1094,6 +1099,17 @@ fn connect_callbacks(ui: &AppWindow) {
         if let Some(user) = sh.profile_user() {
             sh.act(ui, Action::LinkFrom(user));
         }
+    });
+    callback!(ui.on_toggle_card_favourite() => |sh, ui| {
+        if let Some(user) = sh.profile_user()
+            && let Some(contact) = sh.contact_of(&user)
+        {
+            let favourite = sh.contact(contact).is_some_and(|c| !c.favourite);
+            sh.act(ui, Action::SetContactFavourite { contact, favourite });
+        }
+    });
+    callback!(ui.on_open_friend_profile(row) => |sh, ui| {
+        if let Some(user) = sh.friend_at(row) { sh.act(ui, Action::OpenProfile(user)); }
     });
     callback!(ui.on_set_nudges(row, on) => |sh, ui| {
         if let Some((contact, _)) = sh.person_at(row) {

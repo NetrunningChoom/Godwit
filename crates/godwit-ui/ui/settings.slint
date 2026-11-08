@@ -160,6 +160,7 @@ export component Settings inherits Rectangle {
     in-out property <bool> echo-cancellation;
     in-out property <bool> auto-gain;
     in-out property <bool> dark;
+    in-out property <bool> convert-emoticons;
     // Appearance: the accent swatch picked (theme::ACCENTS' order) and the colour style.
     in-out property <int> accent-index;
     in-out property <int> style-index;
@@ -635,6 +636,11 @@ export component Settings inherits Rectangle {
                 if root.section == 3: VerticalLayout {
                     spacing: Theme.space-4;
                     Heading { text: "Appearance"; }
+                    Row {
+                        label: "Convert emoticons to emoji";
+                        detail: "Turn text faces like <3 into emoji as you type.";
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.convert-emoticons; toggled(on) => { root.convert-emoticons = on; root.changed(); } }
+                    }
                     Row {
                         label: "Dark theme";
                         Toggle { y: (parent.height - self.height) / 2; checked: root.dark; toggled(on) => { root.dark = on; root.changed(); } }

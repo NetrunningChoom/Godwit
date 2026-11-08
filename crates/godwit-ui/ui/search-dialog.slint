@@ -3,13 +3,15 @@
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { PinItem } from "types.slint";
+import { PinItem, SearchSuggestionItem } from "types.slint";
 import { Dialog, Button, TextField, MessageSummary } from "widgets.slint";
 
 // The message search dialog.
 export component SearchDialog inherits Dialog {
     callback close-search();
     callback search(string);
+    callback search-edited(string);
+    in property <[SearchSuggestionItem]> search-suggestions;
     in property <bool> search-asked;
     in property <bool> search-busy;
     in property <bool> search-failed;
@@ -32,6 +34,31 @@ export component SearchDialog inherits Dialog {
         placeholder: "Words to find, then Enter";
         autofocus: true;
         accepted => { root.search(self.text); }
+        edited(text) => { root.search-edited(text); }
+    }
+    if root.search-suggestions.length > 0: VerticalLayout {
+        spacing: 0px;
+        alignment: start;
+        for suggestion[i] in root.search-suggestions: Rectangle {
+            width: parent.width;
+            height: Theme.control-button;
+            background: touch.has-hover ? Theme.surface-high : transparent;
+            HorizontalLayout {
+                x: Theme.space-3;
+                y: (parent.height - self.height) / 2;
+                spacing: Theme.space-3;
+                alignment: start;
+                Text { text: suggestion.label; color: Theme.primary; font-weight: 600; vertical-alignment: center; }
+                if suggestion.detail != "": Text { text: suggestion.detail; color: Theme.on-surface-variant; vertical-alignment: center; }
+            }
+            touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    search-field.text = suggestion.query;
+                    root.search-edited(suggestion.query);
+                }
+            }
+        }
     }
     if root.search-hint != "": Text {
         text: root.search-hint;

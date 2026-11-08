@@ -14,6 +14,7 @@ pub mod channel_settings;
 pub mod config_dir;
 pub mod contacts;
 pub mod emoji_packs;
+pub mod emoticons;
 pub mod encoding;
 pub mod forum;
 pub mod games;

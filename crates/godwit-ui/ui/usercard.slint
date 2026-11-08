@@ -30,6 +30,8 @@ export component UserCard inherits Rectangle {
     in property <int> relationship;
     // Their other accounts, when linked ("Also on Signal").
     in property <string> linked;
+    in property <bool> favourite;
+    callback toggle-favourite();
     // Seen in a server where we outrank them (the official UserContextMenu).
     in property <bool> can-kick;
     in property <bool> can-ban;
@@ -242,6 +244,11 @@ export component UserCard inherits Rectangle {
                     }
                 }
                 if root.linked != "": Text { text: root.linked; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+                if root.linked != "" || !root.me: Button {
+                    text: root.favourite ? "Remove from favourites" : "Add to favourites";
+                    kind: "text";
+                    clicked => { root.toggle-favourite(); }
+                }
                 if !root.me: HorizontalLayout {
                     spacing: Theme.space-3;
                     // Stoat only lets friends message each other (the official

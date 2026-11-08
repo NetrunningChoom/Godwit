@@ -730,6 +730,9 @@ impl Presenter {
         }
         if let Some((user, _)) = &state.profile {
             ui.set_card_linked(view::linked(state, user).into());
+            ui.set_card_favourite(state.contacts.of(user).is_some_and(|c| c.favourite));
+        } else {
+            ui.set_card_favourite(false);
         }
         // Channels' call times count from now (the window ticks on).
         // Only forward: the window's own tick runs a little ahead of whole
@@ -795,7 +798,12 @@ impl Presenter {
             self.active_rows = targets;
         }
         if state.showing_friends || state.showing_people {
-            let (rows, people) = view::friends(state, images);
+            let (mut rows, people) = view::friends(state, images);
+            let starred: Vec<bool> = rows.iter().map(|r| r.favourite).collect();
+            let sections = view::sections(&starred, false);
+            for (row, section) in rows.iter_mut().zip(sections) {
+                row.section = section.into();
+            }
             view::sync(&self.friends, rows);
             self.friend_rows = people;
             self.group_person_selected

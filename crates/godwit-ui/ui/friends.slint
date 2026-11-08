@@ -3,7 +3,7 @@
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
-import { RequestItem, AccountItem, GroupPersonItem } from "types.slint";
+import { RequestItem, AccountItem, GroupPersonItem, PersonItem } from "types.slint";
 import { Avatar, Button, TextField, PageHeader } from "widgets.slint";
 
 component AccountSelect inherits Rectangle {
@@ -96,6 +96,7 @@ component RequestRow inherits Rectangle {
 
 // Send a friend request from a chosen account and manage pending requests.
 export component Friends inherits Rectangle {
+    in property <[PersonItem]> people;
     in property <[AccountItem]> accounts;
     in property <[RequestItem]> requests;
     in property <[GroupPersonItem]> group-people;
@@ -109,6 +110,7 @@ export component Friends inherits Rectangle {
     callback send-request(string, string);
     callback accept-request(int);
     callback decline-request(int);
+    callback open-person(int);
     callback account-selected(string);
     callback toggle-group-person(int);
     callback create-group(string);
@@ -214,6 +216,37 @@ export component Friends inherits Rectangle {
                     item: r;
                     accept => { root.accept-request(i); }
                     decline => { root.decline-request(i); }
+                }
+                if root.people.length > 0: Rectangle {
+                    height: 28px;
+                    Text {
+                        x: Theme.gap-lg;
+                        text: "Friends — " + root.people.length;
+                        vertical-alignment: center;
+                        font-size: Theme.text-small;
+                        font-weight: 600;
+                        color: Theme.outline;
+                    }
+                }
+                for p[i] in root.people: Rectangle {
+                    VerticalLayout {
+                        if p.section != "": Rectangle {
+                            height: 28px;
+                            Text { x: Theme.gap-lg; text: p.section; vertical-alignment: center; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; }
+                        }
+                        Rectangle {
+                            height: 56px;
+                            HorizontalLayout {
+                                padding-left: Theme.gap-lg;
+                                padding-right: Theme.gap-lg;
+                                spacing: Theme.gap-md;
+                                Avatar { source: p.avatar; has-image: p.has-avatar; initials: p.initials; }
+                                Text { text: p.name; vertical-alignment: center; horizontal-stretch: 1; color: Theme.on-surface; overflow: elide; }
+                                if p.favourite: Text { text: "★"; vertical-alignment: center; color: Theme.primary; }
+                            }
+                            TouchArea { clicked => { root.open-person(i); } }
+                        }
+                    }
                 }
             }
         }

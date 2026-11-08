@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
 //! A network's privacy overview for Settings: short factual paragraphs, each
-//! with sources. Networks write their own; core never writes the wording.
+//! with sources. Networks write their own; core never writes the wording. Each network lists
+//! its own official pages first, then third-party sources, each with why.
 
 /// One claim and where it comes from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivacyParagraph {
     pub text: String,
+    /// One neutral line on why the sources are listed: what a reader learns there.
+    pub why: String,
     /// (label, address) pairs, opened in the browser. Every claim has one.
     pub sources: Vec<(String, String)>,
 }
@@ -18,11 +21,22 @@ pub const SOURCES_CAVEAT: &str = "These sources are from the dates shown and may
 pub struct PrivacySection {
     pub title: String,
     pub paragraphs: Vec<PrivacyParagraph>,
+    /// An optional closing line the network writes, shown above the caveat.
+    pub takeaway: String,
     /// Shown under the sources (normally [`SOURCES_CAVEAT`]).
     pub caveat: String,
 }
 
 impl PrivacySection {
+    /// The takeaway (if any) and the caveat, as one text under the sources.
+    pub fn footer(&self) -> String {
+        if self.takeaway.is_empty() {
+            self.caveat.clone()
+        } else {
+            format!("{}\n\n{}", self.takeaway, self.caveat)
+        }
+    }
+
     /// Whether every claim is sourced and every source is an https address.
     pub fn is_sourced(&self) -> bool {
         self.paragraphs
@@ -41,8 +55,10 @@ mod tests {
             title: "T".into(),
             paragraphs: vec![PrivacyParagraph {
                 text: "x".into(),
+                why: "y".into(),
                 sources: vec![("a".into(), "https://a.example".into())],
             }],
+            takeaway: String::new(),
             caveat: String::new(),
         };
         assert!(s.is_sourced());

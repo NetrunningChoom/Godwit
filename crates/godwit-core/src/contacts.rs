@@ -37,6 +37,9 @@ pub struct Metacontact {
     /// of the networks' names.
     #[serde(default)]
     pub nickname: Option<String>,
+    /// Starred in Godwit, on this device only.
+    #[serde(default)]
+    pub favourite: bool,
 }
 
 impl Metacontact {
@@ -125,6 +128,7 @@ impl Contacts {
             no_nudges: false,
             not_same: Vec::new(),
             nickname: None,
+            favourite: false,
         });
         id
     }
@@ -146,6 +150,7 @@ impl Contacts {
                 target.preferred_user = gone.preferred_user;
             }
             target.no_nudges |= gone.no_nudges;
+            target.favourite |= gone.favourite;
             target.not_same.extend(gone.not_same);
         }
         true
@@ -477,10 +482,20 @@ pub mod store {
             let mut c = Contacts::default();
             let a = c.ensure(UserId::new(AccountId::new(Network::Stoat, "me"), "01A"), "Ann");
             let b = c.ensure(UserId::new(AccountId::new(Network::Discord, "@me:x"), "@ann:x"), "Ann");
+            if let Some(contact) = c.get_mut(a) {
+                contact.favourite = true;
+            }
             assert!(c.merge(a, b));
             save(&path, &c).unwrap();
             assert_eq!(load(&path).unwrap(), c);
             std::fs::remove_dir_all(&dir).unwrap();
+        }
+
+        #[test]
+        fn old_contact_files_default_to_not_favourite() {
+            let json = r#"{"next":1,"list":[{"id":1,"name":"Ann","identities":[{"account":{"network":"Stoat","user":"me"},"raw":"01A"}],"preferred":null,"preferred_user":null,"nudged":false,"no_nudges":false,"not_same":[],"nickname":null}]}"#;
+            let contacts: Contacts = serde_json::from_str(json).expect("valid old contacts file");
+            assert!(!contacts.iter().next().is_some_and(|contact| contact.favourite));
         }
     }
 }
