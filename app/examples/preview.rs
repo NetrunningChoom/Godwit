@@ -1739,6 +1739,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Screen::Main
             }),
         ),
+        // The poll dialog, filled (the dialog's state is the window's, set below).
+        Scene::new(
+            "poll",
+            Box::new(|app, _, general, _| {
+                app.dispatch(Action::SelectRoom(general.clone()));
+                Screen::Main
+            }),
+        ),
         Scene::new("ctrl-k", Box::new(|_, _, _, _| Screen::Main)),
         Scene::new("light-profile", Box::new(|app, _, _, _| open_profile(app, false))),
         Scene::new(
@@ -1968,6 +1976,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (rows, _) = godwit::view::forward_results(app.state(), &from, "", &mut images.borrow_mut());
             ui.set_forward_results(slint::ModelRc::new(slint::VecModel::from(rows)));
             ui.set_forward_open(true);
+        }
+        if scene.name == "poll" {
+            let model = |items: &[&str]| {
+                slint::ModelRc::new(slint::VecModel::from(
+                    items.iter().map(|s| slint::SharedString::from(*s)).collect::<Vec<_>>(),
+                ))
+            };
+            ui.set_poll_answers(model(&["Pizza", "Soup", "Salad"]));
+            ui.set_poll_durations(model(&godwit_core::poll::POLL_DURATIONS.map(|(_, l)| l)));
+            ui.set_poll_duration(godwit_core::poll::POLL_DEFAULT_DURATION as i32);
+            ui.set_poll_multi(true);
+            ui.set_poll_can_add(true);
+            ui.set_poll_can_post(true);
+            ui.set_poll_open(true);
         }
         // Several passes, as a running event loop would make: layout first,
         // then the pointer (hover needs geometry), then queued `changed`

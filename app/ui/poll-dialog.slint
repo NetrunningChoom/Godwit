@@ -1,0 +1,88 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons } from "theme.slint";
+import { Button, Dialog, IconButton, TextField, Toggle } from "widgets.slint";
+
+// "Create Poll" in the composer's menu, as the official client's dialog: a
+// question, two or more answers, how long it runs and whether people may pick
+// several answers. The typed text lives in the shell (an answer's field keeps
+// its own text between edits); adding or removing an answer sets the list again.
+export component PollDialog inherits Dialog {
+    in property <[string]> answers;
+    in property <[string]> durations;
+    in-out property <int> duration;
+    in-out property <bool> multi;
+    in property <bool> can-add;
+    in property <bool> can-post;
+    // What is still missing or too long, in a sentence.
+    in property <string> hint;
+    in-out property <bool> poll-open;
+    callback question-edited(string);
+    callback answer-edited(int, string);
+    callback add-answer();
+    callback remove-answer(int);
+    callback post();
+
+    title: "Create poll";
+    card-width: 520px;
+    dismissed => { root.poll-open = false; }
+    Text { text: "Question"; color: Theme.on-surface-variant; font-size: Theme.text-small; }
+    TextField {
+        placeholder: "What question do you want to ask?";
+        autofocus: true;
+        edited(t) => { root.question-edited(t); }
+    }
+    Text { text: "Answers"; color: Theme.on-surface-variant; font-size: Theme.text-small; }
+    VerticalLayout {
+        spacing: Theme.space-2;
+        for a[i] in root.answers: HorizontalLayout {
+            spacing: Theme.space-2;
+            TextField {
+                horizontal-stretch: 1;
+                text: a;
+                placeholder: "Answer " + (i + 1);
+                edited(t) => { root.answer-edited(i, t); }
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                glyph: Icons.close;
+                tooltip: "Remove answer";
+                visible: root.answers.length > 2;
+                clicked => { root.remove-answer(i); }
+            }
+        }
+        if root.can-add: Button { text: "Add another answer"; kind: "text"; clicked => { root.add-answer(); } }
+    }
+    Text { text: "Duration"; color: Theme.on-surface-variant; font-size: Theme.text-small; }
+    HorizontalLayout {
+        spacing: Theme.space-2;
+        for d[i] in root.durations: Rectangle {
+            height: 32px;
+            border-radius: Theme.radius-lg;
+            background: i == root.duration ? Theme.secondary-container
+                : touch.has-hover ? Theme.surface-highest : transparent;
+            border-width: i == root.duration ? 0 : 1px;
+            border-color: Theme.outline-variant;
+            Text {
+                text: d;
+                color: i == root.duration ? Theme.on-secondary-container : Theme.on-surface;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            touch := TouchArea { mouse-cursor: pointer; clicked => { root.duration = i; } }
+        }
+    }
+    HorizontalLayout {
+        spacing: Theme.space-3;
+        Text { text: "Allow multiple answers"; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+        Toggle { checked <=> root.multi; }
+    }
+    Text { text: root.hint; color: Theme.outline; font-size: Theme.text-small; wrap: word-wrap; visible: root.hint != ""; }
+    HorizontalLayout {
+        alignment: end;
+        spacing: Theme.gap-sm;
+        Button { text: "Cancel"; kind: "text"; clicked => { root.poll-open = false; } }
+        Button { text: "Post"; kind: "filled"; enabled: root.can-post; clicked => { root.post(); } }
+    }
+}

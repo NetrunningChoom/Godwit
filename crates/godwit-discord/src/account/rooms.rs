@@ -6,6 +6,16 @@
 
 use super::*;
 
+/// What a Discord poll takes: question up to 300 characters, 2 to 10 answers
+/// of up to 55: the web client's composer (docs.discord.food, Poll resource,
+/// documents only the 10-answer cap and durations up to 32 days).
+const POLL_LIMITS: godwit_core::poll::PollLimits = godwit_core::poll::PollLimits {
+    question: 300,
+    answer: 55,
+    min_answers: 2,
+    max_answers: 10,
+};
+
 impl DiscordAccount {
     pub(super) fn avatar(&self, user: &str, guild: Option<&str>) -> String {
         if let Some((g, hash)) = guild.and_then(|g| {
@@ -103,6 +113,7 @@ impl DiscordAccount {
                     .and_then(|g| self.store.guilds.get(g))
                     .is_some_and(|g| g.forwarding_disabled),
             forward_to: send,
+            polls: (send && can(p::SEND_POLLS)).then_some(POLL_LIMITS),
             react: can(p::ADD_REACTIONS),
             // Other servers' emoji: Nitro only (and, in a server, the permission).
             external_emoji: self.store.premium_type != 0 && (c.private() || can(p::USE_EXTERNAL_EMOJIS)),

@@ -150,6 +150,9 @@ pub struct Message {
     /// `forward_from` too.
     #[serde(default)]
     pub forwardable: bool,
+    /// An open poll of ours that can be ended now ("End Poll Now").
+    #[serde(default)]
+    pub poll_endable: bool,
 }
 
 /// What an invite leads to, as its card shows it.

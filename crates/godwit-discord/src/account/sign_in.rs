@@ -118,6 +118,44 @@ impl DiscordAccount {
                     self.dispatch("MESSAGE_CREATE", &note, &mut out);
                 }
             }
+            // A poll arrives as the gateway would send it: type 0 with a poll
+            // object (Discord numbers the answers from 1).
+            Command::CreatePoll {
+                room,
+                question,
+                answers,
+                hours,
+                multi,
+            } => {
+                let me = self.store.me.clone().unwrap_or_default();
+                let now = chrono::Utc::now();
+                let mut m = json!({
+                    "id": crate::api::nonce(), "channel_id": room.raw.as_ref(), "content": "", "type": 0,
+                    "author": {"id": me.id, "username": me.username, "global_name": me.global_name, "avatar": me.avatar},
+                    "timestamp": now.to_rfc3339(),
+                    "poll": {
+                        "question": {"text": question},
+                        "answers": answers.iter().enumerate()
+                            .map(|(i, a)| json!({"answer_id": i + 1, "poll_media": {"text": a}}))
+                            .collect::<Vec<_>>(),
+                        "expiry": (now + chrono::Duration::hours(i64::from(*hours))).to_rfc3339(),
+                        "allow_multiselect": multi,
+                        "layout_type": 1,
+                        "results": {"is_finalized": false, "answer_counts": []},
+                    },
+                });
+                if let Some(g) = self.store.channels.get(room.raw.as_ref()).and_then(|c| c.guild.clone()) {
+                    m["guild_id"] = json!(g);
+                }
+                self.dispatch("MESSAGE_CREATE", &m, &mut out);
+            }
+            // Ending it: the message comes back updated, finalized.
+            Command::EndPoll { message, .. } => {
+                let mut m = self.polls.borrow().get(message.0.as_ref()).cloned()?;
+                m["poll"]["expiry"] = json!(chrono::Utc::now().to_rfc3339());
+                m["poll"]["results"]["is_finalized"] = json!(true);
+                self.dispatch("MESSAGE_UPDATE", &m, &mut out);
+            }
             Command::React {
                 room,
                 message,

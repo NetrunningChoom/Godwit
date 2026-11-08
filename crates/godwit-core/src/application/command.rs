@@ -180,6 +180,20 @@ pub enum Command {
         message: MessageId,
         answer: u64,
     },
+    /// Post a poll in `room` (already checked against its `polls` limits and
+    /// the allowed durations); it arrives as a message of the room.
+    CreatePoll {
+        room: RoomId,
+        question: String,
+        answers: Vec<String>,
+        hours: u32,
+        multi: bool,
+    },
+    /// End our poll in `message` now; it comes back as [`Event::MessageUpdated`].
+    EndPoll {
+        room: RoomId,
+        message: MessageId,
+    },
     /// Messages of `room` matching `query`; answered with [`Event::SearchResults`].
     SearchMessages {
         room: RoomId,

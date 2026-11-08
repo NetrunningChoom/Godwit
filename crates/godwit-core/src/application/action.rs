@@ -138,6 +138,16 @@ pub enum Action {
         message: MessageId,
         answer: u64,
     },
+    /// Post a poll in the selected room (where `Capabilities::polls` is set):
+    /// `hours` is one of `poll::POLL_DURATIONS`. A refusal lands in `errors`.
+    CreatePoll {
+        question: String,
+        answers: Vec<String>,
+        hours: u32,
+        multi: bool,
+    },
+    /// End one of our open polls of the selected room now.
+    EndPoll(MessageId),
     /// Search the selected room's messages (a server channel searches its
     /// channel); empty opens the search with nothing asked yet.
     Search(String),

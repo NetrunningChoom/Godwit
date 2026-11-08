@@ -49,6 +49,15 @@ pub enum Request {
         target_guild: Option<String>,
         comment: String,
     },
+    /// Post a poll (the whole message body, see `api::poll_body`).
+    CreatePoll {
+        channel: String,
+        body: serde_json::Value,
+    },
+    EndPoll {
+        channel: String,
+        message: String,
+    },
     Edit {
         channel: String,
         message: String,
@@ -1025,6 +1034,14 @@ async fn answer(api: &Api, request: Request) -> Answer {
                 .map_err(RequestError::from);
             Answer::Search { channel, query, result }
         }
+        Request::CreatePoll { channel, body } => Answer::Done {
+            what: "creating a poll",
+            result: api.create_poll(&channel, &body).await.map_err(RequestError::from),
+        },
+        Request::EndPoll { channel, message } => Answer::Done {
+            what: "ending a poll",
+            result: api.end_poll(&channel, &message).await.map_err(RequestError::from),
+        },
         Request::Vote {
             channel,
             message,

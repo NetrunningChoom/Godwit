@@ -1228,6 +1228,40 @@ impl NetworkAccount for DiscordAccount {
                     self.vote(&room, &channel, &message.0, answer, &mut out);
                 }
             }
+            Command::CreatePoll {
+                room,
+                question,
+                answers,
+                hours,
+                multi,
+            } => {
+                let Some(channel) = self.channel_of(&room) else {
+                    return out;
+                };
+                // The dispatcher checked already; this guards a stale room.
+                let limits = self.room(&channel).and_then(|r| r.capabilities.polls);
+                let checked = limits
+                    .ok_or_else(|| "polls can't be created here.".to_owned())
+                    .and_then(|l| l.check(&question, &answers));
+                match checked {
+                    Ok((question, answers)) => {
+                        let body = crate::api::poll_body(&question, &answers, hours, multi, &crate::api::nonce());
+                        req(&self.net, Request::CreatePoll { channel, body });
+                    }
+                    Err(why) => out.push(Event::Error(format!("Discord, creating a poll: {why}").into())),
+                }
+            }
+            Command::EndPoll { room, message } => {
+                if let Some(channel) = self.channel_of(&room) {
+                    req(
+                        &self.net,
+                        Request::EndPoll {
+                            channel,
+                            message: message.0.to_string(),
+                        },
+                    );
+                }
+            }
             Command::LoadPins { room } => {
                 if let Some(channel) = self.channel_of(&room) {
                     req(&self.net, Request::Pins { channel });
@@ -1938,6 +1972,78 @@ mod tests {
             sent[0].text
         );
         assert_eq!(&*sent[1].text, "fyi");
+    }
+
+    #[test]
+    fn demo_polls_are_created_and_ended_like_discord_would() {
+        let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
+        let room = a.room_id("20").unwrap();
+        let out = a.run(Command::CreatePoll {
+            room: room.clone(),
+            question: "Lunch?".into(),
+            answers: vec!["Pizza".into(), "Soup".into()],
+            hours: 24,
+            multi: false,
+        });
+        let Some(Event::MessageAdded { message, .. }) = out.iter().find(|e| matches!(e, Event::MessageAdded { .. }))
+        else {
+            panic!("no poll: {out:?}")
+        };
+        assert!(
+            message.text.contains("Lunch") && message.text.contains("](godwit://vote/2)"),
+            "{:?}",
+            message.text
+        );
+        assert!(message.poll_endable, "ours and open");
+        let out = a.run(Command::EndPoll {
+            room,
+            message: message.id.clone(),
+        });
+        let Some(Event::MessageUpdated { message, .. }) =
+            out.iter().find(|e| matches!(e, Event::MessageUpdated { .. }))
+        else {
+            panic!("no update: {out:?}")
+        };
+        assert!(message.text.contains("Poll ended") && !message.poll_endable);
+    }
+
+    #[test]
+    fn creating_a_poll_asks_discord_for_the_message_it_documents() {
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        let room = a.room_id("20").unwrap();
+        // Polls need Send Polls: a DM has it, the test server's @everyone doesn't.
+        assert!(a.room("20").unwrap().capabilities.polls.is_some());
+        assert!(a.room("13").unwrap().capabilities.polls.is_none());
+        let run = |a: &mut DiscordAccount, question: &str, answers: &[&str]| {
+            a.run(Command::CreatePoll {
+                room: room.clone(),
+                question: question.into(),
+                answers: answers.iter().map(|s| (*s).to_owned()).collect(),
+                hours: 72,
+                multi: true,
+            })
+        };
+        assert!(
+            run(&mut a, "Lunch?", &["Pizza"])
+                .iter()
+                .any(|e| matches!(e, Event::Error(_)))
+        );
+        let out = run(&mut a, "Lunch?", &["Pizza", "Soup"]);
+        assert!(out.is_empty(), "{out:?}");
+        let mut found = None;
+        while let Ok(c) = cmds.try_recv() {
+            if let Cmd::Request(Request::CreatePoll { channel, body }) = c {
+                found = Some((channel, body));
+            }
+        }
+        let (channel, body) = found.expect("a request");
+        assert_eq!(channel, "20");
+        assert_eq!(body["poll"]["duration"], 72);
+        assert_eq!(body["poll"]["allow_multiselect"], true);
+        assert_eq!(body["poll"]["layout_type"], 1);
+        assert_eq!(body["poll"]["question"]["text"], "Lunch?");
+        assert_eq!(body["poll"]["answers"][1]["poll_media"]["text"], "Soup");
     }
 
     #[test]

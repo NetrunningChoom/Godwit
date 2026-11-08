@@ -19,6 +19,7 @@ export { Gifs } from "gif-picker.slint";
 export { PlayerWindow } from "player-window.slint";
 import { Switcher } from "switcher.slint";
 import { ForwardDialog } from "forward-dialog.slint";
+import { PollDialog } from "poll-dialog.slint";
 import { UserCard } from "usercard.slint";
 import { Members } from "members.slint";
 import { Login } from "login.slint";
@@ -815,6 +816,23 @@ export component AppWindow inherits Window {
     callback close-profile();
     callback mark-unread(int);
     callback forward-message(int);
+    callback end-poll(int);
+    // The poll dialog (see PollDialog).
+    in property <bool> can-poll;
+    callback create-poll();
+    in-out property <bool> poll-open;
+    in property <[string]> poll-answers;
+    in property <[string]> poll-durations;
+    in-out property <int> poll-duration;
+    in-out property <bool> poll-multi;
+    in property <bool> poll-can-add;
+    in property <bool> poll-can-post;
+    in property <string> poll-hint;
+    callback poll-question(string);
+    callback poll-answer(int, string);
+    callback poll-add-answer();
+    callback poll-remove-answer(int);
+    callback poll-post(int, bool);
     // The forward picker (see ForwardDialog).
     in-out property <bool> forward-open;
     in property <[SwitchItem]> forward-results;
@@ -1275,6 +1293,9 @@ export component AppWindow inherits Window {
                                         open-profile(i) => { root.open-message-profile(i); }
                                         mark-unread(i) => { root.mark-unread(i); }
                                         forward-message(i) => { root.forward-message(i); }
+                                        end-poll(i) => { root.end-poll(i); }
+                                        can-poll: root.can-poll;
+                                        create-poll => { root.create-poll(); }
                                         copy-text(i) => { root.copy-text(i); }
                                         copy-link(i) => { root.copy-link(i); }
                                     }
@@ -1663,6 +1684,21 @@ export component AppWindow inherits Window {
         viewer-web: root.viewer-web;
         viewer-width: root.viewer-width;
         viewer-zoom <=> root.viewer-zoom;
+    }
+    if root.poll-open && screen == Screen.main: PollDialog {
+        answers: root.poll-answers;
+        durations: root.poll-durations;
+        duration <=> root.poll-duration;
+        multi <=> root.poll-multi;
+        can-add: root.poll-can-add;
+        can-post: root.poll-can-post;
+        hint: root.poll-hint;
+        poll-open <=> root.poll-open;
+        question-edited(q) => { root.poll-question(q); }
+        answer-edited(i, t) => { root.poll-answer(i, t); }
+        add-answer => { root.poll-add-answer(); }
+        remove-answer(i) => { root.poll-remove-answer(i); }
+        post => { root.poll-post(root.poll-duration, root.poll-multi); }
     }
     if root.forward-open && screen == Screen.main: ForwardDialog {
         results: root.forward-results;

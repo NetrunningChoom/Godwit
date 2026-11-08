@@ -63,6 +63,7 @@ fn msg(id: &str) -> Message {
         snippet: None,
         pinned: false,
         forwardable: false,
+        poll_endable: false,
     }
 }
 
@@ -4107,4 +4108,81 @@ fn forward_destinations_are_the_accounts_rooms_that_take_forwards() {
     // Names that start with the search come first.
     assert_eq!(names("b", 9), ["b", "ab"]);
     assert!(names("zzz", 9).is_empty());
+}
+
+/// A DM that takes polls, open, with our open poll "p1" and someone's "p2".
+fn polling(send: bool, polls: bool) -> (Application, RoomId) {
+    let mut app = Application::default();
+    let mut r = dm(Network::Stoat, "r1", "them");
+    r.capabilities.send = send;
+    r.capabilities.polls = polls.then_some(crate::poll::PollLimits {
+        question: 300,
+        answer: 55,
+        min_answers: 2,
+        max_answers: 10,
+    });
+    let id = r.id.clone();
+    ready(&mut app, Network::Stoat, vec![r]);
+    app.dispatch(Action::SelectRoom(id.clone()));
+    let mut mine = msg("p1");
+    mine.poll_endable = true;
+    app.apply(Event::History {
+        room: id.clone(),
+        before: None,
+        messages: vec![mine, msg("p2")],
+        reached_start: true,
+    });
+    (app, id)
+}
+
+fn new_poll(question: &str, answers: &[&str], hours: u32) -> Action {
+    Action::CreatePoll {
+        question: question.into(),
+        answers: answers.iter().map(|a| (*a).to_owned()).collect(),
+        hours,
+        multi: true,
+    }
+}
+
+#[test]
+fn creating_a_poll_is_checked_and_trimmed() {
+    let (mut app, room) = polling(true, true);
+    assert_eq!(
+        commands(&app.dispatch(new_poll(" Lunch? ", &["Pizza ", "", "Soup"], 24))),
+        [&Command::CreatePoll {
+            room,
+            question: "Lunch?".into(),
+            answers: vec!["Pizza".into(), "Soup".into()],
+            hours: 24,
+            multi: true,
+        }]
+    );
+    // Too few answers, a blank question, an unoffered duration.
+    assert!(app.dispatch(new_poll("Lunch?", &["Pizza"], 24)).is_empty());
+    assert!(app.dispatch(new_poll(" ", &["a", "b"], 24)).is_empty());
+    assert!(app.dispatch(new_poll("Lunch?", &["a", "b"], 5)).is_empty());
+    assert_eq!(app.state().errors.len(), 3, "each refusal is shown");
+}
+
+#[test]
+fn polls_need_the_capability_and_permission_to_send() {
+    for (send, polls) in [(true, false), (false, true)] {
+        let (mut app, _) = polling(send, polls);
+        assert!(app.dispatch(new_poll("Lunch?", &["a", "b"], 24)).is_empty());
+        assert_eq!(app.state().errors.len(), 1);
+    }
+}
+
+#[test]
+fn only_our_open_polls_can_be_ended() {
+    let (mut app, room) = polling(true, true);
+    assert_eq!(
+        commands(&app.dispatch(Action::EndPoll(MessageId("p1".into())))),
+        [&Command::EndPoll {
+            room,
+            message: MessageId("p1".into())
+        }]
+    );
+    assert!(app.dispatch(Action::EndPoll(MessageId("p2".into()))).is_empty());
+    assert!(app.dispatch(Action::EndPoll(MessageId("nope".into()))).is_empty());
 }

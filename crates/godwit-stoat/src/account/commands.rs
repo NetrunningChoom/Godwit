@@ -311,7 +311,8 @@ impl StoatAccount {
                 Vec::new()
             }
             // Stoat has no polls or threads.
-            Command::VotePoll { .. } | Command::CreateThread { .. } => Vec::new(),
+            // Stoat has no polls (its rooms leave `polls` off).
+            Command::VotePoll { .. } | Command::CreatePoll { .. } | Command::EndPoll { .. } | Command::CreateThread { .. } => Vec::new(),
             Command::LeaveCall => {
                 self.net.send(Cmd::Voice(VoiceCommand::Voice(VoiceCmd::Leave)));
                 Vec::new()

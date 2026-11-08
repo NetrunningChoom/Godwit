@@ -121,6 +121,12 @@ impl DiscordAccount {
             snippet: (!system).then(|| crate::markdown::to_plain(content, &names).into()),
             pinned: m["pinned"].as_bool().unwrap_or(false),
             forwardable: forwardable(m),
+            // Judged when the message is read: a poll that runs out while shown
+            // keeps the row until Discord's finalizing MESSAGE_UPDATE (no timer);
+            // a click in between gets Discord's refusal as a notice.
+            poll_endable: forwarded.is_none()
+                && self.store.me.as_ref().is_some_and(|me| me.id == author)
+                && poll_open(&m["poll"], chrono::Utc::now()),
         })
     }
 
@@ -352,6 +358,18 @@ impl DiscordAccount {
     }
 }
 
+/// Whether a poll can still be ended: not finalized, and not past its expiry
+/// (a poll Discord hasn't finalized yet when the clock passes it can't be
+/// ended either).
+fn poll_open(poll: &Value, now: chrono::DateTime<chrono::Utc>) -> bool {
+    poll.is_object()
+        && poll["results"]["is_finalized"].as_bool() != Some(true)
+        && poll["expiry"]
+            .as_str()
+            .and_then(|e| chrono::DateTime::parse_from_rfc3339(e).ok())
+            .is_none_or(|e| e > now)
+}
+
 /// Whether a message may be forwarded: docs.discord.food (Message Reference
 /// Types) takes only default and reply messages, with no polls, calls or
 /// components.
@@ -366,6 +384,18 @@ fn forwardable(m: &Value) -> bool {
 mod forward_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn open_polls_can_be_ended() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-01-02T00:00:00Z")
+            .unwrap()
+            .to_utc();
+        let poll = |expiry: &str, done: bool| json!({"expiry": expiry, "results": {"is_finalized": done}});
+        assert!(poll_open(&poll("2026-01-03T00:00:00Z", false), now));
+        assert!(!poll_open(&poll("2026-01-01T00:00:00Z", false), now));
+        assert!(!poll_open(&poll("2026-01-03T00:00:00Z", true), now));
+        assert!(!poll_open(&Value::Null, now));
+    }
 
     #[test]
     fn only_plain_messages_can_be_forwarded() {

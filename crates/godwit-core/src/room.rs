@@ -34,6 +34,9 @@ pub struct Capabilities {
     /// A forwarded message can be sent here.
     #[serde(default)]
     pub forward_to: bool,
+    /// A poll can be created here, with what the network takes in one.
+    #[serde(default)]
+    pub polls: Option<crate::poll::PollLimits>,
     pub reply: bool,
     pub attachments: bool,
     /// `||text||` hides text until clicked.
@@ -99,6 +102,7 @@ impl Capabilities {
             mark_unread: false,
             forward_from: false,
             forward_to: false,
+            polls: None,
             reply: true,
             attachments: true,
             spoilers: true,

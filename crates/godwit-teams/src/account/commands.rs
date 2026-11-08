@@ -113,6 +113,7 @@ impl TeamsAccount {
                                 snippet: None,
                                 pinned: false,
                                 forwardable: false,
+                                poll_endable: false,
                             },
                         });
                     }

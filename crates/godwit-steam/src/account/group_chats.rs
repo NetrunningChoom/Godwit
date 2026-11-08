@@ -164,6 +164,7 @@ impl SteamAccount {
             snippet: None,
             pinned: false,
             forwardable: false,
+            poll_endable: false,
         })
     }
 

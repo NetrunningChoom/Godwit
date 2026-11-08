@@ -13,6 +13,7 @@ mod media;
 mod messages;
 mod navigation;
 mod notifications;
+mod poll;
 mod report;
 mod server_admin;
 mod settings_pages;
@@ -141,6 +142,8 @@ pub struct Shell {
     /// The message the forward picker is for, and the room each result sends to.
     forward: Option<(RoomId, MessageId)>,
     forward_rows: Vec<RoomId>,
+    /// What is typed in the poll dialog.
+    poll: poll::PollDraft,
     settings: Settings,
     settings_path: Option<PathBuf>,
     /// The network whose sign-in form is open (None: the network picker).
@@ -404,6 +407,7 @@ impl Shell {
             switch_rows: Vec::new(),
             forward: None,
             forward_rows: Vec::new(),
+            poll: poll::PollDraft::default(),
             settings,
             settings_path,
             login_network: None,

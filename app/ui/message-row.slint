@@ -79,6 +79,7 @@ export component MessageRow inherits Rectangle {
     callback open-profile();
     callback mark-unread();
     callback forward();
+    callback end-poll();
     callback copy-text();
     callback copy-link();
     callback open-picker();
@@ -374,6 +375,7 @@ export component MessageRow inherits Rectangle {
             if root.can-mark-unread: MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.mark-unread(); } }
             if root.message.forwardable && !root.message.pending && root.can-forward: MenuRow { glyph: Icons.arrow-forward; label: "Forward"; clicked => { root.forward(); } }
             MenuRow { glyph: Icons.copy; label: "Copy text"; clicked => { root.copy-text(); } }
+            if root.message.poll-endable && !root.message.pending: MenuRow { glyph: Icons.close; label: "End poll now"; clicked => { root.end-poll(); } }
             MenuDivider { }
             if !root.message.system && root.can-react: MenuRow { glyph: Icons.emoji; label: "React"; clicked => { root.open-picker(); } }
             if root.can-moderate-reactions && message.reactions.length > 0: MenuDivider { }

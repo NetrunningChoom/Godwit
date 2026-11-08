@@ -72,6 +72,7 @@ pub fn msg(id: &str, who: &str, name: &str, at_min: i64, text: &str) -> Message 
         snippet: None,
         pinned: false,
         forwardable: false,
+        poll_endable: false,
     }
 }
 
@@ -881,6 +882,7 @@ pub fn multi(app: &mut Application) -> RoomId {
                 snippet: None,
                 pinned: false,
                 forwardable: false,
+                poll_endable: false,
             }
         })
         .collect();

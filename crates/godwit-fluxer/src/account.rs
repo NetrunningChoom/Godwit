@@ -403,6 +403,7 @@ impl FluxerAccount {
             snippet: (!system).then(|| godwit_discord::markdown::to_plain(content, &names).into()),
             pinned: m["pinned"] == true,
             forwardable: false,
+            poll_endable: false,
         })
     }
 

@@ -342,6 +342,8 @@ export struct MessageItem {
     pinned: bool,
     // The network lets it be forwarded (the menu also needs the room's capability).
     forwardable: bool,
+    // An open poll of ours: "End Poll Now" shows.
+    poll-endable: bool,
     mine: bool,
     // Starts a group: shows the avatar, name and time.
     first-in-group: bool,

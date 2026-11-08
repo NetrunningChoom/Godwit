@@ -894,6 +894,13 @@ fn connect_callbacks(ui: &AppWindow) {
             sh.act(ui, Action::OpenProfile(user));
         }
     });
+    callback!(ui.on_end_poll(row) => |sh, ui| sh.end_poll(ui, row));
+    callback!(ui.on_create_poll() => |sh, ui| sh.open_poll(ui));
+    callback!(ui.on_poll_question(t) => |sh, ui| sh.poll_question(ui, &t));
+    callback!(ui.on_poll_answer(row, t) => |sh, ui| sh.poll_answer(ui, row, &t));
+    callback!(ui.on_poll_add_answer() => |sh, ui| sh.poll_add_answer(ui));
+    callback!(ui.on_poll_remove_answer(row) => |sh, ui| sh.poll_remove_answer(ui, row));
+    callback!(ui.on_poll_post(duration, multi) => |sh, ui| sh.poll_post(ui, duration, multi));
     callback!(ui.on_forward_message(row) => |sh, ui| sh.open_forward(ui, row));
     callback!(ui.on_forward_search(q) => |sh, ui| sh.forward_search(ui, &q));
     callback!(ui.on_forward_send(row, note) => |sh, ui| sh.forward_send(ui, row, &note));

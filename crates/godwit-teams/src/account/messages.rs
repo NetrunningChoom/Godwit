@@ -184,6 +184,7 @@ impl TeamsAccount {
             snippet: (!system).then(|| converted.plain.into()),
             pinned: false,
             forwardable: false,
+            poll_endable: false,
         })
     }
 

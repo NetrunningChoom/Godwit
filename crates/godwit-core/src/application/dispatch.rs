@@ -225,6 +225,13 @@ impl Application {
                     command: Command::VotePoll { room, message, answer },
                 }]
             }
+            Action::CreatePoll {
+                question,
+                answers,
+                hours,
+                multi,
+            } => self.dispatch_create_poll(question, answers, hours, multi),
+            Action::EndPoll(message) => self.dispatch_end_poll(message),
             Action::Search(query) => self.dispatch_search(query),
             Action::CloseSearch => {
                 self.state.search = None;

@@ -93,6 +93,7 @@ impl StoatAccount {
             snippet: None,
             pinned: m.pinned.unwrap_or(false),
             forwardable: false,
+            poll_endable: false,
         }
     }
 

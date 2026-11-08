@@ -1073,6 +1073,66 @@ impl Application {
         }]
     }
 
+    pub(super) fn dispatch_create_poll(
+        &mut self,
+        question: String,
+        answers: Vec<String>,
+        hours: u32,
+        multi: bool,
+    ) -> Vec<Effect> {
+        let Some(room) = self.state.selected.clone() else {
+            return Vec::new();
+        };
+        let limits = self
+            .state
+            .room(&room)
+            .filter(|r| r.capabilities.send)
+            .and_then(|r| r.capabilities.polls);
+        let Some(limits) = limits else {
+            self.state.errors.push("Polls can't be created here.".into());
+            return Vec::new();
+        };
+        if !crate::poll::valid_duration(hours) {
+            self.state.errors.push("Pick how long the poll runs.".into());
+            return Vec::new();
+        }
+        match limits.check(&question, &answers) {
+            Ok((question, answers)) => vec![Effect::Backend {
+                account: room.account.clone(),
+                command: Command::CreatePoll {
+                    room,
+                    question,
+                    answers,
+                    hours,
+                    multi,
+                },
+            }],
+            Err(why) => {
+                self.state.errors.push(why.into());
+                Vec::new()
+            }
+        }
+    }
+
+    pub(super) fn dispatch_end_poll(&mut self, message: MessageId) -> Vec<Effect> {
+        let Some(room) = self.state.selected.clone() else {
+            return Vec::new();
+        };
+        let endable = self.state.timelines.get(&room).is_some_and(|t| {
+            t.messages
+                .iter()
+                .any(|m| m.id == message && m.poll_endable && !m.pending)
+        });
+        if !endable {
+            self.state.errors.push("This poll can't be ended.".into());
+            return Vec::new();
+        }
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::EndPoll { room, message },
+        }]
+    }
+
     pub(super) fn dispatch_toggle_reaction(&mut self, message: MessageId, emoji: Arc<str>) -> Vec<Effect> {
         let Some(room) = self.state.selected.clone() else {
             return Vec::new();

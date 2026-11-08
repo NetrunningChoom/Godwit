@@ -42,6 +42,8 @@ pub const MODERATE_MEMBERS: u64 = 1 << 40;
 pub const MANAGE_GUILD_EXPRESSIONS: u64 = 1 << 30;
 /// Create Expressions: add emoji, and change or delete our own.
 pub const CREATE_GUILD_EXPRESSIONS: u64 = 1 << 43;
+/// Create Polls ("Send Polls"); also needed in DMs, where everything is allowed.
+pub const SEND_POLLS: u64 = 1 << 49;
 pub const ALL: u64 = u64::MAX;
 
 /// Channel kinds for [`CHANNEL_ROWS`]: text (also announcement, forum and

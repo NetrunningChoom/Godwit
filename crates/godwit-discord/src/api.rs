@@ -1015,6 +1015,22 @@ impl Api {
         self.empty(with_json(self.request(Method::PUT, &path), &body)).await
     }
 
+    /// Posts a poll as a message of its own (docs.discord.food, Poll Create
+    /// Structure); it comes back through the gateway like any message.
+    pub async fn create_poll(&self, channel: &str, body: &Value) -> Result<()> {
+        let path = format!("/channels/{channel}/messages");
+        self.json(with_json(self.request(Method::POST, &path), body))
+            .await
+            .map(drop)
+    }
+
+    /// Ends our poll now (End Poll, docs.discord.food Message resource);
+    /// Discord sends MESSAGE_UPDATE with the final results.
+    pub async fn end_poll(&self, channel: &str, message: &str) -> Result<()> {
+        let path = format!("/channels/{channel}/polls/{message}/expire");
+        self.json(self.request(Method::POST, &path)).await.map(drop)
+    }
+
     /// Pins or unpins a message (Yapfast's `pin`).
     pub async fn pin(&self, channel: &str, message: &str, pinned: bool) -> Result<()> {
         let path = format!("/channels/{channel}/messages/pins/{message}");
@@ -1125,6 +1141,20 @@ fn message_body(content: &str, nonce: &str) -> Value {
         "tts": false,
         "flags": 0,
     })
+}
+
+/// A new poll's message as the web client posts it (docs.discord.food, Poll
+/// Create Structure): text-only answers, layout 1 (default).
+pub fn poll_body(question: &str, answers: &[String], hours: u32, multi: bool, nonce: &str) -> Value {
+    let mut body = message_body("", nonce);
+    body["poll"] = json!({
+        "question": {"text": question},
+        "answers": answers.iter().map(|a| json!({"poll_media": {"text": a}})).collect::<Vec<_>>(),
+        "duration": hours,
+        "allow_multiselect": multi,
+        "layout_type": 1,
+    });
+    body
 }
 
 /// The type of a message reference that forwards the message instead of

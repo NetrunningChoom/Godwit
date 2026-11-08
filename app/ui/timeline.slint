@@ -171,6 +171,10 @@ export component Timeline inherits Rectangle {
     callback open-profile(int);
     callback mark-unread(int);
     callback forward-message(int);
+    callback end-poll(int);
+    // Polls can be created here: the attach button opens a menu with Create Poll.
+    in property <bool> can-poll;
+    callback create-poll();
     callback copy-text(int);
     callback copy-link(int);
 
@@ -985,6 +989,7 @@ export component Timeline inherits Rectangle {
                     open-profile => { root.open-profile(i); }
                     mark-unread => { root.mark-unread(i); }
                     forward => { root.forward-message(i); }
+                    end-poll => { root.end-poll(i); }
                     copy-text => { root.copy-text(i); }
                     copy-link => { root.copy-link(i); }
                 }
@@ -1081,16 +1086,29 @@ export component Timeline inherits Rectangle {
             }
         }
         Rectangle {
-            height: composer.preferred-height + Theme.gap-md * 2;composer := HorizontalLayout {
+            height: composer.preferred-height + Theme.gap-md * 2;
+            attach-menu := PopupWindow {
+                x: Theme.gap-lg;
+                y: -88px;
+                MenuPanel {
+                    if root.can-attach: MenuRow { glyph: Icons.attach; label: "Upload a file"; clicked => { root.attach(); } }
+                    MenuRow { glyph: Icons.notes; label: "Create poll"; clicked => { root.create-poll(); } }
+                }
+            }
+            composer := HorizontalLayout {
                 padding-left: Theme.gap-lg;
                 padding-right: Theme.gap-lg;
                 padding-bottom: Theme.gap-md;
                 spacing: Theme.gap-md;
-                if root.can-attach: IconButton {
+                // With polls here the button opens a small menu (as the
+                // official "+"): upload a file, or create a poll.
+                if root.can-attach || root.can-poll: IconButton {
                     y: (parent.height - self.height) / 2;
                     glyph: Icons.attach;
-                    tooltip: "Attach files";
-                    clicked => { root.attach(); }
+                    tooltip: root.can-poll ? "Attach" : "Attach files";
+                    clicked => {
+                        if root.can-poll { attach-menu.show(); } else { root.attach(); }
+                    }
                 }
                 Rectangle {
                     horizontal-stretch: 1;

@@ -978,6 +978,9 @@ impl Presenter {
         ui.set_can_react(room.capabilities.react);
         ui.set_can_mark_unread(room.capabilities.mark_unread);
         ui.set_can_forward(room.capabilities.forward_from);
+        ui.set_can_poll(
+            room.capabilities.polls.is_some() && !matches!(state.compose.get(&room.id), Some(Compose::Edit(_))),
+        );
         ui.set_can_reply(room.capabilities.reply);
         ui.set_can_edit(room.capabilities.edit);
         ui.set_can_delete(room.capabilities.delete);
