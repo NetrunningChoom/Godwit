@@ -163,6 +163,7 @@ impl SteamAccount {
             pending: false,
             snippet: None,
             pinned: false,
+            forwardable: false,
         })
     }
 

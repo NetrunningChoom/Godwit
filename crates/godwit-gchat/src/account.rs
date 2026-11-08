@@ -368,6 +368,7 @@ impl GChatAccount {
             pending: false,
             snippet: None,
             pinned: false,
+            forwardable: false,
         })
     }
 

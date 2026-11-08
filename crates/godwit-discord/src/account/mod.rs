@@ -797,7 +797,7 @@ impl NetworkAccount for DiscordAccount {
                 }
                 // Discord's own limit: 2,000 characters, 4,000 with Nitro. Longer
                 // is refused here rather than sent (nothing claims Nitro we don't have).
-                let limit = if self.store.premium_type == 2 { 4000 } else { 2000 };
+                let limit = self.message_limit();
                 if text.chars().count() > limit {
                     out.push(Event::MessageFailed {
                         room,
@@ -887,6 +887,47 @@ impl NetworkAccount for DiscordAccount {
                     req(&self.net, Request::Ack { channel, message: last });
                     self.sync_rooms(&mut out);
                 }
+            }
+            Command::ForwardMessage {
+                room,
+                message,
+                to,
+                comment,
+            } => {
+                let (Some(channel), Some(target)) = (self.channel_of(&room), self.channel_of(&to)) else {
+                    return out;
+                };
+                let allowed = self.room(&channel).is_some_and(|r| r.capabilities.forward_from)
+                    && self.room(&target).is_some_and(|r| r.capabilities.forward_to);
+                if !allowed {
+                    out.push(Event::Error(
+                        "Discord, forwarding a message: this message can't be forwarded here.".into(),
+                    ));
+                    return out;
+                }
+                if comment.chars().count() > self.message_limit() {
+                    out.push(Event::Error(
+                        format!(
+                            "Discord takes at most {} characters in a message.",
+                            self.message_limit()
+                        )
+                        .into(),
+                    ));
+                    return out;
+                }
+                let guild_of = |c: &str| self.store.channels.get(c).and_then(|c| c.guild.clone());
+                let (guild, target_guild) = (guild_of(&channel), guild_of(&target));
+                req(
+                    &self.net,
+                    Request::Forward {
+                        guild,
+                        target_guild,
+                        channel,
+                        message: message.0.to_string(),
+                        target,
+                        comment,
+                    },
+                );
             }
             Command::MarkUnread { room, last_read } => {
                 if let Some(channel) = self.channel_of(&room) {
@@ -1824,6 +1865,79 @@ mod tests {
         });
         assert!(matches!(out.as_slice(), [Event::MessageFailed { .. }]));
         assert!(cmds.try_recv().is_err(), "nothing goes to Discord that it would refuse");
+    }
+
+    #[test]
+    fn forwarding_is_asked_only_where_discord_would_allow_it() {
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        let _ = cmds.try_recv(); // the presence update
+        let (general, dm, hidden) = (
+            a.room_id("13").unwrap(),
+            a.room_id("20").unwrap(),
+            a.room_id("14").unwrap(),
+        );
+        // Reading #general's history isn't granted in the test world, so its messages stay put.
+        assert!(!a.room("13").unwrap().capabilities.forward_from);
+        assert!(a.room("20").unwrap().capabilities.forward_from);
+        assert!(a.room("13").unwrap().capabilities.forward_to);
+        let forward = |room: &RoomId, to: &RoomId| Command::ForwardMessage {
+            room: room.clone(),
+            message: MessageId("600".into()),
+            to: to.clone(),
+            comment: "look".into(),
+        };
+        let out = a.run(forward(&general, &dm));
+        assert!(matches!(out.as_slice(), [Event::Error(_)]), "{out:?}");
+        assert!(cmds.try_recv().is_err());
+        // Nor into a channel we can't see or write in.
+        let out = a.run(forward(&dm, &hidden));
+        assert!(matches!(out.as_slice(), [Event::Error(_)]), "{out:?}");
+        assert!(cmds.try_recv().is_err());
+        assert!(a.run(forward(&dm, &general)).is_empty());
+        let Ok(Cmd::Request(Request::Forward {
+            channel,
+            message,
+            target,
+            comment,
+            ..
+        })) = cmds.try_recv()
+        else {
+            panic!("no forward")
+        };
+        assert_eq!((&*channel, &*message, &*target, &*comment), ("20", "600", "13", "look"));
+    }
+
+    #[test]
+    fn demo_forwarding_answers_with_a_message_carrying_a_snapshot() {
+        let history = HashMap::from([(
+            "20".to_owned(),
+            vec![
+                json!({"id": "600", "channel_id": "20", "content": "see this", "type": 0, "timestamp": "2026-01-01T00:00:00+00:00", "attachments": [], "embeds": [], "author": {"id": "200", "username": "zarg"}}),
+            ],
+        )]);
+        let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), history);
+        let (dm, general) = (a.room_id("20").unwrap(), a.room_id("13").unwrap());
+        let out = a.run(Command::ForwardMessage {
+            room: dm,
+            message: MessageId("600".into()),
+            to: general.clone(),
+            comment: "fyi".into(),
+        });
+        let sent: Vec<_> = out
+            .iter()
+            .filter_map(|e| match e {
+                Event::MessageAdded { room, message } if *room == general => Some(message),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(sent.len(), 2, "{out:?}");
+        assert!(
+            sent[0].text.contains("Forwarded") && sent[0].text.contains("see this"),
+            "{:?}",
+            sent[0].text
+        );
+        assert_eq!(&*sent[1].text, "fyi");
     }
 
     #[test]

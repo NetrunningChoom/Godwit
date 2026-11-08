@@ -415,14 +415,7 @@ impl Api {
         reply: Option<&str>,
         uploads: &[Upload],
     ) -> Result<Value> {
-        // The web client's new message body.
-        let mut body = json!({
-            "mobile_network_type": "unknown",
-            "content": content,
-            "nonce": nonce,
-            "tts": false,
-            "flags": 0,
-        });
+        let mut body = message_body(content, nonce);
         if !uploads.is_empty() {
             body["attachments"] = uploads
                 .iter()
@@ -440,6 +433,26 @@ impl Api {
         }
         let path = format!("/channels/{channel}/messages");
         self.json(with_json(self.request(Method::POST, &path), &body)).await
+    }
+
+    /// Forwards message `message` of `channel` (in server `guild`, if any) to
+    /// `target`, as the web client does: a message with no content of its own
+    /// whose reference has the forward type; Discord copies the original into
+    /// it as a snapshot (docs.discord.food, Message resource, Forwarded
+    /// Messages; Yapfast's `Api::forward`).
+    pub async fn forward(
+        &self,
+        guild: Option<&str>,
+        channel: &str,
+        message: &str,
+        target: &str,
+        nonce: &str,
+    ) -> Result<Value> {
+        let body = forward_body(guild, channel, message, nonce);
+        let path = format!("/channels/{target}/messages");
+        let request =
+            with_json(self.request(Method::POST, &path), &body).header("X-Context-Properties", context("forwarding"));
+        self.json(request).await
     }
 
     /// Uploads a file to Discord's storage as the web client does: asks for
@@ -1103,6 +1116,33 @@ fn with_json(request: RequestBuilder, body: &Value) -> RequestBuilder {
         .body(body.to_string())
 }
 
+/// The web client's new message body.
+fn message_body(content: &str, nonce: &str) -> Value {
+    json!({
+        "mobile_network_type": "unknown",
+        "content": content,
+        "nonce": nonce,
+        "tts": false,
+        "flags": 0,
+    })
+}
+
+/// The type of a message reference that forwards the message instead of
+/// replying to it (docs.discord.food, Message Reference Types).
+const FORWARD: u64 = 1;
+
+/// A forward's body: no content, only the reference.
+fn forward_body(guild: Option<&str>, channel: &str, message: &str, nonce: &str) -> Value {
+    let mut body = message_body("", nonce);
+    body["message_reference"] = json!({
+        "guild_id": guild,
+        "channel_id": channel,
+        "message_id": message,
+        "type": FORWARD,
+    });
+    body
+}
+
 /// The `X-Context-Properties` header: where in the client something happened.
 fn context(place: &str) -> String {
     use base64::Engine;
@@ -1219,6 +1259,18 @@ mod tests {
         );
         assert!(a.is_ok() && b.is_ok() && c.is_ok());
         server.await.unwrap();
+    }
+
+    #[test]
+    fn a_forward_is_a_reference_of_the_forward_type_with_no_content() {
+        let body = forward_body(Some("10"), "13", "500", "9");
+        assert_eq!(body["content"], "");
+        assert_eq!(
+            body["message_reference"],
+            json!({"guild_id": "10", "channel_id": "13", "message_id": "500", "type": 1})
+        );
+        // In a direct message there is no server: the field is null, as the web client sends it.
+        assert!(forward_body(None, "20", "600", "9")["message_reference"]["guild_id"].is_null());
     }
 
     #[test]

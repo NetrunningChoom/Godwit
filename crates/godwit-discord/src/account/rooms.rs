@@ -84,14 +84,25 @@ impl DiscordAccount {
             ),
         };
         let can = |bit| perms & bit == bit;
+        // A forum has nothing to write in (its posts do); threads take their own permission.
+        let send = !c.forum()
+            && can(if c.thread() {
+                p::SEND_MESSAGES_IN_THREADS
+            } else {
+                p::SEND_MESSAGES
+            });
         let capabilities = Capabilities {
-            // A forum has nothing to write in (its posts do); threads take their own permission.
-            send: !c.forum()
-                && can(if c.thread() {
-                    p::SEND_MESSAGES_IN_THREADS
-                } else {
-                    p::SEND_MESSAGES
-                }),
+            send,
+            // Forwarding out: the server must allow it (its FORWARDING_DISABLED
+            // feature) and we read the channel's history; in: we may send there
+            // (Yapfast's `Ready::forwards_from`, docs.discord.food Message).
+            forward_from: can(p::READ_MESSAGE_HISTORY)
+                && !c
+                    .guild
+                    .as_ref()
+                    .and_then(|g| self.store.guilds.get(g))
+                    .is_some_and(|g| g.forwarding_disabled),
+            forward_to: send,
             react: can(p::ADD_REACTIONS),
             // Other servers' emoji: Nitro only (and, in a server, the permission).
             external_emoji: self.store.premium_type != 0 && (c.private() || can(p::USE_EXTERNAL_EMOJIS)),

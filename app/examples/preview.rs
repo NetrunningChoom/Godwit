@@ -1724,6 +1724,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         ),
         Scene::new("switcher", Box::new(|_, _, _, _| Screen::Main)),
+        // The forward picker over a chat (the demo's network has no forwarding,
+        // so the rooms are made to take it here).
+        Scene::new(
+            "forward",
+            Box::new(|app, _, general, _| {
+                let rooms: Vec<_> = app.state().rooms.iter().map(|r| (**r).clone()).collect();
+                for mut r in rooms {
+                    r.capabilities.forward_to = true;
+                    r.capabilities.forward_from = r.id == *general;
+                    app.apply(Event::RoomUpdated(r));
+                }
+                app.dispatch(Action::SelectRoom(general.clone()));
+                Screen::Main
+            }),
+        ),
         Scene::new("ctrl-k", Box::new(|_, _, _, _| Screen::Main)),
         Scene::new("light-profile", Box::new(|app, _, _, _| open_profile(app, false))),
         Scene::new(
@@ -1946,6 +1961,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (rows, _) = godwit::view::switch_results(app.state(), "e", &mut images.borrow_mut());
             ui.set_switch_results(slint::ModelRc::new(slint::VecModel::from(rows)));
             ui.set_switcher_open(true);
+        }
+        if scene.name == "forward"
+            && let Some(from) = app.state().selected.clone()
+        {
+            let (rows, _) = godwit::view::forward_results(app.state(), &from, "", &mut images.borrow_mut());
+            ui.set_forward_results(slint::ModelRc::new(slint::VecModel::from(rows)));
+            ui.set_forward_open(true);
         }
         // Several passes, as a running event loop would make: layout first,
         // then the pointer (hover needs geometry), then queued `changed`

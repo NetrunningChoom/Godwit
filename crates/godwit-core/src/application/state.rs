@@ -264,6 +264,26 @@ impl AppState {
         self.rooms.iter().find(|r| &r.id == id)
     }
 
+    /// Where a message of `from` can be forwarded: rooms of the same account
+    /// that take forwards, whose name contains `query`, those that start with
+    /// it first, then the most recently active; at most `limit`.
+    pub fn forward_destinations(&self, from: &RoomId, query: &str, limit: usize) -> Vec<Arc<Room>> {
+        let needle = query.trim().to_lowercase();
+        // Each name is lowercased once.
+        let mut found: Vec<(bool, std::cmp::Reverse<i64>, &Arc<Room>)> = self
+            .rooms
+            .iter()
+            .filter(|r| r.id.account == from.account && r.capabilities.forward_to)
+            .filter_map(|r| {
+                let name = r.name.to_lowercase();
+                name.contains(&needle)
+                    .then(|| (!name.starts_with(&needle), std::cmp::Reverse(r.last_activity), r))
+            })
+            .collect();
+        found.sort_by_key(|(prefix, recent, _)| (*prefix, *recent));
+        found.into_iter().take(limit).map(|(_, _, r)| r.clone()).collect()
+    }
+
     pub fn server(&self, id: &ServerId) -> Option<&Arc<Server>> {
         self.servers.iter().find(|s| &s.id == id)
     }

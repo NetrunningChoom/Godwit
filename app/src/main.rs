@@ -894,6 +894,9 @@ fn connect_callbacks(ui: &AppWindow) {
             sh.act(ui, Action::OpenProfile(user));
         }
     });
+    callback!(ui.on_forward_message(row) => |sh, ui| sh.open_forward(ui, row));
+    callback!(ui.on_forward_search(q) => |sh, ui| sh.forward_search(ui, &q));
+    callback!(ui.on_forward_send(row, note) => |sh, ui| sh.forward_send(ui, row, &note));
     callback!(ui.on_mark_unread(row) => |sh, ui| {
         if let Some(id) = sh.message_at(row) {
             sh.act(ui, Action::MarkUnread(id));

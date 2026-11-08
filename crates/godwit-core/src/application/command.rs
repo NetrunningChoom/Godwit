@@ -311,6 +311,15 @@ pub enum Command {
         room: RoomId,
         change: crate::room::RoomNotifyChange,
     },
+    /// Forward `message` of `room` to `to` (same account; only sent where
+    /// the rooms' `forward_from` / `forward_to` capabilities are on), then
+    /// `comment`, when not empty, as a message of its own.
+    ForwardMessage {
+        room: RoomId,
+        message: MessageId,
+        to: RoomId,
+        comment: String,
+    },
     /// Everything after `last_read` is unread again (None: the whole room).
     MarkUnread {
         room: RoomId,

@@ -6,6 +6,7 @@
 mod accounts;
 mod alerting;
 mod calls;
+mod forward;
 mod games;
 mod keep_awake;
 mod media;
@@ -137,6 +138,9 @@ pub struct Shell {
     card_selection: crate::selection::BlockSelection,
     /// The room each quick-switcher result opens.
     switch_rows: Vec<RoomId>,
+    /// The message the forward picker is for, and the room each result sends to.
+    forward: Option<(RoomId, MessageId)>,
+    forward_rows: Vec<RoomId>,
     settings: Settings,
     settings_path: Option<PathBuf>,
     /// The network whose sign-in form is open (None: the network picker).
@@ -398,6 +402,8 @@ impl Shell {
             selection: crate::selection::ChatSelection::default(),
             card_selection: crate::selection::BlockSelection::default(),
             switch_rows: Vec::new(),
+            forward: None,
+            forward_rows: Vec::new(),
             settings,
             settings_path,
             login_network: None,

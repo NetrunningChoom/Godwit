@@ -340,6 +340,8 @@ export struct MessageItem {
     edited: bool,
     // Pinned in its room: a small pin under it, like "(edited)".
     pinned: bool,
+    // The network lets it be forwarded (the menu also needs the room's capability).
+    forwardable: bool,
     mine: bool,
     // Starts a group: shows the avatar, name and time.
     first-in-group: bool,

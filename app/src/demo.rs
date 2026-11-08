@@ -71,6 +71,7 @@ pub fn msg(id: &str, who: &str, name: &str, at_min: i64, text: &str) -> Message 
         pending: false,
         snippet: None,
         pinned: false,
+        forwardable: false,
     }
 }
 
@@ -879,6 +880,7 @@ pub fn multi(app: &mut Application) -> RoomId {
                 pending: false,
                 snippet: None,
                 pinned: false,
+                forwardable: false,
             }
         })
         .collect();

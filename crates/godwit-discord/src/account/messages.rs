@@ -120,6 +120,7 @@ impl DiscordAccount {
             pending: false,
             snippet: (!system).then(|| crate::markdown::to_plain(content, &names).into()),
             pinned: m["pinned"].as_bool().unwrap_or(false),
+            forwardable: forwardable(m),
         })
     }
 
@@ -341,7 +342,43 @@ impl DiscordAccount {
         });
     }
 
+    /// Discord's own limit on a message: 2,000 characters, 4,000 with Nitro.
+    pub(super) fn message_limit(&self) -> usize {
+        if self.store.premium_type == 2 { 4000 } else { 2000 }
+    }
+
     pub(super) fn channel_of(&self, room: &RoomId) -> Option<String> {
         (self.account.as_ref() == Some(&room.account)).then(|| room.raw.to_string())
+    }
+}
+
+/// Whether a message may be forwarded: docs.discord.food (Message Reference
+/// Types) takes only default and reply messages, with no polls, calls or
+/// components.
+fn forwardable(m: &Value) -> bool {
+    matches!(m["type"].as_u64().unwrap_or_default(), 0 | 19)
+        && !m["poll"].is_object()
+        && !m["call"].is_object()
+        && m["components"].as_array().is_none_or(Vec::is_empty)
+}
+
+#[cfg(test)]
+mod forward_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn only_plain_messages_can_be_forwarded() {
+        assert!(forwardable(&json!({"type": 0, "components": []})));
+        assert!(forwardable(&json!({"type": 19})));
+        for no in [
+            json!({"type": 7}),
+            json!({"type": 20}),
+            json!({"type": 0, "poll": {"question": {}}}),
+            json!({"type": 3, "call": {}}),
+            json!({"type": 0, "components": [{"type": 1}]}),
+        ] {
+            assert!(!forwardable(&no), "{no}");
+        }
     }
 }

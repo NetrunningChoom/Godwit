@@ -145,6 +145,11 @@ pub struct Message {
     /// Pinned in its room (the timeline shows a pin by its time).
     #[serde(default)]
     pub pinned: bool,
+    /// The network lets this message be forwarded (a plain one: Discord takes
+    /// no system messages, polls, calls or components). Needs the room's
+    /// `forward_from` too.
+    #[serde(default)]
+    pub forwardable: bool,
 }
 
 /// What an invite leads to, as its card shows it.

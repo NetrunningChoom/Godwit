@@ -762,27 +762,40 @@ pub fn switch_results(state: &AppState, query: &str, images: &mut Images) -> (Ve
         .collect();
     found.sort_by_key(|r| (!r.name.to_lowercase().starts_with(&needle), !r.unread));
     found.truncate(8);
-    let rows = found
-        .iter()
-        .map(|r| {
-            let detail = match &r.kind {
-                RoomKind::Channel { server } => state.server(server).map(|s| s.name.to_string()).unwrap_or_default(),
-                RoomKind::Direct { .. } => "Direct message".to_owned(),
-                RoomKind::Group => "Group".to_owned(),
-                RoomKind::Notes => "Notes".to_owned(),
-            };
-            let item = room_row(r, false, None, images);
-            SwitchItem {
-                name: r.name.as_ref().into(),
-                detail: detail.into(),
-                kind: item.kind,
-                initials: item.initials,
-                icon: item.icon,
-                has_icon: item.has_icon,
-            }
-        })
-        .collect();
+    let rows = found.iter().map(|r| switch_item(state, r, images)).collect();
     (rows, found.iter().map(|r| r.id.clone()).collect())
+}
+
+/// Where a message of `from` can be forwarded (the core picks the rooms), as
+/// the quick switcher's rows; at most eight (they fit any window).
+pub fn forward_results(
+    state: &AppState,
+    from: &RoomId,
+    query: &str,
+    images: &mut Images,
+) -> (Vec<SwitchItem>, Vec<RoomId>) {
+    let found = state.forward_destinations(from, query, 8);
+    let rows = found.iter().map(|r| switch_item(state, r, images)).collect();
+    (rows, found.iter().map(|r| r.id.clone()).collect())
+}
+
+/// One room as a row of the quick switcher or the forward picker.
+fn switch_item(state: &AppState, r: &Arc<Room>, images: &mut Images) -> SwitchItem {
+    let detail = match &r.kind {
+        RoomKind::Channel { server } => state.server(server).map(|s| s.name.to_string()).unwrap_or_default(),
+        RoomKind::Direct { .. } => "Direct message".to_owned(),
+        RoomKind::Group => "Group".to_owned(),
+        RoomKind::Notes => "Notes".to_owned(),
+    };
+    let item = room_row(r, false, None, images);
+    SwitchItem {
+        name: r.name.as_ref().into(),
+        detail: detail.into(),
+        kind: item.kind,
+        initials: item.initials,
+        icon: item.icon,
+        has_icon: item.has_icon,
+    }
 }
 
 #[cfg(test)]

@@ -39,6 +39,16 @@ pub enum Request {
         /// Files to upload first: (path, name).
         files: Vec<(std::path::PathBuf, String)>,
     },
+    /// Forward `message`, then send `comment` (when not empty) after it.
+    Forward {
+        guild: Option<String>,
+        channel: String,
+        message: String,
+        target: String,
+        /// The destination's server, for the comment's reference-less send.
+        target_guild: Option<String>,
+        comment: String,
+    },
     Edit {
         channel: String,
         message: String,
@@ -764,6 +774,40 @@ async fn answer(api: &Api, request: Request) -> Answer {
             .await
             .map_err(RequestError::from);
             Answer::Sent { channel, nonce, result }
+        }
+        Request::Forward {
+            guild,
+            channel,
+            message,
+            target,
+            target_guild,
+            comment,
+        } => {
+            let forwarded = api
+                .forward(guild.as_deref(), &channel, &message, &target, &crate::api::nonce())
+                .await;
+            // The comment is its own message: its failure is worded as such.
+            let (what, result) = match forwarded {
+                Err(e) => ("forwarding a message", Err(e)),
+                Ok(_) if comment.is_empty() => ("forwarding a message", Ok(())),
+                Ok(_) => (
+                    "sending the comment",
+                    api.send(
+                        target_guild.as_deref(),
+                        &target,
+                        &comment,
+                        &crate::api::nonce(),
+                        None,
+                        &[],
+                    )
+                    .await
+                    .map(drop),
+                ),
+            };
+            Answer::Done {
+                what,
+                result: result.map_err(RequestError::from),
+            }
         }
         Request::Edit {
             channel,

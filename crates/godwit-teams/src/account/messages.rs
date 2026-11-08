@@ -183,6 +183,7 @@ impl TeamsAccount {
             pending: false,
             snippet: (!system).then(|| converted.plain.into()),
             pinned: false,
+            forwardable: false,
         })
     }
 

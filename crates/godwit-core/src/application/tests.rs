@@ -62,6 +62,7 @@ fn msg(id: &str) -> Message {
         pending: false,
         snippet: None,
         pinned: false,
+        forwardable: false,
     }
 }
 
@@ -4004,4 +4005,106 @@ fn channel_overrides_changed_elsewhere_refresh_the_open_page() {
         .and_then(|s| s.overview.as_ref())
         .unwrap();
     assert_eq!(o.overrides.as_ref().map(|o| o.entries[1].deny), Some(2));
+}
+
+/// Two DMs of one account (`from` forwards out, `to` takes forwards) and the
+/// first one open with a message, a system notice and a pending one loaded.
+fn forwarding() -> (Application, RoomId, RoomId) {
+    let mut app = Application::default();
+    let mut from = dm(Network::Stoat, "r1", "them");
+    from.capabilities.forward_from = true;
+    let mut to = dm(Network::Stoat, "r2", "other");
+    to.capabilities.forward_to = true;
+    let (a, b) = (from.id.clone(), to.id.clone());
+    ready(&mut app, Network::Stoat, vec![from, to]);
+    app.dispatch(Action::SelectRoom(a.clone()));
+    let mut notice = msg("sys");
+    notice.system = true;
+    notice.forwardable = false;
+    let mut sending = msg("wait");
+    sending.pending = true;
+    sending.forwardable = true;
+    app.apply(Event::History {
+        room: a.clone(),
+        before: None,
+        messages: vec![forwardable(msg("m1")), notice, forwardable(sending)],
+        reached_start: true,
+    });
+    (app, a, b)
+}
+
+fn forwardable(mut m: Message) -> Message {
+    m.forwardable = true;
+    m
+}
+
+fn forward(message: &str, to: &RoomId) -> Action {
+    Action::ForwardMessage {
+        room: RoomId::new(account(Network::Stoat), "r1"),
+        message: MessageId(message.into()),
+        to: to.clone(),
+        comment: "  look  ".into(),
+    }
+}
+
+#[test]
+fn forwarding_goes_to_the_account_with_a_trimmed_comment() {
+    let (mut app, from, to) = forwarding();
+    assert_eq!(
+        commands(&app.dispatch(forward("m1", &to))),
+        [&Command::ForwardMessage {
+            room: from,
+            message: MessageId("m1".into()),
+            to,
+            comment: "look".into()
+        }]
+    );
+}
+
+#[test]
+fn forwarding_needs_both_capabilities_the_same_account_and_a_real_message() {
+    let (mut app, from, to) = forwarding();
+    // Unknown, system and unconfirmed messages are refused.
+    for id in ["nope", "sys", "wait"] {
+        assert!(app.dispatch(forward(id, &to)).is_empty(), "{id}");
+    }
+    assert_eq!(app.state().errors.len(), 3, "each refusal is shown");
+    // A destination that takes no forwards (the source room itself).
+    assert!(app.dispatch(forward("m1", &from)).is_empty());
+    // Another account's room.
+    let other = RoomId::new(AccountId::new(Network::Discord, "elsewhere"), "r2");
+    assert!(app.dispatch(forward("m1", &other)).is_empty());
+    // A source room that doesn't allow forwarding out.
+    let (mut app, _, to) = forwarding();
+    let mut shut = dm(Network::Stoat, "r1", "them");
+    shut.capabilities.forward_from = false;
+    app.apply(Event::RoomUpdated(shut));
+    assert!(app.dispatch(forward("m1", &to)).is_empty());
+}
+
+#[test]
+fn forward_destinations_are_the_accounts_rooms_that_take_forwards() {
+    let mut app = Application::default();
+    let mut rooms = Vec::new();
+    for (raw, to, activity) in [("a", true, 1), ("b", true, 9), ("c", false, 5), ("ab", true, 0)] {
+        let mut r = dm(Network::Stoat, raw, "x");
+        r.capabilities.forward_to = to;
+        r.last_activity = activity;
+        rooms.push(r);
+    }
+    let from = rooms[2].id.clone();
+    ready(&mut app, Network::Stoat, rooms);
+    let names = |q: &str, n: usize| {
+        app.state()
+            .forward_destinations(&from, q, n)
+            .iter()
+            .map(|r| r.name.to_string())
+            .collect::<Vec<_>>()
+    };
+    // Not the room that takes none; the most recent first; capped.
+    assert_eq!(names("", 9), ["b", "a", "ab"]);
+    assert_eq!(names("", 1), ["b"]);
+    // Names that start with the search come first.
+    assert_eq!(names("b", 9), ["b", "ab"]);
+    assert!(names("zzz", 9).is_empty());
 }

@@ -50,6 +50,7 @@ export component Timeline inherits Rectangle {
     in property <bool> can-send;
     in property <bool> can-react;
     in property <bool> can-mark-unread;
+    in property <bool> can-forward;
     in property <bool> can-reply;
     in property <bool> can-edit;
     in property <bool> can-delete;
@@ -169,6 +170,7 @@ export component Timeline inherits Rectangle {
     callback jump-to-reply(int);
     callback open-profile(int);
     callback mark-unread(int);
+    callback forward-message(int);
     callback copy-text(int);
     callback copy-link(int);
 
@@ -943,6 +945,7 @@ export component Timeline inherits Rectangle {
                     row-number: i;
                     can-react: root.can-react;
                     can-mark-unread: root.can-mark-unread;
+                    can-forward: root.can-forward;
                     can-reply: root.can-reply;
                     can-edit: root.can-edit;
                     can-delete: root.can-delete;
@@ -981,6 +984,7 @@ export component Timeline inherits Rectangle {
                     player-move(url, x, y) => { root.player-move(url, x, y); }
                     open-profile => { root.open-profile(i); }
                     mark-unread => { root.mark-unread(i); }
+                    forward => { root.forward-message(i); }
                     copy-text => { root.copy-text(i); }
                     copy-link => { root.copy-link(i); }
                 }

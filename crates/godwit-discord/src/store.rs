@@ -208,6 +208,8 @@ pub struct Guild {
     pub premium_tier: u8,
     /// What it notifies of when we haven't chosen: 0 all messages, 1 mentions.
     pub default_notify: u8,
+    /// The server turned forwarding its messages off (the `FORWARDING_DISABLED` feature).
+    pub forwarding_disabled: bool,
 }
 
 /// What limits a custom emoji's use: `available` false when the server lost
@@ -610,6 +612,7 @@ impl Store {
                 .or_else(|| g["premium_tier"].as_u64())
                 .and_then(|t| u8::try_from(t).ok())
                 .unwrap_or(0),
+            forwarding_disabled: has_feature(p, "FORWARDING_DISABLED") || has_feature(g, "FORWARDING_DISABLED"),
             ..Default::default()
         };
         for r in g["roles"].as_array().into_iter().flatten() {
@@ -650,6 +653,9 @@ impl Store {
             guild.owner = owner.to_owned();
         }
         guild.system_channel = g["system_channel_id"].as_str().map(str::to_owned);
+        if g["features"].is_array() {
+            guild.forwarding_disabled = has_feature(g, "FORWARDING_DISABLED");
+        }
         if let Some(tier) = g["premium_tier"].as_u64().and_then(|t| u8::try_from(t).ok()) {
             guild.premium_tier = tier;
         }
@@ -1096,6 +1102,13 @@ pub fn guild_banner_url(guild: &str, hash: &str) -> String {
 
 pub fn member_avatar_url(guild: &str, user: &str, hash: &str) -> String {
     format!("{CDN}/guilds/{guild}/users/{user}/avatars/{hash}.png?size={PICTURE}")
+}
+
+/// Whether a guild object lists `feature`.
+fn has_feature(guild: &Value, feature: &str) -> bool {
+    guild["features"]
+        .as_array()
+        .is_some_and(|f| f.iter().any(|f| f.as_str() == Some(feature)))
 }
 
 /// A server's custom emoji list (READY, GUILD_CREATE, GUILD_EMOJIS_UPDATE),

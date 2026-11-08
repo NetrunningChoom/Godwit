@@ -920,6 +920,7 @@ impl Application {
             pending: true,
             snippet: None,
             pinned: false,
+            forwardable: false,
         };
         if let Some(t) = self.state.timelines.get_mut(&room) {
             Arc::make_mut(&mut t.messages).push(Arc::new(pending));

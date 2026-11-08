@@ -1038,6 +1038,41 @@ impl Application {
         }]
     }
 
+    pub(super) fn dispatch_forward_message(
+        &mut self,
+        room: RoomId,
+        message: MessageId,
+        to: RoomId,
+        comment: String,
+    ) -> Vec<Effect> {
+        let room_takes = |r: &RoomId, f: fn(&crate::room::Capabilities) -> bool| {
+            self.state.room(r).is_some_and(|r| f(&r.capabilities))
+        };
+        // Only what the network lets be forwarded (and not one still on its
+        // way out), between rooms of one account.
+        let allowed = room.account == to.account
+            && room_takes(&room, |c| c.forward_from)
+            && room_takes(&to, |c| c.forward_to)
+            && self.state.timelines.get(&room).is_some_and(|t| {
+                t.messages
+                    .iter()
+                    .any(|m| m.id == message && m.forwardable && !m.pending)
+            });
+        if !allowed {
+            self.state.errors.push("This message can't be forwarded there.".into());
+            return Vec::new();
+        }
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::ForwardMessage {
+                room,
+                message,
+                to,
+                comment: comment.trim().to_owned(),
+            },
+        }]
+    }
+
     pub(super) fn dispatch_toggle_reaction(&mut self, message: MessageId, emoji: Arc<str>) -> Vec<Effect> {
         let Some(room) = self.state.selected.clone() else {
             return Vec::new();

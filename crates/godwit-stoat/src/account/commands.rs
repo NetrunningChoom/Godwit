@@ -525,6 +525,8 @@ impl StoatAccount {
                 }
                 out
             }
+            // Stoat has no forwarding (its rooms leave forward_from/forward_to off).
+            Command::ForwardMessage { .. } => Vec::new(),
             Command::MarkUnread { room, last_read } => {
                 let channel = room.raw.to_string();
                 // Before the first message: everything is unread. ULIDs sort,

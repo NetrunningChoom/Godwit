@@ -43,6 +43,7 @@ export component MessageRow inherits Rectangle {
     in property <int> row-number;
     in property <bool> can-react;
     in property <bool> can-mark-unread;
+    in property <bool> can-forward;
     // What the room allows (Capabilities): no button that does nothing.
     in property <bool> can-reply;
     in property <bool> can-edit;
@@ -77,6 +78,7 @@ export component MessageRow inherits Rectangle {
     callback player-move(string, int, int);
     callback open-profile();
     callback mark-unread();
+    callback forward();
     callback copy-text();
     callback copy-link();
     callback open-picker();
@@ -370,6 +372,7 @@ export component MessageRow inherits Rectangle {
             if Select.active: MenuDivider { }
             if !root.message.system && root.can-reply: MenuRow { glyph: Icons.reply; label: "Reply"; clicked => { root.reply(); } }
             if root.can-mark-unread: MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.mark-unread(); } }
+            if root.message.forwardable && !root.message.pending && root.can-forward: MenuRow { glyph: Icons.arrow-forward; label: "Forward"; clicked => { root.forward(); } }
             MenuRow { glyph: Icons.copy; label: "Copy text"; clicked => { root.copy-text(); } }
             MenuDivider { }
             if !root.message.system && root.can-react: MenuRow { glyph: Icons.emoji; label: "React"; clicked => { root.open-picker(); } }

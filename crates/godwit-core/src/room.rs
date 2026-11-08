@@ -27,6 +27,13 @@ pub struct Capabilities {
     /// "Mark unread" can move the read marker back (the network takes it).
     #[serde(default)]
     pub mark_unread: bool,
+    /// Messages here can be forwarded to another room of the account (the
+    /// network's own rule: its channel permissions and server settings).
+    #[serde(default)]
+    pub forward_from: bool,
+    /// A forwarded message can be sent here.
+    #[serde(default)]
+    pub forward_to: bool,
     pub reply: bool,
     pub attachments: bool,
     /// `||text||` hides text until clicked.
@@ -90,6 +97,8 @@ impl Capabilities {
             moderate_reactions: false,
             react: true,
             mark_unread: false,
+            forward_from: false,
+            forward_to: false,
             reply: true,
             attachments: true,
             spoilers: true,

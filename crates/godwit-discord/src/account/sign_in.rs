@@ -74,6 +74,50 @@ impl DiscordAccount {
                 }
                 self.dispatch("MESSAGE_CREATE", &m, &mut out);
             }
+            // The forward arrives as the gateway would send it: a message with
+            // no content of its own, carrying a snapshot of the original.
+            Command::ForwardMessage {
+                room,
+                message,
+                to,
+                comment,
+            } => {
+                let original = history
+                    .get(room.raw.as_ref())
+                    .into_iter()
+                    .flatten()
+                    .find(|m| m["id"].as_str() == Some(message.0.as_ref()))
+                    .cloned();
+                let Some(original) = original else {
+                    return Some(out);
+                };
+                let me = self.store.me.clone().unwrap_or_default();
+                let author =
+                    json!({"id": me.id, "username": me.username, "global_name": me.global_name, "avatar": me.avatar});
+                let to_guild = self.store.channels.get(to.raw.as_ref()).and_then(|c| c.guild.clone());
+                let mut copy = json!({"id": crate::api::nonce(), "channel_id": to.raw.as_ref(), "content": "", "type": 0, "author": author, "timestamp": chrono::Utc::now().to_rfc3339(),
+                "flags": 1 << 14,
+                "message_reference": {"type": 1, "message_id": message.0.as_ref(), "channel_id": room.raw.as_ref()},
+                "message_snapshots": [{"message": {
+                    "type": 0,
+                    "content": original["content"],
+                    "timestamp": original["timestamp"],
+                    "attachments": original["attachments"],
+                    "embeds": original["embeds"],
+                    "flags": 0,
+                }}]});
+                if let Some(g) = &to_guild {
+                    copy["guild_id"] = json!(g);
+                }
+                self.dispatch("MESSAGE_CREATE", &copy, &mut out);
+                if !comment.is_empty() {
+                    let mut note = json!({"id": crate::api::nonce(), "channel_id": to.raw.as_ref(), "content": comment, "type": 0, "author": author, "timestamp": chrono::Utc::now().to_rfc3339()});
+                    if let Some(g) = &to_guild {
+                        note["guild_id"] = json!(g);
+                    }
+                    self.dispatch("MESSAGE_CREATE", &note, &mut out);
+                }
+            }
             Command::React {
                 room,
                 message,

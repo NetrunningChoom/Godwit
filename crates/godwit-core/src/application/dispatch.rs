@@ -640,6 +640,12 @@ impl Application {
                 Vec::new()
             }
             Action::MarkUnread(message) => self.dispatch_mark_unread(message),
+            Action::ForwardMessage {
+                room,
+                message,
+                to,
+                comment,
+            } => self.dispatch_forward_message(room, message, to, comment),
             Action::ToggleReaction { message, emoji } => self.dispatch_toggle_reaction(message, emoji),
             Action::RemoveReactions { message, emoji } => self.dispatch_remove_reactions(message, emoji),
         }

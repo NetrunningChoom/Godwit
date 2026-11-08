@@ -92,6 +92,7 @@ impl StoatAccount {
             pending: false,
             snippet: None,
             pinned: m.pinned.unwrap_or(false),
+            forwardable: false,
         }
     }
 

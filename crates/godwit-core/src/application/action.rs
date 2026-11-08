@@ -181,6 +181,14 @@ pub enum Action {
     Delete(MessageId),
     /// Mark the selected room unread from this message on.
     MarkUnread(MessageId),
+    /// Forward a message of `room` to another room of the same account, with
+    /// an optional comment sent after it; a refusal lands in `errors`.
+    ForwardMessage {
+        room: RoomId,
+        message: MessageId,
+        to: RoomId,
+        comment: String,
+    },
     /// Add our reaction with `emoji`, or take it back if it's there.
     ToggleReaction {
         message: MessageId,

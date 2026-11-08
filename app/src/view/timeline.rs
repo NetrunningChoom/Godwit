@@ -710,6 +710,7 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
         pending: m.pending,
         edited: m.edited,
         pinned: m.pinned,
+        forwardable: m.forwardable,
         mine: m.author.raw == m.author.account.user,
         first_in_group: key.first,
         divider_date: key.date.clone().unwrap_or_default().into(),

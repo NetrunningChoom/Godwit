@@ -18,6 +18,7 @@ export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
 export { PlayerWindow } from "player-window.slint";
 import { Switcher } from "switcher.slint";
+import { ForwardDialog } from "forward-dialog.slint";
 import { UserCard } from "usercard.slint";
 import { Members } from "members.slint";
 import { Login } from "login.slint";
@@ -394,6 +395,7 @@ export component AppWindow inherits Window {
     in property <bool> can-send;
     in property <bool> can-react;
     in property <bool> can-mark-unread;
+    in property <bool> can-forward;
     in property <bool> can-reply;
     in property <bool> can-edit;
     in property <bool> can-delete;
@@ -812,6 +814,12 @@ export component AppWindow inherits Window {
     callback open-member-profile(int);
     callback close-profile();
     callback mark-unread(int);
+    callback forward-message(int);
+    // The forward picker (see ForwardDialog).
+    in-out property <bool> forward-open;
+    in property <[SwitchItem]> forward-results;
+    callback forward-search(string);
+    callback forward-send(int, string);
     callback copy-text(int);
     // Copies this text itself to the clipboard (a username).
     callback copy-string(string);
@@ -1172,6 +1180,7 @@ export component AppWindow inherits Window {
                                         can-send: root.can-send;
                                         can-react: root.can-react;
                                         can-mark-unread: root.can-mark-unread;
+                                        can-forward: root.can-forward;
                                         can-reply: root.can-reply;
                                         can-edit: root.can-edit;
                                         can-delete: root.can-delete;
@@ -1265,6 +1274,7 @@ export component AppWindow inherits Window {
                                     jump-to-reply(i) => { root.jump-to-reply(i); }
                                         open-profile(i) => { root.open-message-profile(i); }
                                         mark-unread(i) => { root.mark-unread(i); }
+                                        forward-message(i) => { root.forward-message(i); }
                                         copy-text(i) => { root.copy-text(i); }
                                         copy-link(i) => { root.copy-link(i); }
                                     }
@@ -1653,6 +1663,15 @@ export component AppWindow inherits Window {
         viewer-web: root.viewer-web;
         viewer-width: root.viewer-width;
         viewer-zoom <=> root.viewer-zoom;
+    }
+    if root.forward-open && screen == Screen.main: ForwardDialog {
+        results: root.forward-results;
+        forward-open <=> root.forward-open;
+        forward-search(q) => { root.forward-search(q); }
+        forward-send(i, note) => {
+            root.forward-open = false;
+            root.forward-send(i, note);
+        }
     }
     if root.thread-open && screen == Screen.main: ThreadDialog {
         thread-confirm() => { root.thread-confirm(); }

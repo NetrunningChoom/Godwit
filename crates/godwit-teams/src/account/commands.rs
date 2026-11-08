@@ -112,6 +112,7 @@ impl TeamsAccount {
                                 pending: false,
                                 snippet: None,
                                 pinned: false,
+                                forwardable: false,
                             },
                         });
                     }
