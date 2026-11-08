@@ -139,20 +139,20 @@ features, are not listed as gaps. Official-client references: [Discord forwardin
 **Available:**
 
 - **Account and profile:** QR sign-in, captcha during sign-in, saved sessions, sign out, friend requests, profile cards, bio/banner/roles, online/idle/DND/invisible and custom status; first-run privacy/consent and activity-sharing controls.
-- **Servers and navigation:** Server order, categories and permission-filtered channels; DMs/group DMs; server menu; invites; channel creation; server overview, roles/permissions, invite list/revoke, bans/unban and owner deletion; mute and server notification level.
-- **Messages and composer:** Paged history and live updates; send, reply, edit, delete, reactions; Markdown, mentions, embeds, attachments, stickers, display of incoming forwarded-message snapshots, system/invite cards; polls and voting; threads and forums; GIF search; pins; search and jump-to-result.
-- **People and notifications:** Friends and requests; profile cards; streamed member lists; typing; DM/mention alerts; server/channel unread and mention counts; server-level notification preferences.
+- **Servers and navigation:** Server order and server folders (shown, open/close), categories and permission-filtered channels; DMs/group DMs; server menu; invites; channel creation, editing (name, topic, slowmode, NSFW), deletion, categories and reordering; channel permission overrides; server overview, roles/permissions, emoji manager, invite list/revoke, bans/unban and owner deletion; mute, server notification level and per-channel notification settings.
+- **Messages and composer:** Paged history and live updates; send, reply, edit, delete, reactions; Markdown, mentions, timestamps in the reader's locale, embeds, attachments, stickers (and sending the server's own), forwarding and forwarded snapshots, system/invite cards; creating polls, voting and ending them; threads and forums (tags, sorting, older posts); GIF search; pins; mark unread; search with filters, server-wide, with more results.
+- **People and notifications:** Friends and requests; profile cards with mutual servers and friends and your notes; block/unblock; streamed member lists and member search; typing; DM/mention alerts; server/channel unread and mention counts; server-level notification preferences.
+- **Moderation:** Assign/remove member roles, timeouts, server nicknames, kick and ban with reason and message-history deletion.
 - **Voice and video:** Voice calls with DAVE end-to-end encryption; mute/deafen; watch Go Live streams and cameras, including stream sound; call layout, per-stream mute/volume and theater mode.
 - **Other:** Privacy choice to revoke usage/personalization consents and stop activity sharing.
 
 **In progress or still missing:**
 
 - **Account and profile:** Captchas outside sign-in; message requests are not separated into their own view and need live verification; profile picture upload and most account/privacy/session settings are absent.
-- **Servers and navigation:** Folder display/management; membership-screening invite joins; channel/category editing, webhooks and emoji administration; member role assignment; per-channel notification overrides; complete server/client settings.
-- **Messages and composer:** Search filters and later result pages; message request UX; some sticker formats (Lottie); upload behavior follows account/server limits.
-- **People, moderation and safety:** Block/unblock users and report users/messages; richer moderation and safety UI, per-channel notification settings, invite screening and fuller role/profile actions.
+- **Servers and navigation:** Creating and editing server folders; membership-screening invite joins; webhooks; complete server/client settings.
+- **Messages and composer:** Message request UX; some sticker formats (Lottie); Discord's standard sticker packs; forum gallery layout; upload behavior follows account/server limits.
+- **People, moderation and safety:** Reporting isn't built yet; use Discord's app or website to report. AutoMod, invite screening and fuller profile actions are missing.
 - **Group conversations:** Create group DMs and add/remove members with the official client's full membership and history options.
-- **Message actions:** Send/forward a message to another conversation (Godwit currently displays forwarded snapshots it receives, but does not provide the forwarding workflow).
 - **Voice and video:** Outgoing camera/Go Live and screen-share code paths are experimental and need live confirmation; voice privacy code, stage channels, soundboard, per-channel bitrate controls and some call controls.
 - **Other:** Remaining Discord settings and account/device controls. Nitro features are not offered.
 
@@ -164,6 +164,7 @@ features, are not listed as gaps. Official-client references: [Discord forwardin
 - **Chats:** 1:1 chats and group chats; history, live messages, sending, typing in 1:1, read/unread state, BBCode (bold/italic/strike/code/quotes/spoilers), emoticons, stickers, links, images and invite cards.
 - **Calls:** 1:1 and group voice signaling, mute/deafen controls and member/occupant display.
 - **Notifications and organization:** Home chat list and Godwit's alert path for incoming messages; friends and group/server rooms.
+- **Games in common:** Compare game libraries with friends (a Venn diagram for 2–3 people, a ranked list for more) and copy every list as Markdown to send to a friend or group.
 
 **In progress or still missing:**
 
@@ -224,7 +225,7 @@ features, are not listed as gaps. Official-client references: [Discord forwardin
 **Available:**
 
 - **Account and navigation:** Google sign-in; direct chats and spaces; names, pictures, unread state and latest-message history.
-- **Messages and media:** Send and upload files; edits, deletes, reactions, quote replies and topic threads; links, mentions, images and attachments; read state.
+- **Messages and media:** Send and upload files; edits, deletes, reactions, quote replies and topic threads; links and link cards, mentions, images, video/audio and other attachments that open; read state.
 - **Live state and calls:** Push updates and custom status are implemented; presence snapshots for chat partners.
 
 **In progress or still missing:**
