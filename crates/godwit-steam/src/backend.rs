@@ -13,16 +13,19 @@ use futures_util::StreamExt;
 use steam_vent::{Connection, ConnectionError, ConnectionTrait, LoginError, ServerList};
 use steam_vent_proto_steam::steammessages_chat_steamclient::{
     CChatRoom_ChatRoomGroupRoomsChange_Notification, CChatRoom_IncomingChatMessage_Notification,
-    CChatRoom_MemberStateChange_Notification, ChatRoomClient_NotifyChatGroupUserStateChanged_Notification,
+    CChatRoom_MemberStateChange_Notification, CChatRoom_MessageReaction_Notification,
+    ChatRoomClient_NotifyChatGroupUserStateChanged_Notification,
 };
 use steam_vent_proto_steam::steammessages_clientserver_friends::{
     CMsgClientChangeStatus, CMsgClientEmoticonList, CMsgClientFriendsList, CMsgClientGetEmoticonList,
     CMsgClientPersonaState, CMsgClientRequestFriendData,
 };
 use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientLoggedOff;
+use steam_vent_proto_steam::steammessages_friendmessages_steamclient::EMessageReactionType;
 use steam_vent_proto_steam::steammessages_friendmessages_steamclient::{
     CFriendMessages_AckMessage_Notification, CFriendMessages_GetRecentMessages_Request,
-    CFriendMessages_IncomingMessage_Notification, CFriendMessages_SendMessage_Request,
+    CFriendMessages_IncomingMessage_Notification, CFriendMessages_MessageReaction_Notification,
+    CFriendMessages_SendMessage_Request, CFriendMessages_UpdateMessageReaction_Request,
     CFriendsMessages_GetActiveMessageSessions_Request,
 };
 use tokio::sync::mpsc as tmpsc;
@@ -150,6 +153,21 @@ pub enum Cmd {
         chat: u64,
         time: u32,
     },
+    React {
+        friend: u64,
+        time: u32,
+        ordinal: u32,
+        reaction: String,
+        add: bool,
+    },
+    GroupReact {
+        group: u64,
+        chat: u64,
+        time: u32,
+        ordinal: u32,
+        reaction: String,
+        add: bool,
+    },
     /// Join a group room's voice chat (ending any call first); `call` tags its events.
     GroupCall {
         call: u64,
@@ -180,6 +198,14 @@ pub struct Line {
     pub time: u32,
     pub ordinal: u32,
     pub text: String,
+    pub reactions: Vec<LineReaction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineReaction {
+    pub reaction: String,
+    pub count: u32,
+    pub me: bool,
 }
 
 /// From the network thread to the account.
@@ -299,6 +325,23 @@ pub enum Ev {
         before: Option<(u32, u32)>,
         lines: Vec<Line>,
         more: bool,
+    },
+    Reaction {
+        friend: u64,
+        time: u32,
+        ordinal: u32,
+        reactor: u64,
+        reaction: String,
+        add: bool,
+    },
+    GroupReaction {
+        group: u64,
+        chat: u64,
+        time: u32,
+        ordinal: u32,
+        reactor: u64,
+        reaction: String,
+        add: bool,
     },
     GroupHistoryFailed {
         group: u64,
@@ -756,6 +799,53 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                 tokio::spawn(async move { crate::groups::ack(&conn, group, chat, time).await });
             }
         }
+        Cmd::React {
+            friend,
+            time,
+            ordinal,
+            reaction,
+            add,
+        } => {
+            if let Some(conn) = st.conn.clone() {
+                tokio::spawn(async move {
+                    let req = CFriendMessages_UpdateMessageReaction_Request {
+                        steamid: Some(friend),
+                        server_timestamp: Some(time),
+                        ordinal: Some(ordinal),
+                        reaction_type: Some(steam_vent_proto_common::protobuf::EnumOrUnknown::new(
+                            EMessageReactionType::k_EMessageReactionType_Emoticon,
+                        )),
+                        reaction: Some(reaction),
+                        is_add: Some(add),
+                        ..Default::default()
+                    };
+                    if let Err(e) = conn.service_method(req).await {
+                        diag(&format!("Steam reaction update failed: {e}"));
+                    }
+                });
+            }
+        }
+        Cmd::GroupReact {
+            group,
+            chat,
+            time,
+            ordinal,
+            reaction,
+            add,
+        } => {
+            if let Some(conn) = st.conn.clone() {
+                tokio::spawn(async move {
+                    let req = steam_vent_proto_steam::steammessages_chat_steamclient::CChatRoom_UpdateMessageReaction_Request {
+                        chat_group_id: Some(group), chat_id: Some(chat), server_timestamp: Some(time),
+                        ordinal: Some(ordinal), reaction_type: Some(steam_vent_proto_common::protobuf::EnumOrUnknown::new(steam_vent_proto_steam::steammessages_chat_steamclient::EChatRoomMessageReactionType::k_EChatRoomMessageReactionType_Emoticon)), reaction: Some(reaction), is_add: Some(add),
+                        ..Default::default()
+                    };
+                    if let Err(e) = conn.service_method(req).await {
+                        diag(&format!("Steam group reaction update failed: {e}"));
+                    }
+                });
+            }
+        }
         Cmd::GroupCall {
             call,
             group,
@@ -848,6 +938,7 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                             from: account_id(conn.steam_id().steam64()),
                             time: res.server_timestamp.unwrap_or_else(now),
                             ordinal: res.ordinal.unwrap_or_default(),
+                            reactions: Vec::new(),
                             // As Steam keeps it: its markup, our brackets escaped.
                             text: res
                                 .modified_message
@@ -904,6 +995,18 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                                 time: m.timestamp.unwrap_or_default(),
                                 ordinal: m.ordinal.unwrap_or_default(),
                                 text: m.message.clone().unwrap_or_default(),
+                                reactions: m
+                                    .reactions
+                                    .iter()
+                                    .filter(|r| {
+                                        r.reaction_type() == EMessageReactionType::k_EMessageReactionType_Emoticon
+                                    })
+                                    .map(|r| LineReaction {
+                                        reaction: r.reaction.clone().unwrap_or_default(),
+                                        count: r.reactors.len() as u32,
+                                        me: r.reactors.iter().any(|id| *id == account_id(conn.steam_id().steam64())),
+                                    })
+                                    .collect(),
                             })
                             // Steam includes the message paged from: drop it.
                             .filter(|l| before != Some((l.time, l.ordinal)))
@@ -1156,10 +1259,12 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
     let mut lists = conn.on::<CMsgClientFriendsList>();
     let mut states = conn.on::<CMsgClientPersonaState>();
     let mut incoming = conn.on_notification::<CFriendMessages_IncomingMessage_Notification>();
+    let mut friend_reactions = conn.on_notification::<CFriendMessages_MessageReaction_Notification>();
     let mut voice = signaling::events(&conn);
     let mut logged_off = conn.on::<CMsgClientLoggedOff>();
     let mut emoticon_lists = conn.on::<CMsgClientEmoticonList>();
     let mut group_messages = conn.on_notification::<CChatRoom_IncomingChatMessage_Notification>();
+    let mut group_reactions = conn.on_notification::<CChatRoom_MessageReaction_Notification>();
     let mut group_rooms = conn.on_notification::<CChatRoom_ChatRoomGroupRoomsChange_Notification>();
     let mut group_states = conn.on_notification::<ChatRoomClient_NotifyChatGroupUserStateChanged_Notification>();
     let mut member_states = conn.on_notification::<CChatRoom_MemberStateChange_Notification>();
@@ -1189,6 +1294,41 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
         })
         .abort_handle(),
     );
+
+    let o = out.clone();
+    tasks.push(
+        tokio::spawn(async move {
+            while let Some(item) = friend_reactions.next().await {
+                if let Ok(n) = item {
+                    if n.reaction_type() != EMessageReactionType::k_EMessageReactionType_Emoticon {
+                        continue;
+                    }
+                    o.send(Ev::Reaction {
+                        friend: n.steamid_friend.unwrap_or_default(),
+                        time: n.server_timestamp.unwrap_or_default(),
+                        ordinal: n.ordinal.unwrap_or_default(),
+                        reactor: n.reactor.unwrap_or_default(),
+                        reaction: n.reaction.unwrap_or_default(),
+                        add: n.is_add.unwrap_or(false),
+                    });
+                }
+            }
+        })
+        .abort_handle(),
+    );
+    let o = out.clone();
+    tasks.push(tokio::spawn(async move {
+        while let Some(item) = group_reactions.next().await {
+            if let Ok(n) = item {
+                if n.reaction_type() != steam_vent_proto_steam::steammessages_chat_steamclient::EChatRoomMessageReactionType::k_EChatRoomMessageReactionType_Emoticon { continue; }
+                o.send(Ev::GroupReaction {
+                    group: n.chat_group_id(), chat: n.chat_id(),
+                    time: n.server_timestamp(), ordinal: n.ordinal(),
+                    reactor: n.reactor(), reaction: n.reaction().to_owned(), add: n.is_add(),
+                });
+            }
+        }
+    }).abort_handle());
 
     // The emoticons and stickers we own (asked for below; Steam sends the
     // list again when it changes).
@@ -1225,6 +1365,7 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
                         time: n.timestamp(),
                         ordinal: n.ordinal(),
                         text: n.message().to_owned(),
+                        reactions: Vec::new(),
                     },
                     mentioned,
                 });
@@ -1368,6 +1509,7 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
                             time: n.rtime32_server_timestamp.unwrap_or_else(now),
                             ordinal: n.ordinal.unwrap_or_default(),
                             text,
+                            reactions: Vec::new(),
                         };
                         if !mine {
                             let at = seq.entry(friend).or_default();

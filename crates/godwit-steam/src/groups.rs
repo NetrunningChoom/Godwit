@@ -216,6 +216,13 @@ pub async fn history(
             time: m.server_timestamp(),
             ordinal: m.ordinal(),
             text: m.message().to_owned(),
+            reactions: m.reactions.iter()
+                .filter(|r| r.reaction_type() == steam_vent_proto_steam::steammessages_chat_steamclient::EChatRoomMessageReactionType::k_EChatRoomMessageReactionType_Emoticon)
+                .map(|r| crate::backend::LineReaction {
+                reaction: r.reaction().to_owned(),
+                count: r.num_reactors(),
+                me: r.has_user_reacted(),
+            }).collect(),
         })
         .filter(|l| before != Some((l.time, l.ordinal)))
         .collect();
@@ -239,6 +246,7 @@ pub async fn send(conn: &Connection, group: u64, chat: u64, text: &str) -> Resul
         from: crate::backend::account_id(conn.steam_id().steam64()),
         time: res.server_timestamp.unwrap_or_else(crate::backend::now),
         ordinal: res.ordinal(),
+        reactions: Vec::new(),
         text: res
             .modified_message
             .clone()

@@ -59,6 +59,7 @@ impl SteamAccount {
         let converted = crate::bbcode::convert(&line.text);
         let id = message_id(line.time, line.ordinal);
         let embeds = self.game_embeds(self.room_id(friend), &id, from, converted.games);
+        let reactions = self.reaction_list(&RoomId::new(account.clone(), friend.to_string()), line);
         Some(Message {
             id,
             author: UserId::new(account, from.to_string()),
@@ -80,7 +81,7 @@ impl SteamAccount {
             attachments: images(converted.images),
             embeds,
             invites: converted.invites.into_iter().map(Into::into).collect(),
-            reactions: Vec::new(),
+            reactions,
             pending: false,
             snippet: None,
             pinned: false,

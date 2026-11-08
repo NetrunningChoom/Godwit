@@ -138,6 +138,9 @@ pub struct SteamAccount {
     libraries: HashMap<u64, godwit_core::games::Library>,
     loading_libraries: HashSet<u64>,
     chats: HashMap<u64, Chat>,
+    owned_emoticons: HashSet<String>,
+    /// Reaction counts and own-reaction state by Steam message id.
+    reactions: HashMap<(String, u32, u32), Vec<godwit_core::message::Reaction>>,
     /// The room on screen, if one of ours: its messages are read as they come.
     viewing: Option<u64>,
     profile_for: Option<u64>,
@@ -174,6 +177,79 @@ pub struct SteamAccount {
 }
 
 impl SteamAccount {
+    fn owned_emoticon(&self, name: &str) -> bool {
+        self.owned_emoticons.contains(name)
+    }
+
+    /// The reactions to show on `line`. History and incoming lines carry
+    /// Steam's current counts, so a non-empty list replaces what we kept;
+    /// lines without any (live friend messages) fall back to the reaction
+    /// notifications seen since, and nothing empty is kept.
+    pub(super) fn reaction_list(&mut self, room: &RoomId, line: &Line) -> Vec<godwit_core::message::Reaction> {
+        let key = (room.raw.to_string(), line.time, line.ordinal);
+        if line.reactions.is_empty() {
+            return self.reactions.get(&key).cloned().unwrap_or_default();
+        }
+        let list: Vec<_> = line
+            .reactions
+            .iter()
+            .map(|r| godwit_core::message::Reaction {
+                emoji: format!(":{}:", r.reaction).into(),
+                image_url: Some(crate::bbcode::emoticon_url(&r.reaction).into()),
+                count: r.count,
+                me: r.me,
+            })
+            .collect();
+        self.reactions.insert(key, list.clone());
+        list
+    }
+
+    /// Applies one reaction notification to the message at `at`
+    /// (Steam's `(server timestamp, ordinal)`) in `room`.
+    fn update_reaction(
+        &mut self,
+        room: Option<RoomId>,
+        at: (u32, u32),
+        reactor: u64,
+        name: String,
+        add: bool,
+        out: &mut Vec<Event>,
+    ) {
+        let Some(room) = room else { return };
+        let (time, ordinal) = at;
+        let key = (room.raw.to_string(), time, ordinal);
+        let list = self.reactions.entry(key).or_default();
+        let me = reactor == self.me.unwrap_or_default();
+        if add {
+            if let Some(existing) = list.iter_mut().find(|r| r.emoji.as_ref() == format!(":{name}:")) {
+                existing.count = existing.count.saturating_add(1);
+                existing.me |= me;
+            } else {
+                list.push(godwit_core::message::Reaction {
+                    emoji: format!(":{name}:").into(),
+                    image_url: Some(crate::bbcode::emoticon_url(&name).into()),
+                    count: 1,
+                    me,
+                });
+            }
+        } else if let Some(existing) = list.iter_mut().find(|r| r.emoji.as_ref() == format!(":{name}:")) {
+            existing.count = existing.count.saturating_sub(1);
+            if me {
+                existing.me = false;
+            }
+            list.retain(|r| r.count > 0);
+        }
+        let reactions = list.clone();
+        if reactions.is_empty() {
+            self.reactions.remove(&(room.raw.to_string(), time, ordinal));
+        }
+        out.push(Event::ReactionsChanged {
+            room,
+            id: message_id(time, ordinal),
+            reactions,
+        });
+    }
+
     /// Starts the network thread and connects with the sign-in kept in
     /// `slot`, if there is one.
     pub fn start(wake: Waker, slot: u32) -> std::io::Result<Self> {
@@ -221,6 +297,8 @@ impl SteamAccount {
             libraries: HashMap::new(),
             loading_libraries: HashSet::new(),
             chats: HashMap::new(),
+            owned_emoticons: HashSet::new(),
+            reactions: HashMap::new(),
             viewing: None,
             profile_for: None,
             typing_seq: HashMap::new(),
@@ -420,6 +498,44 @@ impl NetworkAccount for SteamAccount {
                         nonce: nonce.to_string(),
                     });
                 }
+            }
+            Command::React {
+                room,
+                message,
+                emoji,
+                add,
+            } => {
+                if self.account.as_ref() != Some(&room.account) {
+                    return out;
+                }
+                let Some((time, ordinal)) = parse_message_id(&message) else {
+                    return out;
+                };
+                let Some(name) = emoji.strip_prefix(':').and_then(|s| s.strip_suffix(':')) else {
+                    return out;
+                };
+                if name.is_empty() || !self.owned_emoticon(name) {
+                    return out;
+                }
+                if let Some((group, chat)) = group_of(&room) {
+                    self.net.send(Cmd::GroupReact {
+                        group,
+                        chat,
+                        time,
+                        ordinal,
+                        reaction: name.to_owned(),
+                        add,
+                    });
+                } else if let Some(friend) = Self::friend_of(&room) {
+                    self.net.send(Cmd::React {
+                        friend,
+                        time,
+                        ordinal,
+                        reaction: name.to_owned(),
+                        add,
+                    });
+                }
+                return out;
             }
             Command::OpenDirect { user } => {
                 if let Ok(friend) = user.raw.parse::<u64>() {
@@ -949,6 +1065,7 @@ mod tests {
                 time: 50,
                 ordinal: 0,
                 text: "hey @you".into(),
+                reactions: Vec::new(),
             },
             mentioned: true,
         })
@@ -979,6 +1096,7 @@ mod tests {
                 time: 10,
                 ordinal: 0,
                 text: r#"[lobbyinvite appid="440" lobbyid="9"][/lobbyinvite]"#.into(),
+                reactions: Vec::new(),
             },
         })
         .unwrap();
@@ -1020,6 +1138,7 @@ mod tests {
                 time: 10,
                 ordinal: 0,
                 text: r#"[invite chatgroupid="20" chatid="200"][/invite]"#.into(),
+                reactions: Vec::new(),
             },
         })
         .unwrap();
@@ -1056,6 +1175,61 @@ mod tests {
                 .any(|e| matches!(e, Event::RoomOpened(r) if &*r.raw == "g20-200")),
             "joining an ad-hoc group chat opens it"
         );
+    }
+
+    #[test]
+    fn steam_reaction_notification_updates_core_reaction_state() {
+        let (mut a, tx, _) = ready_with_commands();
+        let friend = backend::steam_id(2);
+        tx.send(Ev::Reaction {
+            friend,
+            time: 41,
+            ordinal: 3,
+            reactor: backend::steam_id(2),
+            reaction: "steamhappy".into(),
+            add: true,
+        })
+        .unwrap();
+        let events = a.poll();
+        assert!(events.iter().any(|e| matches!(e, Event::ReactionsChanged {
+            id, reactions, ..
+        } if id == &message_id(41, 3) && reactions.len() == 1 && reactions[0].count == 1 && !reactions[0].me)));
+    }
+
+    #[test]
+    fn steam_room_capabilities_disable_unrepresentable_reactions_and_replies() {
+        let caps = Capabilities::of(Network::Steam);
+        assert!(!caps.react);
+        assert!(!caps.reply);
+    }
+
+    #[test]
+    fn steam_reaction_command_requires_owned_emoticon_and_maps_timestamp_ordinal() {
+        let (mut a, tx, mut commands) = ready_with_commands();
+        tx.send(Ev::Emoticons {
+            emoticons: vec!["steamhappy".into()],
+            stickers: Vec::new(),
+        })
+        .unwrap();
+        a.poll();
+        let account = a.account.clone().unwrap();
+        let room = RoomId::new(account, backend::steam_id(2).to_string());
+        a.run(Command::React {
+            room: room.clone(),
+            message: message_id(42, 7),
+            emoji: ":steamhappy:".into(),
+            add: true,
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::React { friend, time: 42, ordinal: 7, reaction, add: true }) if friend == backend::steam_id(2) && reaction == "steamhappy")
+        );
+        a.run(Command::React {
+            room,
+            message: message_id(42, 7),
+            emoji: "🙂".into(),
+            add: true,
+        });
+        assert!(commands.try_recv().is_err());
     }
 
     #[test]
@@ -1511,6 +1685,7 @@ mod tests {
                 time: 1_700_000_000,
                 ordinal: 0,
                 text: "hi".into(),
+                reactions: Vec::new(),
             },
         })
         .unwrap();
@@ -1545,12 +1720,18 @@ mod tests {
                     time: 20,
                     ordinal: 0,
                     text: "second".into(),
+                    reactions: vec![backend::LineReaction {
+                        reaction: "steamhappy".into(),
+                        count: 2,
+                        me: true,
+                    }],
                 },
                 Line {
                     from: 2,
                     time: 10,
                     ordinal: 0,
                     text: "first".into(),
+                    reactions: Vec::new(),
                 },
             ],
             more: false,
@@ -1567,6 +1748,8 @@ mod tests {
         };
         let texts: Vec<&str> = messages.iter().map(|m| &*m.text).collect();
         assert_eq!(texts, ["first", "second"], "oldest first");
+        assert_eq!(messages[1].reactions[0].count, 2);
+        assert!(messages[1].reactions[0].me);
         assert_eq!(&*messages[1].author.raw, backend::steam_id(1).to_string(), "ours");
     }
 

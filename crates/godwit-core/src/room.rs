@@ -220,6 +220,11 @@ impl Capabilities {
             Network::Steam => Self {
                 edit: false,
                 delete: false,
+                // Steam's EMessageReactionType accepts emoticons/stickers, while the shared picker accepts arbitrary Unicode.
+                // Keep it hidden until the core can restrict it to Steam's accepted names (steam-vent friendmessages proto).
+                react: false,
+                // Neither FriendMessages.SendMessage nor ChatRoom.SendChatMessage has a reply field (steam-vent protos).
+                reply: false,
                 // Steam's chat uploads images through its web file-upload
                 // flow, which isn't built: attaching would send nothing.
                 attachments: false,
@@ -329,9 +334,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn steam_chats_cannot_be_edited() {
+    fn steam_chats_disable_unavailable_actions() {
         let c = Capabilities::of(Network::Steam);
-        assert!(c.send && !c.edit && !c.delete);
+        assert!(c.send && !c.edit && !c.delete && !c.react && !c.reply);
     }
 
     #[test]

@@ -422,10 +422,37 @@ impl SteamAccount {
                 }
             }
             Ev::Emoticons { emoticons, stickers } => {
+                self.owned_emoticons = emoticons.iter().cloned().collect();
                 if let Some(account) = self.account.clone() {
                     let groups = emoji_groups(&account, &emoticons, &stickers);
                     out.push(Event::CustomEmoji { account, groups });
                 }
+            }
+            Ev::Reaction {
+                friend,
+                time,
+                ordinal,
+                reactor,
+                reaction,
+                add,
+            } => {
+                let room = self.room_id(friend);
+                self.update_reaction(room, (time, ordinal), reactor, reaction, add, out);
+            }
+            Ev::GroupReaction {
+                group,
+                chat,
+                time,
+                ordinal,
+                reactor,
+                reaction,
+                add,
+            } => {
+                let room = self
+                    .account
+                    .clone()
+                    .map(|account| RoomId::new(account, group_room_raw(group, chat)));
+                self.update_reaction(room, (time, ordinal), reactor, reaction, add, out);
             }
             Ev::Sessions(sessions) => {
                 for (account_id, last, viewed, unread) in sessions {
