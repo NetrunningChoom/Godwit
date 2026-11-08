@@ -104,6 +104,7 @@ impl Application {
                     a.presence = Some(Presence::Online);
                 }
                 effects.extend(self.derive_people(&id));
+                self.pin_new_notes();
                 effects
             }
             Event::AccountLost { account, reason } => self.receive_account_lost(account, reason),
@@ -119,9 +120,13 @@ impl Application {
                 }
                 let account = room.id.account.clone();
                 let direct = matches!(room.kind, crate::room::RoomKind::Direct { .. });
+                let notes = matches!(room.kind, RoomKind::Notes);
                 match self.state.rooms.iter_mut().find(|r| r.id == room.id) {
                     Some(slot) => *slot = Arc::new(room),
                     None => self.state.rooms.push(Arc::new(room)),
+                }
+                if notes {
+                    self.pin_new_notes();
                 }
                 if direct {
                     self.derive_people(&account)

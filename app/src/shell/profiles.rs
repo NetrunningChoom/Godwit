@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
-//! Profiles: switching (only the profile's accounts stay connected), and the
-//! calls the switcher and the Profiles page make. What is pure (which
-//! accounts stop and start) lives in `crate::profiles`.
+//! Profiles: switching (only the profile's accounts stay connected, or with
+//! soft lock the others keep running in the background, see
+//! `crate::background`), and the calls the switcher and the Profiles page
+//! make. What is pure (which accounts stop and start) lives in
+//! `crate::profiles`.
 
 use super::*;
-use crate::profiles::{Running, plan};
+use crate::profiles::{Running, background_plan, plan};
 use crate::profiles_page::RowKey;
 use crate::ui::ProfilesState;
 use slint::ComponentHandle;
@@ -21,6 +23,8 @@ pub struct ProfileInfo {
     pub default: bool,
     /// How many accounts it has.
     pub accounts: usize,
+    /// Running in the background and alerted since it was last in use.
+    pub alert: bool,
 }
 
 /// The saved contacts at `path`; a damaged file is kept aside and the
@@ -93,8 +97,178 @@ impl Shell {
                 current: p.id == s.current_profile,
                 default: p.id == s.default_profile,
                 accounts: p.accounts.len(),
+                alert: p.id != s.current_profile && self.shelves.get(&p.id).is_some_and(|b| b.unseen),
             })
             .collect()
+    }
+
+    /// Whether the other profiles stay connected (never in the demo, whose
+    /// accounts belong to every profile).
+    fn soft_lock(&self) -> bool {
+        self.settings.background_profiles && self.demo.is_none()
+    }
+
+    /// Starts and stops background accounts so every other profile's
+    /// accounts run once (see `profiles::background_plan`); with soft lock
+    /// off, the background empties.
+    pub(super) fn keep_background(&mut self) {
+        if !self.soft_lock() {
+            for (_, mut shelf) in std::mem::take(&mut self.shelves) {
+                for i in (0..shelf.live.len()).rev() {
+                    shelf.remove(i);
+                }
+            }
+            return;
+        }
+        let shelves: Vec<(u32, Vec<Running>)> = self.shelves.iter().map(|(id, s)| (*id, s.running())).collect();
+        let p = background_plan(
+            &self.running(),
+            &shelves,
+            &self.settings.profiles,
+            self.settings.current_profile,
+            &self.settings.known_accounts,
+        );
+        // Highest index first within each shelf (the plan lists them in order).
+        for &(id, i) in p.stop.iter().rev() {
+            if let Some(shelf) = self.shelves.get_mut(&id) {
+                shelf.remove(i);
+            }
+        }
+        for (id, network, slot) in p.start {
+            let Some(entry) = registry::NETWORKS.iter().find(|e| e.network.key() == network) else {
+                continue;
+            };
+            match (entry.start)(self.wake.clone(), slot) {
+                Ok(mut account) => {
+                    account.set_notifications(self.settings.notifications || self.settings.sounds);
+                    self.shelves.entry(id).or_default().live.push(account);
+                }
+                Err(e) => eprintln!("error: starting a {} account: {e}", entry.network.name()),
+            }
+        }
+        self.shelves.retain(|_, s| !s.live.is_empty());
+    }
+
+    /// An account the foreground is about to start leaves the background
+    /// first, so it never runs twice (what it showed there goes with it).
+    fn take_from_background(&mut self, network: &str, slot: u32) {
+        for shelf in self.shelves.values_mut() {
+            while let Some(i) = shelf
+                .live
+                .iter()
+                .position(|a| a.network().key() == network && a.slot() == slot)
+            {
+                shelf.remove(i);
+            }
+        }
+    }
+
+    /// Polls the background profiles: their events update their own state,
+    /// and their alerts become notifications naming the profile. Returns
+    /// whether a profile's dot in the menu came on.
+    pub(super) fn pump_background(&mut self) -> bool {
+        if self.shelves.is_empty() {
+            return false;
+        }
+        let mut shelves = std::mem::take(&mut self.shelves);
+        let mut changed = false;
+        for (id, shelf) in &mut shelves {
+            let events = shelf.poll();
+            if events.is_empty() {
+                continue;
+            }
+            let name = self.settings.profile(*id).map(|p| p.name.clone()).unwrap_or_default();
+            for event in events {
+                // Judged against the state before the event, as in the foreground.
+                if let Some(n) = shelf.notice(&event, &self.settings) {
+                    let (title, body) =
+                        crate::background::notification_text(&name, &n, self.settings.background_previews);
+                    // Do Not Disturb, the account's alert mode and muzzle
+                    // mode apply as to any alert. Never on the Notifications
+                    // page: that belongs to the profile in use.
+                    self.alerts
+                        .alert(&self.settings, &n.room, n.kind, n.from.as_ref(), &title, &body);
+                    changed |= !shelf.unseen;
+                    shelf.unseen = true;
+                }
+                if let Event::AlertDone { room } = &event {
+                    self.alerts.done(room);
+                }
+                shelf.apply(event, &|a| self.settings.is_offline(a));
+            }
+        }
+        // Nothing may have been added meanwhile (the pump doesn't switch).
+        self.shelves = shelves;
+        changed
+    }
+
+    /// A notification was clicked: its chat opens, in front. One from a
+    /// background profile switches to that profile first (asking only
+    /// when a call would end).
+    pub(super) fn open_alert(&mut self, ui: &AppWindow, room: RoomId) {
+        if self.app.state().room(&room).is_none() {
+            let Some(id) = self
+                .shelves
+                .iter()
+                .find(|(_, s)| s.app.state().room(&room).is_some())
+                .map(|(id, _)| *id)
+            else {
+                return;
+            };
+            if self.app.state().call.is_some() {
+                self.pending_switch_room = Some(room);
+                self.open_switch_dialog(ui, id);
+                show_window(ui);
+                return;
+            }
+            self.switch_profile(ui, id);
+            if self.app.state().room(&room).is_none() {
+                return;
+            }
+        }
+        self.act(ui, Action::SelectRoom(room));
+        show_window(ui);
+    }
+
+    /// Requests the encrypted cache for accounts that came in with a
+    /// background profile (as on `AccountReady`): it fills only what they
+    /// haven't loaded.
+    fn load_cache_for_restored(&mut self) {
+        let ids: Vec<AccountId> = self.app.state().accounts.iter().map(|a| a.id.clone()).collect();
+        for id in ids {
+            if !self.cached_accounts.insert(id.clone()) {
+                continue;
+            }
+            let loading = self.cache.as_ref().is_some_and(|c| c.request_load(&id).is_ok());
+            if !loading {
+                self.cache_loads_finished.insert(id);
+            }
+        }
+    }
+
+    /// Soft lock: the profile in use goes on its shelf, whole, and `to`'s
+    /// comes off (an empty one if it has none yet), so its accounts are
+    /// there at once with everything they showed.
+    fn swap_shelf(&mut self, from: u32, to: u32) {
+        let incoming = self.shelves.remove(&to).unwrap_or_default();
+        // What the old profile's accounts showed stays in the message cache.
+        self.save_cache();
+        let app = std::mem::replace(&mut self.app, incoming.app);
+        let live = std::mem::replace(&mut self.live, incoming.live);
+        for a in &app.state().accounts {
+            self.cached_accounts.remove(&a.id);
+            self.cache_loads_finished.remove(&a.id);
+            self.saved_cache.remove(&a.id);
+        }
+        self.shelves.insert(
+            from,
+            crate::background::Shelf {
+                app,
+                live,
+                unseen: false,
+            },
+        );
+        self.load_cache_for_restored();
     }
 
     /// For the switch confirmation: what a switch costs beyond the accounts
@@ -165,6 +339,9 @@ impl Shell {
             let Some(entry) = registry::NETWORKS.iter().find(|e| e.network.key() == network) else {
                 continue;
             };
+            // Soft lock: it was in the background (another profile has it
+            // too); its state there doesn't move, so it starts afresh here.
+            self.take_from_background(&network, slot);
             match (entry.start)(self.wake.clone(), slot) {
                 Ok(mut account) => {
                     account.set_notifications(self.settings.notifications || self.settings.sounds);
@@ -178,6 +355,9 @@ impl Shell {
         // Nothing running: a calm empty state, not a sign-in form (the
         // profile may just have no accounts; "Add an account" opens the picker).
         self.empty_profile = self.live.is_empty();
+        // What left the foreground may belong in the background, and the
+        // other profiles' lists may have changed.
+        self.keep_background();
     }
 
     /// Closes Settings and every editor in it. They may refer to an account
@@ -198,7 +378,8 @@ impl Shell {
 
     /// Makes profile `id` the one in use (the UI has asked first, see
     /// `call_note`): an ongoing call ends, the other profiles' accounts
-    /// disconnect and leave memory, and this profile's connect.
+    /// disconnect and leave memory (or, with soft lock, go to the
+    /// background), and this profile's connect.
     pub fn switch_profile(&mut self, ui: &AppWindow, id: u32) {
         if id == self.settings.current_profile || self.settings.profile(id).is_none() {
             return;
@@ -217,6 +398,9 @@ impl Shell {
             eprintln!("error: saving contacts: {e}");
         }
         self.settings.switch_view(id);
+        if self.soft_lock() {
+            self.swap_shelf(old, id);
+        }
         if self.demo.is_none() {
             self.contacts_path = contacts_store::path_for(id);
         }
@@ -360,6 +544,9 @@ impl Shell {
         self.profiles_view.show_rail(ui, &infos);
         // A pending confirmation follows its profile: renamed, or gone.
         let state = ui.global::<ProfilesState>();
+        state.set_ask_switch(self.settings.ask_profile_switch);
+        state.set_background(self.soft_lock());
+        state.set_previews(self.settings.background_previews);
         if let Some(id) = self.pending_switch {
             match infos.iter().find(|p| p.id == id) {
                 Some(p) if !p.current => {
@@ -414,7 +601,8 @@ impl Shell {
         self.profiles_view.show_page(rows);
     }
 
-    /// A menu row was chosen: ask before switching (it disconnects accounts).
+    /// A menu row was chosen: ask before switching (it disconnects
+    /// accounts), unless asking was turned off; a call ending always asks.
     pub fn ask_switch_profile(&mut self, ui: &AppWindow, row: i32) {
         let infos = self.profile_list();
         let Some(p) = usize::try_from(row).ok().and_then(|i| infos.get(i)) else {
@@ -423,22 +611,68 @@ impl Shell {
         if p.current {
             return;
         }
-        self.pending_switch = Some(p.id);
-        ui.set_profile_switch_name(p.name.as_str().into());
+        if !needs_asking(self.settings.ask_profile_switch, self.call_note().is_some()) {
+            self.switch_profile(ui, p.id);
+            return;
+        }
+        self.open_switch_dialog(ui, p.id);
+    }
+
+    fn open_switch_dialog(&mut self, ui: &AppWindow, id: u32) {
+        let Some(name) = self.settings.profile(id).map(|p| p.name.clone()) else {
+            return;
+        };
+        self.pending_switch = Some(id);
+        ui.set_profile_switch_name(name.as_str().into());
         ui.set_profile_switch_note(self.call_note().unwrap_or_default().into());
+        let state = ui.global::<ProfilesState>();
+        state.set_dont_ask(false);
+        state.set_background(self.soft_lock());
         ui.set_profile_switch_open(true);
     }
 
     pub fn confirm_profile_switch(&mut self, ui: &AppWindow) {
         ui.set_profile_switch_open(false);
+        // "Don't ask again": Settings → Profiles turns asking back on.
+        if ui.global::<ProfilesState>().get_dont_ask() && self.settings.ask_profile_switch {
+            self.settings.ask_profile_switch = false;
+            self.save_settings();
+        }
+        let room = self.pending_switch_room.take();
         if let Some(id) = self.pending_switch.take() {
             self.switch_profile(ui, id);
+        }
+        if let Some(room) = room.filter(|r| self.app.state().room(r).is_some()) {
+            self.act(ui, Action::SelectRoom(room));
         }
     }
 
     pub fn cancel_profile_switch(&mut self, ui: &AppWindow) {
         self.pending_switch = None;
+        self.pending_switch_room = None;
         ui.set_profile_switch_open(false);
+    }
+
+    /// Settings → Profiles' switches.
+    pub fn set_ask_profile_switch(&mut self, ui: &AppWindow, on: bool) {
+        self.settings.ask_profile_switch = on;
+        self.save_settings();
+        self.refresh(ui);
+    }
+
+    /// Soft lock on: the other profiles' accounts connect in the
+    /// background; off: they disconnect.
+    pub fn set_background_profiles(&mut self, ui: &AppWindow, on: bool) {
+        self.settings.background_profiles = on;
+        self.save_settings();
+        self.keep_background();
+        self.refresh(ui);
+    }
+
+    pub fn set_background_previews(&mut self, ui: &AppWindow, on: bool) {
+        self.settings.background_previews = on;
+        self.save_settings();
+        self.refresh(ui);
     }
 
     /// The Profiles page's calls, by the row they came from.
@@ -496,11 +730,35 @@ impl Shell {
     }
 }
 
+/// Whether a switch asks first: when asking is on, and always when it would
+/// end a call.
+fn needs_asking(ask: bool, in_call: bool) -> bool {
+    ask || in_call
+}
+
+fn show_window(ui: &AppWindow) {
+    if let Err(e) = slint::ComponentHandle::show(ui) {
+        eprintln!("error: showing the window: {e}");
+    }
+}
+
 /// What the delete confirmation adds for the profile in use.
 fn delete_note(current: bool) -> &'static str {
     if current {
         "You are using this profile: Godwit switches to another first."
     } else {
         ""
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_switch_asks_unless_turned_off_but_always_for_a_call() {
+        assert!(needs_asking(true, false));
+        assert!(!needs_asking(false, false));
+        assert!(needs_asking(false, true));
     }
 }

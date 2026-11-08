@@ -5,6 +5,7 @@ import { Theme } from "theme.slint";
 import { Screen, MemberRoleItem } from "types.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Dialog, ConfirmDialog, Button, TextField, TextArea, Select, Toggle } from "widgets.slint";
+import { ProfilesState } from "profiles-settings.slint";
 
 // These stay below the fullscreen viewer, as in AppWindow's original stack.
 export component CallDialogs inherits Rectangle {
@@ -275,8 +276,12 @@ export component ManagementDialogs inherits Rectangle {
     if root.profile-switch-open: ConfirmDialog {
         title: "Switch to " + root.profile-switch-name + "?";
         card-width: 420px;
-        message: "Godwit disconnects this profile's accounts and connects " + root.profile-switch-name + "'s.";
+        message: ProfilesState.background
+            ? "This profile's accounts stay connected in the background: only their notifications come through."
+            : "Godwit disconnects this profile's accounts and connects " + root.profile-switch-name + "'s.";
         note: root.profile-switch-note;
+        check-label: "Don't ask again";
+        checked <=> ProfilesState.dont-ask;
         confirm-text: "Switch";
         confirm-kind: "filled";
         cancelled => { root.cancel-profile-switch(); }

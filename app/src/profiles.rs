@@ -336,6 +336,64 @@ pub fn plan(running: &[Running], profile: &Profile, known: &[KnownAccount]) -> P
     out
 }
 
+/// What keeps the other profiles connected in the background (soft lock):
+/// shelved accounts to stop, and accounts to start into a profile's shelf.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct BackgroundPlan {
+    /// `(profile, index into its shelf)`.
+    pub stop: Vec<(u32, usize)>,
+    /// `(profile, network key, slot)`.
+    pub start: Vec<(u32, String, u32)>,
+}
+
+/// Every account of a profile other than `current` runs exactly once:
+/// in the foreground (`live`) when the current profile has it too, else
+/// in the shelf of the first profile (in order) that lists it. A shelved
+/// account stops when its profile no longer lists it (or is gone or now
+/// current), when it runs elsewhere already, or when it has no known
+/// identity (a sign-in form never belongs in the background).
+pub fn background_plan(
+    live: &[Running],
+    shelves: &[(u32, Vec<Running>)],
+    profiles: &[Profile],
+    current: u32,
+    known: &[KnownAccount],
+) -> BackgroundPlan {
+    let same = |a: &Running, b: &Running| {
+        (a.network == b.network && a.slot == b.slot) || key_of(a, known).is_some_and(|k| key_of(b, known) == Some(k))
+    };
+    let mut out = BackgroundPlan::default();
+    let mut kept: Vec<Running> = live.to_vec();
+    for (id, list) in shelves {
+        let profile = profiles.iter().find(|p| p.id == *id && p.id != current);
+        for (i, r) in list.iter().enumerate() {
+            let wanted = profile.is_some_and(|p| key_of(r, known).is_some_and(|k| p.accounts.iter().any(|a| a == k)));
+            if wanted && !kept.iter().any(|k| same(k, r)) {
+                kept.push(r.clone());
+            } else {
+                out.stop.push((*id, i));
+            }
+        }
+    }
+    for p in profiles.iter().filter(|p| p.id != current) {
+        for key in &p.accounts {
+            let Some(k) = known.iter().find(|k| k.key == *key) else {
+                continue;
+            };
+            let r = Running {
+                key: Some(key.clone()),
+                network: k.network.clone(),
+                slot: k.slot,
+            };
+            if !kept.iter().any(|x| same(x, &r)) {
+                out.start.push((p.id, k.network.clone(), k.slot));
+                kept.push(r);
+            }
+        }
+    }
+    out
+}
+
 /// Which saved sign-ins to start with: those of the profile, and any whose
 /// account isn't known yet (the first start after an upgrade, or a sign-in
 /// that never became ready), which join a profile once ready.
@@ -411,6 +469,66 @@ mod tests {
         assert_eq!(p, Plan::default(), "neither stopped nor started twice");
         let p = plan(&[run(None, "stoat", 0)], &prof(&[]), &known);
         assert_eq!(p.stop, vec![0]);
+    }
+
+    fn prof_id(id: u32, keys: &[&str]) -> Profile {
+        Profile { id, ..prof(keys) }
+    }
+
+    #[test]
+    fn the_background_runs_every_other_profiles_accounts_once() {
+        let known = [
+            kn("stoat:a", "stoat", 0),
+            kn("steam:b", "steam", 0),
+            kn("discord:c", "discord", 0),
+        ];
+        let profiles = [
+            prof_id(0, &["stoat:a"]),
+            prof_id(1, &["stoat:a", "steam:b"]),
+            prof_id(2, &["steam:b", "discord:c", "slack:never-seen"]),
+        ];
+        let live = [run(Some("stoat:a"), "stoat", 0)];
+        let p = background_plan(&live, &[], &profiles, 0, &known);
+        assert!(p.stop.is_empty());
+        assert_eq!(
+            p.start,
+            vec![(1, "steam".to_owned(), 0), (2, "discord".to_owned(), 0)],
+            "stoat:a runs in the foreground; steam:b in the first profile listing it"
+        );
+    }
+
+    #[test]
+    fn shelved_accounts_that_moved_or_left_stop() {
+        let known = [kn("stoat:a", "stoat", 0), kn("steam:b", "steam", 0)];
+        let profiles = [prof_id(0, &["stoat:a"]), prof_id(1, &["steam:b"])];
+        let shelves = [
+            (
+                1,
+                vec![
+                    // Now in the current profile and running there.
+                    run(Some("stoat:a"), "stoat", 0),
+                    run(Some("steam:b"), "steam", 0),
+                    // A sign-in form left behind by a switch.
+                    run(None, "slack", 3),
+                ],
+            ),
+            // A deleted profile's shelf.
+            (7, vec![run(Some("steam:b"), "steam", 0)]),
+        ];
+        let live = [run(Some("stoat:a"), "stoat", 0)];
+        let p = background_plan(&live, &shelves, &profiles, 0, &known);
+        assert_eq!(p.stop, vec![(1, 0), (1, 2), (7, 0)]);
+        assert!(p.start.is_empty(), "steam:b is kept where it is");
+    }
+
+    #[test]
+    fn the_current_profiles_shelf_is_emptied() {
+        let known = [kn("steam:b", "steam", 0)];
+        let profiles = [prof_id(0, &["steam:b"]), prof_id(1, &["steam:b"])];
+        let shelves = [(0, vec![run(Some("steam:b"), "steam", 0)])];
+        let p = background_plan(&[], &shelves, &profiles, 0, &known);
+        assert_eq!(p.stop, vec![(0, 0)]);
+        assert_eq!(p.start, vec![(1, "steam".to_owned(), 0)]);
     }
 
     #[test]

@@ -21,6 +21,16 @@ export global ProfilesState {
     callback delete-profile();
     callback create(string);
     callback set-member(int, bool);
+    // Switching: ask first, keep the other profiles connected (soft lock),
+    // and whether their notifications say who and what.
+    in property <bool> ask-switch;
+    in property <bool> background;
+    in property <bool> previews;
+    callback set-ask-switch(bool);
+    callback set-background(bool);
+    callback set-previews(bool);
+    // The switch dialog's "Don't ask again".
+    in-out property <bool> dont-ask;
 }
 
 export component ProfilesPage inherits VerticalLayout {
@@ -28,9 +38,43 @@ export component ProfilesPage inherits VerticalLayout {
     alignment: start;
     Heading { text: "Profiles"; }
     Text {
-        text: "A profile is a set of accounts. Switching to a profile connects only its accounts and disconnects the others. An account can be in several profiles. The default profile opens when Godwit starts.";
+        text: ProfilesState.background
+            ? "A profile is a set of accounts. The profiles not in use stay connected in the background: only their notifications show, and clicking one switches to its profile. An account can be in several profiles. The default profile opens when Godwit starts."
+            : "A profile is a set of accounts. Switching to a profile connects only its accounts and disconnects the others. An account can be in several profiles. The default profile opens when Godwit starts.";
         wrap: word-wrap;
         color: Theme.on-surface-variant;
+    }
+    Card {
+        VerticalLayout {
+            spacing: Theme.space-5;
+            Row {
+                label: "Ask before switching";
+                detail: "A switch that would end a call always asks.";
+                Toggle {
+                    checked: ProfilesState.ask-switch;
+                    toggled(on) => { ProfilesState.set-ask-switch(on); }
+                }
+            }
+            Row {
+                label: "Keep other profiles connected";
+                detail: "Their accounts stay connected in the background, so their notifications still come and switching is instant. Nothing else of theirs shows in the profile in use. Uses more memory and data.";
+                wrap-label: true;
+                Toggle {
+                    checked: ProfilesState.background;
+                    toggled(on) => { ProfilesState.set-background(on); }
+                }
+            }
+            Row {
+                label: "Show names and messages in their notifications";
+                detail: "Off: a notification only names the profile and says what came.";
+                wrap-label: true;
+                Toggle {
+                    enabled: ProfilesState.background;
+                    checked: ProfilesState.previews;
+                    toggled(on) => { ProfilesState.set-previews(on); }
+                }
+            }
+        }
     }
     for r[i] in ProfilesState.rows: VerticalLayout {
         // A gap between one profile's accounts and the next profile.

@@ -91,8 +91,12 @@ impl StoatAccount {
             },
             react: can(REACT),
             attachments: can(UPLOAD_FILES),
-            voice: (c.voice.is_some() || c.server.is_none()) && can(CONNECT),
-            video: self.video_limit().is_some() && can(crate::permissions::VIDEO),
+            // Saved Notes is a chat with yourself: the official client offers
+            // no call there (its header only shows the call button for DMs,
+            // groups and voice channels), and the server grants every
+            // permission in it, so Connect alone would let a call through.
+            voice: c.channel_type != "SavedMessages" && (c.voice.is_some() || c.server.is_none()) && can(CONNECT),
+            video: c.channel_type != "SavedMessages" && self.video_limit().is_some() && can(crate::permissions::VIDEO),
             video_resolution: self.video_limit().unwrap_or([1280, 720]),
             external_emoji: c.server.is_none() || can(USE_EXTERNAL_EMOJIS),
             // The official GIF button needs SendEmbeds.

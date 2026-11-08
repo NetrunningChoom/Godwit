@@ -195,6 +195,8 @@ struct Scene<'a> {
     right_click: Option<(f32, f32)>,
     /// A left-click at a point, after the hover (so hover-only buttons exist).
     click: Option<(f32, f32)>,
+    /// A left-button drag from a point by dy, held (not released): mid-drag.
+    drag: Option<(f32, f32, f32)>,
     /// The window size, if not the default.
     size: Option<(u32, u32)>,
     /// Escape pressed after the first draw.
@@ -214,12 +216,33 @@ impl<'a> Scene<'a> {
             scroll: None,
             right_click: None,
             click: None,
+            drag: None,
             size: None,
             escape: false,
             open_folder: None,
         }
     }
 }
+
+/// Home with three of its DMs pinned (after the notes chat).
+fn pinned_home(app: &mut Application, _: &AppWindow, _: &RoomId, dm: &RoomId) -> Screen {
+    app.dispatch(Action::SelectServer(None));
+    app.dispatch(Action::SelectRoom(dm.clone()));
+    let dms: Vec<RoomId> = app
+        .state()
+        .direct_rooms()
+        .filter(|r| matches!(r.kind, godwit_core::room::RoomKind::Direct { .. }))
+        .take(3)
+        .map(|r| r.id.clone())
+        .collect();
+    for room in dms {
+        app.dispatch(Action::PinRoom { room, pinned: true });
+    }
+    Screen::Main
+}
+
+/// Where the first pinned chat's row is in "home-pins" (found from a render).
+const PIN_DRAG_Y: f32 = 330.0;
 
 fn friends_scene(app: &mut Application, _: &AppWindow, _: &RoomId, _: &RoomId) -> Screen {
     let person_row = |i: usize, pending: bool| Person {
@@ -737,6 +760,8 @@ fn profile_infos() -> Vec<godwit::shell::ProfileInfo> {
         current,
         default: id == 0,
         accounts,
+        // A background profile that alerted (its dot in the menu).
+        alert: id == 1,
     };
     vec![info(0, "Work", true, 2), info(1, "Private", false, 1)]
 }
@@ -901,6 +926,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             hover: Some((700.0, 330.0)),
             ..Scene::new("channel-hover", Box::new(|_, _, _, _| Screen::Main))
         },
+        // Keyboard scrolling (compare with "channel", at the bottom): Page Up
+        // from the composer; Up three times after clicking a message; typing
+        // after that click goes on in the composer.
+        Scene {
+            click: Some((650.0, 757.0)),
+            ..Scene::new("keys-pageup", Box::new(|_, _, _, _| Screen::Main))
+        },
+        Scene {
+            click: Some((450.0, 631.0)),
+            ..Scene::new("keys-arrows", Box::new(|_, _, _, _| Screen::Main))
+        },
+        Scene {
+            click: Some((450.0, 631.0)),
+            ..Scene::new("keys-typing", Box::new(|_, _, _, _| Screen::Main))
+        },
         Scene {
             hover: Some((150.0, 116.0)),
             ..Scene::new("sidebar-hover", Box::new(|_, _, _, _| Screen::Main))
@@ -953,12 +993,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }),
             )
         },
+        // Home with pinned chats (the demo's notes pin themselves), one
+        // pin dragged down two places, held: the drop line shows where.
+        Scene::new("home-pins", Box::new(pinned_home)),
+        Scene {
+            drag: Some((200.0, PIN_DRAG_Y, 100.0)),
+            ..Scene::new("home-pin-drag", Box::new(pinned_home))
+        },
         Scene::new("profile", Box::new(|app, _, _, _| open_profile(app, false))),
         Scene::new("profile-blocked", Box::new(|app, _, _, _| open_profile(app, true))),
         Scene::new(
             "picker",
             Box::new(|_, ui, _, _| {
                 ui.set_picker_open(true);
+                Screen::Main
+            }),
+        ),
+        // The pointer on an emoji: the preview bar under the list names it.
+        Scene {
+            hover: Some((724.0, 550.0)),
+            ..Scene::new(
+                "picker-hover",
+                Box::new(|_, ui, _, _| {
+                    ui.set_picker_open(true);
+                    Screen::Main
+                }),
+            )
+        },
+        // Saved Notes: a chat with yourself has no call button.
+        Scene::new(
+            "notes-header",
+            Box::new(|app, _, _, _| {
+                app.dispatch(Action::SelectRoom(RoomId::new(account(), "notes")));
                 Screen::Main
             }),
         ),
@@ -1128,6 +1194,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     item("Robin", "The meeting moved to Thursday at 10."),
                     item("Sam", &filler(30, 3)),
                 ])));
+                ui.set_can_pin(true);
+                ui.set_pins_open(true);
+                Screen::Main
+            }),
+        ),
+        // A single pin: the dialog keeps a sensible size.
+        Scene::new(
+            "pins-one",
+            Box::new(|_, ui, _, _| {
+                ui.set_pins(slint::ModelRc::new(slint::VecModel::from(vec![godwit::ui::PinItem {
+                    author: "Robin".into(),
+                    text: "The meeting moved to Thursday at 10.".into(),
+                    time: "3 Nov 2026".into(),
+                }])));
                 ui.set_can_pin(true);
                 ui.set_pins_open(true);
                 Screen::Main
@@ -1359,6 +1439,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Screen::Main
             }),
         ),
+        // Only the default profile: the rail shows no profile tile.
+        Scene::new(
+            "profiles-rail-single",
+            Box::new(|_, ui, _, _| {
+                let only: Vec<_> = profile_infos().into_iter().take(1).collect();
+                godwit::profiles_page::ProfilesView::default().show_rail(ui, &only);
+                Screen::Main
+            }),
+        ),
         // The switcher's menu, drawn in the tree (a popup doesn't open off-screen).
         Scene::new(
             "profiles-menu",
@@ -1378,12 +1467,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Screen::Main
             }),
         ),
+        // Soft lock on, "Don't ask again" ticked.
+        Scene::new(
+            "profiles-confirm-soft",
+            Box::new(|_, ui, _, _| {
+                show_profiles(ui);
+                let state = ui.global::<godwit::ui::ProfilesState>();
+                state.set_background(true);
+                state.set_dont_ask(true);
+                ui.set_profile_switch_name("Private".into());
+                ui.set_profile_switch_open(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "profiles-settings-soft",
+            Box::new(|_, ui, _, _| {
+                ui.set_settings_open(true);
+                ui.set_settings_section(11);
+                let state = ui.global::<godwit::ui::ProfilesState>();
+                state.set_ask_switch(false);
+                state.set_background(true);
+                state.set_previews(true);
+                show_profiles(ui);
+                Screen::Main
+            }),
+        ),
         Scene::new(
             "profiles-settings",
             Box::new(|_, ui, _, _| {
                 use godwit::profiles_page::{AccountEntry, rows};
                 ui.set_settings_open(true);
                 ui.set_settings_section(11);
+                ui.global::<godwit::ui::ProfilesState>().set_ask_switch(true);
                 let infos = profile_infos();
                 let acct = |key: &str, label: &str, network: &str| AccountEntry {
                     key: key.into(),
@@ -1850,6 +1966,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Screen::Main
             }),
         ),
+        // A DM whose last messages are a short reply and a one-line
+        // follow-up, with the pointer on that last line: the reply line
+        // stays left, and the hover toolbar fits above the composer.
+        Scene {
+            hover: Some((700.0, 668.0)),
+            ..Scene::new(
+                "dm-reply-hover",
+                Box::new(|app, _, _, dm| {
+                    app.dispatch(Action::SelectServer(None));
+                    app.dispatch(Action::SelectRoom(dm.clone()));
+                    // Earlier talk, so the last message sits on the composer.
+                    let mut messages: Vec<_> = (0..12)
+                        .map(|i| {
+                            let (who, name) = if i % 2 == 0 { ("u0", person(0)) } else { ("me", me()) };
+                            msg(&format!("e{i:02}"), who, &name, i - 40, &filler(60 + i as u64, 4))
+                        })
+                        .collect();
+                    let mut reply = msg("d2", "me", &me(), 2, &filler(12, 2));
+                    reply.reply_to = Some(MessageId("d1".into()));
+                    messages.extend([
+                        msg("d1", "u0", &person(0), 0, &filler(11, 3)),
+                        reply,
+                        msg("d3", "me", &me(), 3, &filler(13, 2)),
+                    ]);
+                    app.apply(Event::History {
+                        room: dm.clone(),
+                        before: None,
+                        messages,
+                        reached_start: true,
+                    });
+                    Screen::Main
+                }),
+            )
+        },
         Scene {
             hover: Some((700.0, 660.0)),
             click: Some((963.0, 638.0)),
@@ -2277,6 +2427,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             presenter.open_folders.insert((account(), id.into()));
         }
         presenter.show(&ui, app.state(), screen == Screen::Main, &mut images);
+        // The games scene fills the page by hand (no Steam account here), so
+        // keep it shown over what the presenter derived from the state.
+        if scene.name == "games" {
+            ui.set_showing_games(true);
+        }
         // The picker, with its scroll wired as the shell does: rows coming
         // into view get their pictures.
         let picker = std::rc::Rc::new(std::cell::RefCell::new(godwit::picker::Picker::default()));
@@ -2355,6 +2510,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     window.dispatch_event(WindowEvent::KeyReleased { text: k.clone() });
                 }
             };
+            if pass == 3 && scene.name == "keys-pageup" {
+                press(&[slint::platform::Key::PageUp.into()]);
+            }
+            if pass == 3 && scene.name == "keys-arrows" {
+                for _ in 0..3 {
+                    press(&[slint::platform::Key::UpArrow.into()]);
+                }
+            }
+            if pass == 3 && scene.name == "keys-typing" {
+                for k in ["h", "i"] {
+                    press(&[k.into()]);
+                }
+            }
             if pass == 2 && scene.name == "ctrl-k" {
                 press(&[slint::platform::Key::Control.into(), "k".into()]);
             }
@@ -2401,6 +2569,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 window.dispatch_event(WindowEvent::PointerMoved { position });
                 window.dispatch_event(WindowEvent::PointerPressed { position, button });
                 window.dispatch_event(WindowEvent::PointerReleased { position, button });
+            }
+            if pass == 2
+                && let Some((x, y, dy)) = scene.drag
+            {
+                let button = slint::platform::PointerEventButton::Left;
+                let start = LogicalPosition::new(x, y);
+                window.dispatch_event(WindowEvent::PointerMoved { position: start });
+                window.dispatch_event(WindowEvent::PointerPressed {
+                    position: start,
+                    button,
+                });
+                for step in 1..=8 {
+                    let position = LogicalPosition::new(x, y + dy * step as f32 / 8.0);
+                    window.dispatch_event(WindowEvent::PointerMoved { position });
+                }
             }
             if pass == 1
                 && let Some((x, y, dy)) = scene.scroll

@@ -6,7 +6,7 @@
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
-import { Button, TextField, Toggle, SurfaceCard as Card } from "widgets.slint";
+import { Button, TextField, Toggle, Warning, SurfaceCard as Card } from "widgets.slint";
 
 export struct AdRuleItem {
     name: string,
@@ -132,6 +132,12 @@ export global AdState {
 export component AutoDeletePage inherits VerticalLayout {
     spacing: Theme.space-5;
     alignment: start;
+
+    // Always on top of the page (and of the turn-on question): the feature
+    // is young, so say so before anyone relies on it.
+    if AdState.step == 0: Warning {
+        text: "Auto-delete is in early development. Using it is entirely at your own risk; it's best left turned off.";
+    }
 
     // Turning auto-delete on: say plainly what that means first.
     if AdState.step == 0 && AdState.on-warning: Card {

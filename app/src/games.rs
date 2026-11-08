@@ -295,6 +295,24 @@ pub fn markdown(state: &AppState, g: &GamesInCommon) -> Option<String> {
     } else {
         base.rows
     };
+    write_markdown(state, g, &rows)
+}
+
+/// One section of the list as Markdown (the per-heading copy button): the
+/// heading at `index` with its games, and for a region's heading its
+/// sub-headings too. `None` when `index` isn't a heading or nothing follows.
+pub fn section_markdown(state: &AppState, g: &GamesInCommon, rows: &[Row], index: usize) -> Option<String> {
+    let head = rows.get(index).filter(|r| r.header)?;
+    let len = rows[index + 1..]
+        .iter()
+        // A sub-heading ends at any heading; a heading at the next one of its level.
+        .position(|r| r.header && (head.sub || !r.sub))
+        .unwrap_or(rows.len() - index - 1);
+    write_markdown(state, g, &rows[index..=index + len])
+}
+
+/// The title line, then each heading that has games under it, then the games.
+fn write_markdown(state: &AppState, g: &GamesInCommon, rows: &[Row]) -> Option<String> {
     let names: Vec<String> = g.people.iter().map(|u| name_of(state, u)).collect();
     let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
     let mut out = format!("**Games in common: {}**\n", markdown_escape(&and_list(&name_refs)));
@@ -385,6 +403,11 @@ impl GamesDialog {
         if self.friend_model.row_count() > 0 {
             self.friend_model.set_vec(Vec::new());
         }
+    }
+
+    /// The rows last shown (for copying one section).
+    pub fn shown_rows(&self) -> &[Row] {
+        self.kept.as_ref().map_or(&[], |(_, c)| c.rows.as_slice())
     }
 
     /// Brings the models up to date with `g`; returns the rest to show.
@@ -564,6 +587,36 @@ mod tests {
              \n#### also you (1)\n- Portal\n\
              \n#### not you (1)\n- Celeste\n"
         );
+    }
+
+    #[test]
+    fn copies_one_section_with_its_sub_headings() {
+        let lib = |g: &[OwnedGame]| Library::Games(g.to_vec().into());
+        let (state, g) = setup(
+            2,
+            &[
+                lib(&[game(1, "Portal"), game(2, "Dota"), game(3, "Half_Life")]),
+                lib(&[game(1, "Portal"), game(4, "Celeste")]),
+            ],
+        );
+        let mine = contents(&state, &g, 0b01);
+        assert_eq!(
+            section_markdown(&state, &g, &mine.rows, 0).unwrap(),
+            "**Games in common: You and Ann**\n\
+             \n### You own (3)\n\
+             \n#### also Ann (1)\n- Portal\n\
+             \n#### not Ann (2)\n- Dota\n- Half\\_Life\n"
+        );
+        // A sub-heading copies only its own games.
+        let not_ann = mine.rows.iter().position(|r| r.title.starts_with("not Ann")).unwrap();
+        assert_eq!(
+            section_markdown(&state, &g, &mine.rows, not_ann).unwrap(),
+            "**Games in common: You and Ann**\n\
+             \n#### not Ann (2)\n- Dota\n- Half\\_Life\n"
+        );
+        // A game row isn't a section.
+        assert_eq!(section_markdown(&state, &g, &mine.rows, 2), None);
+        assert_eq!(section_markdown(&state, &g, &mine.rows, 99), None);
     }
 
     #[test]

@@ -26,11 +26,13 @@ export component PinsDialog inherits Dialog {
         text: "Nothing is pinned here yet.";
         color: Theme.on-surface-variant;
     }
-    // As tall as the pins themselves, up to a cap (a guessed height per pin
-    // stretched short ones into tall, half-empty cards).
+    // As tall as the pins themselves, between a floor and a cap (a guessed
+    // height per pin stretched short ones into tall, half-empty cards; a
+    // lone pin without the floor left a squat, cramped dialog).
     ScrollView {
-        // + the 12px a ScrollView keeps for its bar.
-        height: min(420px, list.preferred-height + 12px);
+        // + the 12px a ScrollView keeps for its bar; the floor is about two
+        // one-line pins.
+        height: min(420px, max(180px, list.preferred-height + 12px));
         list := VerticalLayout {
             alignment: start;
             spacing: Theme.space-3;

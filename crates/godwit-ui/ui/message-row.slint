@@ -111,6 +111,9 @@ export component MessageRow inherits Rectangle {
             if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
                 root.open-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
             }
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                Select.presses += 1;
+            }
         }
         VerticalLayout {
             padding-top: message.first-in-group ? Theme.space-4 : 1px;
@@ -148,8 +151,17 @@ export component MessageRow inherits Rectangle {
                         font-weight: 600;
                         color: message.reply-has-colour ? message.reply-colour : Theme.on-surface;
                         max-width: parent.width / 2;
+                        // The whole name up to half the row: a long reply
+                        // text squeezed it down to "…".
+                        min-width: min(self.preferred-width, parent.width / 2);
+                        // Its own width, never stretched: with the row's
+                        // stretch shared, the name took up to half the row and
+                        // a short reply's text sat in the middle; the text
+                        // takes the rest (and elides first).
+                        horizontal-stretch: 0;
                     }
                     if !message.reply-missing && message.reply-note != "": HorizontalLayout {
+                        horizontal-stretch: 0;
                         spacing: Theme.gap-sm;
                         padding-left: Theme.gap-sm;
                         Icon { text: Icons.file; font-size: Theme.text-title; color: Theme.on-surface; width: 16px; }
@@ -343,7 +355,10 @@ export component MessageRow inherits Rectangle {
         // keeps the row hovered.
         if root.hovered && !message.pending && (!message.system || root.deletable): Rectangle {
             x: parent.width - self.width - Theme.gap-lg;
-            y: 2px;
+            // On a row shorter than the toolbar (a one-line follow-up) it
+            // rises over the row above instead of hanging below: hanging, it
+            // was cut by the chat's bottom edge on the last message.
+            y: min(2px, parent.height - self.height - 2px);
             width: tools.preferred-width;
             height: Theme.control-icon;
             border-radius: Theme.radius-sm;

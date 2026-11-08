@@ -89,6 +89,13 @@ pub enum Action {
         room: RoomId,
         hidden: bool,
     },
+    /// Moves a pinned chat `by` places among Home's pins (negative: up).
+    MovePin {
+        room: RoomId,
+        by: i32,
+    },
+    /// The accounts whose notes chat was pinned once already, at start.
+    RestorePinSeeds(Vec<AccountId>),
     /// Opens or closes Home's hidden section.
     ToggleHiddenRooms,
     /// Marks a chat unread here (until it's opened), whatever its network says.

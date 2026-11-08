@@ -126,6 +126,17 @@ impl Shell {
         }
     }
 
+    /// A heading's copy button: that section of the list as Markdown.
+    pub fn games_copy_section(&mut self, index: i32) {
+        let state = self.app.state();
+        let (Some(g), Ok(index)) = (state.games.as_ref(), usize::try_from(index)) else {
+            return;
+        };
+        if let Some(text) = crate::games::section_markdown(state, g, self.games.shown_rows(), index) {
+            copy_to_clipboard(text);
+        }
+    }
+
     /// The picker's search, as typed.
     pub fn games_search(&mut self, ui: &AppWindow, query: &str) {
         self.games.query = query.to_owned();

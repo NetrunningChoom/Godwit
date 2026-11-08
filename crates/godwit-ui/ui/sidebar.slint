@@ -13,15 +13,63 @@ component Entry inherits Rectangle {
     callback clicked;
     // A right-click, where it happened.
     callback context(length, length);
+    // Dragged up or down (Home's pins): how far the pointer is from where
+    // it was pressed, counting the list scrolling under it; and, let go, done.
+    in property <bool> draggable;
+    in-out property <bool> dragging;
+    in-out property <length> drag-y;
+    callback dropped();
+    // The list's visible edges (window coordinates): a drag held near one
+    // asks the list to scroll that way.
+    in property <length> edge-top;
+    in property <length> edge-bottom;
+    callback autoscroll(length);
+    // The pointer, in window coordinates (kept while the list scrolls).
+    property <length> pointer-y;
+    function follow() {
+        root.drag-y = root.pointer-y - touch.absolute-position.y - touch.pressed-y;
+    }
     border-radius: Theme.radius-lg;
     background: root.selected ? Theme.secondary-container : touch.has-hover ? Theme.surface-highest : transparent;
     touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        mouse-cursor: root.dragging ? MouseCursor.grabbing : MouseCursor.pointer;
+        // `clicked` comes before the release's pointer-event: a drag's
+        // release isn't also a click.
+        clicked => {
+            if !root.dragging {
+                root.clicked();
+            }
+        }
+        // `moved` fires only while pressed: just what a drag needs.
+        moved => {
+            // A few pixels of wobble is still a click.
+            if root.draggable && self.pressed && (root.dragging || abs(self.mouse-y - self.pressed-y) > 8px) {
+                root.dragging = true;
+                root.pointer-y = self.absolute-position.y + self.mouse-y;
+                root.follow();
+            }
+        }
         pointer-event(e) => {
             if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
                 root.context(self.mouse-x, self.mouse-y);
             }
+            // Released anywhere, inside the entry or not, the drag ends.
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.up && root.dragging {
+                root.dragging = false;
+                root.dropped();
+            }
+            if e.kind == PointerEventKind.cancel {
+                root.dragging = false;
+            }
+        }
+    }
+    // Scrolls only while a drag is held near an edge.
+    Timer {
+        interval: 30ms;
+        running: root.dragging && (root.pointer-y < root.edge-top + 32px || root.pointer-y > root.edge-bottom - 32px);
+        triggered => {
+            root.autoscroll(root.pointer-y < root.edge-top + 32px ? -12px : 12px);
+            root.follow();
         }
     }
     @children
@@ -77,6 +125,28 @@ component RoomRow inherits Rectangle {
     callback toggle-category();
     // A category's "Create channel here".
     callback create-here();
+    // A pinned chat dragged this many places among the pins.
+    callback move-pin(int);
+    in property <length> edge-top;
+    in property <length> edge-bottom;
+    callback autoscroll(length);
+    property <bool> dragging;
+    property <length> drag-y;
+    // The drag, for the list to draw the dragged row and where it lands
+    // over the others (a row can't: the rows after it draw on top): on,
+    // where (in the list), how tall, and the drop line's y (-1px: no move).
+    callback drag-moved(bool, length, length, length);
+    // The line goes in the gap between the pins it would land between.
+    property <length> drop-line: root.drop-by == 0 ? -1px
+        : root.y + (root.drop-by < 0 ? root.drop-by * root.stride : (root.drop-by + 1) * root.stride) - (Theme.space-1 + 2px) / 2;
+    function report-drag() {
+        root.drag-moved(root.dragging, root.y + root.drag-y, root.entry, root.drop-line);
+    }
+    changed drag-y => { root.report-drag(); }
+    changed dragging => { root.report-drag(); }
+    // Where a drag would land: rows of this row's height, clamped to the pins.
+    property <length> stride: root.entry + Theme.space-1;
+    property <int> drop-by: max(-room.pins-above, min(room.pins-below, round(root.drag-y / root.stride)));
     property <length> menu-x;
     property <length> menu-y;
     property <length> entry: room.kind == 2 ? 36px : 44px;
@@ -118,52 +188,56 @@ component RoomRow inherits Rectangle {
     room-menu := PopupWindow {
         x: root.menu-x;
         y: root.menu-y;
-        // A category's menu: create in it, move it, and (Manage Channels
-        // on it) rename or delete it in its settings.
-        if room.header: MenuPanel {
-            if room.can-create-here: MenuRow { glyph: Icons.tag; label: "Create channel"; clicked => { root.create-here(); } }
-            if room.can-reorder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.menu(8); } }
-            if room.can-reorder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.menu(9); } }
-            if room.can-manage: MenuRow { glyph: Icons.settings; label: "Category settings"; clicked => { root.menu(6); } }
-        }
-        if !room.header: MenuPanel {
+        // One panel, its rows conditional: a PopupWindow takes its size
+        // from its child's, and with only `if` children it had none, so
+        // the menu opened 0×0 (invisible, and the next click closed it).
+        MenuPanel {
+            // A category's menu: create in it, move it, and (Manage Channels
+            // on it) rename or delete it in its settings.
+            if room.header && room.can-create-here: MenuRow { glyph: Icons.tag; label: "Create channel"; clicked => { root.create-here(); } }
+            if room.header && room.can-reorder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.menu(8); } }
+            if room.header && room.can-reorder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.menu(9); } }
+            if room.header && room.can-manage: MenuRow { glyph: Icons.settings; label: "Category settings"; clicked => { root.menu(6); } }
             // A server channel pins to Home, beside the DMs (a "general" to keep at hand).
-            MenuRow {
+            if !room.header: MenuRow {
                 glyph: Icons.notes;
                 label: room.kind == 2 ? (room.pinned ? "Unpin from Home" : "Pin to Home") : (room.pinned ? "Unpin" : "Pin to top");
                 clicked => { root.menu(0); }
             }
-            MenuRow { glyph: Icons.chat; label: "Mark as read"; clicked => { root.menu(1); } }
-            MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.menu(2); } }
+            // Home's pins in the user's order (or drag them).
+            if !room.header && room.pins-above > 0: MenuRow { glyph: Icons.expand-less; label: "Move pin up"; clicked => { root.menu(10); } }
+            if !room.header && room.pins-below > 0: MenuRow { glyph: Icons.expand; label: "Move pin down"; clicked => { root.menu(11); } }
+            if !room.header: MenuRow { glyph: Icons.chat; label: "Mark as read"; clicked => { root.menu(1); } }
+            if !room.header: MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.menu(2); } }
             // Muzzle mode (Settings → Notifications) for just this chat.
             // Cycles: the network's rules → every message → off.
             if !room.header: MenuRow { glyph: Icons.unread; label: room.alerts == 1 ? "Notifications: all messages" : room.alerts == 2 ? "Notifications: off" : "Notifications: default"; clicked => { root.menu(5); } }
             if !room.header: MenuRow { glyph: Icons.schedule; label: room.muzzled ? "Unmuzzle repeat messages" : "Muzzle repeat messages"; clicked => { root.menu(4); } }
-            if room.games: MenuRow { glyph: Icons.group; label: "Games in common…"; clicked => { root.menu(7); } }
+            if !room.header && room.games: MenuRow { glyph: Icons.group; label: "Games in common…"; clicked => { root.menu(7); } }
             // The official channel menu's mute (with durations) and notification settings,
             // as rows (menu 20..=24 mute for a while, 26 until turned off, 27 unmute,
             // 30..=33 the level).
-            if room.can-notify: MenuDivider { }
-            if room.can-notify && room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Unmute channel" : "Unmute"; clicked => { root.menu(27); } }
-            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Mute channel for 15 minutes" : "Mute for 15 minutes"; clicked => { root.menu(20); } }
-            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 1 hour"; clicked => { root.menu(21); } }
-            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 3 hours"; clicked => { root.menu(22); } }
-            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 8 hours"; clicked => { root.menu(23); } }
-            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 24 hours"; clicked => { root.menu(24); } }
-            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… until I turn it back on"; clicked => { root.menu(26); } }
-            if room.can-notify && room.kind == 2: MenuDivider { }
-            if room.can-notify && room.kind == 2: MenuRow { glyph: Icons.notifications; label: (room.notify-level == 3 ? "✓ " : "") + "Use server default"; clicked => { root.menu(30); } }
-            if room.can-notify && room.kind == 2: MenuRow { glyph: Icons.chat; label: (room.notify-level == 0 ? "✓ " : "") + "Notify: all messages"; clicked => { root.menu(31); } }
-            if room.can-notify && room.kind == 2: MenuRow { glyph: Icons.at; label: (room.notify-level == 1 ? "✓ " : "") + "Notify: only @mentions"; clicked => { root.menu(32); } }
-            if room.can-notify && room.kind == 2: MenuRow { glyph: Icons.lock; label: (room.notify-level == 2 ? "✓ " : "") + "Notify: nothing"; clicked => { root.menu(33); } }
-            if room.kind != 2: MenuDivider { }
-            if room.kind != 2: MenuRow { glyph: Icons.close; label: room.hidden ? "Unhide" : "Hide"; clicked => { root.menu(3); } }
+            if !room.header && room.can-notify: MenuDivider { }
+            if !room.header && room.can-notify && room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Unmute channel" : "Unmute"; clicked => { root.menu(27); } }
+            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Mute channel for 15 minutes" : "Mute for 15 minutes"; clicked => { root.menu(20); } }
+            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 1 hour"; clicked => { root.menu(21); } }
+            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 3 hours"; clicked => { root.menu(22); } }
+            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 8 hours"; clicked => { root.menu(23); } }
+            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 24 hours"; clicked => { root.menu(24); } }
+            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… until I turn it back on"; clicked => { root.menu(26); } }
+            if !room.header && room.can-notify && room.kind == 2: MenuDivider { }
+            if !room.header && room.can-notify && room.kind == 2: MenuRow { glyph: Icons.notifications; label: (room.notify-level == 3 ? "✓ " : "") + "Use server default"; clicked => { root.menu(30); } }
+            if !room.header && room.can-notify && room.kind == 2: MenuRow { glyph: Icons.chat; label: (room.notify-level == 0 ? "✓ " : "") + "Notify: all messages"; clicked => { root.menu(31); } }
+            if !room.header && room.can-notify && room.kind == 2: MenuRow { glyph: Icons.at; label: (room.notify-level == 1 ? "✓ " : "") + "Notify: only @mentions"; clicked => { root.menu(32); } }
+            if !room.header && room.can-notify && room.kind == 2: MenuRow { glyph: Icons.lock; label: (room.notify-level == 2 ? "✓ " : "") + "Notify: nothing"; clicked => { root.menu(33); } }
+            if !room.header && room.kind != 2: MenuDivider { }
+            if !room.header && room.kind != 2: MenuRow { glyph: Icons.close; label: room.hidden ? "Unhide" : "Hide"; clicked => { root.menu(3); } }
             // The official channel menu's "Open channel settings".
-            if room.can-manage: MenuDivider { }
-            if room.can-reorder: MenuDivider { }
-            if room.can-reorder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.menu(8); } }
-            if room.can-reorder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.menu(9); } }
-            if room.can-manage: MenuRow { glyph: Icons.settings; label: "Channel settings"; clicked => { root.menu(6); } }
+            if !room.header && room.can-manage: MenuDivider { }
+            if !room.header && room.can-reorder: MenuDivider { }
+            if !room.header && room.can-reorder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.menu(8); } }
+            if !room.header && room.can-reorder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.menu(9); } }
+            if !room.header && room.can-manage: MenuRow { glyph: Icons.settings; label: "Channel settings"; clicked => { root.menu(6); } }
         }
     }
     if !room.header: Entry {
@@ -171,6 +245,17 @@ component RoomRow inherits Rectangle {
         height: root.entry;
         selected: room.selected;
         clicked => { root.clicked(); }
+        draggable: room.pinned && room.pins-above + room.pins-below > 0;
+        dragging <=> root.dragging;
+        drag-y <=> root.drag-y;
+        edge-top: root.edge-top;
+        edge-bottom: root.edge-bottom;
+        autoscroll(d) => { root.autoscroll(d); }
+        dropped => {
+            if root.drop-by != 0 {
+                root.move-pin(root.drop-by);
+            }
+        }
         context(x, y) => {
             root.menu-x = x;
             root.menu-y = y;
@@ -442,6 +527,17 @@ export component Sidebar inherits Rectangle {
     // Its width, as the user dragged it (see app.slint's handles).
     in property <length> panel-width: Theme.sidebar-width;
     width: root.panel-width;
+    // Bumped when Home is clicked while open: the chats go back to the top.
+    in property <int> scroll-reset;
+    changed scroll-reset => { list.content-y = 0; }
+    // A pinned chat dragged this many places among the pins.
+    callback move-pin(int, int);
+    // The dragged pin, drawn over the list as it follows the pointer.
+    property <bool> ghost-shown;
+    property <length> ghost-y;
+    property <length> ghost-height;
+    property <RoomItem> ghost-room;
+    property <length> drop-line;
     VerticalLayout {
         padding-left: Theme.gap-md;
         padding-right: Theme.gap-md;
@@ -513,9 +609,78 @@ export component Sidebar inherits Rectangle {
                 }
             }
         }
+        // Home's own entries and the conversation search stay put; only
+        // the chats below them scroll.
+        if root.home-navigation: VerticalLayout {
+            spacing: Theme.space-1;
+            padding-bottom: Theme.space-1;
+            // Every alert, newest first, across networks (Godwit's own).
+            MenuButton {
+                glyph: Icons.notifications;
+                label: "Notifications";
+                badge: root.notifications-unseen;
+                selected: root.notifications-selected;
+                clicked => { root.show-notifications(); }
+            }
+            // Friends in calls and in games, across networks.
+            MenuButton {
+                glyph: Icons.group;
+                label: "Active now";
+                selected: root.active-selected;
+                clicked => { root.show-active(); }
+            }
+            // Everyone as one person across networks.
+            MenuButton {
+                glyph: Icons.link;
+                label: "People";
+                selected: root.people-selected;
+                clicked => { root.show-people(); }
+            }
+            // Which games friends share, on the networks with game libraries.
+            if root.can-show-games: MenuButton {
+                glyph: Icons.group;
+                label: "Games in common";
+                selected: root.games-selected;
+                clicked => { root.show-games(); }
+            }
+            // Adding someone is an action, used rarely: last.
+            MenuButton {
+                glyph: Icons.group;
+                label: "Add a friend";
+                selected: root.friends-selected;
+                clicked => { root.show-friends(); }
+            }
+            Text {
+                x: Theme.space-4;
+                height: 34px;
+                text: "Conversations";
+                font-size: Theme.text-label;
+                font-weight: 600;
+                color: Theme.on-surface;
+                vertical-alignment: bottom;
+            }
+            Rectangle { height: 5px; }
+            // Search and network filtering apply only to the conversations below.
+            TextField {
+                height: 36px;
+                placeholder: "Search conversations";
+                text <=> root.home-query;
+                edited(t) => { root.search-home(t); }
+            }
+            if root.home-networks.length > 1: NetworkSelect {
+                width: root.width - Theme.space-4;
+                x: Theme.space-2;
+                networks: root.home-networks;
+                selected-network: root.home-network;
+                selected(n) => { root.filter-home(n); }
+            }
+        }
         // No scrollbar here either; it pushed the rows off their padding.
         list := Flickable {
             vertical-stretch: 1;
+            // Wheel only, as the rail: dragging to scroll took a pinned
+            // chat's drag before the row could.
+            interactive: false;
             content-height: rows.preferred-height;
             // Its own height, not the view's, so the last rows can be scrolled to.
             rows := VerticalLayout {
@@ -524,51 +689,6 @@ export component Sidebar inherits Rectangle {
                 alignment: start;
                 spacing: Theme.space-1;
                 padding-bottom: Theme.gap-md;
-                // Every alert, newest first, across networks (Godwit's own).
-                if root.home-navigation: MenuButton {
-                    glyph: Icons.notifications;
-                    label: "Notifications";
-                    badge: root.notifications-unseen;
-                    selected: root.notifications-selected;
-                    clicked => { root.show-notifications(); }
-                }
-                // Friends in calls and in games, across networks.
-                if root.home-navigation: MenuButton {
-                    glyph: Icons.group;
-                    label: "Active now";
-                    selected: root.active-selected;
-                    clicked => { root.show-active(); }
-                }
-                // Everyone as one person across networks.
-                if root.home-navigation: MenuButton {
-                    glyph: Icons.link;
-                    label: "People";
-                    selected: root.people-selected;
-                    clicked => { root.show-people(); }
-                }
-                // Which games friends share, on the networks with game libraries.
-                if root.home-navigation && root.can-show-games: MenuButton {
-                    glyph: Icons.group;
-                    label: "Games in common";
-                    selected: root.games-selected;
-                    clicked => { root.show-games(); }
-                }
-                // Adding someone is an action, used rarely: last.
-                if root.home-navigation: MenuButton {
-                    glyph: Icons.group;
-                    label: "Add a friend";
-                    selected: root.friends-selected;
-                    clicked => { root.show-friends(); }
-                }
-                if root.home-navigation: Text {
-                    x: Theme.space-4;
-                    height: 34px;
-                    text: "Conversations";
-                    font-size: Theme.text-label;
-                    font-weight: 600;
-                    color: Theme.on-surface;
-                    vertical-alignment: bottom;
-                }
                 if root.can-show-threads: Rectangle {
                     height: 40px;
                     background: root.threads-selected || threads-touch.has-hover ? Theme.surface-high : transparent;
@@ -576,26 +696,24 @@ export component Sidebar inherits Rectangle {
                     Text { x: Theme.gap-md; text: "Threads"; color: Theme.on-surface; vertical-alignment: center; height: parent.height; }
                     threads-touch := TouchArea { mouse-cursor: pointer; clicked => { root.show-threads(); } }
                 }
-                if root.home-navigation: Rectangle { height: 5px; }
-                // Search and network filtering apply only to the conversations below.
-                if root.home-navigation: TextField {
-                    height: 36px;
-                    placeholder: "Search conversations";
-                    text <=> root.home-query;
-                    edited(t) => { root.search-home(t); }
-                }
-                if root.home-navigation && root.home-networks.length > 1: NetworkSelect {
-                    width: root.width - Theme.space-4;
-                    x: Theme.space-2;
-                    networks: root.home-networks;
-                    selected-network: root.home-network;
-                    selected(n) => { root.filter-home(n); }
-                }
                 for room[i] in root.rooms: RoomRow {
                     room: room;
                     clock: root.clock;
                     clicked => { root.select-room(i); }
                     menu(a) => { root.room-menu(i, a); }
+                    move-pin(by) => { root.move-pin(i, by); }
+                    drag-moved(on, y, h, line) => {
+                        root.ghost-shown = on;
+                        root.ghost-y = y;
+                        root.ghost-height = h;
+                        root.ghost-room = room;
+                        root.drop-line = line;
+                    }
+                    edge-top: list.absolute-position.y;
+                    edge-bottom: list.absolute-position.y + list.height;
+                    autoscroll(d) => {
+                        list.content-y = max(min(0px, list.height - list.content-height), min(0px, list.content-y - d));
+                    }
                     toggle-hidden => { root.toggle-hidden-rooms(); }
                     toggle-category => { root.toggle-category(i); }
                     create-here => { root.create-channel-in(i); }
@@ -622,6 +740,32 @@ export component Sidebar inherits Rectangle {
                     }
                     Button { y: (parent.height - self.height) / 2; text: "Join"; kind: "text"; clicked => { root.join-room(i); } }
                 }
+            }
+            // A dragged pin follows the pointer over the other rows, as the
+            // rail's servers do.
+            if root.ghost-shown: Rectangle {
+                y: root.ghost-y;
+                width: list.width;
+                height: root.ghost-height;
+                border-radius: Theme.radius-lg;
+                background: Theme.surface-highest;
+                drop-shadow-blur: 3px;
+                drop-shadow-color: Theme.shadow;
+                EmojiText {
+                    x: Theme.space-3;
+                    width: parent.width - 2 * Theme.space-3;
+                    text: root.ghost-room.name;
+                    runs: root.ghost-room.name-runs;
+                    font-weight: 600;
+                    color: Theme.on-surface;
+                }
+            }
+            // Where it lands.
+            if root.ghost-shown && root.drop-line >= 0: Rectangle {
+                y: root.drop-line;
+                width: list.width;
+                height: 2px;
+                background: Theme.primary;
             }
         }
         // YapFast's voice dock: connection and room on one line, then video

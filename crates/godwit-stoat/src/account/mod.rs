@@ -964,6 +964,9 @@ mod tests {
         assert_eq!(&**display_name, "Me Myself");
         let names: Vec<&str> = rooms.iter().map(|r| &*r.name).collect();
         assert_eq!(names, ["Saved Notes", "Ann", "general", "chat"]);
+        // Saved Notes grants every permission, yet has no calls (official client).
+        assert!(matches!(rooms[0].kind, RoomKind::Notes));
+        assert!(!rooms[0].capabilities.voice && !rooms[0].capabilities.video);
         assert!(matches!(&rooms[1].kind, RoomKind::Direct { with } if &*with.raw == "ANN"));
         assert_eq!(
             rooms[1].icon_url.as_deref(),

@@ -79,6 +79,7 @@ export component TextBlock inherits Rectangle {
         pointer-event(e) => {
             if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
                 Select.down(root.row-number, root.index, self.mouse-x, self.mouse-y, e.modifiers.shift);
+                Select.presses += 1;
                 Select.px = self.absolute-position.x + self.mouse-x;
                 Select.py = self.absolute-position.y + self.mouse-y;
                 Select.dragging = true;

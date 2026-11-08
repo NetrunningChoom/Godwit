@@ -310,7 +310,8 @@ impl Shell {
 
     /// A Home row's menu: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide,
     /// 4 muzzle mode on/off for this chat, 5 its notifications (cycles),
-    /// 6 its channel settings, 7 "Games in common…", 20..=33 its mute and level.
+    /// 6 its channel settings, 7 "Games in common…", 10/11 move its pin up/down,
+    /// 20..=33 its mute and level.
     pub fn room_menu(&mut self, ui: &AppWindow, row: i32, choice: i32) {
         // A category heading's menu: 6 its settings, 8 move up, 9 move down.
         if let Some(category) = usize::try_from(row)
@@ -395,19 +396,35 @@ impl Shell {
             return;
         }
         let state = self.app.state();
+        // A person merged across networks is one chat: core pins, hides
+        // and moves all of their rooms together.
         let action = match choice {
             0 => Action::PinRoom {
-                pinned: !state.pinned_rooms.contains(&room),
+                pinned: !state.is_pinned(&room),
                 room,
             },
             1 => Action::MarkRoomRead(room),
             2 => Action::MarkRoomUnread(room),
-            _ => Action::HideRoom {
-                hidden: !state.hidden_rooms.contains(&room),
+            10 | 11 => Action::MovePin {
+                room,
+                by: if choice == 10 { -1 } else { 1 },
+            },
+            3 => Action::HideRoom {
+                hidden: !state.is_hidden(&room),
                 room,
             },
+            _ => return,
         };
         self.act(ui, action);
+        self.save_room_prefs();
+    }
+
+    /// A pinned chat dragged `by` rows among Home's pins (negative: up).
+    pub fn move_pin(&mut self, ui: &AppWindow, row: i32, by: i32) {
+        let Some(room) = usize::try_from(row).ok().and_then(|r| self.room_at(r)) else {
+            return;
+        };
+        self.act(ui, Action::MovePin { room, by });
         self.save_room_prefs();
     }
 
@@ -543,9 +560,14 @@ impl Shell {
         let state = self.app.state();
         let pinned: Vec<String> = state.pinned_rooms.iter().map(settings::room_key).collect();
         let hidden: Vec<String> = state.hidden_rooms.iter().map(settings::room_key).collect();
-        if pinned != self.settings.pinned_rooms || hidden != self.settings.hidden_rooms {
+        let seeded: Vec<String> = state.pins_seeded.iter().map(settings::account_key).collect();
+        if pinned != self.settings.pinned_rooms
+            || hidden != self.settings.hidden_rooms
+            || seeded != self.settings.pins_seeded
+        {
             self.settings.pinned_rooms = pinned;
             self.settings.hidden_rooms = hidden;
+            self.settings.pins_seeded = seeded;
             self.save_settings();
         }
     }

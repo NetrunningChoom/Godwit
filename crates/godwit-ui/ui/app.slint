@@ -103,6 +103,8 @@ export component AppWindow inherits Window {
 
     in property <[ServerItem]> servers;
     in property <bool> home-selected: true;
+    // Counts Home clicks while Home is open (the sidebar scrolls back up).
+    property <int> home-scroll-reset;
     in property <bool> server-settings-available;
     in property <bool> server-settings-open;
     // A server channel's settings (see channel-settings.slint).
@@ -605,6 +607,7 @@ export component AppWindow inherits Window {
     callback games-pick-region(int);
     callback games-scrolled(int);
     callback games-copy-list();
+    callback games-copy-section(int);
     in property <bool> members-shown;
     in property <[MemberItem]> members;
     // The open profile card.
@@ -829,6 +832,8 @@ export component AppWindow inherits Window {
     callback attach();
     callback paste-files() -> bool;
     callback room-menu(int, int);
+    // A pinned chat dragged this many rows among Home's pins.
+    callback move-pin(int, int);
     in-out property <string> home-query;
     callback search-home(string);
     in property <[string]> home-networks;
@@ -1064,7 +1069,11 @@ export component AppWindow inherits Window {
                     root.focus-account = i;
                     root.open-account(i);
                 }
-                select-home => { root.select-home(); }
+                select-home => {
+                    // Home clicked while open: its chat list back to the top.
+                    if root.home-selected { root.home-scroll-reset += 1; }
+                    root.select-home();
+                }
                 profile-name: root.profile-name;
                 profile-initial: root.profile-initial;
                 profiles: root.profiles;
@@ -1094,6 +1103,8 @@ export component AppWindow inherits Window {
                             open-server-settings => { root.open-server-settings(); }
                             server-menu: root.server-menu;
                             room-menu(i, a) => { root.room-menu(i, a); }
+                            move-pin(i, by) => { root.move-pin(i, by); }
+                            scroll-reset: root.home-scroll-reset;
                             home-query <=> root.home-query;
                             search-home(t) => { root.search-home(t); }
                             home-networks: root.home-networks;
@@ -1217,6 +1228,7 @@ export component AppWindow inherits Window {
                                         pick-region(m) => { root.games-pick-region(m); }
                                         games-scrolled(first) => { root.games-scrolled(first); }
                                         copy-list => { root.games-copy-list(); }
+                                        copy-section(i) => { root.games-copy-section(i); }
                                     }
                                     if root.showing-threads: Threads {
                                         horizontal-stretch: 1;

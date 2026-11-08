@@ -238,6 +238,107 @@ export component Timeline inherits Rectangle {
     // the dialog, so its scrim covers everything.
     in-out property <int> confirm-delete: -1;
 
+    // The keyboard scrolls the chat, as a browser scrolls a page: Page
+    // Up/Down from anywhere (the composer passes them on), the arrows and
+    // Home/End once the chat was clicked (the composer keeps its own
+    // arrows: lines, and Up in an empty box edits the last message).
+    // 40px a line, as browsers step.
+    property <length> scroll-line: 40px;
+    function scroll-chat(dy: length) {
+        list.content-y = max(min(0px, list.visible-height - list.content-height), min(0px, list.content-y - dy));
+    }
+    // A page keeps a line of the last one in view, as browsers do.
+    function scroll-page(direction: int) {
+        root.scroll-chat(direction * max(root.scroll-line, list.visible-height - root.scroll-line));
+    }
+    // Typing while the chat has the keys goes on in the composer, at its end.
+    function type-in-composer(t: string) {
+        input.focus();
+        root.draft += t;
+        root.draft-edited(root.draft);
+        // The cursor at the end (offsets are clamped to the text).
+        input.set-selection-offsets(2147483647, 2147483647);
+    }
+    property <int> chat-presses: Select.presses;
+    changed chat-presses => { chat-keys.focus(); }
+    // Holds the focus only; out of the layout, so it takes no room. Keys it
+    // doesn't use go on to the window's shortcuts.
+    chat-keys := FocusScope {
+        width: 0px;
+        height: 0px;
+        key-pressed(e) => {
+            // Alt+Up/Down switch rooms, and other shortcuts: the window's.
+            if e.modifiers.alt || e.modifiers.meta {
+                return reject;
+            }
+            if e.modifiers.control {
+                if (e.text == "c" || e.text == "C") && Select.active {
+                    Select.copy();
+                    return accept;
+                }
+                if (e.text == "v" || e.text == "V") && root.can-send {
+                    input.focus();
+                    if !(root.can-attach && root.paste-files()) {
+                        input.paste();
+                    }
+                    return accept;
+                }
+                if e.text == Key.Home {
+                    root.scroll-chat(-list.content-height);
+                    return accept;
+                }
+                if e.text == Key.End {
+                    root.scroll-chat(list.content-height);
+                    return accept;
+                }
+                return reject;
+            }
+            if e.text == Key.UpArrow {
+                root.scroll-chat(-root.scroll-line);
+                return accept;
+            }
+            if e.text == Key.DownArrow {
+                root.scroll-chat(root.scroll-line);
+                return accept;
+            }
+            if e.text == Key.PageUp {
+                root.scroll-page(-1);
+                return accept;
+            }
+            if e.text == Key.PageDown {
+                root.scroll-page(1);
+                return accept;
+            }
+            if e.text == Key.Home {
+                root.scroll-chat(-list.content-height);
+                return accept;
+            }
+            if e.text == Key.End {
+                root.scroll-chat(list.content-height);
+                return accept;
+            }
+            if e.text == Key.Escape {
+                if Select.active {
+                    Select.clear();
+                    return accept;
+                }
+                if root.compose-label != "" {
+                    root.cancel-compose();
+                    return accept;
+                }
+                return reject;
+            }
+            // Text, not a control or special key (those are below the space
+            // or in Slint's private-use range).
+            if root.can-send && e.text >= " " && e.text != Key.Delete
+                && !(e.text >= "\u{F700}" && e.text < "\u{F900}") {
+                root.type-in-composer(e.text);
+                return accept;
+            }
+            reject
+        }
+    }
+
     VerticalLayout {
         // The header: 48 px, a 24 px symbol and the 15 px semibold title.
         Rectangle {
@@ -1011,13 +1112,7 @@ export component Timeline inherits Rectangle {
                     join-invite(code) => { root.join-invite(code); }
                     join-activity(url) => { root.join-activity(url); }
                     // Typing on selected text goes on in the composer.
-                    typed(t) => {
-                        input.focus();
-                        root.draft += t;
-                        root.draft-edited(root.draft);
-                        // The cursor at the end (offsets are clamped to the text).
-                        input.set-selection-offsets(2147483647, 2147483647);
-                    }
+                    typed(t) => { root.type-in-composer(t); }
                     player-pointer(url, x, y, down) => { root.player-pointer(url, x, y, down); }
                     player-move(url, x, y) => { root.player-move(url, x, y); }
                     open-profile => { root.open-profile(i); }
@@ -1200,6 +1295,15 @@ export component Timeline inherits Rectangle {
                                 return accept;
                             }
 
+                            // Page Up/Down scroll the chat, not the draft.
+                            if event.text == Key.PageUp {
+                                root.scroll-page(-1);
+                                return accept;
+                            }
+                            if event.text == Key.PageDown {
+                                root.scroll-page(1);
+                                return accept;
+                            }
                             // Arrow-up in an empty box edits our last message, as officially.
                             if event.text == Key.UpArrow && self.text == "" {
                                 root.edit-last();

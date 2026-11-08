@@ -657,8 +657,13 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
                             .any(|r| r.name.to_lowercase().contains(&query))
                 });
             }
-            for (row, _, members, _, _) in &mut entries {
+            for (row, main, members, _, _) in &mut entries {
                 row.pinned = pin(members).is_some();
+                if row.pinned {
+                    let (above, below) = state.pin_moves(main);
+                    row.pins_above = i32::try_from(above).unwrap_or(i32::MAX);
+                    row.pins_below = i32::try_from(below).unwrap_or(i32::MAX);
+                }
                 row.hidden = !row.pinned && hidden(members);
                 if members.iter().any(|m| state.marked_unread.contains(m)) {
                     row.unread = true;

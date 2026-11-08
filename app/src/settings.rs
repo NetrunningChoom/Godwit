@@ -73,6 +73,9 @@ pub struct Settings {
     /// Home's pinned and hidden chats (`network:user|room`).
     pub pinned_rooms: Vec<String>,
     pub hidden_rooms: Vec<String>,
+    /// Accounts whose notes chat was pinned once already (`network:user`),
+    /// so an unpinned one stays unpinned.
+    pub pins_seeded: Vec<String>,
     /// The rail's servers in the user's order (`network:user|server`); ones
     /// not listed keep their network's order after these.
     pub server_order: Vec<String>,
@@ -107,6 +110,16 @@ pub struct Settings {
     pub next_profile_id: u32,
     /// Accounts seen signed in, to start a profile's accounts later.
     pub known_accounts: Vec<crate::profiles::KnownAccount>,
+    /// Switching profiles asks first (the dialog's "Don't ask again" turns
+    /// it off; Settings → Profiles turns it back on). A call still asks.
+    pub ask_profile_switch: bool,
+    /// Soft lock: the other profiles' accounts stay connected in the
+    /// background (see `background`), so their notifications still come and
+    /// a switch is instant. Off: a switch disconnects them, as before.
+    pub background_profiles: bool,
+    /// Background profiles' notifications show who and what; off, only
+    /// the profile's name and the kind of alert.
+    pub background_previews: bool,
     /// The profile in use; not saved (each start opens the default one).
     #[serde(skip)]
     pub current_profile: u32,
@@ -152,6 +165,7 @@ impl Default for Settings {
             members_width: 0.0,
             message_tone: 0,
             pinned_rooms: Vec::new(),
+            pins_seeded: Vec::new(),
             hidden_rooms: Vec::new(),
             server_order: Vec::new(),
             account_order: Vec::new(),
@@ -167,6 +181,9 @@ impl Default for Settings {
             default_profile: 0,
             next_profile_id: 0,
             known_accounts: Vec::new(),
+            ask_profile_switch: true,
+            background_profiles: false,
+            background_previews: false,
             current_profile: 0,
         }
     }

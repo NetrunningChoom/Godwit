@@ -280,6 +280,9 @@ fn connect_callbacks(ui: &AppWindow) {
         callback!(ps.on_delete_profile() => |sh, ui| sh.profile_page_delete(ui));
         callback!(ps.on_create(name) => |sh, ui| sh.profile_page_create(ui, &name));
         callback!(ps.on_set_member(row, on) => |sh, ui| sh.profile_page_member(ui, row, on));
+        callback!(ps.on_set_ask_switch(on) => |sh, ui| sh.set_ask_profile_switch(ui, on));
+        callback!(ps.on_set_background(on) => |sh, ui| sh.set_background_profiles(ui, on));
+        callback!(ps.on_set_previews(on) => |sh, ui| sh.set_background_previews(ui, on));
     }
     callback!(ui.on_settings_open_autodelete() => |sh, ui| sh.open_autodelete(ui));
     {
@@ -471,6 +474,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_games_pick_friend(i, picked) => |sh, ui| sh.games_pick_friend(ui, i, picked));
     callback!(ui.on_games_pick_region(region) => |sh, ui| sh.games_pick_region(ui, region));
     callback!(ui.on_games_copy_list() => |sh, _ui| sh.games_copy_list());
+    callback!(ui.on_games_copy_section(i) => |sh, _ui| sh.games_copy_section(i));
     callback!(ui.on_games_scrolled(first) => |sh, ui| sh.games_scrolled(ui, first));
     callback!(ui.on_pin_jump(i) => |sh, ui| sh.pin_jump(ui, i));
     callback!(ui.on_pin_unpin(i) => |sh, ui| sh.pin_unpin(ui, i));
@@ -893,6 +897,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_search_members(q) => |sh, ui| sh.act(ui, Action::SearchMembers { query: q.to_string() }));
     callback!(ui.on_filter_home(n) => |sh, ui| sh.filter_home(ui, n.to_string()));
     callback!(ui.on_room_menu(row, choice) => |sh, ui| sh.room_menu(ui, row, choice));
+    callback!(ui.on_move_pin(row, by) => |sh, ui| sh.move_pin(ui, row, by));
     callback!(ui.on_toggle_category(row) => |sh, ui| sh.toggle_category(ui, row));
     callback!(ui.on_toggle_hidden_rooms() => |sh, ui| sh.toggle_hidden_rooms(ui));
     ui.on_paste_files({

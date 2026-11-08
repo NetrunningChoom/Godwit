@@ -212,6 +212,12 @@ pub struct Shell {
     /// The profile the delete confirmation (Settings → Profiles) is about.
     pending_delete: Option<u32>,
     profiles_view: crate::profiles_page::ProfilesView,
+    /// Soft-locked profiles' accounts, running in the background, by
+    /// profile (see `background`); empty unless that setting is on.
+    shelves: std::collections::BTreeMap<u32, crate::background::Shelf>,
+    /// A background profile's notification clicked during a call: the chat
+    /// to open once the switch is confirmed.
+    pending_switch_room: Option<RoomId>,
 }
 
 #[derive(Clone)]
@@ -476,6 +482,8 @@ impl Shell {
             pending_switch: None,
             pending_delete: None,
             profiles_view: Default::default(),
+            shelves: Default::default(),
+            pending_switch_room: None,
         };
         ui.set_emoji_rows(ModelRc::from(shell.picker.model.clone()));
         ui.set_notification_items(ModelRc::from(shell.notification_items.clone()));
@@ -504,6 +512,15 @@ impl Shell {
         };
         let (pinned, hidden) = (keys(&shell.settings.pinned_rooms), keys(&shell.settings.hidden_rooms));
         shell.app.dispatch(Action::RestoreRoomPrefs { pinned, hidden });
+        let seeded = shell
+            .settings
+            .pins_seeded
+            .iter()
+            .filter_map(|k| settings::parse_account_key(k))
+            .collect();
+        shell.app.dispatch(Action::RestorePinSeeds(seeded));
+        // The other profiles' accounts, when they stay connected.
+        shell.keep_background();
         Ok(shell)
     }
 
@@ -527,6 +544,8 @@ impl Shell {
         let events = self.poll_accounts();
         self.sync_media();
         let mut had_events = !events.is_empty() || forms(self) != before;
+        // Background profiles: only their alerts (and the menu's dot) show.
+        had_events |= self.pump_background();
         self.apply_all(events);
         had_events |= self.app.expire_typing(std::time::Instant::now());
         // Nothing else may wake us when a notice runs out (no stop event, a
@@ -548,13 +567,9 @@ impl Shell {
         }
         self.presenter.images_changed |= self.images.poll();
         // A clicked notification: its chat, in front.
-        if let Some(room) = self.alerts.take_clicked()
-            && self.app.state().room(&room).is_some()
-        {
-            self.act(ui, Action::SelectRoom(room));
-            if let Err(e) = slint::ComponentHandle::show(ui) {
-                eprintln!("error: showing the window: {e}");
-            }
+        // A background profile's switches to that profile first.
+        if let Some(room) = self.alerts.take_clicked() {
+            self.open_alert(ui, room);
         }
         self.log_errors(ui);
         let players = self.inline_players.poll();

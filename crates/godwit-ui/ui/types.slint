@@ -131,6 +131,10 @@ export struct RoomItem {
     // Home: pinned to the top, or in the hidden section (the menu's words).
     pinned: bool,
     hidden: bool,
+    // A pinned chat: how many pins are above and below it (how far it can
+    // move, by its menu or a drag).
+    pins-above: int,
+    pins-below: int,
     // Muzzle mode applies to this chat (its own choice, or the default).
     muzzled: bool,
     // This chat's notifications: 0 the network's rules, 1 every message, 2 off.
@@ -225,6 +229,9 @@ export global Select {
     // The pressed pointer, in window coordinates: every block under it
     // reports where it is, so a drag selects across messages.
     in-out property <bool> dragging;
+    // Left presses on messages: the timeline takes the keys then (arrows,
+    // Page Up/Down scroll it), as a page takes them when clicked in a browser.
+    in-out property <int> presses;
     in-out property <length> px;
     in-out property <length> py;
     // The block whose link is under the pointer (a hand cursor).
@@ -779,6 +786,8 @@ export struct ProfileItem {
     initial: string,
     // The profile in use (marked in the menu).
     current: bool,
+    // Kept connected in the background and alerted since last in use.
+    alert: bool,
 }
 
 // A row of Settings → Profiles: a profile's header, or one account under it

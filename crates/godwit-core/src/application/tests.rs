@@ -2805,6 +2805,17 @@ fn joining_leaving_and_switching_calls() {
 }
 
 #[test]
+fn notes_never_take_a_call_even_if_a_network_claims_voice() {
+    let mut app = Application::default();
+    let mut r = room(Network::Stoat, "notes", RoomKind::Notes);
+    r.capabilities.voice = true;
+    let id = r.id.clone();
+    ready(&mut app, Network::Stoat, vec![r]);
+    assert!(app.dispatch(Action::JoinCall(id)).is_empty());
+    assert!(app.state().call.is_none());
+}
+
+#[test]
 fn rooms_without_voice_cant_be_called_and_occupants_are_tracked() {
     let mut app = Application::default();
     let mut r = dm(Network::Steam, "s", "x");

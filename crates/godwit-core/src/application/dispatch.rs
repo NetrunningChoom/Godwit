@@ -103,19 +103,19 @@ impl Application {
                 self.select(room)
             }
             Action::PinRoom { room, pinned } => {
-                self.state.pinned_rooms.retain(|r| *r != room);
-                if pinned {
-                    self.state.hidden_rooms.retain(|r| *r != room);
-                    self.state.pinned_rooms.push(room);
-                }
+                self.pin_room(room, pinned);
                 Vec::new()
             }
             Action::HideRoom { room, hidden } => {
-                self.state.hidden_rooms.retain(|r| *r != room);
-                if hidden {
-                    self.state.pinned_rooms.retain(|r| *r != room);
-                    self.state.hidden_rooms.push(room);
-                }
+                self.hide_room(room, hidden);
+                Vec::new()
+            }
+            Action::MovePin { room, by } => {
+                self.move_pin(&room, by);
+                Vec::new()
+            }
+            Action::RestorePinSeeds(accounts) => {
+                self.state.pins_seeded = accounts;
                 Vec::new()
             }
             Action::ToggleHiddenRooms => {

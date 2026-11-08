@@ -139,6 +139,7 @@ impl ProfilesView {
                     name: p.name.as_str().into(),
                     initial: p.initial.as_str().into(),
                     current: p.current,
+                    alert: p.alert,
                 })
                 .collect(),
         );
@@ -168,6 +169,7 @@ mod tests {
             current,
             default: id == 0,
             accounts,
+            alert: false,
         }
     }
 

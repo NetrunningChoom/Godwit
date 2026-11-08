@@ -120,8 +120,9 @@ export component ProfileMenu inherits MenuPanel {
     callback choose(int);
     callback manage();
     for p[i] in root.profiles: MenuRow {
-        // The check is plain text: the icon font's subset has none.
-        glyph: p.current ? "✓" : "";
+        // The check is plain text: the icon font's subset has none. A dot:
+        // a background profile alerted since it was last in use.
+        glyph: p.current ? "✓" : p.alert ? "●" : "";
         label: p.name;
         clicked => { root.choose(i); }
     }
@@ -199,8 +200,10 @@ export component Rail inherits Rectangle {
                     clicked => { root.select-home(); }
                 }
                 // As Home's neighbour: the profile in use, a rounded square (not
-                // a server's circle); a click lists the profiles.
-                RailEntry {
+                // a server's circle); a click lists the profiles. Hidden while
+                // there is only one (the default): nothing to switch to, and
+                // Settings → Profiles still makes another.
+                if root.profiles.length > 1: RailEntry {
                     tooltip: "Profile: " + root.profile-name;
                     clicked => {
                         root.profile-menu-y = self.absolute-position.y - root.absolute-position.y;

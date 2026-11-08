@@ -165,6 +165,9 @@ pub struct AppState {
     /// a collapsible section at the bottom; a new message brings one back).
     pub pinned_rooms: Vec<RoomId>,
     pub hidden_rooms: Vec<RoomId>,
+    /// Accounts whose notes chat was pinned once already (see
+    /// `Application::pin_new_notes`); kept by the app between starts.
+    pub pins_seeded: Vec<AccountId>,
     pub show_hidden: bool,
     /// Chats the user marked unread, shown so until opened.
     pub marked_unread: Vec<RoomId>,

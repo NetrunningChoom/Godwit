@@ -4,7 +4,7 @@
 import { ListView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import { GamesFriendItem, GameRowItem } from "types.slint";
-import { Toggle, PageHeader, TextField, ChoiceChip, IconButton } from "widgets.slint";
+import { Toggle, PageHeader, TextField, ChoiceChip, IconLabelButton } from "widgets.slint";
 
 // A Venn region's count: picking it lists that region's games below.
 component RegionCount inherits Rectangle {
@@ -66,6 +66,9 @@ export component GamesPage inherits Rectangle {
     // Every list (each region, or everyone and everyone-but) as Markdown on
     // the clipboard, to send to a friend or a group.
     callback copy-list();
+    // One heading's section (a region with its sub-headings, or one
+    // sub-heading), by row index, as Markdown on the clipboard.
+    callback copy-section(int);
 
     property <length> row-height: 48px;
 
@@ -73,10 +76,17 @@ export component GamesPage inherits Rectangle {
         PageHeader {
             label: "Games in common";
             glyph: Icons.group;
-            if root.rows.length > 0: IconButton {
-                glyph: Icons.copy;
-                tooltip: "Copy all lists";
-                clicked => { root.copy-list(); }
+            // A labelled button, not a bare icon: copying is what the page
+            // is often opened for.
+            if root.rows.length > 0: VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 0;
+                IconLabelButton {
+                    kind: "tonal";
+                    glyph: Icons.copy;
+                    label: "Copy all lists";
+                    clicked => { root.copy-list(); }
+                }
             }
         }
         if root.accounts.length > 1: HorizontalLayout {
@@ -175,7 +185,10 @@ export component GamesPage inherits Rectangle {
                     vertical-stretch: 1;
                     // Not `scrolled`: it doesn't fire for the mouse wheel.
                     changed content-y => { root.report(); }
-                    for r in root.rows: HorizontalLayout {
+                    for r[i] in root.rows: HorizontalLayout {
+                        // The list's own width, so every heading's Copy
+                        // button lines up at its end.
+                        width: list.visible-width;
                         height: root.row-height;
                         spacing: Theme.space-4;
                         // A sub-heading sits under its section's heading: the
@@ -191,11 +204,24 @@ export component GamesPage inherits Rectangle {
                         }
                         Text {
                             text: r.title;
+                            // A heading's text takes the room, so its Copy
+                            // button sits at the row's end.
+                            horizontal-stretch: r.header ? 1 : 0;
                             vertical-alignment: center;
                             overflow: elide;
                             font-size: r.header ? Theme.text-label : Theme.text-body;
                             font-weight: r.header ? 600 : 400;
                             color: r.header ? Theme.on-surface-variant : Theme.on-surface;
+                        }
+                        // Every heading copies its own section.
+                        if r.header: VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 0;
+                            IconLabelButton {
+                                glyph: Icons.copy;
+                                label: "Copy";
+                                clicked => { root.copy-section(i); }
+                            }
                         }
                     }
                 }

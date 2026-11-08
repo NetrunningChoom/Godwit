@@ -7,6 +7,7 @@ pub mod account_pages;
 pub mod alerts;
 pub mod anim;
 pub mod autodelete_page;
+pub mod background;
 pub mod cache;
 pub mod channel_settings;
 pub mod code;

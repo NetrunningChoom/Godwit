@@ -10,6 +10,7 @@ mod effect;
 mod event;
 mod on_action;
 mod on_event;
+mod pins;
 mod state;
 
 mod apply;

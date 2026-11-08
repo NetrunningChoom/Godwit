@@ -3,7 +3,7 @@
 
 import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { EmojiRowItem } from "types.slint";
+import { EmojiRowItem, EmojiCellItem } from "types.slint";
 import { TextField } from "widgets.slint";
 
 // The emoji picker, as Godwit's: a search, then 36 px cells nine to a row.
@@ -20,6 +20,25 @@ export component EmojiPicker inherits Rectangle {
     width: 9 * 36px + 24px + 16px;
     // The top row on screen: the category bar marks its section.
     property <int> top: 0;
+    // The emoji the preview bar shows: the one last hovered (or the first
+    // of the pack last picked); -1 until then.
+    property <int> hover-row: -1;
+    property <int> hover-col: 0;
+    // Before any hover the preview shows the first emoji, as the official
+    // picker does (`EmojiPicker.tsx`, its `hoveredItem` effect).
+    property <int> first-row: root.rows.length > 0 && root.rows[0].header ? 1 : 0;
+    property <bool> hover-ok: root.hover-row >= 0 && root.hover-row < root.rows.length
+        && !root.rows[root.hover-row].header && root.hover-col < root.rows[root.hover-row].cells.length;
+    property <int> preview-row: root.hover-ok ? root.hover-row : root.first-row;
+    property <int> preview-col: root.hover-ok ? root.hover-col : 0;
+    property <bool> has-preview: root.preview-row < root.rows.length && !root.rows[root.preview-row].header
+        && root.preview-col < root.rows[root.preview-row].cells.length;
+    property <EmojiCellItem> preview: root.has-preview ? root.rows[root.preview-row].cells[root.preview-col] : { };
+    // A custom emoji's pack (its section heading, e.g. the server); none for
+    // Unicode emoji or in search results, as officially.
+    property <int> preview-section: root.has-preview ? root.rows[root.preview-row].section : 0;
+    property <string> preview-from: root.has-preview && root.preview.glyph == "" && root.preview-section < root.rows.length
+        && root.rows[root.preview-section].header ? root.rows[root.preview-section].title : "";
     height: 440px;
     border-radius: Theme.radius-lg;
     background: Theme.surface-high;
@@ -41,7 +60,7 @@ export component EmojiPicker inherits Rectangle {
         TextField {
             placeholder: "Search for emojis...";
             autofocus: true;
-            edited(t) => { root.search(t); }
+            edited(t) => { root.hover-row = -1; root.search(t); }
         }
         // The categories (each server's emoji, then the Unicode groups), as
         // Discord's picker: each is its first emoji; clicking jumps there.
@@ -75,6 +94,9 @@ export component EmojiPicker inherits Rectangle {
                         mouse-cursor: pointer;
                         clicked => {
                             list.content-y = -(i * 36px);
+                            // Picking a pack previews its first emoji.
+                            root.hover-row = i + 1;
+                            root.hover-col = 0;
                             root.top = i;
                             root.scrolled-to(i);
                         }
@@ -114,6 +136,12 @@ export component EmojiPicker inherits Rectangle {
                         pick := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.picked(i, j); }
+                            changed has-hover => {
+                                if self.has-hover {
+                                    root.hover-row = i;
+                                    root.hover-col = j;
+                                }
+                            }
                         }
                         Tooltip {
                             Rectangle {
@@ -125,6 +153,43 @@ export component EmojiPicker inherits Rectangle {
                             }
                         }
                     }
+                }
+            }
+        }
+        // The preview bar under the list, as the official picker's
+        // `EmojiPreviewBar`: the emoji at 24 px, its :name: (0.875rem, 600)
+        // and, for a custom emoji, "from <pack>" (0.75rem, muted); 36 px tall.
+        HorizontalLayout {
+            height: 36px;
+            padding-left: Theme.gap-md;
+            padding-right: Theme.gap-md;
+            spacing: Theme.gap-md;
+            visible: root.has-preview;
+            Rectangle {
+                width: 24px;
+                if root.preview.has-image: Image {
+                    width: 24px;
+                    height: 24px;
+                    source: root.preview.image;
+                }
+                if !root.preview.has-image: Text { text: root.preview.glyph; font-size: Theme.text-large; color: Theme.on-surface; }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: Theme.space-1;
+                Text {
+                    text: root.preview.name;
+                    overflow: elide;
+                    font-size: Theme.text-body;
+                    font-weight: 600;
+                    color: Theme.on-surface;
+                }
+                if root.preview-from != "": Text {
+                    text: "from " + root.preview-from;
+                    overflow: elide;
+                    font-size: Theme.text-small;
+                    color: Theme.on-surface-variant;
                 }
             }
         }

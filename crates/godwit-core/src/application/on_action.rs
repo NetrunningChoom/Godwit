@@ -1122,7 +1122,12 @@ impl Application {
     }
 
     pub(super) fn dispatch_join_call(&mut self, room: RoomId) -> Vec<Effect> {
-        if !self.state.room(&room).is_some_and(|r| r.capabilities.voice)
+        // Notes (a chat with yourself) never has a call, whatever a network's
+        // capabilities say.
+        if !self
+            .state
+            .room(&room)
+            .is_some_and(|r| r.capabilities.voice && !matches!(r.kind, RoomKind::Notes))
             || self.state.call.as_ref().is_some_and(|c| c.room == room)
         {
             return Vec::new();

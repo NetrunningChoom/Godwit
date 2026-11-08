@@ -352,7 +352,11 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
         r.capabilities.notify_settings = true;
         r
     };
-    let mut rooms = vec![room("notes", "Saved Notes", RoomKind::Notes, false, 0)];
+    // Saved Notes has no calls (as the bridge says).
+    let mut notes = room("notes", "Saved Notes", RoomKind::Notes, false, 0);
+    notes.capabilities.voice = false;
+    notes.capabilities.video = false;
+    let mut rooms = vec![notes];
     for i in 0..14 {
         let mut dm = room(
             &format!("dm{i}"),

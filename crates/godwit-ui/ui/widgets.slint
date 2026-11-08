@@ -347,7 +347,8 @@ export component Button inherits Rectangle {
     in property <bool> danger;
     in property <bool> enabled: true;
     callback clicked;
-    property <color> fg: !root.enabled ? Theme.outline
+    // Out so IconLabelButton (built on this) colours its icon and label alike.
+    out property <color> fg: !root.enabled ? Theme.outline
         : root.kind == "filled" ? Theme.on-primary
         : root.kind == "tonal" ? Theme.on-secondary-container
         : root.danger ? Theme.error : Theme.primary;
@@ -372,6 +373,22 @@ export component Button inherits Rectangle {
         enabled: root.enabled;
         mouse-cursor: root.enabled ? pointer : default;
         clicked => { root.clicked(); }
+    }
+}
+
+// A Button with an icon before its label. Built on Button (same kinds,
+// colours and state layer) rather than as a property on it: any extra child
+// in Button changes how its plain label is sized everywhere.
+export component IconLabelButton inherits Button {
+    in property <string> glyph;
+    in property <string> label;
+    text: "";
+    min-width: content.preferred-width + 24px;
+    content := HorizontalLayout {
+        alignment: center;
+        spacing: Theme.space-2;
+        Icon { width: Theme.icon-medium; text: root.glyph; color: root.fg; }
+        Text { text: root.label; color: root.fg; font-weight: 600; vertical-alignment: center; }
     }
 }
 
@@ -689,12 +706,46 @@ export component Dialog inherits Rectangle {
     }
 }
 
+// A checkbox with its label ("Don't ask again"). The click area covers the
+// whole row; the owner decides what a click does (`toggled`).
+export component Checkbox inherits Rectangle {
+    in property <bool> checked;
+    in property <string> label;
+    callback toggled();
+    min-height: row.preferred-height;
+    preferred-width: row.preferred-width;
+    row := HorizontalLayout {
+        spacing: Theme.space-3;
+        alignment: start;
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 18px; // literal: the box's own glyph size
+            height: 18px; // literal: the box's own glyph size
+            border-radius: Theme.radius-xs;
+            border-width: 2px;
+            border-color: root.checked ? Theme.primary : Theme.outline;
+            background: root.checked ? Theme.primary : transparent;
+            // Plain text: the icon font's subset has no check.
+            if root.checked: Text { text: "✓"; color: Theme.on-primary; font-size: Theme.text-small; }
+        }
+        Text { text: root.label; color: Theme.on-surface; vertical-alignment: center; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(); }
+    }
+}
+
 // Repeated title/message/actions confirmation. The optional detail and note
-// preserve the existing account notices without extra dialog variants.
+// preserve the existing account notices without extra dialog variants; an
+// optional checkbox (`check-label`, e.g. "Don't ask again") sits above the
+// buttons.
 export component ConfirmDialog inherits Dialog {
     in property <string> message;
     in property <string> detail;
     in property <string> note;
+    in property <string> check-label;
+    in-out property <bool> checked;
     in property <string> cancel-text: "Cancel";
     in property <string> confirm-text;
     in property <string> confirm-kind: "text";
@@ -721,6 +772,11 @@ export component ConfirmDialog inherits Dialog {
             border-radius: 2px;
             background: Theme.primary;
         }
+    }
+    if root.check-label != "": Checkbox {
+        label: root.check-label;
+        checked: root.checked;
+        toggled => { root.checked = !root.checked; }
     }
     HorizontalLayout {
         alignment: end;
