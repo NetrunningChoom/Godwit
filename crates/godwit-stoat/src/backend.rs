@@ -1701,7 +1701,7 @@ impl Backend {
                                             .json(&body),
                                     )
                                     .await?;
-                                return Ok(Some(updated));
+                                Ok(Some(updated))
                             }
                             ChannelEditCmd::SetChannelPermissions {
                                 channel,
@@ -1716,10 +1716,10 @@ impl Backend {
                                         &format!("/channels/{channel}/permissions/{target}"),
                                     )
                                     .json(&json!({ "permissions": permissions }));
-                                rest.send::<Value>(rb).await?;
+                                let updated = rest.send::<crate::api::Channel>(rb).await?;
+                                Ok(Some(updated))
                             }
                         }
-                        Ok(None)
                     }
                     .await;
                     out.emit(Ev::ChannelSaved {

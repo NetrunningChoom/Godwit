@@ -81,9 +81,10 @@ impl StoatAccount {
             search: can(crate::permissions::READ_MESSAGE_HISTORY),
             pin_messages: c.server.is_none() || can(MANAGE_MESSAGES),
             send: can(SEND_MESSAGE),
-            // The official context menu and settings: Manage Channel on a
-            // server channel (groups have their own page there).
-            manage_channel: c.server.is_some() && can(crate::permissions::MANAGE_CHANNEL),
+            // The official ChannelSettings is available to channel managers
+            // and to people who can manage permission overrides.
+            manage_channel: c.server.is_some()
+                && (can(crate::permissions::MANAGE_CHANNEL) || can(crate::permissions::MANAGE_PERMISSIONS)),
             react: can(REACT),
             attachments: can(UPLOAD_FILES),
             voice: (c.voice.is_some() || c.server.is_none()) && can(CONNECT),

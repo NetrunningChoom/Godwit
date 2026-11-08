@@ -89,13 +89,22 @@ const fn info(
 
 /// The official permissions editor's rows for server roles, for the core.
 pub fn server_list() -> std::sync::Arc<[godwit_core::server_settings::PermissionInfo]> {
+    list_for(EditContext::Server)
+}
+
+/// The permissions shown by the official channel permissions editor.
+pub fn channel_list() -> std::sync::Arc<[godwit_core::server_settings::PermissionInfo]> {
+    list_for(EditContext::TextChannel)
+}
+
+fn list_for(context: EditContext) -> std::sync::Arc<[godwit_core::server_settings::PermissionInfo]> {
     LIST.iter()
         .filter_map(|i| {
             Some(godwit_core::server_settings::PermissionInfo {
                 bit: i.bit,
                 heading: i.heading.map(Into::into),
                 title: i.title.into(),
-                description: i.description(EditContext::Server)?.into(),
+                description: i.description(context)?.into(),
             })
         })
         .collect()

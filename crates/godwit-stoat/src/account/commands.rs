@@ -63,16 +63,12 @@ impl StoatAccount {
             // Stoat keeps no game libraries.
             Command::LoadGameLibraries { .. } => Vec::new(),
             Command::ServerAdmin { server, op } => self.server_admin(server, op),
-            Command::LoadChannelOverview { .. } | Command::SaveChannelOverview { .. } | Command::DeleteChannel { .. } => {
+            Command::LoadChannelOverview { .. }
+            | Command::SaveChannelOverview { .. }
+            | Command::DeleteChannel { .. }
+            | Command::SetChannelOverride { .. } => {
                 self.channel_command(command)
             }
-            // Stoat's channel overrides aren't wired yet (its overview has no
-            // `overrides`, so the page never sends this).
-            Command::SetChannelOverride { room, request, .. } => vec![Event::ChannelOverview {
-                room,
-                request,
-                result: Err("Stoat channel permissions can't be changed here yet.".into()),
-            }],
             Command::LoadServerOverview { server, request } => {
                 let result = self.server_overview(&server).ok_or_else(|| "This server is no longer available.".into());
                 vec![Event::ServerOverview { server, request, result }]

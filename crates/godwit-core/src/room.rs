@@ -91,8 +91,8 @@ pub struct Capabilities {
     /// every member leave it off: the local filter already finds them.
     #[serde(default)]
     pub member_search: bool,
-    /// The channel's settings page opens, and the channel can be deleted
-    /// (Stoat: Manage Channel on a server channel).
+    /// The channel's settings page can be opened; its individual actions may
+    /// require narrower permissions than this page-level capability.
     #[serde(default)]
     pub manage_channel: bool,
     /// We can set how loudly this room notifies (a mute, or a level of its
