@@ -288,7 +288,51 @@ fn end_quote(out: &mut Out, quote: &mut Vec<Out>) {
 /// What the user typed, as Slack's text: `&`, `<` and `>` escaped (Slack
 /// reads its own markup, `*bold*` and the rest, from the rest).
 pub fn from_text(text: &str) -> String {
+    // Slack's Web API treats ID references as active mentions. Preserve the
+    // same tokens the official client writes when an autocomplete selection
+    // is inserted; escaping their angle brackets silently turns them into
+    // ordinary text. Everything else remains escaped.
+    let mut out = String::with_capacity(text.len());
+    let mut plain = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find('<') {
+        plain.push_str(&rest[..start]);
+        let Some(end) = rest[start + 1..].find('>') else {
+            plain.push_str(&rest[start..]);
+            rest = "";
+            break;
+        };
+        let end = start + end + 2;
+        let token = &rest[start..end];
+        if slack_reference(&rest[start + 1..end - 1]) {
+            out.push_str(&escape_slack_text(&plain));
+            plain.clear();
+            out.push_str(token);
+        } else {
+            plain.push_str(token);
+        }
+        rest = &rest[end..];
+    }
+    plain.push_str(rest);
+    out.push_str(&escape_slack_text(&plain));
+    out
+}
+
+fn escape_slack_text(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn slack_reference(reference: &str) -> bool {
+    let (target, _) = reference.split_once('|').unwrap_or((reference, ""));
+    let valid_id = |prefixes: &[u8], id: &str| {
+        id.as_bytes().split_first().is_some_and(|(prefix, rest)| {
+            prefixes.contains(prefix) && !rest.is_empty() && rest.iter().all(u8::is_ascii_alphanumeric)
+        })
+    };
+    target.strip_prefix('@').is_some_and(|id| valid_id(b"UW", id))
+        || target.strip_prefix('#').is_some_and(|id| valid_id(b"CGD", id))
+        || matches!(target, "!here" | "!channel" | "!everyone")
+        || target.strip_prefix("!subteam^").is_some_and(|id| valid_id(b"S", id))
 }
 
 #[cfg(test)]
@@ -364,5 +408,14 @@ mod tests {
     #[test]
     fn sent_text_is_escaped() {
         assert_eq!(from_text("a < b & *c*"), "a &lt; b &amp; *c*");
+    }
+
+    #[test]
+    fn sent_id_mentions_keep_slacks_active_reference_syntax() {
+        assert_eq!(
+            from_text("Hi <@U123>, <!here> and <#C456|general> <tag>"),
+            "Hi <@U123>, <!here> and <#C456|general> &lt;tag&gt;"
+        );
+        assert_eq!(from_text("<javascript:alert(1)>"), "&lt;javascript:alert(1)&gt;");
     }
 }

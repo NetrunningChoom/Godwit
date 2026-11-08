@@ -52,6 +52,20 @@ pub fn mentions(properties: &serde_json::Value) -> Mentions {
         .collect()
 }
 
+/// The MRIs named by `properties.mentions`, regardless of whether the web
+/// client encoded that property as a JSON string or an already parsed array.
+pub fn mention_mris(properties: &serde_json::Value) -> Vec<String> {
+    let list = match &properties["mentions"] {
+        serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_default(),
+        v => v.clone(),
+    };
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|mention| mention["mri"].as_str().map(str::to_owned))
+        .collect()
+}
+
 /// A tag as read: its name (lower case), whether it closes, its attributes.
 struct Tag {
     name: String,
@@ -604,6 +618,16 @@ mod tests {
         );
         assert_eq!(c.rich, "Hi [\\@Ada](godwit://user/8:orgid:abc)\\!");
         assert_eq!(c.plain, "Hi @Ada!");
+    }
+
+    #[test]
+    fn mention_mris_accept_string_and_array_properties() {
+        for properties in [
+            serde_json::json!({"mentions": "[{\"mri\":\"8:orgid:abc\"}]"}),
+            serde_json::json!({"mentions": [{"mri": "8:orgid:abc"}]}),
+        ] {
+            assert_eq!(mention_mris(&properties), ["8:orgid:abc"]);
+        }
     }
 
     #[test]

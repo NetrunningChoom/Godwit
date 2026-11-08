@@ -511,6 +511,18 @@ mod tests {
             out.iter()
                 .any(|e| matches!(e, Event::Alert { room, .. } if &*room.raw == CHANNEL))
         );
+        out.clear();
+        a.handle(
+            Ev::News(
+                json!({"resourceType":"NewMessage","resource":{"conversationid":CHANNEL,"id":"1760346600000","from":BEA,"content":"Hi again","messagetype":"Text","clientmessageid":"16","properties":{"mentions":[{"mri":ME}]}}}),
+            ),
+            &mut out,
+        );
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Alert { room, .. } if &*room.raw == CHANNEL)),
+            "an array-shaped mention property also alerts"
+        );
         // Edits and deletes of thread replies update the thread room, not
         // the channel's timeline.
         out.clear();

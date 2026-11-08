@@ -8,13 +8,7 @@ impl TeamsAccount {
     /// Whether the message @-mentions us: `properties.mentions` is a JSON
     /// string of `{"mri": …}` objects (as msteams-mcp's client writes them).
     pub(super) fn mentions_me(&self, m: &Value) -> bool {
-        m["properties"]["mentions"]
-            .as_str()
-            .and_then(|s| serde_json::from_str::<Value>(s).ok())
-            .is_some_and(|list| {
-                list.as_array()
-                    .is_some_and(|ms| ms.iter().any(|mm| mm["mri"].as_str() == Some(self.me.as_str())))
-            })
+        html::mention_mris(&m["properties"]).iter().any(|mri| mri == &self.me)
     }
 
     pub(super) fn message_in(&mut self, conversation: &str, raw: &Value) -> Option<Message> {
