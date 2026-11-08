@@ -27,6 +27,7 @@ pub struct ServerEditor {
     /// draft, and the list it was taken from (a new list refreshes a clean draft).
     role_index: usize,
     role_allow: u64,
+    role_deny: u64,
     role_dirty: bool,
     roles_seen: Option<ServerRoles>,
     /// The Emoji page: the picture chosen for the next emoji, a problem with
@@ -208,8 +209,12 @@ impl ServerEditor {
                 ui.set_server_edit_role_colour(role.colour.as_deref().unwrap_or_default().into());
                 ui.set_server_edit_role_hoist(role.hoist);
                 self.role_allow = role.allow;
+                self.role_deny = role.deny;
             }
-            None => self.role_allow = roles.default_allow,
+            None => {
+                self.role_allow = roles.default_allow;
+                self.role_deny = 0;
+            }
         }
         self.role_dirty = false;
     }
@@ -226,7 +231,18 @@ impl ServerEditor {
         self.role_dirty = true;
     }
 
-    pub fn toggle_permission(&mut self, state: &AppState, row: i32) {
+    fn apply_permission_state(&mut self, bit: u64, value: i32) {
+        self.role_allow &= !bit;
+        self.role_deny &= !bit;
+        match value {
+            1 => self.role_allow |= bit,
+            2 => self.role_deny |= bit,
+            _ => {}
+        }
+        self.role_dirty = true;
+    }
+
+    pub fn set_permission_state(&mut self, state: &AppState, row: i32, value: i32) {
         let Some(p) = state
             .server_settings
             .as_ref()
@@ -235,8 +251,7 @@ impl ServerEditor {
         else {
             return;
         };
-        self.role_allow ^= p.bit;
-        self.role_dirty = true;
+        self.apply_permission_state(p.bit, value);
     }
 
     /// Save on the Roles page: Everyone's default permissions, or the role's
@@ -264,8 +279,9 @@ impl ServerEditor {
             name: (name.trim() != role.name.as_ref()).then(|| name.trim().into()),
             colour: (colour != role.colour.as_deref()).then(|| colour.map(Into::into)),
             hoist: (hoist != role.hoist).then_some(hoist),
-            // Allowing a permission also lifts its deny; turning it off leaves it neutral.
-            permissions: (self.role_allow != role.allow).then_some((self.role_allow, role.deny & !self.role_allow)),
+            // Send both bitsets so neutral, allow and deny remain distinct.
+            permissions: ((self.role_allow, self.role_deny) != (role.allow, role.deny))
+                .then_some((self.role_allow, self.role_deny)),
         };
         Ok(Some(Action::ServerAdmin {
             server,
@@ -525,7 +541,13 @@ impl ServerEditor {
                         heading: p.heading.as_deref().unwrap_or_default().into(),
                         title: p.title.as_ref().into(),
                         description: p.description.as_ref().into(),
-                        allowed: self.role_allow & p.bit != 0,
+                        state: if self.role_allow & p.bit != 0 {
+                            1
+                        } else if self.role_deny & p.bit != 0 {
+                            2
+                        } else {
+                            0
+                        },
                     })
                     .collect();
                 ui.set_server_edit_permissions(ModelRc::new(VecModel::from(perms)));
@@ -688,6 +710,38 @@ mod tests {
         );
         assert_eq!(moved_role_ranks(&roles, 0, true), None);
         assert_eq!(moved_role_ranks(&roles, 2, false), None);
+    }
+
+    #[test]
+    fn role_permission_draft_keeps_explicit_deny_and_can_return_to_neutral() {
+        use godwit_core::server_settings::{PermissionInfo, ServerRole};
+        let bit = 1_u64 << 12;
+        let role = ServerRole {
+            id: "r".into(),
+            name: "Role".into(),
+            colour: None,
+            hoist: false,
+            allow: 0,
+            deny: bit,
+        };
+        let permission = PermissionInfo {
+            bit,
+            heading: None,
+            title: "Permission".into(),
+            description: "A permission".into(),
+        };
+        let mut editor = ServerEditor {
+            role_allow: role.allow,
+            role_deny: role.deny,
+            ..Default::default()
+        };
+        editor.apply_permission_state(permission.bit, 2);
+        assert_eq!(editor.role_deny, bit);
+        editor.apply_permission_state(permission.bit, 0);
+        assert_eq!(editor.role_allow | editor.role_deny, 0);
+        editor.apply_permission_state(permission.bit, 1);
+        assert_eq!(editor.role_allow, bit);
+        assert_eq!(editor.role_deny, 0);
     }
 
     #[test]

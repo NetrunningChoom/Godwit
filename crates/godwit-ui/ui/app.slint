@@ -200,7 +200,7 @@ export component AppWindow inherits Window {
     callback delete-server-invite(int); callback copy-server-invite(int);
     callback unban-server-user(int);
     callback select-server-role(int); callback create-server-role(string); callback server-role-edited();
-    callback toggle-server-permission(int); callback save-server-role(); callback delete-server-role();
+    callback set-server-permission-state(int, int); callback save-server-role(); callback delete-server-role();
     callback move-server-role(bool);
     callback delete-server();
     // The profile card's Kick / Ban (ban: true), with the ban's reason.
@@ -1587,7 +1587,7 @@ export component AppWindow inherits Window {
         delete-invite(i) => { root.delete-server-invite(i); } copy-invite(i) => { root.copy-server-invite(i); }
         unban(i) => { root.unban-server-user(i); }
         select-role(i) => { root.select-server-role(i); } create-role(n) => { root.create-server-role(n); }
-        role-edited => { root.server-role-edited(); } toggle-permission(i) => { root.toggle-server-permission(i); }
+        role-edited => { root.server-role-edited(); } set-permission-state(i, s) => { root.set-server-permission-state(i, s); }
         save-role => { root.save-server-role(); } delete-role => { root.delete-server-role(); }
         move-role(up) => { root.move-server-role(up); }
         delete-server => { root.delete-server(); }
@@ -2008,7 +2008,7 @@ export component AppWindow inherits Window {
         y: parent.height - self.height - 24px;
         width: min(600px, parent.width - 32px);
         height: 56px;
-        border-radius: 6px;
+        border-radius: 6px; // literal: compact send-error toast corner
         background: Theme.error;
         TouchArea {
             clicked => { root.dismiss-send-error(); }

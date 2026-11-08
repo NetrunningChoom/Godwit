@@ -5,7 +5,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import { Section } from "settings.slint";
 import { AdminRoleItem, BanItem, EmojiItem, PermissionItem, ServerInviteItem } from "types.slint";
-import { Avatar, Button, ConfirmDialog, Dialog, IconButton, Select, TextArea, TextField, Toggle } from "widgets.slint";
+import { Avatar, Button, ConfirmDialog, Dialog, IconButton, Select, TextArea, TextField, Toggle, TriState } from "widgets.slint";
 
 // Server settings, as the official ServerSettings: a sidebar of pages
 // (Overview, Roles, Emoji, Invites, Bans), each shown only with the permission it
@@ -73,7 +73,7 @@ export component ServerSettings inherits Rectangle {
     callback delete-invite(int); callback copy-invite(int);
     callback unban(int);
     callback select-role(int); callback create-role(string); callback role-edited();
-    callback toggle-permission(int); callback save-role(); callback delete-role();
+    callback set-permission-state(int, int); callback save-role(); callback delete-role();
     callback move-role(bool);
     callback pick-emoji-file(); callback emoji-name-edited(); callback create-emoji();
     callback rename-emoji(int, string); callback delete-emoji(int);
@@ -241,7 +241,11 @@ export component ServerSettings inherits Rectangle {
                                             Text { text: p.title; color: Theme.on-surface; }
                                             Text { text: p.description; font-size: Theme.text-small; color: Theme.outline; wrap: word-wrap; }
                                         }
-                                        Toggle { y: (parent.height - self.height) / 2; checked: p.allowed; toggled(on) => { root.toggle-permission(i); } }
+                                        TriState {
+                                            y: (parent.height - self.height) / 2;
+                                            state: p.state; enabled: !root.admin-busy;
+                                            chose(state) => { root.set-permission-state(i, state); }
+                                        }
                                     }
                                 }
                             }

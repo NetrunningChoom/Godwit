@@ -486,6 +486,7 @@ fn server_admin_scene(name: &'static str, page: i32) -> Scene<'static> {
             editor.show(ui, app.state(), &mut images);
             if page == 1 {
                 editor.select_role(ui, app.state(), 1);
+                editor.set_permission_state(app.state(), 0, 2);
                 editor.show(ui, app.state(), &mut images);
             }
             Screen::Main

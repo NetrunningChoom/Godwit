@@ -365,7 +365,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_select_server_role(row) => |sh, ui| sh.select_server_role(ui, row));
     callback!(ui.on_create_server_role(name) => |sh, ui| sh.create_server_role(ui, &name));
     callback!(ui.on_server_role_edited() => |sh, ui| sh.server_role_edited(ui));
-    callback!(ui.on_toggle_server_permission(row) => |sh, ui| sh.toggle_server_permission(ui, row));
+    callback!(ui.on_set_server_permission_state(row, value) => |sh, ui| sh.set_server_permission_state(ui, row, value));
     callback!(ui.on_save_server_role() => |sh, ui| sh.save_server_role(ui));
     callback!(ui.on_move_server_role(up) => |sh, ui| sh.move_server_role(ui, up));
     callback!(ui.on_delete_server_role() => |sh, ui| sh.delete_server_role(ui));

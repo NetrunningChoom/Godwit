@@ -714,7 +714,8 @@ export struct PermissionItem {
     heading: string,
     title: string,
     description: string,
-    allowed: bool,
+    // 0 neutral, 1 allow, 2 deny.
+    state: int,
 }
 
 // A permission on a channel's Permissions page; heading starts a group.

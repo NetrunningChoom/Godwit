@@ -99,8 +99,8 @@ impl Shell {
         self.show_server_settings(ui);
     }
 
-    pub fn toggle_server_permission(&mut self, ui: &AppWindow, row: i32) {
-        self.server_editor.toggle_permission(self.app.state(), row);
+    pub fn set_server_permission_state(&mut self, ui: &AppWindow, row: i32, value: i32) {
+        self.server_editor.set_permission_state(self.app.state(), row, value);
         self.show_server_settings(ui);
     }
 

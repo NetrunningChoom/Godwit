@@ -1387,7 +1387,11 @@ fn demo_admin(overview: &godwit_core::server_settings::ServerOverview, seed: u64
         colour: colour.map(Into::into),
         hoist,
         allow,
-        deny: 0,
+        deny: if allow & p::MANAGE_MESSAGES != 0 {
+            0
+        } else {
+            p::MANAGE_MESSAGES
+        },
     };
     let roles = vec![
         role(
