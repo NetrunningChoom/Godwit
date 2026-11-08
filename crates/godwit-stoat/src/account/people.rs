@@ -123,11 +123,60 @@ impl StoatAccount {
         }
         let kick = self.store.can_in_server(server, KICK_MEMBERS);
         let ban = self.store.can_in_server(server, BAN_MEMBERS);
-        (kick || ban).then(|| godwit_core::members::Moderation {
+        let roles = self.assignable_roles(server, user);
+        (kick || ban || !roles.is_empty()).then(|| godwit_core::members::Moderation {
             kick,
             ban,
+            roles,
             ..godwit_core::members::Moderation::new(ServerId::new(account.clone(), server))
         })
+    }
+
+    /// The roles we may toggle on `user`, highest first, as for-web's
+    /// UserProfileRoles: the owner edits every role; otherwise Assign Roles,
+    /// a member below us, and only roles below our own best rank (the
+    /// server refuses adding one at or above it). Empty when we may not.
+    pub(super) fn assignable_roles(&self, server: &str, user: &str) -> Vec<godwit_core::members::ModerationRole> {
+        let Some(s) = self.store.servers.get(server) else {
+            return Vec::new();
+        };
+        let Some(me) = self.store.me.as_deref() else {
+            return Vec::new();
+        };
+        let owner = s.owner == me;
+        if !owner
+            && (me == user
+                || !self.store.can_in_server(server, crate::permissions::ASSIGN_ROLES)
+                || !self.store.outranks(server, user))
+        {
+            return Vec::new();
+        }
+        let mine = self.store.member_ranking(server, me);
+        let held: Vec<String> = self
+            .store
+            .members
+            .get(&MemberId {
+                server: server.to_string(),
+                user: user.to_string(),
+            })
+            .map(|m| m.roles.clone())
+            .unwrap_or_default();
+        let mut roles: Vec<(&String, &crate::api::Role)> =
+            s.roles.iter().filter(|(_, r)| owner || r.rank > mine).collect();
+        roles.sort_by(|a, b| a.1.rank.cmp(&b.1.rank).then_with(|| a.0.cmp(b.0)));
+        roles
+            .into_iter()
+            .map(|(id, r)| godwit_core::members::ModerationRole {
+                id: id.as_str().into(),
+                name: r.name.as_str().into(),
+                colour: r
+                    .colour
+                    .as_deref()
+                    .and_then(crate::api::parse_hex_colour)
+                    .map(|(r, g, b)| [r, g, b]),
+                assigned: held.contains(id),
+            })
+            .collect()
     }
 
     /// Sends the servers' custom emoji if they changed.

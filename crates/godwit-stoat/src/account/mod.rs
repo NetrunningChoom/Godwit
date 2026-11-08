@@ -1703,6 +1703,89 @@ mod tests {
     }
 
     #[test]
+    fn member_roles_follow_the_official_assign_rules() {
+        let (mut a, tx, mut cmds, _) = connected();
+        let ready = json!({
+            "users": [
+                { "_id": "ME", "username": "me", "relationship": "User" },
+                { "_id": "ANN", "username": "ann" },
+                { "_id": "BOSS", "username": "boss" }
+            ],
+            "servers": [{
+                "_id": "S", "name": "Server", "owner": "OWNER", "channels": [],
+                "roles": {
+                    "TOP": { "name": "Top", "rank": 0 },
+                    "HI": { "name": "Mods", "rank": 1,
+                            "permissions": { "a": crate::permissions::ASSIGN_ROLES, "d": 0 } },
+                    "MID": { "name": "Mid", "rank": 2 },
+                    "LO": { "name": "Low", "rank": 3, "colour": "#00ff00" }
+                }
+            }],
+            "channels": [],
+            "members": [
+                { "_id": { "server": "S", "user": "ME" }, "roles": ["HI"] },
+                { "_id": { "server": "S", "user": "ANN" }, "roles": ["LO"] },
+                { "_id": { "server": "S", "user": "BOSS" }, "roles": ["TOP"] }
+            ]
+        });
+        tx.send(Ev::Ready(serde_json::from_value(ready).unwrap())).unwrap();
+        a.poll();
+        while cmds.try_recv().is_ok() {}
+        // Only roles below our own best rank, highest first.
+        let roles = a.assignable_roles("S", "ANN");
+        let shown: Vec<(&str, bool)> = roles.iter().map(|r| (&*r.id, r.assigned)).collect();
+        assert_eq!(shown, [("MID", false), ("LO", true)]);
+        assert_eq!(roles[1].colour, Some([0, 255, 0]));
+        assert!(a.moderation("S", "ANN").is_some_and(|m| m.roles.len() == 2));
+        // Nobody above us, and not ourselves.
+        assert!(a.assignable_roles("S", "BOSS").is_empty());
+        assert!(a.assignable_roles("S", "ME").is_empty());
+
+        let acc = a.account.clone().unwrap();
+        let server = ServerId::new(acc.clone(), "S");
+        let set = |role: &str, on: bool| Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::SetMemberRole {
+                user: UserId::new(acc.clone(), "ANN"),
+                role: role.into(),
+                on,
+            },
+        };
+        // The whole list goes out, as for-web sends it.
+        assert!(a.run(set("MID", true)).is_empty());
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::Member(MemberCmd::SetRoles { server, user, roles }))
+                if server == "S" && user == "ANN" && roles == ["LO", "MID"]
+        ));
+        assert!(a.run(set("LO", false)).is_empty());
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::Member(MemberCmd::SetRoles { roles, .. })) if roles.is_empty()
+        ));
+        // A role at or above ours is refused before the network.
+        for role in ["HI", "TOP", "GONE"] {
+            let out = a.run(set(role, true));
+            assert!(
+                matches!(out.as_slice(), [Event::ServerAdmin { result: Err(_), .. }]),
+                "{role}"
+            );
+        }
+        assert!(cmds.try_recv().is_err());
+
+        // The owner may hand out every role.
+        if let Some(s) = a.store.servers.get_mut("S") {
+            s.owner = "ME".into();
+        }
+        let ids: Vec<String> = a
+            .assignable_roles("S", "BOSS")
+            .iter()
+            .map(|r| r.id.to_string())
+            .collect();
+        assert_eq!(ids, ["TOP", "HI", "MID", "LO"]);
+    }
+
+    #[test]
     fn friend_requests_send_the_tag_and_the_card_follows_the_relationship() {
         use godwit_core::members::Relationship;
         let (mut a, tx, mut cmds, _) = connected();

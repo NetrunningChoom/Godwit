@@ -689,7 +689,13 @@ impl StoatAccount {
             if !kind.starts_with("Message") {
                 self.sync_servers(out);
                 self.sync_friends(out);
-                if kind == "UserRelationship"
+                // Roles shown or offered on the card can change with these.
+                let refresh_profile = kind == "UserRelationship"
+                    || kind == "ServerMemberUpdate"
+                    || kind == "ServerUpdate"
+                    || kind.starts_with("ServerRole");
+                if refresh_profile
+                    && self.profile_for.is_some()
                     && let Some(p) = self.profile()
                 {
                     out.push(Event::Profile(p));

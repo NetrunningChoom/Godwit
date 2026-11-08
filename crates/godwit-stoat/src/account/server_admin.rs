@@ -41,11 +41,12 @@ impl StoatAccount {
             | ServerAdmin::DeleteEmoji(_) => Some((p::MANAGE_CUSTOMISATION, "Manage Customisation")),
             ServerAdmin::CreateInvite => Some((p::INVITE_OTHERS, "Invite Others")),
             ServerAdmin::CreateChannel { .. } => Some((p::MANAGE_CHANNEL, "Manage Channels")),
+            // Checked below with the owner and rank rules.
+            ServerAdmin::SetMemberRole { .. } => None,
             // The card never offers these here (no capability is set).
-            ServerAdmin::SetMemberRole { .. }
-            | ServerAdmin::Timeout { .. }
-            | ServerAdmin::SetServerNickname { .. }
-            | ServerAdmin::MoveChannel { .. } => None,
+            ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } | ServerAdmin::MoveChannel { .. } => {
+                None
+            }
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -58,10 +59,42 @@ impl StoatAccount {
             return fail(server, &format!("You need the {name} permission for this."));
         }
         let cmd = match op {
-            ServerAdmin::SetMemberRole { .. }
-            | ServerAdmin::Timeout { .. }
-            | ServerAdmin::SetServerNickname { .. }
-            | ServerAdmin::MoveChannel { .. } => {
+            ServerAdmin::SetMemberRole { user, role, on } => {
+                if user.account != server.account {
+                    return fail(server, "That member belongs to another account.");
+                }
+                let target = user.raw.to_string();
+                let key = MemberId {
+                    server: raw.clone(),
+                    user: target.clone(),
+                };
+                let Some(held) = self.store.members.get(&key).map(|m| m.roles.clone()) else {
+                    return fail(server, "They're no longer in this server.");
+                };
+                // The same rules the card was built with, checked again now.
+                if !self.assignable_roles(&raw, &target).iter().any(|r| r.id == role) {
+                    return fail(server, "You can't change that role for them.");
+                }
+                // for-web sends the whole list, minus roles the server no
+                // longer has.
+                let mut roles: Vec<String> = held.into_iter().filter(|r| r.as_str() != role.as_ref()).collect();
+                if on {
+                    roles.push(role.to_string());
+                }
+                let known = self
+                    .store
+                    .servers
+                    .get(&raw)
+                    .map(|s| s.roles.clone())
+                    .unwrap_or_default();
+                roles.retain(|r| known.contains_key(r));
+                Cmd::Member(MemberCmd::SetRoles {
+                    server: raw,
+                    user: target,
+                    roles,
+                })
+            }
+            ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } | ServerAdmin::MoveChannel { .. } => {
                 return fail(server, "This isn't available here yet.");
             }
             ServerAdmin::LoadInvites => Cmd::Server(ServerCmd::FetchServerInvites { server: raw }),

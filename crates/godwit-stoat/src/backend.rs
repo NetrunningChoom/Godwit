@@ -179,6 +179,13 @@ pub enum MemberCmd {
         server: String,
         user: String,
     },
+    /// Sets a member's whole role list (`DataMemberEdit.roles`), for server
+    /// admin, which waits for it (answered with AdminDone).
+    SetRoles {
+        server: String,
+        user: String,
+        roles: Vec<String>,
+    },
     BanUser {
         server: String,
         user: String,
@@ -1527,7 +1534,9 @@ impl Backend {
         let autumn = config.features.autumn.url.clone();
         // Kicks and bans come from server admin, which waits for them.
         let admin = match &cmd {
-            MemberCmd::KickMember { server, .. } | MemberCmd::BanUser { server, .. } => Some(server.clone()),
+            MemberCmd::KickMember { server, .. }
+            | MemberCmd::BanUser { server, .. }
+            | MemberCmd::SetRoles { server, .. } => Some(server.clone()),
             MemberCmd::EditMember { .. } | MemberCmd::RemoveRecipient { .. } | MemberCmd::TransferGroup { .. } => None,
         };
         tokio::spawn(async move {
@@ -1545,6 +1554,13 @@ impl Backend {
                         rest.send::<Value>(
                             rest.req(reqwest::Method::PATCH, &format!("/servers/{server}/members/{user}"))
                                 .json(&body),
+                        )
+                        .await?;
+                    }
+                    MemberCmd::SetRoles { server, user, roles } => {
+                        rest.send::<Value>(
+                            rest.req(reqwest::Method::PATCH, &format!("/servers/{server}/members/{user}"))
+                                .json(&json!({ "roles": roles })),
                         )
                         .await?;
                     }
