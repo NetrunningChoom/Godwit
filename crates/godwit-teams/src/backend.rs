@@ -519,19 +519,29 @@ async fn start(mut saved: Saved, out: Out, ready: tmpsc::UnboundedSender<Started
     };
     let activity = {
         let api = api.clone();
-        let out = out.clone();
         tokio::spawn(async move {
             // The registered transport's activity lease needs renewal; this is
             // one write every two minutes, not a presence polling loop.
             let mut interval = tokio::time::interval(Duration::from_secs(120));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut outage_reported = false;
             loop {
                 interval.tick().await;
-                if let Err(e) = api.report_activity().await {
-                    out.send(Ev::Answer(Answer::Done {
-                        what: "reporting activity",
-                        result: Err(text(&e)),
-                    }));
+                if let Err(error) = api.report_activity_with_recovery().await {
+                    if !outage_reported {
+                        let status = crate::api::refused_status(&error)
+                            .map(|status| status.to_string())
+                            .unwrap_or_else(|| "unavailable".into());
+                        let action = if status == "404" {
+                            "endpoint re-registration or retry failed"
+                        } else {
+                            "will retry at the next scheduled renewal"
+                        };
+                        eprintln!("note: Teams activity report failed (HTTP {status}); {action}.");
+                        outage_reported = true;
+                    }
+                } else {
+                    outage_reported = false;
                 }
             }
         })

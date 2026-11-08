@@ -88,6 +88,26 @@ impl Refused {
     }
 }
 
+/// The activity lease can refer to an endpoint the service no longer knows.
+/// Retry that case only after re-registering the existing endpoint once.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ActivityRecovery {
+    ReRegister,
+    Stop,
+}
+
+pub(crate) fn activity_recovery(status: Option<u16>, already_retried: bool) -> ActivityRecovery {
+    if status == Some(404) && !already_retried {
+        ActivityRecovery::ReRegister
+    } else {
+        ActivityRecovery::Stop
+    }
+}
+
+pub(crate) fn refused_status(error: &anyhow::Error) -> Option<u16> {
+    error.downcast_ref::<Refused>().map(|refused| refused.status)
+}
+
 /// HTTPS with ring, no retries, no cookies.
 pub fn client() -> Result<Client> {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -502,6 +522,18 @@ impl Api {
             .await
             .map(drop)
     }
+
+    /// Re-register the same endpoint and report activity once if its lease is stale.
+    pub async fn report_activity_with_recovery(&self) -> Result<()> {
+        match self.report_activity().await {
+            Ok(()) => Ok(()),
+            Err(error) if activity_recovery(refused_status(&error), false) == ActivityRecovery::ReRegister => {
+                self.register_presence().await?;
+                self.report_activity().await
+            }
+            Err(error) => Err(error),
+        }
+    }
     pub async fn set_presence(&self, presence: godwit_core::members::Presence) -> Result<()> {
         use godwit_core::members::Presence;
         let availability = match presence {
@@ -640,6 +672,14 @@ pub fn presence_of(availability: &str) -> godwit_core::members::Presence {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn activity_recovery_reregisters_only_for_the_first_404() {
+        assert_eq!(activity_recovery(Some(404), false), ActivityRecovery::ReRegister);
+        assert_eq!(activity_recovery(Some(404), true), ActivityRecovery::Stop);
+        assert_eq!(activity_recovery(Some(500), false), ActivityRecovery::Stop);
+        assert_eq!(activity_recovery(None, false), ActivityRecovery::Stop);
+    }
 
     #[test]
     fn directory_and_presence_answers_are_read() {
