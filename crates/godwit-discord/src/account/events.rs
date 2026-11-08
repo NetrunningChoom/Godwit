@@ -335,6 +335,11 @@ impl DiscordAccount {
                 self.sync_emoji(out);
                 self.sync_emoji_page(out);
             }
+            "USER_GUILD_SETTINGS_UPDATE" => {
+                self.store.apply_guild_settings(d);
+                self.sync_rooms(out);
+                self.sync_servers(out);
+            }
             "GUILD_UPDATE" => {
                 self.store.update_guild(d);
                 self.sync_servers(out);

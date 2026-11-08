@@ -11,6 +11,7 @@ fn account(n: Network) -> AccountId {
 
 fn room(n: Network, raw: &str, kind: RoomKind) -> Room {
     Room {
+        notify: Default::default(),
         id: RoomId::new(account(n), raw),
         name: raw.into(),
         kind,
@@ -3225,6 +3226,34 @@ fn channel_settings_app() -> Application {
     let locked = room(n, "L", kind());
     ready(&mut app, n, vec![managed, locked]);
     app
+}
+
+#[test]
+fn room_notify_settings_need_the_rooms_capability() {
+    use crate::room::RoomNotifyChange as C;
+    let n = Network::Stoat;
+    let mut app = Application::default();
+    let plain = room(n, "P", RoomKind::Group);
+    let mut able = room(n, "A", RoomKind::Group);
+    able.capabilities.notify_settings = true;
+    ready(&mut app, n, vec![plain, able]);
+    let change = C::Level(Some(9));
+    let none = app.dispatch(Action::SetRoomNotify {
+        room: RoomId::new(account(n), "P"),
+        change,
+    });
+    assert!(none.is_empty());
+    let effects = app.dispatch(Action::SetRoomNotify {
+        room: RoomId::new(account(n), "A"),
+        change,
+    });
+    assert!(matches!(
+        commands(&effects).as_slice(),
+        [Command::SetRoomNotify {
+            change: C::Level(Some(2)),
+            ..
+        }]
+    ));
 }
 
 fn open_channel_settings(app: &mut Application, can_manage: bool) -> RoomId {

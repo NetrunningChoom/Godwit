@@ -140,6 +140,22 @@ component RoomRow inherits Rectangle {
             if !room.header: MenuRow { glyph: Icons.unread; label: room.alerts == 1 ? "Notifications: all messages" : room.alerts == 2 ? "Notifications: off" : "Notifications: default"; clicked => { root.menu(5); } }
             if !room.header: MenuRow { glyph: Icons.schedule; label: room.muzzled ? "Unmuzzle repeat messages" : "Muzzle repeat messages"; clicked => { root.menu(4); } }
             if room.games: MenuRow { glyph: Icons.group; label: "Games in common…"; clicked => { root.menu(7); } }
+            // The official channel menu's mute (with durations) and notification settings,
+            // as rows (menu 20..=24 mute for a while, 26 until turned off, 27 unmute,
+            // 30..=33 the level).
+            if room.can-notify: MenuDivider { }
+            if room.can-notify && room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Unmute channel" : "Unmute"; clicked => { root.menu(27); } }
+            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Mute channel for 15 minutes" : "Mute for 15 minutes"; clicked => { root.menu(20); } }
+            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 1 hour"; clicked => { root.menu(21); } }
+            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 3 hours"; clicked => { root.menu(22); } }
+            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 8 hours"; clicked => { root.menu(23); } }
+            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 24 hours"; clicked => { root.menu(24); } }
+            if room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… until I turn it back on"; clicked => { root.menu(26); } }
+            if room.can-notify && room.kind == 2: MenuDivider { }
+            if room.can-notify && room.kind == 2: MenuRow { glyph: Icons.notifications; label: (room.notify-level == 3 ? "✓ " : "") + "Use server default"; clicked => { root.menu(30); } }
+            if room.can-notify && room.kind == 2: MenuRow { glyph: Icons.chat; label: (room.notify-level == 0 ? "✓ " : "") + "Notify: all messages"; clicked => { root.menu(31); } }
+            if room.can-notify && room.kind == 2: MenuRow { glyph: Icons.at; label: (room.notify-level == 1 ? "✓ " : "") + "Notify: only @mentions"; clicked => { root.menu(32); } }
+            if room.can-notify && room.kind == 2: MenuRow { glyph: Icons.lock; label: (room.notify-level == 2 ? "✓ " : "") + "Notify: nothing"; clicked => { root.menu(33); } }
             if room.kind != 2: MenuDivider { }
             if room.kind != 2: MenuRow { glyph: Icons.close; label: room.hidden ? "Unhide" : "Hide"; clicked => { root.menu(3); } }
             // The official channel menu's "Open channel settings".

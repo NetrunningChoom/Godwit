@@ -122,6 +122,8 @@ impl DiscordAccount {
             // The channel's settings and delete: Manage Channels on that
             // channel (threads have their own permissions).
             manage_channel: c.guild.is_some() && !c.thread() && can(p::MANAGE_CHANNELS),
+            // Channel overrides in our guild settings; DMs take a mute only.
+            notify_settings: !c.thread(),
             // The picker sends the GIF's link, which needs embedding.
             gifs: can(p::SEND_MESSAGES) && (c.guild.is_none() || can(p::EMBED_LINKS)),
             max_upload: upload_limit(
@@ -138,13 +140,17 @@ impl DiscordAccount {
             _ => None,
         };
         Some(Room {
+            notify: godwit_core::room::RoomNotify {
+                level: self.store.channel_notify.get(channel).copied().filter(|l| *l <= 2),
+                muted: self.store.channel_muted(channel),
+            },
             id: RoomId::new(account, channel),
             name: name.into(),
             kind,
             icon_url: icon.map(Into::into),
             capabilities,
             encryption: RoomEncryption::Unencrypted,
-            unread: self.store.unread(channel) && !self.store.muted_channels.contains(channel),
+            unread: self.store.unread(channel) && !self.store.channel_muted(channel),
             mentions: self.store.mentions(channel),
             last_read: self
                 .store

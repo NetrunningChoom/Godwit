@@ -255,6 +255,7 @@ impl TeamsAccount {
         let last_id = c.last.as_ref().and_then(|(i, _, _)| i.parse::<i64>().ok()).unwrap_or(0);
         let ours = c.last.as_ref().is_some_and(|(_, _, from)| *from == self.me);
         Some(Room {
+            notify: Default::default(),
             id: RoomId::new(account, id),
             name: name.into(),
             kind,

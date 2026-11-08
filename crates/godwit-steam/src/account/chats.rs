@@ -12,6 +12,7 @@ impl SteamAccount {
         let persona = f.map(|f| &f.persona);
         let chat = self.chats.get(&friend);
         Some(Room {
+            notify: Default::default(),
             id: RoomId::new(account.clone(), friend.to_string()),
             name: self.name_of(friend).into(),
             kind: RoomKind::Direct {

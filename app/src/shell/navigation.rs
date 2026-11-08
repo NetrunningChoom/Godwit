@@ -307,7 +307,7 @@ impl Shell {
 
     /// A Home row's menu: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide,
     /// 4 muzzle mode on/off for this chat, 5 its notifications (cycles),
-    /// 6 its channel settings, 7 "Games in common…".
+    /// 6 its channel settings, 7 "Games in common…", 20..=33 its mute and level.
     pub fn room_menu(&mut self, ui: &AppWindow, row: i32, choice: i32) {
         // A category heading's menu: 6 its settings, 8 move up, 9 move down.
         if let Some(category) = usize::try_from(row)
@@ -362,6 +362,10 @@ impl Shell {
             self.presenter.muzzle = self.settings.clone();
             self.save_settings();
             self.refresh(ui);
+            return;
+        }
+        if let Some(change) = notify_change(choice) {
+            self.act(ui, Action::SetRoomNotify { room, change });
             return;
         }
         if choice == 6 {
@@ -748,5 +752,51 @@ impl Shell {
             None => self.presenter.people_query = query,
         }
         self.refresh(ui);
+    }
+}
+
+/// What a room menu's notification choices ask for (see `room_menu`), as
+/// Discord's channel menu offers: mute for 15 minutes, 1, 3, 8, 24 hours or
+/// until turned back on; unmute; or the channel's own level.
+fn notify_change(choice: i32) -> Option<godwit_core::room::RoomNotifyChange> {
+    use godwit_core::room::RoomNotifyChange as C;
+    const MINUTE: u32 = 60;
+    Some(match choice {
+        20 => C::Mute {
+            seconds: Some(15 * MINUTE),
+        },
+        21 => C::Mute {
+            seconds: Some(60 * MINUTE),
+        },
+        22 => C::Mute {
+            seconds: Some(3 * 60 * MINUTE),
+        },
+        23 => C::Mute {
+            seconds: Some(8 * 60 * MINUTE),
+        },
+        24 => C::Mute {
+            seconds: Some(24 * 60 * MINUTE),
+        },
+        26 => C::Mute { seconds: None },
+        27 => C::Unmute,
+        30 => C::Level(None),
+        31..=33 => C::Level(Some(u8::try_from(choice - 31).ok()?)),
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod notify_choice_tests {
+    use super::notify_change;
+    use godwit_core::room::RoomNotifyChange as C;
+
+    #[test]
+    fn menu_choices_map_to_changes() {
+        assert_eq!(notify_change(21), Some(C::Mute { seconds: Some(3600) }));
+        assert_eq!(notify_change(26), Some(C::Mute { seconds: None }));
+        assert_eq!(notify_change(27), Some(C::Unmute));
+        assert_eq!(notify_change(30), Some(C::Level(None)));
+        assert_eq!(notify_change(32), Some(C::Level(Some(1))));
+        assert_eq!(notify_change(6), None);
     }
 }

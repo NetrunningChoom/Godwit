@@ -366,6 +366,7 @@ mod tests {
         use godwit_core::room::{Capabilities, RoomEncryption};
         let account = AccountId::new(Network::Stoat, "me");
         let room = |raw: &str, name: &str, unread: bool| Room {
+            notify: Default::default(),
             id: RoomId::new(account.clone(), raw),
             name: name.into(),
             kind: RoomKind::Group,

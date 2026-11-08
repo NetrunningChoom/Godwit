@@ -27,6 +27,7 @@ pub fn user(raw: &str) -> UserId {
 
 pub fn room(raw: &str, name: &str, kind: RoomKind, unread: bool, mentions: u32) -> Room {
     Room {
+        notify: Default::default(),
         id: RoomId::new(account(), raw),
         name: name.into(),
         kind,
@@ -341,6 +342,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
         r.capabilities.voice = raw == "voice";
         // Server S is the one we manage (see `demo_overview`).
         r.capabilities.manage_channel = true;
+        r.capabilities.notify_settings = true;
         r
     };
     let mut rooms = vec![room("notes", "Saved Notes", RoomKind::Notes, false, 0)];
@@ -753,6 +755,7 @@ pub fn multi(app: &mut Application) -> RoomId {
         (3, person(21), true, None),
     ];
     let steam_room = |n: u64, name: &str, online: bool, status: Option<&str>, unread: bool| Room {
+        notify: Default::default(),
         id: RoomId::new(steam.clone(), steam_user(n).raw.as_ref()),
         name: name.into(),
         kind: RoomKind::Direct { with: steam_user(n) },
@@ -2049,6 +2052,18 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
             command @ (Command::LoadChannelOverview { .. }
             | Command::SaveChannelOverview { .. }
             | Command::DeleteChannel { .. }) => self.channel_command(command),
+            Command::SetRoomNotify { room, change } => {
+                use godwit_core::room::RoomNotifyChange as C;
+                let Some((r, _)) = self.channels.iter_mut().find(|(r, _)| r.id == room) else {
+                    return Vec::new();
+                };
+                match change {
+                    C::Level(level) => r.notify.level = level,
+                    C::Mute { .. } => r.notify.muted = true,
+                    C::Unmute => r.notify.muted = false,
+                }
+                vec![Event::RoomUpdated(r.clone())]
+            }
             Command::LoadServerOverview { server, request } => {
                 let result = self
                     .overviews
@@ -2730,6 +2745,43 @@ mod tests {
         let after = titles(&app);
         assert!(after.iter().all(|(i, _)| i.as_deref() != Some("C1")));
         assert_eq!(after[0].1, 5, "its channels went to the loose group");
+    }
+
+    #[test]
+    fn demo_channel_mute_and_level_show_on_the_room() {
+        use godwit_core::room::RoomNotifyChange as C;
+        let (mut app, _, _) = world(Contacts::default());
+        let mut demo = DemoAccount::new(&app);
+        let id = RoomId::new(account(), "voice");
+        let notify = |app: &godwit_core::application::Application| app.state().room(&id).map(|r| r.notify);
+        assert!(app.state().room(&id).unwrap().capabilities.notify_settings);
+        run(
+            &mut app,
+            &mut demo,
+            Action::SetRoomNotify {
+                room: id.clone(),
+                change: C::Mute { seconds: Some(900) },
+            },
+        );
+        assert!(notify(&app).unwrap().muted);
+        run(
+            &mut app,
+            &mut demo,
+            Action::SetRoomNotify {
+                room: id.clone(),
+                change: C::Level(Some(1)),
+            },
+        );
+        assert_eq!(notify(&app).unwrap().level, Some(1));
+        run(
+            &mut app,
+            &mut demo,
+            Action::SetRoomNotify {
+                room: id.clone(),
+                change: C::Unmute,
+            },
+        );
+        assert!(!notify(&app).unwrap().muted);
     }
 
     #[test]

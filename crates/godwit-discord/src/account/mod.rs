@@ -11,6 +11,7 @@ mod channel_admin;
 mod commands;
 mod events;
 mod messages;
+mod notify;
 mod people;
 mod rooms;
 mod server_admin;
@@ -1197,6 +1198,7 @@ impl NetworkAccount for DiscordAccount {
             }
             Command::JoinInvite { code } => req(&self.net, Request::JoinInvite { code: code.to_string() }),
             Command::ServerAdmin { server, op } => out.extend(self.server_admin(server, op)),
+            Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(&room, change)),
             Command::LoadChannelOverview { .. }
             | Command::SaveChannelOverview { .. }
             | Command::DeleteChannel { .. } => out.extend(self.channel_command(command)),
@@ -1788,6 +1790,115 @@ mod tests {
         assert!(out.iter().any(
             |e| matches!(e, Event::ServersChanged { servers, .. } if servers.iter().any(|s| s.rights.notify == 2))
         ));
+    }
+
+    #[test]
+    fn channel_notification_settings_send_overrides_and_show_on_the_room() {
+        use godwit_core::room::RoomNotifyChange as C;
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        let room = RoomId::new(a.account.clone().expect("signed in"), "13");
+        assert!(a.room("13").expect("room").capabilities.notify_settings);
+        let out = a.run(Command::SetRoomNotify {
+            room: room.clone(),
+            change: C::Mute { seconds: Some(900) },
+        });
+        let Ok(Cmd::Request(Request::ChannelNotify {
+            guild, channel, body, ..
+        })) = cmds.try_recv()
+        else {
+            panic!("expected the override")
+        };
+        assert_eq!((guild.as_deref(), channel.as_str()), (Some("10"), "13"));
+        assert_eq!(body["muted"], true);
+        assert_eq!(body["mute_config"]["selected_time_window"], 900);
+        assert!(body["mute_config"]["end_time"].is_string());
+        assert!(out.iter().any(|e| matches!(e, Event::RoomUpdated(r) if r.notify.muted)));
+        let out = a.run(Command::SetRoomNotify {
+            room,
+            change: C::Level(Some(1)),
+        });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::RoomUpdated(r) if r.notify.level == Some(1) && r.notify.muted))
+        );
+        // The whole override goes out, so the level change keeps the mute.
+        let Ok(Cmd::Request(Request::ChannelNotify {
+            guild, body, previous, ..
+        })) = cmds.try_recv()
+        else {
+            panic!("expected the override")
+        };
+        assert_eq!(
+            (body["message_notifications"].as_u64(), body["muted"].as_bool()),
+            (Some(1), Some(true))
+        );
+        assert_eq!(previous["message_notifications"], 3);
+        // A failed request puts the old override back.
+        let mut out = Vec::new();
+        a.answer(
+            crate::backend::Answer::ChannelNotify {
+                guild,
+                previous,
+                result: Err(anyhow::anyhow!("offline").into()),
+            },
+            &mut out,
+        );
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::RoomUpdated(r) if r.notify.level.is_none() && r.notify.muted))
+        );
+        assert!(out.iter().any(|e| matches!(e, Event::Error(_))));
+    }
+
+    #[test]
+    fn settings_updates_read_overrides_with_expired_mutes_and_inherit() {
+        let (mut a, _cmds, _tx) = account();
+        ready(&mut a);
+        let past = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
+        let soon = (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339();
+        let mut out = Vec::new();
+        a.dispatch(
+            "USER_GUILD_SETTINGS_UPDATE",
+            &json!({"guild_id": "10", "channel_overrides": [
+                {"channel_id": "13", "muted": true, "mute_config": {"end_time": past, "selected_time_window": 900}, "message_notifications": 3},
+                {"channel_id": "12", "muted": true, "mute_config": {"end_time": soon, "selected_time_window": 3600}, "message_notifications": 2},
+                {"channel_id": "11", "muted": true, "mute_config": null, "message_notifications": 1},
+            ]}),
+            &mut out,
+        );
+        assert!(!a.store.channel_muted("13"), "an ended mute is off");
+        assert!(a.store.channel_muted("12") && a.store.channel_muted("11"));
+        assert_eq!(a.store.channel_notify.get("12"), Some(&2));
+        assert!(!a.store.channel_notify.contains_key("13"), "3 inherits");
+        // Resetting a channel clears it.
+        a.dispatch(
+            "USER_GUILD_SETTINGS_UPDATE",
+            &json!({"guild_id": "10", "channel_overrides": [{"channel_id": "12", "muted": false, "mute_config": null, "message_notifications": 3}]}),
+            &mut out,
+        );
+        assert!(!a.store.channel_muted("12") && !a.store.channel_notify.contains_key("12"));
+    }
+
+    #[test]
+    fn demo_channel_notification_changes_come_back_as_room_updates() {
+        use godwit_core::room::RoomNotifyChange as C;
+        let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
+        let room = RoomId::new(a.account.clone().expect("signed in"), "13");
+        let out = a.run(Command::SetRoomNotify {
+            room: room.clone(),
+            change: C::Mute { seconds: None },
+        });
+        assert!(out.iter().any(|e| matches!(e, Event::RoomUpdated(r) if r.notify.muted)));
+        let out = a.run(Command::SetRoomNotify {
+            room,
+            change: C::Unmute,
+        });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::RoomUpdated(r) if !r.notify.muted))
+        );
     }
 
     #[test]

@@ -295,6 +295,7 @@ impl GChatAccount {
             None => (c.name.clone(), RoomKind::Group, c.icon.clone()),
         };
         Some(Room {
+            notify: Default::default(),
             id: RoomId::new(account, raw),
             name: name.into(),
             kind,

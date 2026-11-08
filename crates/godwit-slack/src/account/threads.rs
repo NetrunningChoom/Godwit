@@ -55,6 +55,7 @@ impl SlackAccount {
         let mut capabilities = Capabilities::of(Network::Slack);
         capabilities.threads = false;
         Some(Room {
+            notify: Default::default(),
             id: RoomId::new(account.clone(), format!("{team}:{channel}:{ts}").as_str()),
             name: if t.subscribed {
                 let label = self

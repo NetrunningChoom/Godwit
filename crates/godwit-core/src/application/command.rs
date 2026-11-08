@@ -296,6 +296,13 @@ pub enum Command {
     UnlockWithKey {
         key: Secret,
     },
+    /// A room's own notification level or mute (only sent where the room's
+    /// `Capabilities::notify_settings` is on); the account answers with
+    /// [`Event::RoomUpdated`] carrying the new `Room::notify`.
+    SetRoomNotify {
+        room: RoomId,
+        change: crate::room::RoomNotifyChange,
+    },
     /// Everything after `last_read` is unread again (None: the whole room).
     MarkUnread {
         room: RoomId,

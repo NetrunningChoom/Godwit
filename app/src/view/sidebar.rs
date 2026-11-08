@@ -179,6 +179,9 @@ pub(super) fn room_row(r: &Room, selected: bool, occupants: Option<&Vec<CallMemb
     RoomItem {
         thread: r.parent.is_some(),
         can_manage: r.capabilities.manage_channel,
+        can_notify: r.capabilities.notify_settings,
+        muted: r.notify.muted,
+        notify_level: r.notify.level.map_or(3, i32::from),
         header: false,
         name: r.name.as_ref().into(),
         name_runs: label_runs(&r.name, images),

@@ -35,6 +35,12 @@ pub enum Action {
         room: RoomId,
         quality: crate::call::ScreenShareQuality,
     },
+    /// Mutes a room or sets its own notification level, where its network
+    /// takes that (`Capabilities::notify_settings`).
+    SetRoomNotify {
+        room: RoomId,
+        change: crate::room::RoomNotifyChange,
+    },
     /// A server channel's settings page (see [`crate::channel_settings`]).
     OpenChannelSettings(RoomId),
     /// A category's settings (name, delete): the same page as a channel's.

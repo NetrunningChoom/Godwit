@@ -152,6 +152,7 @@ impl SlackAccount {
             _ => None,
         };
         Some(Room {
+            notify: Default::default(),
             id: RoomId::new(account, format!("{team}:{id}").as_str()),
             name: name.into(),
             kind,

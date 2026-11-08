@@ -97,6 +97,7 @@ impl StoatAccount {
             ..Capabilities::of(Network::Stoat)
         };
         Room {
+            notify: Default::default(),
             id: RoomId::new(account.clone(), c.id.as_str()),
             name: self.store.channel_title(c).into(),
             kind,

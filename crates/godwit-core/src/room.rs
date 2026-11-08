@@ -69,6 +69,11 @@ pub struct Capabilities {
     /// (Stoat: Manage Channel on a server channel).
     #[serde(default)]
     pub manage_channel: bool,
+    /// We can set how loudly this room notifies (a mute, or a level of its
+    /// own): the menu offers it, [`Room::notify`] shows the state (Discord:
+    /// channel overrides in the user's guild settings).
+    #[serde(default)]
+    pub notify_settings: bool,
 }
 
 impl Capabilities {
@@ -98,6 +103,7 @@ impl Capabilities {
             max_upload: 0,
             pin_messages: false,
             manage_channel: false,
+            notify_settings: false,
             forum: false,
             report: false,
         };
@@ -246,6 +252,31 @@ pub struct Room {
     /// listed under it.
     #[serde(default)]
     pub parent: Option<Arc<str>>,
+    /// Our own notification choices here (see `Capabilities::notify_settings`).
+    #[serde(default)]
+    pub notify: RoomNotify,
+}
+
+/// How we asked a room to notify: its own level, and a mute. Networks
+/// without per-room settings leave it at the default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoomNotify {
+    /// 0 all messages, 1 only mentions, 2 nothing; None follows the server.
+    pub level: Option<u8>,
+    /// Muted now (a mute that has run out counts as off).
+    pub muted: bool,
+}
+
+/// A change to a room's [`RoomNotify`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoomNotifyChange {
+    /// Its own level (0 all, 1 mentions, 2 nothing); None: the server's.
+    Level(Option<u8>),
+    /// Mute for this many seconds; None: until we turn it back on.
+    Mute {
+        seconds: Option<u32>,
+    },
+    Unmute,
 }
 
 impl Room {

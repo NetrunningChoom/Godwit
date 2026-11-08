@@ -193,6 +193,7 @@ impl FluxerAccount {
             ),
         };
         Some(Room {
+            notify: Default::default(),
             id: RoomId::new(account, channel),
             name: name.into(),
             kind,

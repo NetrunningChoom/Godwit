@@ -86,6 +86,19 @@ impl DiscordAccount {
                     }
                 }
             }
+            Answer::ChannelNotify {
+                guild,
+                previous,
+                result,
+            } => {
+                if let Err(e) = result {
+                    self.apply_override(guild.as_deref(), &previous);
+                    if let Some(room) = previous["channel_id"].as_str().and_then(|c| self.room(c)) {
+                        out.push(Event::RoomUpdated(room));
+                    }
+                    out.push(Event::Error(format!("Discord, notification setting: {e}").into()));
+                }
+            }
             Answer::DmOpened(result) => match result {
                 Ok(c) => {
                     for u in c["recipients"].as_array().into_iter().flatten() {

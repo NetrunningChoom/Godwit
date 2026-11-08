@@ -924,6 +924,16 @@ impl Api {
         self.empty(with_json(self.request(Method::PATCH, &path), &body)).await
     }
 
+    /// One channel's override in our settings for its server (`@me` for
+    /// DMs), as the client's channel menu sends it: `PATCH
+    /// /users/@me/guilds/{g}/settings` with `channel_overrides`
+    /// (docs.discord.food, Guild Settings / Channel Override).
+    pub async fn channel_notify(&self, guild: Option<&str>, channel: &str, entry: &Value) -> Result<()> {
+        let path = format!("/users/@me/guilds/{}/settings", guild.unwrap_or("@me"));
+        let body = serde_json::json!({ "channel_overrides": { channel: entry } });
+        self.empty(with_json(self.request(Method::PATCH, &path), &body)).await
+    }
+
     /// Messages matching `content`: a server's search narrowed to `channel`,
     /// or a DM's own (Yapfast's `search`). Discord answers groups of messages
     /// with the matches first in each.

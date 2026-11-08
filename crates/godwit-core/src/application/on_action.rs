@@ -961,6 +961,26 @@ impl Application {
         }]
     }
 
+    /// Only rooms whose network takes per-room notification settings.
+    pub(super) fn dispatch_set_room_notify(
+        &mut self,
+        room: RoomId,
+        change: crate::room::RoomNotifyChange,
+    ) -> Vec<Effect> {
+        use crate::room::RoomNotifyChange as C;
+        if !self.state.room(&room).is_some_and(|r| r.capabilities.notify_settings) {
+            return Vec::new();
+        }
+        let change = match change {
+            C::Level(level) => C::Level(level.map(|l| l.min(2))),
+            other => other,
+        };
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::SetRoomNotify { room, change },
+        }]
+    }
+
     pub(super) fn dispatch_mark_unread(&mut self, message: MessageId) -> Vec<Effect> {
         let Some(room) = self.state.selected.clone() else {
             return Vec::new();

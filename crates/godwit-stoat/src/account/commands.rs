@@ -149,6 +149,7 @@ impl StoatAccount {
             | Command::AnswerInvite { .. }
             // Servers' channels are all listed already.
             | Command::LoadDirectory { .. }
+            | Command::SetRoomNotify { .. }
             | Command::JoinRoom { .. } => Vec::new(),
             Command::Focus { room } => {
                 self.viewing = room.map(|r| r.raw.to_string());

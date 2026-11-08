@@ -286,7 +286,9 @@ pub struct Store {
     /// A channel's own level where we set one (0 all, 1 mentions, 2
     /// nothing; 3 or missing: the server's).
     pub channel_notify: HashMap<String, u8>,
-    pub muted_channels: HashSet<String>,
+    /// Channels we muted: when the mute ends (Unix seconds), None for
+    /// until we turn it back on.
+    pub muted_channels: HashMap<String, Option<i64>>,
     /// Our custom status text, as last set.
     pub custom_status: Option<String>,
     pub status: String,
@@ -311,6 +313,55 @@ impl Store {
             return level;
         }
         c.guild.as_deref().map_or(0, |g| self.notify_level(g))
+    }
+
+    /// Whether we muted `channel` (an ended mute doesn't count; nothing
+    /// polls, the end is checked when read).
+    pub fn channel_muted(&self, channel: &str) -> bool {
+        self.muted_channels
+            .get(channel)
+            .is_some_and(|until| until.is_none_or(|t| t > chrono::Utc::now().timestamp()))
+    }
+
+    /// One `user_guild_settings` entry (READY's, or USER_GUILD_SETTINGS_UPDATE's),
+    /// where a null `guild_id` holds the DMs' overrides. A channel we reset
+    /// stays listed (level 3, not muted), so nothing needs clearing.
+    pub fn apply_guild_settings(&mut self, s: &Value) {
+        let guild = s["guild_id"].as_str();
+        if let Some(g) = guild {
+            if let Some(level) = s["message_notifications"].as_u64().and_then(|l| u8::try_from(l).ok()) {
+                self.guild_notify.insert(g.to_owned(), level);
+            }
+            if s["muted"] == true {
+                self.muted_guilds.insert(g.to_owned());
+            } else if s.get("muted").is_some() {
+                self.muted_guilds.remove(g);
+            }
+        }
+        let Some(overrides) = s["channel_overrides"].as_array() else {
+            return;
+        };
+        for o in overrides {
+            let Some(c) = o["channel_id"].as_str() else { continue };
+            match o["message_notifications"].as_u64().and_then(|l| u8::try_from(l).ok()) {
+                Some(level) if level <= 2 => {
+                    self.channel_notify.insert(c.to_owned(), level);
+                }
+                _ => {
+                    self.channel_notify.remove(c);
+                }
+            }
+            // A mute with an end in the past is over (the client's own check).
+            let until = o["mute_config"]["end_time"]
+                .as_str()
+                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| t.timestamp());
+            if o["muted"] == true && until.is_none_or(|t| t > chrono::Utc::now().timestamp()) {
+                self.muted_channels.insert(c.to_owned(), until);
+            } else {
+                self.muted_channels.remove(c);
+            }
+        }
     }
 
     pub fn notify_level(&self, guild: &str) -> u8 {
@@ -399,24 +450,7 @@ impl Store {
             ) {
                 self.guild_notify.insert(g.to_owned(), level);
             }
-            if s["muted"] == true
-                && let Some(g) = guild
-            {
-                self.muted_guilds.insert(g.to_owned());
-            }
-            for o in s["channel_overrides"].as_array().into_iter().flatten() {
-                if let (Some(c), Some(level)) = (
-                    o["channel_id"].as_str(),
-                    o["message_notifications"].as_u64().and_then(|l| u8::try_from(l).ok()),
-                ) {
-                    self.channel_notify.insert(c.to_owned(), level);
-                }
-                if o["muted"] == true
-                    && let Some(c) = o["channel_id"].as_str()
-                {
-                    self.muted_channels.insert(c.to_owned());
-                }
-            }
+            self.apply_guild_settings(s);
         }
         self.status = d["sessions"][0]["status"].as_str().unwrap_or("online").to_owned();
         // Presences usually come in READY_SUPPLEMENTAL; take any READY has.
@@ -1114,7 +1148,7 @@ mod tests {
         assert!(s.unread("13"));
         assert_eq!(s.mentions("13"), 2);
         assert!(s.unread("20"), "a never-read DM with messages");
-        assert!(s.muted_channels.contains("13"));
+        assert!(s.channel_muted("13"));
         assert_eq!(s.relationships["200"], FRIEND);
         assert_eq!(s.display_name("100", Some("10")), "Bloopy");
         assert_eq!(s.display_name("200", None), "zarg");

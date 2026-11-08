@@ -122,6 +122,7 @@ impl Application {
                 Vec::new()
             }
             Action::MarkRoomRead(room) => self.dispatch_mark_room_read(room),
+            Action::SetRoomNotify { room, change } => self.dispatch_set_room_notify(room, change),
             Action::RestoreRoomPrefs { pinned, hidden } => {
                 self.state.pinned_rooms = pinned;
                 self.state.hidden_rooms = hidden;

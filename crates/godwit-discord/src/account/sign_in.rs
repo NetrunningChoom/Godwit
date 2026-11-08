@@ -222,6 +222,8 @@ impl DiscordAccount {
                 room: room.clone(),
                 reason: Some("Calls don't connect in demo mode.".into()),
             }),
+            // The change is applied as the gateway's settings update would.
+            Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(room, *change)),
             Command::Typing { .. } | Command::MarkRead { .. } | Command::Focus { .. } => return None,
             Command::LoadMembers { .. } | Command::LoadServerOverview { .. } | Command::OpenDirect { .. } => {
                 return None;

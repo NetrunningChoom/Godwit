@@ -231,8 +231,8 @@ impl DiscordAccount {
         let Some(c) = self.store.channels.get(channel) else {
             return;
         };
-        let muted = self.store.muted_channels.contains(channel)
-            || c.guild.as_ref().is_some_and(|g| self.store.muted_guilds.contains(g));
+        let muted =
+            self.store.channel_muted(channel) || c.guild.as_ref().is_some_and(|g| self.store.muted_guilds.contains(g));
         // The server's notification level: all messages, mentions only, or
         // nothing (DMs always notify unless muted).
         let level = if c.guild.is_some() {

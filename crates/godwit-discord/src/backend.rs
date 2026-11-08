@@ -156,6 +156,16 @@ pub enum Request {
         guild: String,
         level: u8,
     },
+    /// A channel's (or DM's) override in our guild settings: the body of
+    /// its entry in `channel_overrides` (see `account::notify`).
+    ChannelNotify {
+        /// None for DMs (`@me`).
+        guild: Option<String>,
+        channel: String,
+        body: serde_json::Value,
+        /// The override before the change, put back if the request fails.
+        previous: serde_json::Value,
+    },
     Pin {
         channel: String,
         message: String,
@@ -293,6 +303,12 @@ pub enum Answer {
     /// reported, successes arrive as gateway events.
     Done {
         what: &'static str,
+        result: Result<(), RequestError>,
+    },
+    /// A channel override was sent; on failure `previous` goes back.
+    ChannelNotify {
+        guild: Option<String>,
+        previous: Value,
         result: Result<(), RequestError>,
     },
     DmOpened(Result<Value, RequestError>),
@@ -894,6 +910,19 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::GuildNotify { guild, level } => Answer::Done {
             what: "notification setting",
             result: api.guild_notify(&guild, level).await.map_err(RequestError::from),
+        },
+        Request::ChannelNotify {
+            guild,
+            channel,
+            body,
+            previous,
+        } => Answer::ChannelNotify {
+            result: api
+                .channel_notify(guild.as_deref(), &channel, &body)
+                .await
+                .map_err(RequestError::from),
+            guild,
+            previous,
         },
         Request::Search { guild, channel, query } => {
             let result = api

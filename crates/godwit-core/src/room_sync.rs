@@ -58,6 +58,7 @@ mod tests {
 
     fn room(raw: &str, name: &str) -> Room {
         Room {
+            notify: Default::default(),
             id: RoomId::new(AccountId::new(Network::Slack, "me"), raw),
             name: name.into(),
             kind: RoomKind::Group,

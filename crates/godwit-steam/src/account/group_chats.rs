@@ -41,6 +41,7 @@ impl SteamAccount {
         let c = self.group_chats.get(&(group, chat));
         let server = g.is_server();
         Some(Room {
+            notify: Default::default(),
             id: RoomId::new(account.clone(), group_room_raw(group, chat)),
             name: if server {
                 r.name.clone()
