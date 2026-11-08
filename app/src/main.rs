@@ -690,7 +690,11 @@ fn connect_callbacks(ui: &AppWindow) {
     });
     callback!(ui.on_select_room(row) => |sh, ui| {
         if let Some(id) = usize::try_from(row).ok().and_then(|r| sh.room_at(r)) {
-            sh.act(ui, Action::SelectRoom(id));
+            if id.raw.as_ref() == godwit::view::NOTES_PLACEHOLDER {
+                sh.act(ui, Action::OpenNotes(id.account));
+            } else {
+                sh.act(ui, Action::SelectRoom(id));
+            }
         }
     });
     callback!(ui.on_load_earlier() => |sh, ui| sh.act(ui, Action::LoadEarlier));

@@ -103,6 +103,8 @@ pub enum Action {
     RestorePinSeeds(Vec<AccountId>),
     /// Opens or closes Home's hidden section.
     ToggleHiddenRooms,
+    /// Opens this account's notes-to-self room, creating it if needed.
+    OpenNotes(AccountId),
     /// Marks a chat unread here (until it's opened), whatever its network says.
     MarkRoomUnread(RoomId),
     /// Marks a chat read, at its network too.

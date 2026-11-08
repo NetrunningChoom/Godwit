@@ -2423,6 +2423,10 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
             // The made-up people's direct chats are `dm{n}` for `u{n}`.
             Command::OpenDirect { user } => match user.raw.strip_prefix('u').and_then(|n| n.parse::<usize>().ok()) {
                 Some(n) if n < 14 => vec![Event::RoomOpened(RoomId::new(self.id.clone(), format!("dm{n}")))],
+                _ if user.raw == self.id.user => {
+                    let notes = room("notes", "Saved Notes", RoomKind::Notes, false, 0);
+                    vec![Event::RoomUpdated(notes.clone()), Event::RoomOpened(notes.id)]
+                }
                 _ => Vec::new(),
             },
             Command::CreateGroup { name, .. } => {

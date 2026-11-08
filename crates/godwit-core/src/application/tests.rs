@@ -226,6 +226,35 @@ fn ready(app: &mut Application, n: Network, rooms: Vec<Room>) -> Vec<Effect> {
 }
 
 #[test]
+fn open_notes_creates_for_capable_account_and_selects_existing_room() {
+    let mut app = Application::default();
+    let stoat = account(Network::Stoat);
+    ready(&mut app, Network::Stoat, Vec::new());
+    let effects = app.dispatch(Action::OpenNotes(stoat.clone()));
+    assert_eq!(
+        commands(&effects),
+        [&Command::OpenDirect {
+            user: UserId::new(stoat.clone(), "me")
+        }]
+    );
+
+    let note = room(Network::Stoat, "saved", RoomKind::Notes);
+    app.apply(Event::RoomUpdated(note.clone()));
+    let effects = app.dispatch(Action::OpenNotes(stoat));
+    // Selecting loads the room's history, but never asks to open a DM again.
+    assert!(
+        !commands(&effects)
+            .iter()
+            .any(|c| matches!(c, Command::OpenDirect { .. }))
+    );
+    assert_eq!(app.state().selected, Some(note.id));
+
+    let discord = account(Network::Discord);
+    ready(&mut app, Network::Discord, Vec::new());
+    assert!(app.dispatch(Action::OpenNotes(discord)).is_empty());
+}
+
+#[test]
 fn late_steam_personas_refresh_loaded_authors_only_on_their_account() {
     let mut app = Application::default();
     // Results only count for signed-in accounts.

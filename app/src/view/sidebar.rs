@@ -18,6 +18,10 @@ pub enum RailRow {
     SignIn(godwit_core::network::Network),
 }
 
+/// Home's selectable row may stand for a notes room that has not been
+/// created by its network yet.
+pub const NOTES_PLACEHOLDER: &str = "__godwit_notes_placeholder__";
+
 /// The accounts in the user's rail order; the rest after, as they signed in.
 pub fn ordered_accounts<'a>(state: &'a AppState, order: &[String]) -> Vec<&'a godwit_core::application::Account> {
     let mut accounts: Vec<_> = state.accounts.iter().collect();
@@ -605,6 +609,34 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
                     .unwrap_or(1);
                 row.when = last_talked(activity).into();
                 entries.push((row, main.id.clone(), members, activity, status));
+            }
+            // Stoat creates Saved Notes on first open, so keep a selectable
+            // entry visible before the API has returned its channel.
+            for account in &state.accounts {
+                if account.id.network.has_notes_to_self()
+                    && !state
+                        .rooms
+                        .iter()
+                        .any(|r| r.id.account == account.id && matches!(r.kind, RoomKind::Notes))
+                {
+                    let id = RoomId::new(account.id.clone(), NOTES_PLACEHOLDER);
+                    let mut row = RoomItem {
+                        name: "Saved Notes".into(),
+                        kind: 3,
+                        initials: "SN".into(),
+                        selected: selected == Some(&id),
+                        ..RoomItem::default()
+                    };
+                    if several {
+                        row.subtitle = format!("{} · Notes to yourself", account.display_name).into();
+                        let (badge, has_badge) = picture(images, account.avatar_url.as_deref());
+                        row.account_badge = badge;
+                        row.has_account_badge = has_badge;
+                        row.account_initials = initials(&account.display_name).into();
+                        row.account_badged = true;
+                    }
+                    entries.push((row, id.clone(), vec![id], 0, 1));
+                }
             }
             // Server channels pinned to Home: their own rows, the server's
             // name beneath (only pinned ones; Home stays DMs otherwise).

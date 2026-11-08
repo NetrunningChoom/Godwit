@@ -698,6 +698,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn saved_messages_channel_response_deserializes() {
+        let channel: Channel = serde_json::from_value(serde_json::json!({
+            "_id": "notes-id",
+            "channel_type": "SavedMessages",
+            "user": "ME"
+        }))
+        .unwrap();
+        assert_eq!(channel.id, "notes-id");
+        assert_eq!(channel.channel_type, "SavedMessages");
+        assert_eq!(channel.server, None);
+        assert!(channel.recipients.is_empty());
+    }
+
+    #[test]
     fn proxy_and_embeds() {
         assert_eq!(
             encode_uri_component("https://a.b/c?d=1&e=ü"),

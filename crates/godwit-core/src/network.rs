@@ -44,6 +44,12 @@ impl Network {
         matches!(self, Self::Stoat)
     }
 
+    /// The network has a chat with yourself that can be created by opening
+    /// a direct message to the signed-in user (Stoat's Saved Notes).
+    pub fn has_notes_to_self(self) -> bool {
+        matches!(self, Self::Stoat)
+    }
+
     /// The network keeps favourite people itself (synced across its own
     /// clients), so Godwit reads them and writes stars back.
     pub fn keeps_favourites(self) -> bool {

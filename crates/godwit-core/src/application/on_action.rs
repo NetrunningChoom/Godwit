@@ -1081,6 +1081,28 @@ impl Application {
         }
     }
 
+    pub(super) fn dispatch_open_notes(&mut self, account: AccountId) -> Vec<Effect> {
+        if !account.network.has_notes_to_self() || !self.state.accounts.iter().any(|a| a.id == account) {
+            return Vec::new();
+        }
+        if let Some(room) = self
+            .state
+            .rooms
+            .iter()
+            .find(|r| r.id.account == account && matches!(r.kind, RoomKind::Notes))
+            .map(|r| r.id.clone())
+        {
+            return self.select(room);
+        }
+        // Not there yet: opening a DM with yourself makes it (Stoat's
+        // `User.openDM()` on the own user, stoat.js `User.ts`).
+        let user = UserId::new(account.clone(), account.user.clone());
+        vec![Effect::Backend {
+            account,
+            command: Command::OpenDirect { user },
+        }]
+    }
+
     pub(super) fn dispatch_load_invite(&mut self, account: AccountId, code: Arc<str>) -> Vec<Effect> {
         let key = (account.clone(), code.clone());
         if self

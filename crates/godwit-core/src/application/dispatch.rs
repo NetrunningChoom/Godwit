@@ -133,6 +133,7 @@ impl Application {
                 self.state.show_hidden = !self.state.show_hidden;
                 Vec::new()
             }
+            Action::OpenNotes(account) => self.dispatch_open_notes(account),
             Action::MarkRoomUnread(room) => {
                 if self.state.room(&room).is_some() && !self.state.marked_unread.contains(&room) {
                     self.state.marked_unread.push(room);
