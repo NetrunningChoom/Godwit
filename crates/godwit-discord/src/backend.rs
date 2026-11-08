@@ -58,6 +58,12 @@ pub enum Request {
         channel: String,
         message: String,
     },
+    /// "Mark unread": ack up to `message` with the mentions left after it.
+    AckManual {
+        channel: String,
+        message: String,
+        mention_count: u32,
+    },
     AckBulk(Vec<(String, String)>),
     Typing {
         channel: String,
@@ -790,6 +796,17 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::Ack { channel, message } => Answer::Done {
             what: "marking read",
             result: api.ack(&channel, &message).await.map_err(RequestError::from),
+        },
+        Request::AckManual {
+            channel,
+            message,
+            mention_count,
+        } => Answer::Done {
+            what: "marking unread",
+            result: api
+                .ack_manual(&channel, &message, mention_count)
+                .await
+                .map_err(RequestError::from),
         },
         Request::AckBulk(reads) => Answer::Done {
             what: "marking read",

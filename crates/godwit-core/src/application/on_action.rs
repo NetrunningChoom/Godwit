@@ -1022,6 +1022,9 @@ impl Application {
         let Some(room) = self.state.selected.clone() else {
             return Vec::new();
         };
+        if !self.state.room(&room).is_some_and(|r| r.capabilities.mark_unread) {
+            return Vec::new();
+        }
         let Some(list) = self.state.timelines.get(&room).map(|t| t.messages.clone()) else {
             return Vec::new();
         };

@@ -976,6 +976,7 @@ impl Presenter {
                 .into(),
         );
         ui.set_can_react(room.capabilities.react);
+        ui.set_can_mark_unread(room.capabilities.mark_unread);
         ui.set_can_reply(room.capabilities.reply);
         ui.set_can_edit(room.capabilities.edit);
         ui.set_can_delete(room.capabilities.delete);

@@ -888,6 +888,26 @@ impl NetworkAccount for DiscordAccount {
                     self.sync_rooms(&mut out);
                 }
             }
+            Command::MarkUnread { room, last_read } => {
+                if let Some(channel) = self.channel_of(&room) {
+                    let after = last_read.as_ref().map(|m| m.0.as_ref());
+                    let mention_count = self.store.mark_unread_after(&channel, after);
+                    // With no message before it there is nothing to ack (the
+                    // official client sends a synthetic id there); only the
+                    // local marker moves until the next read.
+                    if let Some(message) = last_read {
+                        req(
+                            &self.net,
+                            Request::AckManual {
+                                channel,
+                                message: message.0.to_string(),
+                                mention_count,
+                            },
+                        );
+                    }
+                    self.sync_rooms(&mut out);
+                }
+            }
             Command::MarkRead { room, last } => {
                 if let Some(channel) = self.channel_of(&room) {
                     let was_unread = self.store.unread(&channel) || self.store.mentions(&channel) > 0;
@@ -1718,6 +1738,20 @@ mod tests {
             })
             .expect("the servers are sent again");
         assert_eq!(folders.iter().filter(|f| **f).count(), 2);
+    }
+
+    #[test]
+    fn demo_mark_unread_moves_the_marker_back_at_once() {
+        let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
+        let room = a.room_id("13").unwrap();
+        let last = a.store.channels["13"].last_message_id.clone().unwrap_or_default();
+        a.store.mark_read("13", &last);
+        assert!(!a.store.unread("13"));
+        a.run(Command::MarkUnread {
+            room,
+            last_read: Some(MessageId("1".into())),
+        });
+        assert!(a.store.unread("13"));
     }
 
     #[test]

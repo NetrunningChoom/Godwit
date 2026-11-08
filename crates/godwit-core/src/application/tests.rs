@@ -2139,6 +2139,18 @@ fn invalid_invites_can_be_retried_explicitly_without_duplicate_inflight_requests
 }
 
 #[test]
+fn marking_unread_needs_the_capability() {
+    let mut app = Application::default();
+    let mut r = dm(Network::Stoat, "r1", "them");
+    r.capabilities.mark_unread = false;
+    let id = r.id.clone();
+    ready(&mut app, Network::Stoat, vec![r]);
+    app.dispatch(Action::SelectRoom(id.clone()));
+    app.apply(page(&id, None, &["m1", "m2"], true));
+    assert!(app.dispatch(Action::MarkUnread(MessageId("m2".into()))).is_empty());
+}
+
+#[test]
 fn marking_unread_reads_up_to_the_message_before() {
     let (mut app, id) = open_dm(&["m1", "m2", "m3"]);
     assert_eq!(

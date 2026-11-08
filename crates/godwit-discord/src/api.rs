@@ -505,6 +505,18 @@ impl Api {
             .map(drop)
     }
 
+    /// Marks a channel read up to `message` by hand ("Mark Unread" acks the
+    /// message before the chosen one), with the mentions after it that stay
+    /// unread. docs.discord.food, Read States, "Acknowledge Message": `manual`
+    /// and `mention_count` make the ack move the marker back.
+    pub async fn ack_manual(&self, channel: &str, message: &str, mention_count: u32) -> Result<()> {
+        let path = format!("/channels/{channel}/messages/{message}/ack");
+        let body = json!({"manual": true, "mention_count": mention_count});
+        self.json(with_json(self.request(Method::POST, &path), &body))
+            .await
+            .map(drop)
+    }
+
     /// Marks channels read, each up to its message, in one request, as the
     /// web client does for a whole server (at most 100 at once).
     pub async fn ack_bulk(&self, reads: &[(String, String)]) -> Result<()> {

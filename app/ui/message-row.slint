@@ -42,6 +42,7 @@ export component MessageRow inherits Rectangle {
     // Its place in the timeline (selection highlights name their row).
     in property <int> row-number;
     in property <bool> can-react;
+    in property <bool> can-mark-unread;
     // What the room allows (Capabilities): no button that does nothing.
     in property <bool> can-reply;
     in property <bool> can-edit;
@@ -368,7 +369,7 @@ export component MessageRow inherits Rectangle {
             if Select.active: MenuRow { glyph: Icons.copy; label: "Copy"; clicked => { Select.copy(); } }
             if Select.active: MenuDivider { }
             if !root.message.system && root.can-reply: MenuRow { glyph: Icons.reply; label: "Reply"; clicked => { root.reply(); } }
-            MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.mark-unread(); } }
+            if root.can-mark-unread: MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.mark-unread(); } }
             MenuRow { glyph: Icons.copy; label: "Copy text"; clicked => { root.copy-text(); } }
             MenuDivider { }
             if !root.message.system && root.can-react: MenuRow { glyph: Icons.emoji; label: "React"; clicked => { root.open-picker(); } }

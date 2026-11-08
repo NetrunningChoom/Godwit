@@ -25,6 +25,7 @@ impl DiscordAccount {
                         }
                         // A short page is the channel's start.
                         let reached_start = page.len() < crate::api::PAGE;
+                        self.store.note_history(&page);
                         let mut messages: Vec<Message> = page.iter().filter_map(|m| self.message(m)).collect();
                         for m in &messages {
                             self.remember_reactions(&channel, m);

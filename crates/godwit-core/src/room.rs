@@ -24,6 +24,9 @@ pub struct Capabilities {
     #[serde(default)]
     pub moderate_reactions: bool,
     pub react: bool,
+    /// "Mark unread" can move the read marker back (the network takes it).
+    #[serde(default)]
+    pub mark_unread: bool,
     pub reply: bool,
     pub attachments: bool,
     /// `||text||` hides text until clicked.
@@ -86,6 +89,7 @@ impl Capabilities {
             delete_others: false,
             moderate_reactions: false,
             react: true,
+            mark_unread: false,
             reply: true,
             attachments: true,
             spoilers: true,
@@ -110,12 +114,14 @@ impl Capabilities {
         match network {
             // Autumn takes attachments up to 20 MB (Stoat's own limit).
             Network::Stoat => Self {
+                mark_unread: true,
                 video: true,
                 max_upload: 20 * 1024 * 1024,
                 ..all
             },
             // Discord without Nitro or boosts (the account adjusts per room).
             Network::Discord => Self {
+                mark_unread: true,
                 threads: true,
                 max_upload: 10 * 1024 * 1024,
                 ..all

@@ -1122,6 +1122,12 @@ pub fn discord_world() -> (
             format!("{} __{}__ ~~{}~~", filler(314, 3), filler(315, 1), filler(316, 1)),
         ),
         msg(
+            204,
+            &general,
+            user(1),
+            "meet at <t:1793100000:t> (<t:1793100000:T>), <t:1793100000:d> / <t:1793100000:D>, <t:1793100000:f>, <t:1793100000:F>, <t:1793100000:R>".into(),
+        ),
+        msg(
             205,
             &general,
             user(3),

@@ -225,7 +225,9 @@ impl DiscordAccount {
             }),
             // The change is applied as the gateway's settings update would.
             Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(room, *change)),
-            Command::Typing { .. } | Command::MarkRead { .. } | Command::Focus { .. } => return None,
+            Command::Typing { .. } | Command::MarkRead { .. } | Command::MarkUnread { .. } | Command::Focus { .. } => {
+                return None;
+            }
             Command::LoadMembers { .. } | Command::LoadServerOverview { .. } | Command::OpenDirect { .. } => {
                 return None;
             }

@@ -232,6 +232,8 @@ impl DiscordAccount {
                     self.room_id(d["channel_id"].as_str().unwrap_or_default()),
                     d["id"].as_str(),
                 ) {
+                    self.store
+                        .forget_message(d["channel_id"].as_str().unwrap_or_default(), id);
                     out.push(Event::MessageDeleted {
                         room,
                         id: MessageId(id.into()),
@@ -241,6 +243,8 @@ impl DiscordAccount {
             "MESSAGE_DELETE_BULK" => {
                 if let Some(room) = self.room_id(d["channel_id"].as_str().unwrap_or_default()) {
                     for id in d["ids"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                        self.store
+                            .forget_message(d["channel_id"].as_str().unwrap_or_default(), id);
                         out.push(Event::MessageDeleted {
                             room: room.clone(),
                             id: MessageId(id.into()),
@@ -249,10 +253,8 @@ impl DiscordAccount {
                 }
             }
             "MESSAGE_ACK" => {
-                if let (Some(c), Some(m)) = (d["channel_id"].as_str(), d["message_id"].as_str()) {
-                    self.store.mark_read(c, m);
-                    self.sync_rooms(out);
-                }
+                self.store.message_ack(d);
+                self.sync_rooms(out);
             }
             "TYPING_START" => {
                 let (Some(channel), Some(user)) = (d["channel_id"].as_str(), d["user_id"].as_str()) else {

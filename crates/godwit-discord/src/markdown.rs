@@ -137,7 +137,42 @@ impl<N: Names> Resolve for Unpadded<'_, N> {
         self.names.emoji_url(unpad(id))
     }
     fn timestamp(&self, secs: i64, style: Option<char>) -> String {
-        godwit_stoat::timefmt::timestamp(secs, style)
+        timestamp(secs, style, chrono::Utc::now().timestamp(), &chrono::Local)
+    }
+}
+
+/// A `<t:…>` timestamp as Discord's client words it, in the reader's time
+/// zone `tz` (docs.discord.food, Reference, "Message Formatting" timestamp
+/// styles). The docs' examples are en-US ("April 20, 2021 at 16:20"); the
+/// official client follows the locale, and we use the en-GB order, which
+/// matches the app's own dd/mm dates, with a 24-hour clock.
+/// `now` and `tz` are parameters so tests are exact. `R` is computed when the
+/// message is drawn and never ticks: a timer would be idle work for little.
+pub fn timestamp<Tz: chrono::TimeZone>(secs: i64, style: Option<char>, now: i64, tz: &Tz) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let Some(t) = tz.timestamp_opt(secs, 0).single() else {
+        return format!("<t:{secs}>");
+    };
+    match style {
+        Some('t') => t.format("%H:%M").to_string(),
+        Some('T') => t.format("%H:%M:%S").to_string(),
+        Some('d') => t.format("%d/%m/%Y").to_string(),
+        Some('s') => t.format("%d/%m/%Y, %H:%M").to_string(),
+        Some('S') => t.format("%d/%m/%Y, %H:%M:%S").to_string(),
+        Some('D') => t.format("%-d %B %Y").to_string(),
+        Some('F') => t.format("%A, %-d %B %Y %H:%M").to_string(),
+        Some('R') => {
+            let diff = now - secs;
+            let r = godwit_stoat::timefmt::relative(diff.abs() * 1000);
+            if diff >= 0 || r == "just now" {
+                r
+            } else {
+                format!("in {}", r.trim_end_matches(" ago"))
+            }
+        }
+        _ => t.format("%-d %B %Y %H:%M").to_string(),
     }
 }
 
@@ -212,5 +247,36 @@ mod tests {
         assert!(plain.contains("user123"), "{plain}");
         assert!(plain.contains("chan45"), "{plain}");
         assert!(!plain.contains("000"), "{plain}");
+    }
+
+    #[test]
+    fn timestamp_styles() {
+        let tz = chrono::FixedOffset::east_opt(2 * 3600).unwrap();
+        let t = 1_618_928_430; // 2021-04-20 14:20:30 UTC, 16:20:30 at +2
+        let f = |c| timestamp(t, c, t, &tz);
+        assert_eq!(f(Some('t')), "16:20");
+        assert_eq!(f(Some('T')), "16:20:30");
+        assert_eq!(f(Some('d')), "20/04/2021");
+        assert_eq!(f(Some('s')), "20/04/2021, 16:20");
+        assert_eq!(f(Some('S')), "20/04/2021, 16:20:30");
+        assert_eq!(f(Some('D')), "20 April 2021");
+        assert_eq!(f(None), "20 April 2021 16:20");
+        assert_eq!(f(Some('f')), "20 April 2021 16:20");
+        assert_eq!(f(Some('F')), "Tuesday, 20 April 2021 16:20");
+        assert_eq!(f(Some('R')), "just now");
+        assert_eq!(timestamp(t, Some('R'), t + 2 * 86_400, &tz), "2 days ago");
+        assert_eq!(timestamp(t, Some('R'), t - 3 * 3600, &tz), "in 3 hours");
+    }
+
+    #[test]
+    fn timestamps_parse_in_every_style_and_bad_forms_stay_text() {
+        for s in ["t", "T", "d", "D", "f", "F", "R", "s", "S"] {
+            let out = to_plain(&format!("<t:1618928430:{s}>"), &Fake);
+            assert!(!out.contains("<t:"), "{s}: {out}");
+        }
+        assert!(!to_plain("<t:1618928430>", &Fake).contains("<t:"));
+        for bad in ["<t:abc>", "<t:>"] {
+            assert!(to_plain(bad, &Fake).contains("t:"), "{bad}");
+        }
     }
 }

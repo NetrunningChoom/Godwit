@@ -276,6 +276,10 @@ pub struct Store {
     /// Members as seen: (guild, user).
     pub members: HashMap<(String, String), Member>,
     pub read: HashMap<String, ReadState>,
+    /// Per channel, the ids (by snowflake order) of messages seen that
+    /// mention us: what "Mark unread" counts for the new `mention_count`.
+    /// Bounded; only what was loaded is known, as in the official client.
+    pub mention_ids: HashMap<String, std::collections::BTreeSet<(usize, String)>>,
     /// user → relationship type.
     pub relationships: HashMap<String, u64>,
     /// user → status ("online", "idle", "dnd", "offline").
@@ -681,6 +685,7 @@ impl Store {
     }
 
     pub fn remove_channel(&mut self, id: &str) {
+        self.mention_ids.remove(id);
         if let Some(c) = self.channels.remove(id)
             && let Some(g) = c.guild.as_ref().and_then(|g| self.guilds.get_mut(g))
         {
@@ -733,17 +738,91 @@ impl Store {
             self.mark_read(channel, id);
             return false;
         }
-        let mentioned = m["mention_everyone"] == true
+        let mentioned = self.mentions_us(m, channel, me);
+        if mentioned {
+            self.read.entry(channel.to_owned()).or_default().mentions += 1;
+        }
+        self.note_mention(channel, id, mentioned);
+        mentioned
+    }
+
+    fn mentions_us(&self, m: &Value, channel: &str, me: &str) -> bool {
+        m["mention_everyone"] == true
             || m["mentions"]
                 .as_array()
                 .into_iter()
                 .flatten()
                 .any(|u| u["id"].as_str() == Some(me))
-            || self.channels.get(channel).is_some_and(|c| c.kind == DM);
-        if mentioned {
-            self.read.entry(channel.to_owned()).or_default().mentions += 1;
+            || self.channels.get(channel).is_some_and(|c| c.kind == DM)
+    }
+
+    fn note_mention(&mut self, channel: &str, id: &str, mentioned: bool) {
+        const KEEP: usize = 500;
+        if !mentioned {
+            return;
         }
-        mentioned
+        let set = self.mention_ids.entry(channel.to_owned()).or_default();
+        set.insert((id.len(), id.to_owned()));
+        while set.len() > KEEP {
+            set.pop_first();
+        }
+    }
+
+    /// A deleted message no longer counts toward "Mark unread"'s mentions.
+    pub fn forget_message(&mut self, channel: &str, id: &str) {
+        if let Some(set) = self.mention_ids.get_mut(channel) {
+            set.remove(&(id.len(), id.to_owned()));
+        }
+    }
+
+    /// A MESSAGE_ACK. A manual one (docs.discord.food, Read States: `manual`,
+    /// `mention_count`; our own or another session's "Mark Unread") sets the
+    /// marker and mentions as given, even backwards; others only move forward.
+    pub fn message_ack(&mut self, d: &Value) {
+        let (Some(c), Some(m)) = (d["channel_id"].as_str(), d["message_id"].as_str()) else {
+            return;
+        };
+        if d["manual"] == true {
+            let entry = self.read.entry(c.to_owned()).or_default();
+            entry.last_message_id = Some(m.to_owned());
+            entry.mentions = d["mention_count"]
+                .as_u64()
+                .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX));
+        } else {
+            self.mark_read(c, m);
+        }
+    }
+
+    /// Notes which of a loaded history page mention us (so a later "Mark
+    /// unread" can count them); the read state itself isn't touched.
+    pub fn note_history(&mut self, page: &[Value]) {
+        let me = self.me.as_ref().map(|u| u.id.clone()).unwrap_or_default();
+        for m in page {
+            let (Some(channel), Some(id)) = (m["channel_id"].as_str(), m["id"].as_str()) else {
+                continue;
+            };
+            if m["author"]["id"].as_str() == Some(me.as_str()) {
+                continue;
+            }
+            let mentioned = self.mentions_us(m, channel, &me);
+            self.note_mention(channel, id, mentioned);
+        }
+    }
+
+    /// Mark unread: everything after `message` is unread again (`None`: the
+    /// whole channel). Returns the mentions among it, the `mention_count` the
+    /// official client sends with its manual ack.
+    pub fn mark_unread_after(&mut self, channel: &str, message: Option<&str>) -> u32 {
+        let after = message.unwrap_or("0");
+        let count = self
+            .mention_ids
+            .get(channel)
+            .map_or(0, |set| set.iter().filter(|(_, id)| newer(id, after)).count());
+        let count = u32::try_from(count).unwrap_or(u32::MAX);
+        let entry = self.read.entry(channel.to_owned()).or_default();
+        entry.last_message_id = Some(after.to_owned());
+        entry.mentions = count;
+        count
     }
 
     pub fn mark_read(&mut self, channel: &str, message: &str) {
@@ -1209,5 +1288,47 @@ mod tests {
         s.message_created(&json!({"id": "502", "channel_id": "13", "author": {"id": "100", "username": "me_bloop"}}));
         assert!(!s.unread("13"), "writing reads the channel");
         assert!(newer("1000", "999") && !newer("999", "1000"));
+    }
+
+    #[test]
+    fn mark_unread_moves_the_marker_and_counts_mentions() {
+        let mut s = Store {
+            me: User::from(&json!({"id": "100", "username": "me"})),
+            ..Default::default()
+        };
+        s.channels.insert(
+            "13".into(),
+            Channel {
+                id: "13".into(),
+                last_message_id: Some("505".into()),
+                ..Default::default()
+            },
+        );
+        let msg = |id: &str, mention: bool| {
+            json!({"id": id, "channel_id": "13", "guild_id": "10", "author": {"id": "200", "username": "z"},
+                "mentions": if mention { json!([{"id": "100"}]) } else { json!([]) }})
+        };
+        s.note_history(&[msg("501", true), msg("502", false), msg("503", true), msg("505", true)]);
+        s.mark_read("13", "505");
+        assert!(!s.unread("13"));
+        // Unread from 503 on: 503 and 505 mention us.
+        assert_eq!(s.mark_unread_after("13", Some("502")), 2);
+        assert!(s.unread("13"));
+        assert_eq!(s.mentions("13"), 2);
+        assert_eq!(s.mark_unread_after("13", Some("505")), 0);
+        assert!(!s.unread("13"));
+        // Manual acks (our echo, other sessions) set marker and mentions, backwards too.
+        s.message_ack(&json!({"channel_id": "13", "message_id": "502", "manual": true, "mention_count": 2}));
+        assert!(s.unread("13") && s.mentions("13") == 2);
+        // A plain ack only moves forward.
+        s.message_ack(&json!({"channel_id": "13", "message_id": "501"}));
+        assert!(s.unread("13") && s.mentions("13") == 2);
+        s.message_ack(&json!({"channel_id": "13", "message_id": "505"}));
+        assert!(!s.unread("13") && s.mentions("13") == 0);
+        // Deleted messages and removed channels stop counting.
+        s.forget_message("13", "503");
+        assert_eq!(s.mark_unread_after("13", Some("502")), 1);
+        s.remove_channel("13");
+        assert!(!s.mention_ids.contains_key("13"));
     }
 }

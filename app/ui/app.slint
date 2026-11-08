@@ -393,6 +393,7 @@ export component AppWindow inherits Window {
     callback jump-to-present();
     in property <bool> can-send;
     in property <bool> can-react;
+    in property <bool> can-mark-unread;
     in property <bool> can-reply;
     in property <bool> can-edit;
     in property <bool> can-delete;
@@ -1170,6 +1171,7 @@ export component AppWindow inherits Window {
                                     jump-to-present => { root.jump-to-present(); }
                                         can-send: root.can-send;
                                         can-react: root.can-react;
+                                        can-mark-unread: root.can-mark-unread;
                                         can-reply: root.can-reply;
                                         can-edit: root.can-edit;
                                         can-delete: root.can-delete;
