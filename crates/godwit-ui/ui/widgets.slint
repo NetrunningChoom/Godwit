@@ -506,11 +506,13 @@ export component TextArea inherits Rectangle {
 // new value passed to `toggled`.
 export component Toggle inherits Rectangle {
     in property <bool> checked;
+    in property <bool> enabled: true;
     callback toggled(bool /* the new value */);
     width: 52px;
     height: 32px;
     border-radius: Theme.radius-lg;
     background: root.checked ? Theme.primary : Theme.surface-highest;
+    opacity: root.enabled ? 1.0 : 0.38;
     border-width: root.checked ? 0 : 2px;
     border-color: Theme.outline;
     Rectangle {
@@ -522,7 +524,8 @@ export component Toggle inherits Rectangle {
         background: root.checked ? Theme.on-primary : Theme.outline;
     }
     TouchArea {
-        mouse-cursor: pointer;
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
         clicked => {
             root.toggled(!root.checked);
         }

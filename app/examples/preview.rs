@@ -505,10 +505,14 @@ fn channel_settings_scene() -> Scene<'static> {
 /// The Permissions page of a channel: @everyone and one role override, with
 /// a role left to add. The demo account has no overrides, so the page is
 /// filled from an overview made here.
-fn channel_permissions_scene() -> Scene<'static> {
+fn channel_permissions_scene(group: bool) -> Scene<'static> {
     Scene::new(
-        "channel-permissions",
-        Box::new(|app, ui, _, _| {
+        if group {
+            "group-permissions"
+        } else {
+            "channel-permissions"
+        },
+        Box::new(move |app, ui, _, _| {
             use godwit_core::channel_settings::{
                 ChannelOverride, ChannelOverrides, ChannelOverview, OverrideChoice, OverrideTarget,
             };
@@ -542,39 +546,64 @@ fn channel_permissions_scene() -> Scene<'static> {
                 allow,
                 deny,
             };
+            let permissions = if group {
+                vec![
+                    perm(Some("Admin"), 1, "Manage Channel", "Edit group name and description"),
+                    perm(
+                        None,
+                        4,
+                        "Manage Permissions",
+                        "Whether other users can edit these settings",
+                    ),
+                    perm(Some("Channels"), 1 << 22, "Send Messages", "Send messages in channel"),
+                    perm(None, 1 << 27, "Upload Files", "Send attachments to chat"),
+                ]
+            } else {
+                vec![
+                    perm(
+                        Some("General Channel Permissions"),
+                        1,
+                        "View Channel",
+                        "Allows members to view this channel.",
+                    ),
+                    perm(None, 2, "Create Invite", "Allows members to invite new people."),
+                    perm(
+                        Some("Text Channel Permissions"),
+                        4,
+                        "Send Messages",
+                        "Allows members to send messages in this channel.",
+                    ),
+                    perm(None, 8, "Attach Files", "Allows members to upload files or media."),
+                ]
+            };
             app.apply(Event::ChannelOverview {
                 room,
                 request,
                 result: Ok(Some(ChannelOverview {
                     name: "lounge".into(),
-                    can_manage: true,
+                    can_manage: !group,
+                    is_group: group,
+                    icons: !group,
                     overrides: Some(ChannelOverrides {
-                        entries: vec![
-                            entry("E", "@everyone", true, 0, 2),
-                            entry("M", "Moderators", false, 1 | 4, 0),
-                        ],
-                        permissions: vec![
-                            perm(
-                                Some("General Channel Permissions"),
-                                1,
-                                "View Channel",
-                                "Allows members to view this channel.",
-                            ),
-                            perm(None, 2, "Create Invite", "Allows members to invite new people."),
-                            perm(
-                                Some("Text Channel Permissions"),
-                                4,
-                                "Send Messages",
-                                "Allows members to send messages in this channel.",
-                            ),
-                            perm(None, 8, "Attach Files", "Allows members to upload files or media."),
-                        ]
-                        .into(),
-                        choices: vec![OverrideChoice {
-                            target: target("S"),
-                            name: "Supporters".into(),
-                        }],
+                        entries: if group {
+                            vec![entry("default", "Everyone", true, (1 << 22) | (1 << 30), 0)]
+                        } else {
+                            vec![
+                                entry("E", "@everyone", true, 0, 2),
+                                entry("M", "Moderators", false, 1 | 4, 0),
+                            ]
+                        },
+                        permissions: permissions.into(),
+                        choices: if group {
+                            Vec::new()
+                        } else {
+                            vec![OverrideChoice {
+                                target: target("S"),
+                                name: "Supporters".into(),
+                            }]
+                        },
                         can_edit: true,
+                        supports_deny: !group,
                         grantable: u64::MAX,
                     }),
                     ..Default::default()
@@ -583,8 +612,10 @@ fn channel_permissions_scene() -> Scene<'static> {
             let mut images = Images::offline();
             let mut editor = godwit::channel_settings::ChannelEditor::default();
             editor.show(ui, app.state(), &mut images);
-            editor.show_page(1);
-            editor.select_override(app.state(), 1);
+            if !group {
+                editor.show_page(1);
+                editor.select_override(app.state(), 1);
+            }
             editor.show(ui, app.state(), &mut images);
             Screen::Main
         }),
@@ -1460,7 +1491,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         },
         channel_settings_scene(),
-        channel_permissions_scene(),
+        channel_permissions_scene(false),
+        channel_permissions_scene(true),
         category_settings_scene(),
         create_category_scene(),
         create_in_category_scene(),

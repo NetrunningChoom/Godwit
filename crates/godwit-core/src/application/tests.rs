@@ -4024,6 +4024,7 @@ fn overrides_page(app: &mut Application, can_edit: bool, grantable: u64) -> Room
                     name: "Subs".into(),
                 }],
                 can_edit,
+                supports_deny: true,
                 grantable,
             }),
             ..Default::default()

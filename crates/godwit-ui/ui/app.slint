@@ -122,6 +122,7 @@ export component AppWindow inherits Window {
     in property <string> channel-edit-icon-label;
     in property <bool> channel-edit-has-icons;
     in property <bool> channel-edit-is-category;
+    in property <bool> channel-edit-is-group;
     in property <bool> channel-edit-has-slowmode;
     in property <[string]> channel-edit-slowmode-choices;
     in-out property <int> channel-edit-slowmode-index;
@@ -1598,7 +1599,7 @@ export component AppWindow inherits Window {
         dirty: root.channel-edit-dirty; failed: root.channel-edit-failed; status: root.channel-edit-status;
         name <=> root.channel-edit-name; description <=> root.channel-edit-description; mature <=> root.channel-edit-mature;
         icon: root.channel-edit-icon; has-icon: root.channel-edit-has-icon; icon-label: root.channel-edit-icon-label;
-        has-icons: root.channel-edit-has-icons; is-category: root.channel-edit-is-category;
+        has-icons: root.channel-edit-has-icons; is-category: root.channel-edit-is-category; is-group: root.channel-edit-is-group;
         has-slowmode: root.channel-edit-has-slowmode; slowmode-choices: root.channel-edit-slowmode-choices;
         slowmode-index <=> root.channel-edit-slowmode-index; description-hint: root.channel-edit-description-hint;
         close => { root.close-channel-settings(); } save => { root.save-channel-overview(); }

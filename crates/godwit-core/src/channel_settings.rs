@@ -18,6 +18,8 @@ pub struct ChannelOverview {
     pub can_manage: bool,
     /// A category: only its name (and deleting it) apply.
     pub is_category: bool,
+    /// A group conversation: only its permissions page is available here.
+    pub is_group: bool,
     /// The network gives channels an icon (the picture editor shows).
     pub icons: bool,
     /// Seconds a person waits between messages (slowmode), or None where
@@ -70,6 +72,9 @@ pub struct ChannelOverrides {
     pub choices: Vec<OverrideChoice>,
     /// Whether this account may change overrides (Manage Permissions here).
     pub can_edit: bool,
+    /// Whether entries can carry explicit denies. Group permissions are a
+    /// single allow bitset in Stoat.
+    pub supports_deny: bool,
     /// The permission bits this account may allow or deny: it can't grant
     /// what it doesn't have itself (administrators and owners have all).
     pub grantable: u64,
@@ -89,9 +94,10 @@ impl ChannelOverrides {
         let known =
             self.entries.iter().any(|e| &e.target == target) || self.choices.iter().any(|c| &c.target == target);
         self.can_edit
+            && (self.supports_deny || deny == 0)
             && known
             && allow & deny == 0
-            && (allow | deny) & !listed == 0
+            && ((allow ^ old_allow) | (deny ^ old_deny)) & !listed == 0
             && ((allow ^ old_allow) | (deny ^ old_deny)) & !self.grantable == 0
     }
 }

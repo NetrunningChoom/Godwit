@@ -52,6 +52,7 @@ impl DiscordAccount {
             mature: c.nsfw,
             can_manage: true,
             is_category: category,
+            is_group: false,
             slowmode: (!category).then_some(c.slowmode),
             description_max: topic_max(c),
             overrides: self.channel_overrides(c),
@@ -173,6 +174,7 @@ impl DiscordAccount {
             permissions,
             choices,
             can_edit: self.store.can(&c.id, p::MANAGE_ROLES),
+            supports_deny: true,
             grantable: self.grantable(c),
         })
     }

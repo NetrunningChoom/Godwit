@@ -1495,6 +1495,7 @@ impl DemoAccount {
                     mature: false,
                     can_manage: true,
                     is_category: false,
+                    is_group: false,
                     icons: true,
                     slowmode: Some(0),
                     description_max: 0,

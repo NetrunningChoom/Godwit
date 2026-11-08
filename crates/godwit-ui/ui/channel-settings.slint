@@ -10,8 +10,8 @@ import { AdminRoleItem, OverridePermItem } from "types.slint";
 // A server channel's settings, as the official ChannelSettings: a sidebar
 // with Overview and (with Manage Channel) Delete Channel, and the Overview's
 // icon, name, description and mature switch, and (where the network has
-// per-role overrides) Permissions: a list of roles and members, and for
-// each the allow / inherit / deny of every permission. Webhooks come later.
+// per-role overrides) Permissions. Groups can expose only their default
+// permission set. Webhooks come later.
 export component ChannelSettings inherits Rectangle {
     in property <string> title;
     in property <bool> loaded;
@@ -30,6 +30,7 @@ export component ChannelSettings inherits Rectangle {
     // and the one now); a category has only a name.
     in property <bool> has-icons;
     in property <bool> is-category;
+    in property <bool> is-group;
     in property <bool> has-slowmode;
     in property <[string]> slowmode-choices;
     in-out property <int> slowmode-index;
@@ -67,7 +68,7 @@ export component ChannelSettings inherits Rectangle {
                 VerticalLayout {
                     padding: Theme.space-4; spacing: Theme.space-1; alignment: start;
                     Text { text: root.title; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; overflow: elide; }
-                    Section { label: "Overview"; selected: root.page == 0; clicked => { root.show-page(0); } }
+                    if !root.is-group: Section { label: "Overview"; selected: root.page == 0; clicked => { root.show-page(0); } }
                     if root.has-overrides: Section { label: "Permissions"; selected: root.page == 1; clicked => { root.show-page(1); } }
                     if root.allowed: Rectangle { height: 12px; }
                     if root.allowed: Section { label: root.is-category ? "Delete Category" : "Delete Channel"; danger: true; clicked => { root.confirm-delete = true; } }
@@ -80,7 +81,7 @@ export component ChannelSettings inherits Rectangle {
                     Text { text: root.page == 1 ? "Permissions" : "Overview"; font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
                     Button { text: "Close"; kind: "text"; clicked => { root.close(); } }
                 }
-                if root.page == 0: overview := ScrollView {
+                if root.page == 0 && !root.is-group: overview := ScrollView {
                     vertical-stretch: 1;
                     VerticalLayout {
                         width: min(overview.visible-width, 680px);
@@ -165,7 +166,8 @@ export component ChannelSettings inherits Rectangle {
                                             Text { text: p.title; color: Theme.on-surface; }
                                             Text { text: p.description; font-size: Theme.text-small; color: Theme.outline; wrap: word-wrap; }
                                         }
-                                        TriState { y: (parent.height - self.height) / 2; state: p.state; enabled: root.override-can-edit && !p.locked && !root.busy; chose(s) => { root.set-override-permission(i, s); } }
+                                        if p.tri-state: TriState { y: (parent.height - self.height) / 2; state: p.state; enabled: root.override-can-edit && !p.locked && !root.busy; chose(s) => { root.set-override-permission(i, s); } }
+                                        if !p.tri-state: Toggle { y: (parent.height - self.height) / 2; checked: p.state == 1; enabled: root.override-can-edit && !p.locked && !root.busy; toggled(on) => { root.set-override-permission(i, on ? 1 : 0); } }
                                     }
                                 }
                             }
@@ -177,7 +179,7 @@ export component ChannelSettings inherits Rectangle {
                         }
                     }
                 }
-                if root.page == 0: HorizontalLayout {
+                if root.page == 0 && !root.is-group: HorizontalLayout {
                     padding: Theme.space-5; spacing: Theme.space-3; alignment: end;
                     Button { text: "Reset"; enabled: root.loaded && !root.busy; clicked => { root.reset(); } }
                     Button { text: "Save"; kind: "filled"; enabled: root.loaded && root.allowed && !root.busy && root.dirty; clicked => { root.save(); } }

@@ -291,6 +291,7 @@ impl ChannelEditor {
             } else {
                 0
             },
+            tri_state: o.supports_deny,
             locked: p.bit & o.grantable == 0,
         };
         match self.rows {
@@ -346,6 +347,8 @@ impl ChannelEditor {
                 .map_or("", |o| o.name.as_ref())
                 .into(),
         );
+        let is_group = s.overview.as_ref().is_some_and(|o| o.is_group);
+        ui.set_channel_edit_is_group(is_group);
         let error = self.error.as_deref().or(s.error.as_deref());
         ui.set_channel_edit_failed(error.is_some());
         ui.set_channel_edit_status(
@@ -372,6 +375,8 @@ impl ChannelEditor {
         ui.set_channel_edit_has_overrides(overrides.is_some());
         if overrides.is_none() {
             self.page = 0;
+        } else if is_group {
+            self.page = 1;
         }
         ui.set_channel_edit_page(self.page);
         match overrides {
@@ -471,6 +476,7 @@ mod tests {
             permissions: vec![perm(1), perm(2), perm(4)].into(),
             choices: Vec::new(),
             can_edit: true,
+            supports_deny: true,
             grantable: u64::MAX,
         }
     }
@@ -520,5 +526,14 @@ mod tests {
         assert!(e.draft.is_none());
         e.set_permission_in(&o, 0, 1);
         assert_eq!(e.reconcile(&o), Some((0, (1, 0))));
+    }
+
+    #[test]
+    fn group_bitsets_preserve_unlisted_bits_and_reject_deny_values() {
+        let mut o = overrides((1 << 60, 0), (0, 0));
+        o.supports_deny = false;
+        let everyone = target("E");
+        assert!(o.may_set(&everyone, (1 << 60) | 1, 0));
+        assert!(!o.may_set(&everyone, (1 << 60) | 1, 2));
     }
 }

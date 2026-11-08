@@ -83,8 +83,12 @@ impl StoatAccount {
             send: can(SEND_MESSAGE),
             // The official ChannelSettings is available to channel managers
             // and to people who can manage permission overrides.
-            manage_channel: c.server.is_some()
-                && (can(crate::permissions::MANAGE_CHANNEL) || can(crate::permissions::MANAGE_PERMISSIONS)),
+            manage_channel: if c.channel_type == "Group" {
+                can(crate::permissions::MANAGE_PERMISSIONS)
+            } else {
+                c.server.is_some()
+                    && (can(crate::permissions::MANAGE_CHANNEL) || can(crate::permissions::MANAGE_PERMISSIONS))
+            },
             react: can(REACT),
             attachments: can(UPLOAD_FILES),
             voice: (c.voice.is_some() || c.server.is_none()) && can(CONNECT),

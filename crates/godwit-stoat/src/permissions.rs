@@ -97,6 +97,11 @@ pub fn channel_list() -> std::sync::Arc<[godwit_core::server_settings::Permissio
     list_for(EditContext::TextChannel)
 }
 
+/// The official permissions shown for members of a group.
+pub fn group_list() -> std::sync::Arc<[godwit_core::server_settings::PermissionInfo]> {
+    list_for(EditContext::Group)
+}
+
 fn list_for(context: EditContext) -> std::sync::Arc<[godwit_core::server_settings::PermissionInfo]> {
     LIST.iter()
         .filter_map(|i| {

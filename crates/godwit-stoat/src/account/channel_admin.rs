@@ -18,13 +18,21 @@ impl StoatAccount {
         let Some(c) = self.store.channels.get(room.raw.as_ref()) else {
             return Err("This channel is no longer available.");
         };
-        if c.server.is_none() {
-            return Err("Only server channels have these settings.");
+        if c.server.is_none() && c.channel_type != "Group" {
+            return Err("Only server channels and groups have these settings.");
         }
-        if !self.store.can(&c.id, crate::permissions::MANAGE_CHANNEL)
-            && !self.store.can(&c.id, crate::permissions::MANAGE_PERMISSIONS)
-        {
-            return Err("You need Manage Channels or Manage Permissions for this.");
+        let can_open = if c.channel_type == "Group" {
+            self.store.can(&c.id, crate::permissions::MANAGE_PERMISSIONS)
+        } else {
+            self.store.can(&c.id, crate::permissions::MANAGE_CHANNEL)
+                || self.store.can(&c.id, crate::permissions::MANAGE_PERMISSIONS)
+        };
+        if !can_open {
+            return Err(if c.channel_type == "Group" {
+                "You need Manage Permissions for this group."
+            } else {
+                "You need Manage Channels or Manage Permissions for this."
+            });
         }
         Ok(c)
     }
@@ -32,6 +40,9 @@ impl StoatAccount {
     /// A channel this account may edit or delete.
     fn managed_channel(&self, room: &RoomId) -> Result<&Channel, &'static str> {
         let c = self.channel_settings_channel(room)?;
+        if c.server.is_none() {
+            return Err("Group details can't be changed from this page.");
+        }
         if !self.store.can(&c.id, crate::permissions::MANAGE_CHANNEL) {
             return Err("You need the Manage Channels permission for this.");
         }
@@ -39,8 +50,34 @@ impl StoatAccount {
     }
 
     /// Values for the official ChannelPermissionsEditor, with @everyone
-    /// first and role rows in the server's role priority order.
+    /// first and (for server channels) role rows in server role priority order.
     fn channel_overrides(&self, channel: &Channel) -> Option<ChannelOverrides> {
+        let is_group = channel.channel_type == "Group";
+        if is_group {
+            let permissions = crate::permissions::group_list();
+            let allow = channel
+                .permissions
+                .map_or(crate::permissions::DEFAULT_DIRECT_MESSAGE, |p| p as u64);
+            let grantable = self.store.channel_permissions(&channel.id);
+            return Some(ChannelOverrides {
+                entries: vec![ChannelOverride {
+                    target: OverrideTarget {
+                        id: "default".into(),
+                        member: false,
+                    },
+                    name: "Everyone".into(),
+                    colour: None,
+                    everyone: true,
+                    allow,
+                    deny: 0,
+                }],
+                permissions,
+                choices: Vec::new(),
+                can_edit: self.store.can(&channel.id, crate::permissions::MANAGE_PERMISSIONS),
+                supports_deny: false,
+                grantable,
+            });
+        }
         let server_id = channel.server.as_deref()?;
         let server = self.store.servers.get(server_id)?;
         let permissions = crate::permissions::channel_list();
@@ -90,6 +127,7 @@ impl StoatAccount {
             permissions,
             choices,
             can_edit,
+            supports_deny: true,
             grantable,
         })
     }
@@ -103,8 +141,9 @@ impl StoatAccount {
             description: c.description.as_deref().unwrap_or_default().into(),
             icon_url: c.icon.as_ref().and_then(|f| self.file_url(f)).map(Into::into),
             mature: c.nsfw,
-            can_manage: self.store.can(&c.id, crate::permissions::MANAGE_CHANNEL),
+            can_manage: c.server.is_some() && self.store.can(&c.id, crate::permissions::MANAGE_CHANNEL),
             is_category: false,
+            is_group: c.channel_type == "Group",
             icons: true,
             // Stoat has no slowmode.
             slowmode: None,
@@ -215,12 +254,20 @@ impl StoatAccount {
                 let (Ok(allow), Ok(deny)) = (i64::try_from(allow), i64::try_from(deny)) else {
                     return failed("Those permission values aren't supported by Stoat.");
                 };
+                let permissions = if c.channel_type == "Group" {
+                    if role.is_some() || deny != 0 {
+                        return failed("Group permissions only support a default allow bitset.");
+                    }
+                    serde_json::json!(allow)
+                } else {
+                    serde_json::json!({ "a": allow, "d": deny })
+                };
                 self.net
                     .send(Cmd::Channel(ChannelCmd::Edit(ChannelEditCmd::SetChannelPermissions {
                         channel: room.raw.to_string(),
                         request,
                         role,
-                        permissions: serde_json::json!({ "a": allow, "d": deny }),
+                        permissions,
                     })));
                 Vec::new()
             }
@@ -248,6 +295,7 @@ impl StoatAccount {
                             c.nsfw = updated.nsfw;
                             c.default_permissions = updated.default_permissions;
                             c.role_permissions = updated.role_permissions;
+                            c.permissions = updated.permissions;
                         }
                         self.sync_rooms(out);
                         self.channel_overview(&room).map(Some).map_err(Into::into)
@@ -310,6 +358,169 @@ mod tests {
         assert_eq!(overrides.entries[1].deny, 1 << 22);
         assert!(overrides.choices.is_empty());
         assert!(overrides.can_edit);
+    }
+
+    #[test]
+    fn group_permissions_show_binary_everyone_bits_and_save_the_group_bitset() {
+        let (mut a, _tx, mut cmds, _) = connected();
+        let group: Channel = serde_json::from_value(serde_json::json!({
+            "_id": "G1",
+            "channel_type": "Group",
+            "owner": "ME",
+            "permissions": crate::permissions::SEND_MESSAGE | crate::permissions::CONNECT
+        }))
+        .expect("a group channel");
+        a.store.channels.insert("G1".into(), group);
+        while cmds.try_recv().is_ok() {}
+        let group_room = a.room(&room("G1").account, a.store.channels.get("G1").expect("group"));
+        assert!(group_room.capabilities.manage_channel);
+
+        let loaded = a.run_command(Command::LoadChannelOverview {
+            room: room("G1"),
+            request: 1,
+        });
+        let [
+            Event::ChannelOverview {
+                result: Ok(Some(overview)),
+                ..
+            },
+        ] = loaded.as_slice()
+        else {
+            panic!("group owner should be able to load group permissions");
+        };
+        assert!(overview.is_group);
+        assert!(!overview.can_manage, "group controls are permission-only here");
+        let overrides = overview.overrides.as_ref().expect("group permissions");
+        assert!(!overrides.supports_deny);
+        assert!(overrides.choices.is_empty());
+        assert_eq!(overrides.entries.len(), 1);
+        assert_eq!(
+            overrides.entries[0].allow,
+            crate::permissions::SEND_MESSAGE | crate::permissions::CONNECT
+        );
+
+        let target = OverrideTarget {
+            id: "default".into(),
+            member: false,
+        };
+        assert!(
+            a.run_command(Command::SetChannelOverride {
+                room: room("G1"),
+                request: 2,
+                target: target.clone(),
+                change: Some((
+                    crate::permissions::SEND_MESSAGE | crate::permissions::CONNECT | crate::permissions::UPLOAD_FILES,
+                    0,
+                )),
+            })
+            .is_empty()
+        );
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::Channel(ChannelCmd::Edit(ChannelEditCmd::SetChannelPermissions {
+                channel,
+                request: 2,
+                role: None,
+                permissions,
+            }))) if channel == "G1" && permissions == serde_json::json!(
+                crate::permissions::SEND_MESSAGE | crate::permissions::CONNECT | crate::permissions::UPLOAD_FILES
+            )
+        ));
+
+        let updated: Channel = serde_json::from_value(serde_json::json!({
+            "_id": "G1",
+            "channel_type": "Group",
+            "owner": "ME",
+            "permissions": crate::permissions::SEND_MESSAGE | crate::permissions::CONNECT | crate::permissions::UPLOAD_FILES
+        }))
+        .expect("updated group");
+        let mut events = Vec::new();
+        a.channel_answer(
+            Ev::ChannelSaved {
+                channel: "G1".into(),
+                request: 2,
+                result: Ok(Some(updated)),
+            },
+            &mut events,
+        );
+        assert_eq!(
+            a.store.channels.get("G1").and_then(|c| c.permissions),
+            Some(
+                (crate::permissions::SEND_MESSAGE | crate::permissions::CONNECT | crate::permissions::UPLOAD_FILES)
+                    as i64
+            )
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Event::ChannelOverview { result: Ok(Some(overview)), .. }
+                if overview.is_group
+                    && overview.overrides.as_ref().is_some_and(|o| {
+                        o.entries[0].allow
+                            == (crate::permissions::SEND_MESSAGE
+                                | crate::permissions::CONNECT
+                                | crate::permissions::UPLOAD_FILES)
+                    })
+        )));
+
+        let denied = a.run_command(Command::SetChannelOverride {
+            room: room("G1"),
+            request: 3,
+            target,
+            change: Some((crate::permissions::SEND_MESSAGE, crate::permissions::CONNECT)),
+        });
+        assert!(matches!(
+            denied.as_slice(),
+            [Event::ChannelOverview { result: Err(_), .. }]
+        ));
+        assert!(cmds.try_recv().is_err());
+    }
+
+    #[test]
+    fn a_group_member_with_manage_permissions_can_edit_the_default_set() {
+        let (mut a, _tx, mut cmds, _) = connected();
+        let initial = crate::permissions::MANAGE_PERMISSIONS | crate::permissions::SEND_MESSAGE;
+        let group: Channel = serde_json::from_value(serde_json::json!({
+            "_id": "G2",
+            "channel_type": "Group",
+            "owner": "ANN",
+            "permissions": initial
+        }))
+        .expect("a group channel");
+        a.store.channels.insert("G2".into(), group);
+        while cmds.try_recv().is_ok() {}
+
+        let room_id = room("G2");
+        let room = a.room(&room_id.account, a.store.channels.get("G2").expect("group"));
+        assert!(room.capabilities.manage_channel);
+        let loaded = a.run_command(Command::LoadChannelOverview {
+            room: room_id.clone(),
+            request: 1,
+        });
+        assert!(matches!(
+            loaded.as_slice(),
+            [Event::ChannelOverview { result: Ok(Some(o)), .. }]
+                if o.overrides.as_ref().is_some_and(|o| o.can_edit)
+        ));
+        assert!(
+            a.run_command(Command::SetChannelOverride {
+                room: room_id,
+                request: 2,
+                target: OverrideTarget {
+                    id: "default".into(),
+                    member: false,
+                },
+                change: Some((0, 0)),
+            })
+            .is_empty()
+        );
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::Channel(ChannelCmd::Edit(ChannelEditCmd::SetChannelPermissions {
+                role: None,
+                permissions,
+                ..
+            }))) if permissions == serde_json::json!(0)
+        ));
     }
 
     #[test]
