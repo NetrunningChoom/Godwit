@@ -52,6 +52,11 @@ pub trait NetworkAccount {
     fn run(&mut self, command: Command) -> Vec<Event>;
     /// A message's link in the network's own app, if it has one.
     fn message_link(&self, room: &RoomId, message: &MessageId) -> Option<String>;
+    /// Set when the network doesn't take reports from Godwit: the report
+    /// entries then show this explanation and its links instead of a form.
+    fn report_notice(&self) -> Option<crate::report::ReportNotice> {
+        None
+    }
     /// Whether this network accepts pasted server invites.
     fn supports_invites(&self) -> bool {
         false

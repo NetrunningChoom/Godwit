@@ -1833,6 +1833,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         ),
         Scene::new(
+            "report-declined",
+            Box::new(|app, ui, _, _| {
+                open_profile(app, false);
+                let notice = godwit_discord::report_notice();
+                ui.set_report_title("Report user".into());
+                ui.set_report_unavailable(notice.text.as_str().into());
+                let labels: Vec<slint::SharedString> = notice.links.iter().map(|(l, _)| l.as_str().into()).collect();
+                ui.set_report_links(slint::ModelRc::new(slint::VecModel::from(labels)));
+                ui.set_report_open(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
             "cleanup-thread",
             Box::new(|_, ui, _, _| {
                 ui.set_thread_open(true);

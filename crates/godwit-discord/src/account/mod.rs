@@ -1483,6 +1483,10 @@ impl NetworkAccount for DiscordAccount {
         out
     }
 
+    fn report_notice(&self) -> Option<godwit_core::report::ReportNotice> {
+        Some(crate::report_notice())
+    }
+
     fn supports_invites(&self) -> bool {
         true
     }

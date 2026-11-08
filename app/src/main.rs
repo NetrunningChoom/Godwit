@@ -357,6 +357,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_report_message(row) => |sh, ui| sh.report_message(ui, row));
     callback!(ui.on_report_server() => |sh, ui| sh.report_server(ui));
     callback!(ui.on_submit_report(reason, detail) => |sh, ui| sh.submit_report(ui, reason, &detail));
+    callback!(ui.on_open_report_link(i) => |sh, _ui| sh.open_report_link(i));
     callback!(ui.on_close_report() => |sh, ui| sh.close_report(ui));
     callback!(ui.on_moderate_member(ban, reason, delete) => |sh, ui| sh.moderate_member(ui, ban, &reason, usize::try_from(delete).unwrap_or(0)));
     callback!(ui.on_toggle_member_role(i, on) => |sh, ui| sh.toggle_member_role(ui, usize::try_from(i).unwrap_or(usize::MAX), on));

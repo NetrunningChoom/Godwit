@@ -32,3 +32,31 @@ pub mod session;
 pub mod settings;
 pub mod store;
 pub mod voice;
+
+/// Why Godwit doesn't report on Discord, with
+/// sources. Every address was checked to load (HTTP 200).
+pub fn report_notice() -> godwit_core::report::ReportNotice {
+    let link = |label: &str, url: &str| (label.to_owned(), url.to_owned());
+    godwit_core::report::ReportNotice {
+        text: "Reporting isn't available in Godwit yet. To report something, use Discord's app or website.".to_owned(),
+        links: vec![
+            link("Discord's Terms of Service", "https://discord.com/terms"),
+            link("Discord's Privacy Policy", "https://discord.com/privacy"),
+            link("Discord's safety transparency reports", "https://discord.com/safety-transparency-reports"),
+        ],
+    }
+}
+
+#[cfg(test)]
+mod report_notice_tests {
+    #[test]
+    fn declines_reports_with_an_explanation() {
+        let n = super::report_notice();
+        assert!(n.text.starts_with("Reporting isn't available in Godwit yet. To report something, use Discord's app or website."));
+        assert!(n.links.iter().all(|(_, u)| u.starts_with("https://")));
+        // The account supplies it, and offers no report form.
+        use godwit_core::account::NetworkAccount;
+        let (a, _) = crate::account::DiscordAccount::demo(crate::store::test_ready(), Default::default());
+        assert_eq!(a.report_notice().as_ref(), Some(&n));
+    }
+}

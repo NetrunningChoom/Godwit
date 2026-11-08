@@ -189,6 +189,8 @@ pub struct Shell {
     /// What the open report dialog is about, and whether it was sent.
     report: Option<godwit_core::report::ReportTarget>,
     report_submitted: bool,
+    /// The addresses behind the declined-report popup's link buttons.
+    report_links: Vec<String>,
     channel_editor: crate::channel_settings::ChannelEditor,
     /// The call's account, and whether its video was last said to be on screen.
     call_shown: Option<(AccountId, bool)>,
@@ -441,6 +443,7 @@ impl Shell {
             server_editor: crate::server_settings::ServerEditor::default(),
             report: None,
             report_submitted: false,
+            report_links: Vec::new(),
             channel_editor: crate::channel_settings::ChannelEditor::default(),
             call_shown: None,
             profile_editor: Default::default(),
@@ -977,6 +980,7 @@ impl Shell {
         }
         self.account_pages.show(ui, self.app.state());
         self.show_report(ui);
+        self.show_report_entries(ui);
         self.show_devices(ui);
         let signed_in = !self.app.state().accounts.is_empty();
         let status = self.sign_in_status();

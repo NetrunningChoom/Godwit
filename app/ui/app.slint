@@ -348,6 +348,10 @@ export component AppWindow inherits Window {
     in-out property <string> report-detail;
     in property <int> report-status;
     in property <string> report-notice;
+    // A network that declines reports: its explanation, link labels (open-report-link(i)).
+    in property <string> report-unavailable;
+    in property <[string]> report-links;
+    callback open-report-link(int);
     callback submit-report(int, string);
     callback close-report();
     // The Invite dialog: open, and its link once made ("" while it's made).
@@ -1898,6 +1902,9 @@ export component AppWindow inherits Window {
         report-detail <=> root.report-detail;
         report-status: root.report-status;
         report-notice: root.report-notice;
+        report-unavailable: root.report-unavailable;
+        report-links: root.report-links;
+        open-report-link(i) => { root.open-report-link(i); }
         submit-report(r, d) => { root.submit-report(r, d); }
         close-report => { root.close-report(); }
         confirm-delete <=> root.confirm-delete;

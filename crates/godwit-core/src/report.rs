@@ -4,6 +4,15 @@
 
 use crate::ids::{MessageId, RoomId, ServerId, UserId};
 
+/// What a network shows in place of its report form when it declines
+/// reports (its own wording and sources; core never writes them).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReportNotice {
+    pub text: String,
+    /// (label, address) pairs, opened in the browser.
+    pub links: Vec<(String, String)>,
+}
+
 /// What is being reported.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReportTarget {
