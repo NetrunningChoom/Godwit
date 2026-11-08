@@ -28,6 +28,7 @@ pub mod network;
 pub mod own_profile;
 pub mod poll;
 pub mod privacy;
+pub mod privacy_overview;
 pub mod report;
 pub mod rich;
 pub mod room;

@@ -205,6 +205,29 @@ impl Shell {
         account_pages.set_rename_session(-1);
         ui.set_settings_data_policy_url(id.network.privacy_url().into());
         ui.set_settings_data_policy_label(format!("Open {} privacy information", id.network.name()).into());
+        // The network's own privacy overview, if it has one.
+        let section = self.account(&id).and_then(|a| a.privacy_section());
+        ui.set_settings_overview_title(section.as_ref().map_or("", |s| s.title.as_str()).into());
+        ui.set_settings_overview_caveat(section.as_ref().map_or("", |s| s.caveat.as_str()).into());
+        let paras: Vec<crate::ui::PrivPara> = section
+            .iter()
+            .flat_map(|s| &s.paragraphs)
+            .map(|p| crate::ui::PrivPara {
+                text: p.text.as_str().into(),
+                sources: ModelRc::new(VecModel::from(
+                    p.sources
+                        .iter()
+                        .map(|(l, _)| l.as_str().into())
+                        .collect::<Vec<slint::SharedString>>(),
+                )),
+            })
+            .collect();
+        ui.set_settings_overview(ModelRc::new(VecModel::from(paras)));
+        self.privacy_sources = section
+            .iter()
+            .flat_map(|s| &s.paragraphs)
+            .map(|p| p.sources.iter().map(|(_, u)| u.clone()).collect())
+            .collect();
         let row = self.profile_editor.row_of(&id);
         ui.set_settings_account_profile(row.is_some());
         let pages = id.network.account_pages();
@@ -221,6 +244,17 @@ impl Shell {
         ui.set_settings_account_tab(if row.is_some() { 0 } else { 1 });
         if let Some(row) = row {
             self.select_profile_account(ui, i32::try_from(row).unwrap_or(0));
+        }
+    }
+
+    /// Opens one source of the privacy overview in the browser.
+    pub fn open_privacy_source(&mut self, para: i32, source: i32) {
+        let url = usize::try_from(para)
+            .ok()
+            .zip(usize::try_from(source).ok())
+            .and_then(|(p, s)| self.privacy_sources.get(p)?.get(s));
+        if let Some(url) = url {
+            open_external(url);
         }
     }
 

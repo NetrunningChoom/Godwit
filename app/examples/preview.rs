@@ -1841,7 +1841,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_report_unavailable(notice.text.as_str().into());
                 let labels: Vec<slint::SharedString> = notice.links.iter().map(|(l, _)| l.as_str().into()).collect();
                 ui.set_report_links(slint::ModelRc::new(slint::VecModel::from(labels)));
+                ui.set_report_caveat(notice.caveat.unwrap_or_default().into());
+                ui.set_report_privacy_label(notice.privacy_overview.unwrap_or_default().into());
                 ui.set_report_open(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "settings-privacy-overview",
+            Box::new(|_, ui, _, _| {
+                // Layout only: the header is the demo's first account (Stoat); in the
+                // app each account shows its own network's section.
+                let section = godwit_discord::privacy_section();
+                ui.set_settings_open(true);
+                ui.set_settings_section(10);
+                ui.set_settings_account(0);
+                ui.set_settings_account_profile(false);
+                ui.set_settings_account_tab(5);
+                ui.set_settings_data_policy_url("https://discord.com/privacy".into());
+                ui.set_settings_data_policy_label("Open Discord privacy information".into());
+                ui.set_settings_overview_title(section.title.as_str().into());
+                ui.set_settings_overview_caveat(section.caveat.as_str().into());
+                let paras: Vec<godwit::ui::PrivPara> = section
+                    .paragraphs
+                    .iter()
+                    .map(|p| godwit::ui::PrivPara {
+                        text: p.text.as_str().into(),
+                        sources: slint::ModelRc::new(slint::VecModel::from(
+                            p.sources
+                                .iter()
+                                .map(|(l, _)| l.as_str().into())
+                                .collect::<Vec<slint::SharedString>>(),
+                        )),
+                    })
+                    .collect();
+                ui.set_settings_overview(slint::ModelRc::new(slint::VecModel::from(paras)));
                 Screen::Main
             }),
         ),

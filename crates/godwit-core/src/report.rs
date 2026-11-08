@@ -11,6 +11,11 @@ pub struct ReportNotice {
     pub text: String,
     /// (label, address) pairs, opened in the browser.
     pub links: Vec<(String, String)>,
+    /// Label of a button that opens the account's privacy overview in
+    /// Settings (an internal target, not an address), if the network has one.
+    pub privacy_overview: Option<String>,
+    /// Shown under the links: how current the sources are.
+    pub caveat: Option<String>,
 }
 
 /// What is being reported.

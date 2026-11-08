@@ -6,6 +6,12 @@
 import { Theme } from "theme.slint";
 import { Button, Toggle, SurfaceCard as Card, SettingsRow, Select, TextField } from "widgets.slint";
 
+// A claim in a network's privacy overview and the labels of its sources.
+export struct PrivPara {
+    text: string,
+    sources: [string],
+}
+
 export struct PrivItem {
     label: string,
     detail: string,
@@ -264,8 +270,25 @@ export component DataPrivacyPage inherits VerticalLayout {
     in property <string> policy-url;
     in property <string> policy-label;
     callback open-policy(string);
+    // The network's own overview (empty when it has none).
+    in property <string> overview-title;
+    in property <[PrivPara]> overview;
+    in property <string> overview-caveat;
+    callback open-source(int, int);
     spacing: Theme.space-5;
     alignment: start;
+    if root.overview.length > 0: Card {
+        Text { text: "Privacy overview · " + root.overview-title; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
+        for para[p] in root.overview: VerticalLayout {
+            spacing: Theme.space-2;
+            Text { text: para.text; wrap: word-wrap; color: Theme.on-surface-variant; }
+            HorizontalLayout {
+                alignment: start;
+                for label[s] in para.sources: Button { text: label; kind: "text"; clicked => { root.open-source(p, s); } }
+            }
+        }
+        Text { text: root.overview-caveat; wrap: word-wrap; font-size: Theme.text-label; color: Theme.outline; }
+    }
     Card {
         Text { text: "Official platform information"; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
         Text {

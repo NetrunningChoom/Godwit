@@ -5,7 +5,7 @@
 
 import { AdState } from "autodelete.slint";
 export { AdState }
-import { AccountPages } from "account-pages.slint";
+import { AccountPages, PrivPara } from "account-pages.slint";
 export { AccountPages }
 import { Palette, Slider, ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
@@ -352,6 +352,10 @@ export component AppWindow inherits Window {
     in property <string> report-unavailable;
     in property <[string]> report-links;
     callback open-report-link(int);
+    // Label of the button that opens the account's privacy overview ("" = none).
+    in property <string> report-privacy-label;
+    in property <string> report-caveat;
+    callback open-privacy-overview();
     callback submit-report(int, string);
     callback close-report();
     // The Invite dialog: open, and its link once made ("" while it's made).
@@ -653,6 +657,10 @@ export component AppWindow inherits Window {
     in property <bool> settings-account-log-out-others;
     in property <string> settings-data-policy-url;
     in property <string> settings-data-policy-label;
+    in property <string> settings-overview-title;
+    in property <[PrivPara]> settings-overview;
+    in property <string> settings-overview-caveat;
+    callback settings-open-source(int, int);
     callback settings-open-privacy();
     callback settings-open-sessions();
     callback open-settings-account(int);
@@ -1561,6 +1569,10 @@ export component AppWindow inherits Window {
         data-policy-url: root.settings-data-policy-url;
         data-policy-label: root.settings-data-policy-label;
         open-policy(url) => { root.login-open-link(url); }
+        overview-title: root.settings-overview-title;
+        overview: root.settings-overview;
+        overview-caveat: root.settings-overview-caveat;
+        open-source(p, s) => { root.settings-open-source(p, s); }
         open-privacy => { root.settings-open-privacy(); }
         open-sessions => { root.settings-open-sessions(); }
         open-account(i) => { root.open-settings-account(i); }
@@ -1905,6 +1917,9 @@ export component AppWindow inherits Window {
         report-unavailable: root.report-unavailable;
         report-links: root.report-links;
         open-report-link(i) => { root.open-report-link(i); }
+        report-privacy-label: root.report-privacy-label;
+        report-caveat: root.report-caveat;
+        open-privacy-overview => { root.open-privacy-overview(); }
         submit-report(r, d) => { root.submit-report(r, d); }
         close-report => { root.close-report(); }
         confirm-delete <=> root.confirm-delete;

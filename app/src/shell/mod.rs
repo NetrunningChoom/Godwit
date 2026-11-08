@@ -191,6 +191,8 @@ pub struct Shell {
     report_submitted: bool,
     /// The addresses behind the declined-report popup's link buttons.
     report_links: Vec<String>,
+    /// The addresses behind the privacy overview's source buttons, per paragraph.
+    privacy_sources: Vec<Vec<String>>,
     channel_editor: crate::channel_settings::ChannelEditor,
     /// The call's account, and whether its video was last said to be on screen.
     call_shown: Option<(AccountId, bool)>,
@@ -444,6 +446,7 @@ impl Shell {
             report: None,
             report_submitted: false,
             report_links: Vec::new(),
+            privacy_sources: Vec::new(),
             channel_editor: crate::channel_settings::ChannelEditor::default(),
             call_shown: None,
             profile_editor: Default::default(),

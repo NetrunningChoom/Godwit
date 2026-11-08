@@ -185,6 +185,9 @@ export component ManagementDialogs inherits Rectangle {
     in property <string> report-unavailable;
     in property <[string]> report-links;
     callback open-report-link(int);
+    in property <string> report-privacy-label;
+    in property <string> report-caveat;
+    callback open-privacy-overview();
     callback submit-report(int, string);
     callback close-report();
     in-out property <int> confirm-delete: -1;
@@ -364,7 +367,12 @@ export component ManagementDialogs inherits Rectangle {
         }
         if root.report-unavailable != "": VerticalLayout {
             spacing: Theme.gap-sm;
+            if root.report-privacy-label != "": Button { text: root.report-privacy-label; kind: "tonal"; clicked => { root.open-privacy-overview(); } }
             for label[i] in root.report-links: Button { text: label; kind: "text"; clicked => { root.open-report-link(i); } }
+        }
+        if root.report-unavailable != "" && root.report-caveat != "": Text {
+            text: root.report-caveat;
+            wrap: word-wrap; font-size: Theme.text-label; color: Theme.outline;
         }
         if root.report-unavailable != "": HorizontalLayout {
             alignment: end;

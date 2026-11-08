@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { AutoDeletePage, AdState } from "autodelete.slint";
-import { PrivacyPage, SessionsPage, DataPrivacyPage, AccountPages } from "account-pages.slint";
+import { PrivacyPage, SessionsPage, DataPrivacyPage, AccountPages, PrivPara } from "account-pages.slint";
 import { ProfileSettings } from "profile-settings.slint";
 import { BrandBanner } from "brand-banner.slint";
 import { ScrollView } from "std-widgets.slint";
@@ -52,6 +52,10 @@ export component Settings inherits Rectangle {
     in property <string> data-policy-url;
     in property <string> data-policy-label;
     callback open-policy(string);
+    in property <string> overview-title;
+    in property <[PrivPara]> overview;
+    in property <string> overview-caveat;
+    callback open-source(int, int);
     callback open-privacy();
     callback open-sessions();
     callback open-account(int);
@@ -297,6 +301,10 @@ export component Settings inherits Rectangle {
                     policy-url: root.data-policy-url;
                     policy-label: root.data-policy-label;
                     open-policy(url) => { root.open-policy(url); }
+                    overview-title: root.overview-title;
+                    overview: root.overview;
+                    overview-caveat: root.overview-caveat;
+                    open-source(p, s) => { root.open-source(p, s); }
                 }
                 if root.section == 10 && root.account-profile && root.account-tab == 0: ProfileSettings {
                     accounts: root.edit-profile-accounts;

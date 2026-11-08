@@ -7,15 +7,28 @@ use godwit_core::report::ReportTarget;
 
 use super::*;
 
+/// The account a report is filed under.
+fn target_account(target: &ReportTarget) -> godwit_core::ids::AccountId {
+    match target {
+        ReportTarget::User { user, .. } => user.account.clone(),
+        ReportTarget::Message { room, .. } => room.account.clone(),
+        ReportTarget::Server { server } => server.account.clone(),
+    }
+}
+
+/// Where an account sits in the Settings account list.
+fn account_index<'a>(
+    mut ids: impl Iterator<Item = &'a godwit_core::ids::AccountId>,
+    account: &godwit_core::ids::AccountId,
+) -> Option<usize> {
+    ids.position(|id| id == account)
+}
+
 impl Shell {
     fn open_report(&mut self, ui: &AppWindow, target: ReportTarget) {
         // A network that declines reports explains why, with its sources,
         // instead of the form.
-        let account = match &target {
-            ReportTarget::User { user, .. } => user.account.clone(),
-            ReportTarget::Message { room, .. } => room.account.clone(),
-            ReportTarget::Server { server } => server.account.clone(),
-        };
+        let account = target_account(&target);
         let notice = self.account(&account).and_then(|a| a.report_notice());
         ui.set_report_unavailable(notice.as_ref().map_or("", |n| n.text.as_str()).into());
         let labels: Vec<slint::SharedString> = notice
@@ -23,6 +36,14 @@ impl Shell {
             .flat_map(|n| n.links.iter().map(|(l, _)| l.as_str().into()))
             .collect();
         ui.set_report_links(ModelRc::new(VecModel::from(labels)));
+        ui.set_report_caveat(notice.as_ref().and_then(|n| n.caveat.as_deref()).unwrap_or("").into());
+        ui.set_report_privacy_label(
+            notice
+                .as_ref()
+                .and_then(|n| n.privacy_overview.as_deref())
+                .unwrap_or("")
+                .into(),
+        );
         self.report_links = notice
             .map(|n| n.links.into_iter().map(|(_, u)| u).collect())
             .unwrap_or_default();
@@ -36,6 +57,23 @@ impl Shell {
         ui.set_report_open(true);
         self.report = Some(target);
         self.report_submitted = false;
+    }
+
+    /// The notice's button: closes the dialog and opens the declining
+    /// account's Data & privacy tab, where its privacy overview is.
+    pub fn open_privacy_overview(&mut self, ui: &AppWindow) {
+        let Some(account) = self.report.as_ref().map(target_account) else {
+            return;
+        };
+        let Some(index) = account_index(self.app.state().accounts.iter().map(|a| &a.id), &account) else {
+            return;
+        };
+        self.close_report(ui);
+        ui.set_settings_section(10);
+        ui.set_settings_account(i32::try_from(index).unwrap_or(0));
+        ui.set_settings_open(true);
+        self.settings_opened(ui);
+        ui.set_settings_account_tab(5);
     }
 
     /// Opens one of the notice's links in the browser.
@@ -133,5 +171,23 @@ impl Shell {
                 ui.set_report_status(3);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use godwit_core::ids::{AccountId, ServerId};
+
+    #[test]
+    fn the_notice_opens_its_accounts_overview() {
+        let a = AccountId::new(godwit_core::network::Network::Stoat, "a");
+        let b = AccountId::new(godwit_core::network::Network::Stoat, "b");
+        let target = ReportTarget::Server {
+            server: ServerId::new(b.clone(), "s"),
+        };
+        assert_eq!(target_account(&target), b);
+        assert_eq!(account_index([&a, &b].into_iter(), &b), Some(1));
+        assert_eq!(account_index([&a].into_iter(), &b), None);
     }
 }

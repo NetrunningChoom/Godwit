@@ -57,6 +57,12 @@ pub trait NetworkAccount {
     fn report_notice(&self) -> Option<crate::report::ReportNotice> {
         None
     }
+    /// The network's section of Settings → Data & privacy: plain facts about
+    /// privacy and moderation, each with its sources. None shows only the
+    /// policy link.
+    fn privacy_section(&self) -> Option<crate::privacy_overview::PrivacySection> {
+        None
+    }
     /// Whether this network accepts pasted server invites.
     fn supports_invites(&self) -> bool {
         false

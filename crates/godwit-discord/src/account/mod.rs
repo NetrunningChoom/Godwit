@@ -1487,6 +1487,10 @@ impl NetworkAccount for DiscordAccount {
         Some(crate::report_notice())
     }
 
+    fn privacy_section(&self) -> Option<godwit_core::privacy_overview::PrivacySection> {
+        Some(crate::privacy_section())
+    }
+
     fn supports_invites(&self) -> bool {
         true
     }
