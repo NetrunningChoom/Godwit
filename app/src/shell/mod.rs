@@ -15,6 +15,7 @@ mod navigation;
 mod notifications;
 mod poll;
 mod profiles;
+pub use profiles::ProfileInfo;
 mod report;
 mod server_admin;
 mod settings_pages;
@@ -203,6 +204,12 @@ pub struct Shell {
     call_shown: Option<(AccountId, bool)>,
     /// Drafts of the profiles not in use, kept for this session.
     stashed_drafts: std::collections::HashMap<u32, std::collections::HashMap<RoomId, String>>,
+    /// The profile the switch confirmation is about, and what shows of the
+    /// profiles (rail menu, Settings page).
+    pending_switch: Option<u32>,
+    /// The profile the delete confirmation (Settings → Profiles) is about.
+    pending_delete: Option<u32>,
+    profiles_view: crate::profiles_page::ProfilesView,
 }
 
 #[derive(Clone)]
@@ -463,6 +470,9 @@ impl Shell {
             call_videos_seen: None,
             pushed_voice: None,
             stashed_drafts: Default::default(),
+            pending_switch: None,
+            pending_delete: None,
+            profiles_view: Default::default(),
         };
         ui.set_emoji_rows(ModelRc::from(shell.picker.model.clone()));
         ui.set_notification_items(ModelRc::from(shell.notification_items.clone()));
@@ -994,6 +1004,7 @@ impl Shell {
             self.autodelete_page.show(ui, view.as_ref(), &label);
         }
         self.account_pages.show(ui, self.app.state());
+        self.show_profiles(ui);
         self.show_report(ui);
         self.show_report_entries(ui);
         self.show_devices(ui);

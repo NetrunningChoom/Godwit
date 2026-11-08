@@ -3,6 +3,7 @@
 
 import { AutoDeletePage, AdState } from "autodelete.slint";
 import { PrivacyPage, SessionsPage, DataPrivacyPage, AccountPages, PrivPara } from "account-pages.slint";
+import { ProfilesPage, ProfilesState } from "profiles-settings.slint";
 import { ProfileSettings } from "profile-settings.slint";
 import { BrandBanner } from "brand-banner.slint";
 import { ScrollView } from "std-widgets.slint";
@@ -214,6 +215,7 @@ export component Settings inherits Rectangle {
                 }
                 Section { label: "+ Add an account"; clicked => { root.add-account(); } }
                 Text { text: "App"; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 36px; vertical-alignment: bottom; }
+                Section { label: "Profiles"; selected: root.section == 11; clicked => { root.section = 11; } }
                 Section { label: "Message cache"; selected: root.section == 7; clicked => { root.section = 7; } }
                 Section {
                     label: root.problems-unseen > 0 ? "Problems (" + root.problems-unseen + ")" : "Problems";
@@ -440,6 +442,7 @@ export component Settings inherits Rectangle {
                     }
                     }
                 }
+                if root.section == 11: ProfilesPage { }
                 if root.section == 7: VerticalLayout {
                     spacing: Theme.space-4;
                     Heading { text: "Message cache"; }
@@ -690,6 +693,17 @@ export component Settings inherits Rectangle {
             }
         }
     }
+    }
+    if ProfilesState.removing-name != "": ConfirmDialog {
+        title: "Delete " + ProfilesState.removing-name + "?";
+        card-width: 420px;
+        message: "Its accounts stay signed in and stay in your other profiles; nothing else is deleted.";
+        note: ProfilesState.removing-note;
+        confirm-text: "Delete profile";
+        confirm-kind: "filled";
+        danger: true;
+        cancelled => { ProfilesState.cancel-delete(); }
+        confirmed => { ProfilesState.delete-profile(); }
     }
     if root.confirm-remove-app: ConfirmDialog {
         title: "Remove Godwit from your apps?";

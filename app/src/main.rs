@@ -267,6 +267,19 @@ fn connect_callbacks(ui: &AppWindow) {
         callback!(pages.on_log_out_session_with_proof(i, method, value) => |sh, ui| sh.log_out_session_with_proof(ui, i, method, &value));
         callback!(pages.on_submit_session_rename(i, name) => |sh, ui| sh.rename_session(ui, i, &name));
     }
+    callback!(ui.on_switch_profile(row) => |sh, ui| sh.ask_switch_profile(ui, row));
+    callback!(ui.on_confirm_profile_switch() => |sh, ui| sh.confirm_profile_switch(ui));
+    callback!(ui.on_cancel_profile_switch() => |sh, ui| sh.cancel_profile_switch(ui));
+    {
+        let ps = ui.global::<godwit::ui::ProfilesState>();
+        callback!(ps.on_rename(row, name) => |sh, ui| sh.profile_page_rename(ui, row, &name));
+        callback!(ps.on_set_default(row) => |sh, ui| sh.profile_page_default(ui, row));
+        callback!(ps.on_ask_delete(row) => |sh, ui| sh.profile_page_ask_delete(ui, row));
+        callback!(ps.on_cancel_delete() => |sh, ui| sh.profile_page_cancel_delete(ui));
+        callback!(ps.on_delete_profile() => |sh, ui| sh.profile_page_delete(ui));
+        callback!(ps.on_create(name) => |sh, ui| sh.profile_page_create(ui, &name));
+        callback!(ps.on_set_member(row, on) => |sh, ui| sh.profile_page_member(ui, row, on));
+    }
     callback!(ui.on_settings_open_autodelete() => |sh, ui| sh.open_autodelete(ui));
     {
         use godwit_core::autodelete::AutoDeleteCommand as C;

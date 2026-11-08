@@ -27,6 +27,7 @@ pub mod player_window;
 pub mod present;
 pub mod profile_settings;
 pub mod profiles;
+pub mod profiles_page;
 pub mod qr;
 pub mod registry;
 pub mod sas;

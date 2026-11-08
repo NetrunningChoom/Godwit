@@ -769,3 +769,29 @@ export struct ThreadItem {
     when: string,
     unread: bool,
 }
+
+// A profile in the rail's switcher.
+export struct ProfileItem {
+    name: string,
+    // The letter on its tile.
+    initial: string,
+    // The profile in use (marked in the menu).
+    current: bool,
+}
+
+// A row of Settings → Profiles: a profile's header, or one account under it
+// (its toggle says whether the profile has it).
+export struct ProfileRowItem {
+    header: bool,
+    name: string,
+    // The profile in use, and the one opened at startup.
+    current: bool,
+    default: bool,
+    can-delete: bool,
+    // "3 accounts", under the name.
+    detail: string,
+    // An account: "Name (@user)", its network, and whether the profile has it.
+    label: string,
+    network: string,
+    member: bool,
+}

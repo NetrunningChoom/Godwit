@@ -4,7 +4,7 @@
 
 import { Theme, Icons, Icon } from "theme.slint";
 import { NetworkIcon } from "network-icon.slint";
-import { ServerItem, FolderIcon } from "types.slint";
+import { ServerItem, FolderIcon, ProfileItem } from "types.slint";
 import { Avatar, Badge, MenuPanel, MenuRow, MenuDivider } from "widgets.slint";
 
 // One 56 px entry: a 42 px round icon, the pill on the left edge (32 px
@@ -112,11 +112,35 @@ component Divider inherits Rectangle {
     Rectangle { x: 12px; width: parent.width - 24px; height: 1px; background: Theme.outline-variant; }
 }
 
-// Home, then a section per account: its avatar (opens its profile), then its
+// The profile switcher's menu: each profile (the one in use marked), then
+// the page that manages them. Its own component so the preview can draw it
+// (a PopupWindow doesn't open off-screen).
+export component ProfileMenu inherits MenuPanel {
+    in property <[ProfileItem]> profiles;
+    callback choose(int);
+    callback manage();
+    for p[i] in root.profiles: MenuRow {
+        // The check is plain text: the icon font's subset has none.
+        glyph: p.current ? "✓" : "";
+        label: p.name;
+        clicked => { root.choose(i); }
+    }
+    MenuDivider { }
+    MenuRow { glyph: Icons.settings; label: "Manage profiles…"; clicked => { root.manage(); } }
+}
+
+// Home, then the profile switcher, then a section per account: its avatar (opens its profile), then its
 // servers in the user's order. Settings lives in the account card.
 export component Rail inherits Rectangle {
     in property <[ServerItem]> servers;
     in property <bool> home-selected;
+    // The profile in use (its tile) and all of them (its menu).
+    in property <string> profile-name;
+    in property <string> profile-initial;
+    in property <[ProfileItem]> profiles;
+    // A profile's menu row: asks to switch to it (the app confirms first).
+    callback switch-profile(int);
+    callback manage-profiles();
     // An account's row (in `servers`): a click collapses or expands its
     // section, a right-click opens its profile (status, presence).
     callback toggle-account(int);
@@ -146,6 +170,7 @@ export component Rail inherits Rectangle {
     callback server-leave();
     property <int> menu-row: -1;
     property <length> menu-y;
+    property <length> profile-menu-y;
 
     width: 64px;
     VerticalLayout {
@@ -172,6 +197,20 @@ export component Rail inherits Rectangle {
                     tooltip: "Home";
                     selected: root.home-selected;
                     clicked => { root.select-home(); }
+                }
+                // As Home's neighbour: the profile in use, a rounded square (not
+                // a server's circle); a click lists the profiles.
+                RailEntry {
+                    tooltip: "Profile: " + root.profile-name;
+                    clicked => {
+                        root.profile-menu-y = self.absolute-position.y - root.absolute-position.y;
+                        profile-menu.show();
+                    }
+                    Avatar {
+                        size: Theme.server-icon;
+                        radius: Theme.radius-lg;
+                        initials: root.profile-initial;
+                    }
                 }
                 for item[i] in root.servers: VerticalLayout {
                     if item.divider-before: Divider { }
@@ -334,6 +373,17 @@ export component Rail inherits Rectangle {
             if root.menu-can-report: MenuRow { glyph: Icons.error; label: "Report server"; danger: true; clicked => { root.server-report(); } }
             if root.menu-can-leave && !root.menu-can-report: MenuDivider { }
             if root.menu-can-leave: MenuRow { glyph: Icons.logout; label: "Leave server"; danger: true; clicked => { root.server-leave(); } }
+        }
+    }
+    profile-menu := PopupWindow {
+        x: root.width - 4px;
+        y: root.profile-menu-y;
+        width: 220px;
+        ProfileMenu {
+            width: parent.width;
+            profiles: root.profiles;
+            choose(i) => { root.switch-profile(i); }
+            manage => { root.manage-profiles(); }
         }
     }
 }

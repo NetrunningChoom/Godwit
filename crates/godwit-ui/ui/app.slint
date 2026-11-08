@@ -5,6 +5,8 @@
 
 import { AdState } from "autodelete.slint";
 export { AdState }
+import { ProfilesState } from "profiles-settings.slint";
+export { ProfilesState }
 import { AccountPages, PrivPara } from "account-pages.slint";
 export { AccountPages }
 import { Palette, Slider, ScrollView } from "std-widgets.slint";
@@ -23,9 +25,9 @@ import { PollDialog } from "poll-dialog.slint";
 import { UserCard } from "usercard.slint";
 import { Members } from "members.slint";
 import { Login } from "login.slint";
-import { Rail } from "rail.slint";
+import { Rail, ProfileMenu } from "rail.slint";
 import { Sidebar } from "sidebar.slint";
-import { ForumPostItem, ForumTagItem } from "types.slint";
+import { ForumPostItem, ForumTagItem, ProfileItem } from "types.slint";
 import { Timeline } from "timeline.slint";
 import { Friends } from "friends.slint";
 import { JoinServer } from "join-server.slint";
@@ -746,6 +748,20 @@ export component AppWindow inherits Window {
     callback submit-mfa(string);
     callback log-out();
     callback select-home();
+    // The profiles: the one in use (the rail's tile) and all of them. A
+    // switch asks first (`profile-switch-*`), and a call's note says so.
+    in property <string> profile-name;
+    in property <string> profile-initial;
+    in property <[ProfileItem]> profiles;
+    callback switch-profile(int);
+    in-out property <bool> profile-switch-open;
+    in property <string> profile-switch-name;
+    in property <string> profile-switch-note;
+    callback confirm-profile-switch();
+    callback cancel-profile-switch();
+    // Preview only: draws the switcher's menu in the tree (a popup doesn't
+    // open off-screen).
+    in property <bool> profile-menu-preview;
     callback select-server(int);
     // A rail account row was right-clicked (its row in `servers`): its profile.
     callback open-account(int);
@@ -951,6 +967,23 @@ export component AppWindow inherits Window {
             alignment: center;
             Button { text: "Add an account"; clicked => { root.add-account(); } }
         }
+        // Another profile may have accounts: one click (and a confirmation) away.
+        if root.profiles.length > 1: Text {
+            text: "Or use another profile";
+            horizontal-alignment: center;
+            color: Theme.on-surface-variant;
+        }
+        if root.profiles.length > 1: HorizontalLayout {
+            alignment: center;
+            spacing: Theme.space-2;
+            for p[i] in root.profiles: HorizontalLayout {
+                if !p.current: Button {
+                    text: "Switch to " + p.name;
+                    kind: "tonal";
+                    clicked => { root.switch-profile(i); }
+                }
+            }
+        }
     }
     if screen == Screen.connecting: VerticalLayout {
         alignment: center;
@@ -1026,6 +1059,15 @@ export component AppWindow inherits Window {
                     root.open-account(i);
                 }
                 select-home => { root.select-home(); }
+                profile-name: root.profile-name;
+                profile-initial: root.profile-initial;
+                profiles: root.profiles;
+                switch-profile(i) => { root.switch-profile(i); }
+                manage-profiles => {
+                    root.settings-section = 11;
+                    root.settings-open = true;
+                    root.settings-opened();
+                }
                 select-server(i) => { root.select-server(i); }
                 join-server => { root.open-join-server(); }
             }
@@ -1567,6 +1609,13 @@ export component AppWindow inherits Window {
         save-override => { root.save-channel-override(); } remove-override => { root.remove-channel-override(); }
         add-override(i) => { root.add-channel-override(i); }
     }
+    if root.profile-menu-preview: ProfileMenu {
+        x: Theme.rail-width - 4px;
+        // Below Home's 56 px entry (and the rail's top padding).
+        y: Theme.gap-md + 56px;
+        width: 220px;
+        profiles: root.profiles;
+    }
     if root.settings-open && screen == Screen.main: Settings {
         reset-panels => {
             root.sidebar-w = Theme.sidebar-width;
@@ -1900,6 +1949,11 @@ export component AppWindow inherits Window {
         log-out => { root.log-out(); }
         log-out-account(i) => { root.log-out-account(i); }
         confirm-leave <=> root.confirm-leave;
+        profile-switch-open <=> root.profile-switch-open;
+        profile-switch-name: root.profile-switch-name;
+        profile-switch-note: root.profile-switch-note;
+        confirm-profile-switch => { root.confirm-profile-switch(); }
+        cancel-profile-switch => { root.cancel-profile-switch(); }
         sidebar-title: root.sidebar-title;
         server-menu-leave => { root.server-menu-leave(); }
         confirm-moderate <=> root.confirm-moderate;

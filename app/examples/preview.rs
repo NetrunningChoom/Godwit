@@ -697,6 +697,24 @@ fn call_many(app: &mut Application, _: &AppWindow, _: &RoomId, _: &RoomId) -> Sc
     Screen::Main
 }
 
+fn profile_infos() -> Vec<godwit::shell::ProfileInfo> {
+    let info = |id, name: &str, current, accounts| godwit::shell::ProfileInfo {
+        id,
+        name: name.into(),
+        initial: name.chars().take(1).collect(),
+        current,
+        default: id == 0,
+        accounts,
+    };
+    vec![info(0, "Work", true, 2), info(1, "Private", false, 1)]
+}
+
+/// The rail's profile tile and menu rows, filled as the app does (the
+/// window keeps the models).
+fn show_profiles(ui: &godwit::ui::AppWindow) {
+    godwit::profiles_page::ProfilesView::default().show_rail(ui, &profile_infos());
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = std::env::args()
         .nth(1)
@@ -1300,6 +1318,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let _ = ui;
                 Screen::Main
+            }),
+        ),
+        Scene::new(
+            "profiles-rail",
+            Box::new(|_, ui, _, _| {
+                show_profiles(ui);
+                Screen::Main
+            }),
+        ),
+        // The switcher's menu, drawn in the tree (a popup doesn't open off-screen).
+        Scene::new(
+            "profiles-menu",
+            Box::new(|_, ui, _, _| {
+                show_profiles(ui);
+                ui.set_profile_menu_preview(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "profiles-confirm",
+            Box::new(|_, ui, _, _| {
+                show_profiles(ui);
+                ui.set_profile_switch_name("Private".into());
+                ui.set_profile_switch_note("You are in a call; switching profiles ends it.".into());
+                ui.set_profile_switch_open(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "profiles-settings",
+            Box::new(|_, ui, _, _| {
+                use godwit::profiles_page::{AccountEntry, rows};
+                ui.set_settings_open(true);
+                ui.set_settings_section(11);
+                let infos = profile_infos();
+                let acct = |key: &str, label: &str, network: &str| AccountEntry {
+                    key: key.into(),
+                    label: label.into(),
+                    network: network.into(),
+                };
+                let accounts = [
+                    acct("stoat:1", "Demo (@demo)", "Stoat"),
+                    acct("discord:2", "Robin (@robin)", "Discord"),
+                    acct("steam:3", "Sam (@sam)", "Steam"),
+                ];
+                let mut view = godwit::profiles_page::ProfilesView::default();
+                view.show_rail(ui, &infos);
+                view.show_page(rows(&infos, &accounts, |p, k| (p == 0) == (k != "steam:3")));
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "profiles-empty",
+            Box::new(|_, ui, _, _| {
+                show_profiles(ui);
+                Screen::Empty
             }),
         ),
         Scene::new(

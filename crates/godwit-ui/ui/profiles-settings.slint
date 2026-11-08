@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { ProfileRowItem } from "types.slint";
+import { Button, TextField, Toggle, ChoiceChip, SurfaceCard as Card, SectionHeading as Heading, SettingsRow as Row } from "widgets.slint";
+
+// The page's rows and its answers, reached from Rust as a global (rows are
+// numbered as listed: the app knows which profile or account each is).
+export global ProfilesState {
+    in property <[ProfileRowItem]> rows;
+    in-out property <string> new-name;
+    // The profile waiting for "Delete" to be confirmed ("" none), as the
+    // app holds it (by id, so a refresh can't change which one it is).
+    in property <string> removing-name;
+    in property <string> removing-note;
+    callback ask-delete(int);
+    callback cancel-delete();
+    callback rename(int, string);
+    callback set-default(int);
+    callback delete-profile();
+    callback create(string);
+    callback set-member(int, bool);
+}
+
+export component ProfilesPage inherits VerticalLayout {
+    spacing: Theme.space-3;
+    alignment: start;
+    Heading { text: "Profiles"; }
+    Text {
+        text: "A profile is a set of accounts. Switching to a profile connects only its accounts and disconnects the others. An account can be in several profiles. The default profile opens when Godwit starts.";
+        wrap: word-wrap;
+        color: Theme.on-surface-variant;
+    }
+    for r[i] in ProfilesState.rows: VerticalLayout {
+        // A gap between one profile's accounts and the next profile.
+        if r.header && i > 0: Rectangle { height: Theme.space-3; }
+        if r.header: Card {
+            HorizontalLayout {
+                spacing: Theme.space-3;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: Theme.space-1;
+                    TextField {
+                        text: r.name;
+                        placeholder: "Profile name";
+                        // A rejected name (empty, unchanged) shows the profile's again:
+                        // typing broke the binding above.
+                        accepted => { ProfilesState.rename(i, self.text); self.text = r.name; }
+                        blurred => { ProfilesState.rename(i, self.text); self.text = r.name; }
+                    }
+                    Text {
+                        text: (r.current ? "In use · " : "") + r.detail;
+                        font-size: Theme.text-small;
+                        color: Theme.outline;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    ChoiceChip {
+                        label: r.default ? "Default" : "Make default";
+                        chosen: r.default;
+                        choose => { ProfilesState.set-default(i); }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Button {
+                        text: "Delete";
+                        danger: true;
+                        enabled: r.can-delete;
+                        clicked => { ProfilesState.ask-delete(i); }
+                    }
+                }
+            }
+        }
+        if !r.header: Row {
+            label: r.label;
+            detail: r.network;
+            padding-left: Theme.space-5;
+            padding-right: Theme.space-5;
+            Toggle {
+                checked: r.member;
+                toggled(on) => { ProfilesState.set-member(i, on); }
+            }
+        }
+    }
+    Rectangle { height: Theme.space-3; }
+    Heading { text: "New profile"; }
+    HorizontalLayout {
+        spacing: Theme.space-3;
+        TextField {
+            horizontal-stretch: 1;
+            text <=> ProfilesState.new-name;
+            placeholder: "Name";
+            accepted => { ProfilesState.create(self.text); }
+        }
+        Button {
+            text: "Add profile";
+            kind: "tonal";
+            enabled: ProfilesState.new-name != "";
+            clicked => { ProfilesState.create(ProfilesState.new-name); }
+        }
+    }
+}

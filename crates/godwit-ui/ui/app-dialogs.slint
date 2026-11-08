@@ -146,6 +146,12 @@ export component ManagementDialogs inherits Rectangle {
     callback log-out();
     callback log-out-account(int);
     in-out property <bool> confirm-leave;
+    // Switching profile disconnects this one's accounts: asked first.
+    in-out property <bool> profile-switch-open;
+    in property <string> profile-switch-name;
+    in property <string> profile-switch-note;
+    callback confirm-profile-switch();
+    callback cancel-profile-switch();
     in property <string> sidebar-title;
     callback server-menu-leave();
     in-out property <int> confirm-moderate;
@@ -265,6 +271,16 @@ export component ManagementDialogs inherits Rectangle {
         danger: true;
         cancelled => { root.confirm-leave = false; }
         confirmed => { root.confirm-leave = false; root.server-menu-leave(); }
+    }
+    if root.profile-switch-open: ConfirmDialog {
+        title: "Switch to " + root.profile-switch-name + "?";
+        card-width: 420px;
+        message: "Godwit disconnects this profile's accounts and connects " + root.profile-switch-name + "'s.";
+        note: root.profile-switch-note;
+        confirm-text: "Switch";
+        confirm-kind: "filled";
+        cancelled => { root.cancel-profile-switch(); }
+        confirmed => { root.confirm-profile-switch(); }
     }
     // The official KickMember / BanMember confirmations; a ban takes a reason.
     if root.confirm-moderate > 0: Dialog {

@@ -6,6 +6,9 @@
 
 use super::*;
 use crate::profiles::{Running, plan};
+use crate::profiles_page::RowKey;
+use crate::ui::ProfilesState;
+use slint::ComponentHandle;
 
 /// One profile as the switcher and the Profiles page list it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -349,5 +352,155 @@ impl Shell {
         }
         self.save_settings();
         self.refresh(ui);
+    }
+
+    /// The rail's tile and menu, and Settings → Profiles while it is open.
+    pub(super) fn show_profiles(&mut self, ui: &AppWindow) {
+        let infos = self.profile_list();
+        self.profiles_view.show_rail(ui, &infos);
+        // A pending confirmation follows its profile: renamed, or gone.
+        let state = ui.global::<ProfilesState>();
+        if let Some(id) = self.pending_switch {
+            match infos.iter().find(|p| p.id == id) {
+                Some(p) if !p.current => {
+                    ui.set_profile_switch_name(p.name.as_str().into());
+                    ui.set_profile_switch_note(self.call_note().unwrap_or_default().into());
+                }
+                _ => self.cancel_profile_switch(ui),
+            }
+        }
+        match self.pending_delete.and_then(|id| infos.iter().find(|p| p.id == id)) {
+            Some(p) if ui.get_settings_open() && infos.len() > 1 => {
+                state.set_removing_name(p.name.as_str().into());
+                state.set_removing_note(delete_note(p.current).into());
+            }
+            _ => {
+                self.pending_delete = None;
+                state.set_removing_name("".into());
+            }
+        }
+        let live: std::collections::HashMap<String, (String, String)> = self
+            .app
+            .state()
+            .accounts
+            .iter()
+            .map(|a| {
+                (
+                    account_key(&a.id),
+                    (
+                        a.id.network.name().to_string(),
+                        format!("{} (@{})", a.display_name, a.username),
+                    ),
+                )
+            })
+            .collect();
+        let keys = self
+            .settings
+            .known_accounts
+            .iter()
+            .map(|k| k.key.clone())
+            .chain(self.settings.profiles.iter().flat_map(|p| p.accounts.iter().cloned()))
+            .chain(live.keys().cloned());
+        let entries = crate::profiles_page::entries(keys, &live, |network| {
+            registry::NETWORKS
+                .iter()
+                .find(|e| e.network.key() == network)
+                .map(|e| e.network.name().to_string())
+                .unwrap_or_default()
+        });
+        // Demo accounts belong to every profile (and are never unloaded).
+        let demo = self.demo.is_some();
+        let rows = crate::profiles_page::rows(&infos, &entries, |id, key| demo || self.profile_has(id, key));
+        self.profiles_view.show_page(rows);
+    }
+
+    /// A menu row was chosen: ask before switching (it disconnects accounts).
+    pub fn ask_switch_profile(&mut self, ui: &AppWindow, row: i32) {
+        let infos = self.profile_list();
+        let Some(p) = usize::try_from(row).ok().and_then(|i| infos.get(i)) else {
+            return;
+        };
+        if p.current {
+            return;
+        }
+        self.pending_switch = Some(p.id);
+        ui.set_profile_switch_name(p.name.as_str().into());
+        ui.set_profile_switch_note(self.call_note().unwrap_or_default().into());
+        ui.set_profile_switch_open(true);
+    }
+
+    pub fn confirm_profile_switch(&mut self, ui: &AppWindow) {
+        ui.set_profile_switch_open(false);
+        if let Some(id) = self.pending_switch.take() {
+            self.switch_profile(ui, id);
+        }
+    }
+
+    pub fn cancel_profile_switch(&mut self, ui: &AppWindow) {
+        self.pending_switch = None;
+        ui.set_profile_switch_open(false);
+    }
+
+    /// The Profiles page's calls, by the row they came from.
+    pub fn profile_page_rename(&mut self, ui: &AppWindow, row: i32, name: &str) {
+        if let Some(&RowKey::Profile(id)) = self.profiles_view.key(row)
+            && self.settings.profile(id).is_some_and(|p| p.name != name.trim())
+        {
+            self.rename_profile(id, name);
+        }
+        // An empty or unchanged name goes back to what it was.
+        self.refresh(ui);
+    }
+
+    pub fn profile_page_default(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(&RowKey::Profile(id)) = self.profiles_view.key(row) {
+            self.set_default_profile(id);
+            self.refresh(ui);
+        }
+    }
+
+    pub fn profile_page_ask_delete(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(&RowKey::Profile(id)) = self.profiles_view.key(row) {
+            self.pending_delete = Some(id);
+            self.show_profiles(ui);
+        }
+    }
+
+    pub fn profile_page_cancel_delete(&mut self, ui: &AppWindow) {
+        self.pending_delete = None;
+        self.show_profiles(ui);
+    }
+
+    /// Confirmed: deletes the profile that was asked about (still checked,
+    /// the list may have changed since).
+    pub fn profile_page_delete(&mut self, ui: &AppWindow) {
+        if let Some(id) = self.pending_delete.take() {
+            self.delete_profile(ui, id);
+        }
+        self.show_profiles(ui);
+    }
+
+    pub fn profile_page_create(&mut self, ui: &AppWindow, name: &str) {
+        if name.trim().is_empty() {
+            return;
+        }
+        self.create_profile(name);
+        ui.global::<ProfilesState>().set_new_name("".into());
+        self.refresh(ui);
+    }
+
+    pub fn profile_page_member(&mut self, ui: &AppWindow, row: i32, member: bool) {
+        if let Some(RowKey::Account(id, key)) = self.profiles_view.key(row).cloned() {
+            self.set_account_in_profile(ui, id, &key, member);
+        }
+    }
+}
+
+/// What the delete confirmation adds for the profile in use.
+fn delete_note(current: bool) -> &'static str {
+    if current {
+        "You are using this profile: Godwit switches to another first."
+    } else {
+        ""
     }
 }

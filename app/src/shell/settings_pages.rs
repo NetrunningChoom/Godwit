@@ -60,6 +60,8 @@ impl Shell {
 
     /// Settings opened: show the saved values and ask for the devices.
     pub fn settings_opened(&mut self, ui: &AppWindow) {
+        self.pending_delete = None;
+        self.show_profiles(ui);
         let editable = self
             .app
             .state()
