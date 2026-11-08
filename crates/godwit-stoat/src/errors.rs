@@ -184,6 +184,12 @@ mod tests {
             ApiError::new(400, r#"{"type":"SomethingNew"}"#).to_string(),
             "the server said something new (HTTP 400)"
         );
+        // Stoat reports overlong message bodies as PayloadTooLarge (HTTP 409),
+        // not as a generic conflict. Keep this actionable send failure intact.
+        assert_eq!(
+            ApiError::new(409, r#"{"type":"PayloadTooLarge"}"#).to_string(),
+            "the message is too long (HTTP 409)"
+        );
         assert!(
             ApiError::new(429, "not json")
                 .to_string()
