@@ -1418,6 +1418,7 @@ fn demo_admin(overview: &godwit_core::server_settings::ServerOverview, seed: u64
         invites,
         bans,
         roles: ServerRoles {
+            can_reorder: true,
             roles,
             default_allow: p::VIEW_CHANNEL | p::READ_MESSAGE_HISTORY | p::SEND_MESSAGE | p::REACT | p::CONNECT,
             permissions: p::server_list(),
@@ -1782,6 +1783,20 @@ impl DemoAccount {
                 if let Some((allow, deny)) = edit.permissions {
                     (role.allow, role.deny) = (allow, deny);
                 }
+                R::Roles(admin.roles.clone())
+            }
+            A::SetRoleRanks(ranks) => {
+                let mut ordered = Vec::with_capacity(ranks.len());
+                for id in ranks {
+                    let Some(role) = admin.roles.roles.iter().find(|r| r.id == id) else {
+                        return Err("That role no longer exists.".into());
+                    };
+                    ordered.push(role.clone());
+                }
+                if ordered.len() != admin.roles.roles.len() {
+                    return Err("The role order is out of date.".into());
+                }
+                admin.roles.roles = ordered;
                 R::Roles(admin.roles.clone())
             }
             A::DeleteRole(id) => {

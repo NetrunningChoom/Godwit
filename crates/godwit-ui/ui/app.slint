@@ -189,6 +189,7 @@ export component AppWindow inherits Window {
     callback rename-server-emoji(int, string); callback delete-server-emoji(int);
     in property <[AdminRoleItem]> server-edit-roles;
     in property <bool> server-edit-roles-loaded;
+    in property <bool> server-edit-roles-reorderable;
     in property <int> server-edit-role-index;
     in-out property <string> server-edit-role-name;
     in-out property <string> server-edit-role-colour;
@@ -200,6 +201,7 @@ export component AppWindow inherits Window {
     callback unban-server-user(int);
     callback select-server-role(int); callback create-server-role(string); callback server-role-edited();
     callback toggle-server-permission(int); callback save-server-role(); callback delete-server-role();
+    callback move-server-role(bool);
     callback delete-server();
     // The profile card's Kick / Ban (ban: true), with the ban's reason.
     in property <bool> card-can-kick;
@@ -1572,7 +1574,7 @@ export component AppWindow inherits Window {
         notice: root.server-edit-notice; notice-failed: root.server-edit-notice-failed;
         invites: root.server-edit-invites; invites-loaded: root.server-edit-invites-loaded;
         bans: root.server-edit-bans; bans-loaded: root.server-edit-bans-loaded;
-        roles: root.server-edit-roles; roles-loaded: root.server-edit-roles-loaded; role-index: root.server-edit-role-index;
+        roles: root.server-edit-roles; roles-loaded: root.server-edit-roles-loaded; roles-reorderable: root.server-edit-roles-reorderable; role-index: root.server-edit-role-index;
         role-name <=> root.server-edit-role-name; role-colour <=> root.server-edit-role-colour; role-hoist <=> root.server-edit-role-hoist;
         permissions: root.server-edit-permissions; role-dirty: root.server-edit-role-dirty;
         emoji: root.server-edit-emoji; emoji-loaded: root.server-edit-emoji-loaded; emoji-new-name <=> root.server-edit-emoji-new-name;
@@ -1587,6 +1589,7 @@ export component AppWindow inherits Window {
         select-role(i) => { root.select-server-role(i); } create-role(n) => { root.create-server-role(n); }
         role-edited => { root.server-role-edited(); } toggle-permission(i) => { root.toggle-server-permission(i); }
         save-role => { root.save-server-role(); } delete-role => { root.delete-server-role(); }
+        move-role(up) => { root.move-server-role(up); }
         delete-server => { root.delete-server(); }
     }
     if root.channel-settings-open && screen == Screen.main: ChannelSettings {

@@ -282,6 +282,21 @@ impl ServerEditor {
         })
     }
 
+    /// Move the selected role one place in the network's most-important-first order.
+    pub fn move_role(&self, state: &AppState, up: bool) -> Option<Action> {
+        let settings = state.server_settings.as_ref()?;
+        let roles = settings.roles.as_ref()?;
+        if !roles.can_reorder {
+            return None;
+        }
+        let index = self.role_index.checked_sub(1)?;
+        let ranks = moved_role_ranks(&roles.roles, index, up)?;
+        Some(Action::ServerAdmin {
+            server: settings.server.clone(),
+            op: ServerAdmin::SetRoleRanks(ranks),
+        })
+    }
+
     /// A picture was chosen for the next emoji (or picking failed).
     pub fn emoji_picked(&mut self, token: &(ServerId, u64), result: Result<EmojiFile, String>) {
         if self.token.as_ref() != Some(token) {
@@ -471,6 +486,7 @@ impl ServerEditor {
                 let Some(roles) = &s.roles else {
                     return;
                 };
+                ui.set_server_edit_roles_reorderable(roles.can_reorder);
                 if self.roles_seen.as_ref() != Some(roles) {
                     // Keep the same role selected across a refreshed list.
                     let id = self
@@ -629,9 +645,50 @@ impl ServerEditor {
     }
 }
 
+fn moved_role_ranks(
+    roles: &[godwit_core::server_settings::ServerRole],
+    index: usize,
+    up: bool,
+) -> Option<Vec<std::sync::Arc<str>>> {
+    let target = if up {
+        index.checked_sub(1)?
+    } else {
+        index.checked_add(1)?
+    };
+    if index >= roles.len() || target >= roles.len() {
+        return None;
+    }
+    let mut ranks: Vec<_> = roles.iter().map(|role| role.id.clone()).collect();
+    ranks.swap(index, target);
+    Some(ranks)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_rank_moves_swap_neighbors_and_stop_at_the_edges() {
+        use godwit_core::server_settings::ServerRole;
+        let roles = ["a", "b", "c"].map(|id| ServerRole {
+            id: id.into(),
+            name: id.into(),
+            colour: None,
+            hoist: false,
+            allow: 0,
+            deny: 0,
+        });
+        assert_eq!(
+            moved_role_ranks(&roles, 1, true),
+            Some(vec!["b".into(), "a".into(), "c".into()])
+        );
+        assert_eq!(
+            moved_role_ranks(&roles, 1, false),
+            Some(vec!["a".into(), "c".into(), "b".into()])
+        );
+        assert_eq!(moved_role_ranks(&roles, 0, true), None);
+        assert_eq!(moved_role_ranks(&roles, 2, false), None);
+    }
 
     #[test]
     fn role_colours_are_plain_hex_or_none() {

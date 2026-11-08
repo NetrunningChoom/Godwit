@@ -31,6 +31,7 @@ impl StoatAccount {
             ServerAdmin::Kick(_) => Some((p::KICK_MEMBERS, "Kick Members")),
             ServerAdmin::CreateRole(_)
             | ServerAdmin::EditRole(_)
+            | ServerAdmin::SetRoleRanks(_)
             | ServerAdmin::DeleteRole(_)
             | ServerAdmin::SetDefaultPermissions(_) => Some((p::MANAGE_ROLE, "Manage Roles")),
             // for-web gates the Emoji page on Manage Customisation.
@@ -139,6 +140,13 @@ impl StoatAccount {
                     body: Value::Object(body),
                     icon: None,
                     permissions: edit.permissions,
+                }))
+            }
+            ServerAdmin::SetRoleRanks(ranks) => {
+                // The official server Roles page orders the highest priority first.
+                Cmd::Role(RoleCmd::Edit(RoleEditCmd::SetRoleRanks {
+                    server: raw,
+                    ranks: ranks.iter().map(ToString::to_string).collect(),
                 }))
             }
             ServerAdmin::DeleteRole(role) => Cmd::Role(RoleCmd::Edit(RoleEditCmd::DeleteRole {
@@ -340,6 +348,7 @@ impl StoatAccount {
         // Lower rank is more important; ids break ties so the order is stable.
         roles.sort_by(|a, b| a.1.rank.cmp(&b.1.rank).then_with(|| a.0.cmp(b.0)));
         ServerRoles {
+            can_reorder: true,
             roles: roles
                 .into_iter()
                 .map(|(id, r)| godwit_core::server_settings::ServerRole {

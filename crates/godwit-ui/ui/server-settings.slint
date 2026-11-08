@@ -58,6 +58,7 @@ export component ServerSettings inherits Rectangle {
     in property <bool> emoji-can-create;
     in property <[AdminRoleItem]> roles;
     in property <bool> roles-loaded;
+    in property <bool> roles-reorderable;
     // The role being edited: 0 is Everyone, then the roles in order.
     in property <int> role-index;
     in-out property <string> role-name;
@@ -73,6 +74,7 @@ export component ServerSettings inherits Rectangle {
     callback unban(int);
     callback select-role(int); callback create-role(string); callback role-edited();
     callback toggle-permission(int); callback save-role(); callback delete-role();
+    callback move-role(bool);
     callback pick-emoji-file(); callback emoji-name-edited(); callback create-emoji();
     callback rename-emoji(int, string); callback delete-emoji(int);
     callback delete-server();
@@ -204,6 +206,11 @@ export component ServerSettings inherits Rectangle {
                             spacing: Theme.space-3;
                             Text { text: "Role name"; color: Theme.on-surface; }
                             TextField { text <=> root.role-name; enabled: !root.admin-busy; edited => { root.role-edited(); } }
+                            if root.roles-reorderable: HorizontalLayout {
+                                spacing: Theme.space-3;
+                                Button { text: "Move up"; kind: "text"; enabled: root.role-index > 1 && !root.admin-busy && !root.role-dirty; clicked => { root.move-role(true); } }
+                                Button { text: "Move down"; kind: "text"; enabled: root.role-index < root.roles.length - 1 && !root.admin-busy && !root.role-dirty; clicked => { root.move-role(false); } }
+                            }
                             HorizontalLayout {
                                 spacing: Theme.space-5;
                                 VerticalLayout {

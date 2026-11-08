@@ -40,6 +40,7 @@ impl DiscordAccount {
         let mut roles: Vec<&store::Role> = g.roles.values().filter(|r| r.id != guild && !r.managed).collect();
         roles.sort_by(|a, b| b.position.cmp(&a.position).then_with(|| a.id.cmp(&b.id)));
         ServerRoles {
+            can_reorder: false,
             roles: roles
                 .into_iter()
                 .map(|r| ServerRole {
@@ -224,6 +225,7 @@ impl DiscordAccount {
             ServerAdmin::Kick(_) => Some((p::KICK_MEMBERS, "Kick Members")),
             ServerAdmin::CreateRole(_)
             | ServerAdmin::EditRole(_)
+            | ServerAdmin::SetRoleRanks(_)
             | ServerAdmin::DeleteRole(_)
             | ServerAdmin::SetDefaultPermissions(_) => Some((p::MANAGE_ROLES, "Manage Roles")),
             ServerAdmin::CreateInvite => Some((p::CREATE_INSTANT_INVITE, "Create Invite")),
@@ -411,6 +413,9 @@ impl DiscordAccount {
                         role: edit.id.to_string(),
                         body: Value::Object(body),
                     }
+                }
+                ServerAdmin::SetRoleRanks(_) => {
+                    return fail(server, "Role reordering isn't available here yet.");
                 }
                 ServerAdmin::DeleteRole(role) => Admin::DeleteRole(role.to_string()),
                 ServerAdmin::SetDefaultPermissions(allow) => Admin::ModifyRole {

@@ -188,6 +188,8 @@ pub struct PermissionInfo {
 pub struct ServerRoles {
     /// Most important first.
     pub roles: Vec<ServerRole>,
+    /// This network lets managers change role priority.
+    pub can_reorder: bool,
     /// What everyone has without a role.
     pub default_allow: u64,
     pub permissions: Arc<[PermissionInfo]>,
@@ -215,6 +217,8 @@ pub enum ServerAdmin {
     LoadRoles,
     CreateRole(Arc<str>),
     EditRole(RoleEdit),
+    /// Replaces role priority, most important first.
+    SetRoleRanks(Vec<Arc<str>>),
     DeleteRole(Arc<str>),
     SetDefaultPermissions(u64),
     LoadEmoji,

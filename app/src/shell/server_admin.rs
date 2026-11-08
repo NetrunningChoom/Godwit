@@ -115,6 +115,12 @@ impl Shell {
         }
     }
 
+    pub fn move_server_role(&mut self, ui: &AppWindow, up: bool) {
+        if let Some(action) = self.server_editor.move_role(self.app.state(), up) {
+            self.act(ui, action);
+        }
+    }
+
     pub fn delete_server_role(&mut self, ui: &AppWindow) {
         if let Some(action) = self.server_editor.delete_role(self.app.state()) {
             self.act(ui, action);
