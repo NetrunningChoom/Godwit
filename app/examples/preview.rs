@@ -1073,6 +1073,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         ),
         Scene::new(
+            "create-server",
+            Box::new(|_, ui, _, _| {
+                ui.set_join_server_accounts(slint::ModelRc::new(slint::VecModel::from(vec!["Demo — Stoat".into()])));
+                ui.set_join_server_create_accounts(slint::ModelRc::new(slint::VecModel::from(vec![
+                    "Demo account".into(),
+                ])));
+                ui.set_join_server_account_index(0);
+                ui.set_join_server_create_account_index(0);
+                ui.set_join_server_creating(true);
+                ui.set_join_server_choosing(false);
+                ui.set_join_server_open(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
             "profile-settings",
             Box::new(|_, ui, _, _| {
                 ui.set_settings_open(true);

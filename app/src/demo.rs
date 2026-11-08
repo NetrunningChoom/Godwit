@@ -2119,6 +2119,9 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
     fn supports_invites(&self) -> bool {
         true
     }
+    fn supports_create_server(&self) -> bool {
+        true
+    }
 
     fn parse_invite(&self, input: &str) -> Option<String> {
         godwit_stoat::account::invite_code(input)
@@ -2139,6 +2142,31 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
     fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
         use godwit_core::application::Command;
         match command {
+            Command::CreateServer { name } => {
+                let name = name.trim();
+                if name.is_empty() || name.chars().count() > 32 {
+                    return vec![Event::Error("A server name is 1 to 32 characters.".into())];
+                }
+                let id = ServerId::new(self.id.clone(), format!("demo-created-{}", self.servers.len()));
+                let server = Server {
+                    id: id.clone(),
+                    name: name.into(),
+                    icon_url: None,
+                    banner_url: None,
+                    categories: Vec::new(),
+                    muted: false,
+                    rights: Default::default(),
+                    folder: None,
+                };
+                self.servers.push(server.clone());
+                vec![
+                    Event::ServersChanged {
+                        account: self.id.clone(),
+                        servers: self.servers.clone(),
+                    },
+                    Event::ServerCreated(id),
+                ]
+            }
             Command::ServerAdmin { server, op } if op.member_target().is_some() => self.member_change(&server, op),
             Command::ServerAdmin { server, op }
                 if matches!(

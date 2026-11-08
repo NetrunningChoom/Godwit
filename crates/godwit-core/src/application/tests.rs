@@ -2530,6 +2530,64 @@ fn creating_a_group_requires_two_unique_users_on_a_supported_signed_in_account()
 }
 
 #[test]
+fn server_creation_trims_and_checks_the_name_and_requires_a_signed_in_account() {
+    let (mut app, _) = open_dm(&[]);
+    let account = account(Network::Stoat);
+    let effects = app.dispatch(Action::CreateServer {
+        account: account.clone(),
+        name: "  New place  ".into(),
+    });
+    assert_eq!(
+        commands(&effects),
+        [&Command::CreateServer {
+            name: "New place".into()
+        }]
+    );
+    assert!(
+        app.dispatch(Action::CreateServer {
+            account: account.clone(),
+            name: "  ".into(),
+        })
+        .is_empty()
+    );
+    assert!(
+        app.dispatch(Action::CreateServer {
+            account: account.clone(),
+            name: "x".repeat(33),
+        })
+        .is_empty()
+    );
+    assert!(
+        app.dispatch(Action::CreateServer {
+            account: AccountId::new(Network::Discord, "missing"),
+            name: "Valid".into(),
+        })
+        .is_empty()
+    );
+}
+
+#[test]
+fn a_created_server_opens_after_its_server_list_arrives() {
+    let (mut app, _) = open_dm(&[]);
+    let id = ServerId::new(account(Network::Stoat), "created");
+    app.apply(Event::ServersChanged {
+        account: account(Network::Stoat),
+        servers: vec![Server {
+            id: id.clone(),
+            name: "New place".into(),
+            icon_url: None,
+            banner_url: None,
+            categories: Vec::new(),
+            muted: false,
+            rights: Default::default(),
+            folder: None,
+        }],
+    });
+    app.apply(Event::ServerCreated(id.clone()));
+    assert_eq!(app.state().selected_server, Some(id));
+}
+
+#[test]
 fn server_channels_load_members_and_the_list_toggles() {
     let mut app = Application::new(Contacts::default());
     let server = ServerId::new(account(Network::Stoat), "S");

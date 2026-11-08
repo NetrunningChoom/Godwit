@@ -753,6 +753,7 @@ impl NetworkAccount for SteamAccount {
                 }
             }
             // Other commands are not implemented by this backend yet.
+            Command::CreateServer { .. } => {}
             _ => {}
         }
         out

@@ -816,6 +816,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_reset_join_server() => |sh, ui| sh.reset_join_server(ui));
     callback!(ui.on_inspect_invite(row, input) => |sh, ui| sh.inspect_invite(ui, row, &input));
     callback!(ui.on_accept_server_invite() => |sh, ui| sh.accept_server_invite(ui));
+    callback!(ui.on_create_server(name) => |sh, ui| sh.create_server(ui, &name));
     callback!(ui.on_player_fullscreen(url) => |sh, ui| sh.player_fullscreen(ui, &url));
     callback!(ui.on_player_pointer(url, x, y, down) => |sh, _| sh.player_pointer(&url, x, y, down));
     callback!(ui.on_player_move(url, x, y) => |sh, _| sh.player_move(&url, x, y));

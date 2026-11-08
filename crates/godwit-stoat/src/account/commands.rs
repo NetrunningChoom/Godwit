@@ -18,6 +18,16 @@ impl StoatAccount {
 
     pub(super) fn run_command(&mut self, command: Command) -> Vec<Event> {
         match command {
+            Command::CreateServer { name } => {
+                // The official for-web CreateServer modal follows DataCreateServer.name (1–32 characters):
+                // https://github.com/stoatchat/for-web/blob/main/packages/client/components/modal/modals/CreateServer.tsx
+                let name = name.trim();
+                if name.is_empty() || name.chars().count() > 32 {
+                    return vec![Event::Error("A server name is 1 to 32 characters.".into())];
+                }
+                self.net.send(Cmd::Server(ServerCmd::CreateServer { name: name.to_owned() }));
+                Vec::new()
+            }
             Command::AutoDelete(command) => self.autodelete_command(command),
             // Stoat's privacy switches aren't offered here (yet).
             Command::LoadPrivacy | Command::SetPrivacy { .. } => Vec::new(),

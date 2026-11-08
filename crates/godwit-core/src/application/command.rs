@@ -32,6 +32,10 @@ pub enum Command {
         server: ServerId,
         op: crate::server_settings::ServerAdmin,
     },
+    /// Create a server with this name; success is [`Event::ServerCreated`].
+    CreateServer {
+        name: String,
+    },
     /// Marks a whole chat read, up to its newest message as the network knows it.
     MarkRoomRead {
         room: RoomId,

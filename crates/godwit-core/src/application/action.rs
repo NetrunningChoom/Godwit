@@ -78,6 +78,11 @@ pub enum Action {
     },
     /// Show a server's rooms, or (None) the direct messages.
     SelectServer(Option<ServerId>),
+    /// Create a server on `account` and open it when the network confirms it.
+    CreateServer {
+        account: AccountId,
+        name: String,
+    },
     SelectRoom(RoomId),
     /// Home's own arrangement (kept by the app between starts): a chat
     /// pinned to the top, or hidden in the collapsed section at the bottom.

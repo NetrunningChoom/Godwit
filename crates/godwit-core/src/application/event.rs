@@ -126,6 +126,8 @@ pub enum Event {
         account: AccountId,
         servers: Vec<Server>,
     },
+    /// A newly created server is present in the account's server list; open it.
+    ServerCreated(ServerId),
     /// A page of history, oldest first. `before` is what the page was asked
     /// to end before; `None` is the newest page, which replaces the timeline.
     History {

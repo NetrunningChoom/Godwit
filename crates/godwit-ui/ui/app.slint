@@ -814,16 +814,22 @@ export component AppWindow inherits Window {
     callback join-activity(string);
     in property <bool> join-server-open;
     in property <[string]> join-server-accounts;
+    in property <[string]> join-server-create-accounts;
+    in-out property <int> join-server-account-index;
+    in-out property <int> join-server-create-account-index;
     in property <string> join-server-status;
     in property <string> join-server-name;
     in property <bool> join-server-ready;
     in property <bool> join-server-busy;
     in property <bool> join-server-failed;
+    in-out property <bool> join-server-creating;
+    in-out property <bool> join-server-choosing;
     callback open-join-server();
     callback close-join-server();
     callback reset-join-server();
     callback inspect-invite(int, string);
     callback accept-server-invite();
+    callback create-server(string);
     callback player-pointer(string, int, int, bool);
     callback player-move(string, int, int);
     callback cancel-compose();
@@ -1780,15 +1786,21 @@ export component AppWindow inherits Window {
     }
     if root.join-server-open && screen == Screen.main: JoinServer {
         accounts: root.join-server-accounts;
+        create-accounts: root.join-server-create-accounts;
+        account-index <=> root.join-server-account-index;
+        create-account-index <=> root.join-server-create-account-index;
         status: root.join-server-status;
         server-name: root.join-server-name;
         ready: root.join-server-ready;
         busy: root.join-server-busy;
         failed: root.join-server-failed;
+        creating <=> root.join-server-creating;
+        choosing <=> root.join-server-choosing;
         dismissed => { root.close-join-server(); }
         reset => { root.reset-join-server(); }
         inspect(i, text) => { root.inspect-invite(i, text); }
         join => { root.accept-server-invite(); }
+        create-server(name) => { root.create-server(name); }
     }
     CallDialogs {
         screen: root.screen;

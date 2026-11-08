@@ -45,9 +45,13 @@ impl StoatAccount {
             Ev::ServerJoined(server) => {
                 // Creation returns a complete server before its websocket
                 // events arrive; install it and refresh both sidebar models.
+                let created_id = server.server.id.clone();
                 self.store.add_server(server);
                 self.sync_servers(out);
                 self.sync_rooms(out);
+                if let Some(account) = self.account.clone() {
+                    out.push(Event::ServerCreated(ServerId::new(account, created_id.as_str())));
+                }
             }
             Ev::OwnProfile { after_save, result } => {
                 let Some(account) = self.account.clone() else { return };
@@ -515,6 +519,7 @@ impl StoatAccount {
                 self.sync_rooms(out);
                 self.sync_servers(out);
             }
+            Ev::FormError(e) => out.push(Event::Error(e.into())),
             Ev::Error(e) => match self.status {
                 // A failed login or code: show it on the form that sent it.
                 Status::LoggingIn | Status::NeedsMfa { .. } => {

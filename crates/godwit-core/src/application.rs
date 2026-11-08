@@ -359,6 +359,7 @@ impl Application {
             | Event::CustomEmoji { account, .. } => signed_in(account),
             Event::Profile(p) => signed_in(&p.user.account),
             Event::GameLibrary { user, .. } => signed_in(&user.account),
+            Event::ServerCreated(server) => signed_in(&server.account),
             Event::Directory { server, .. } => signed_in(&server.account),
             Event::Members { room, .. }
             | Event::VoiceSince { room, .. }

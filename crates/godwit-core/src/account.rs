@@ -67,6 +67,11 @@ pub trait NetworkAccount {
     fn supports_invites(&self) -> bool {
         false
     }
+    /// Whether this account can create a server from a name, as in Stoat's
+    /// official `CreateOrJoinServer` / `CreateServer` modals.
+    fn supports_create_server(&self) -> bool {
+        false
+    }
     fn can_edit_profile(&self) -> bool {
         false
     }

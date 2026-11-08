@@ -136,7 +136,32 @@ impl Shell {
                     .map(|a| format!("{} — {}", a.display_name, a.id.network.name()).into())
             })
             .collect();
+        self.create_server_accounts = self
+            .app
+            .state()
+            .accounts
+            .iter()
+            .filter(|a| self.account(&a.id).is_some_and(|a| a.supports_create_server()))
+            .map(|a| a.id.clone())
+            .collect();
+        let create_labels: Vec<SharedString> = self
+            .create_server_accounts
+            .iter()
+            .filter_map(|id| {
+                self.app
+                    .state()
+                    .accounts
+                    .iter()
+                    .find(|a| &a.id == id)
+                    .map(|a| format!("{} — {}", a.display_name, a.id.network.name()).into())
+            })
+            .collect();
         ui.set_join_server_accounts(ModelRc::new(VecModel::from(labels)));
+        ui.set_join_server_create_accounts(ModelRc::new(VecModel::from(create_labels)));
+        ui.set_join_server_account_index(0);
+        ui.set_join_server_create_account_index(0);
+        ui.set_join_server_creating(false);
+        ui.set_join_server_choosing(true);
         self.reset_join_server(ui);
         if self.join_accounts.is_empty() {
             ui.set_join_server_status("Sign in to an account that supports server invites first.".into());
@@ -147,6 +172,7 @@ impl Shell {
     pub fn close_join_server(&mut self, ui: &AppWindow) {
         self.reset_join_server(ui);
         self.join_accounts.clear();
+        self.create_server_accounts.clear();
         ui.set_join_server_open(false);
     }
 
@@ -188,6 +214,27 @@ impl Shell {
         }
         self.join_submitted = true;
         self.act(ui, Action::JoinInvite { account, code });
+    }
+
+    pub fn create_server(&mut self, ui: &AppWindow, name: &str) {
+        let Some(account) = usize::try_from(ui.get_join_server_create_account_index())
+            .ok()
+            .and_then(|i| self.create_server_accounts.get(i))
+            .cloned()
+        else {
+            return;
+        };
+        if !self.account(&account).is_some_and(|a| a.supports_create_server()) {
+            return;
+        }
+        self.act(
+            ui,
+            Action::CreateServer {
+                account,
+                name: name.to_owned(),
+            },
+        );
+        self.close_join_server(ui);
     }
 
     pub(super) fn show_join_server(&mut self, ui: &AppWindow) {

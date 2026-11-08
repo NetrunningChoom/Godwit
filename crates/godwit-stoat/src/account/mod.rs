@@ -606,6 +606,9 @@ impl NetworkAccount for StoatAccount {
     fn supports_invites(&self) -> bool {
         true
     }
+    fn supports_create_server(&self) -> bool {
+        true
+    }
 
     fn parse_invite(&self, input: &str) -> Option<String> {
         invite_code(input)
@@ -796,6 +799,21 @@ mod tests {
             Ok(Cmd::Server(ServerCmd::CreateGroup { name, users }))
                 if name == "Project" && users == ["ANN", "BO"]
         ));
+    }
+
+    #[test]
+    fn create_server_maps_a_valid_name_to_the_backend_command() {
+        let (mut account, _, mut commands, _) = connected();
+        while commands.try_recv().is_ok() {}
+        account.run(Command::CreateServer {
+            name: "  New place  ".into(),
+        });
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(Cmd::Server(ServerCmd::CreateServer { name })) if name == "New place"
+        ));
+        account.run(Command::CreateServer { name: "x".repeat(33) });
+        assert!(commands.try_recv().is_err());
     }
 
     #[test]

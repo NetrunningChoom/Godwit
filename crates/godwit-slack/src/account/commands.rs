@@ -512,6 +512,7 @@ impl SlackAccount {
                     }
                 }
             }
+            Command::CreateServer { .. } => {}
             _ => {}
         }
         out

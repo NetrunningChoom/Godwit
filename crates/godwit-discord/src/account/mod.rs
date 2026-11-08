@@ -1466,6 +1466,7 @@ impl NetworkAccount for DiscordAccount {
             // is never sent (no Nitro features).
             Command::SetScreenShare(on) => self.set_call_live(on, &mut out),
             Command::StartScreenShare { .. } => self.set_call_live(true, &mut out),
+            Command::CreateServer { .. } => {}
             _ => {}
         }
         out

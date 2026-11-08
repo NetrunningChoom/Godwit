@@ -359,6 +359,7 @@ impl TeamsAccount {
                     }
                 }
             }
+            Command::CreateServer { .. } => {}
             _ => {}
         }
         out

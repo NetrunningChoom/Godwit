@@ -142,6 +142,7 @@ impl Application {
                 self.set_servers(&account, servers);
                 Vec::new()
             }
+            Event::ServerCreated(server) => self.dispatch_select_server(Some(server)),
             Event::History {
                 room,
                 before,

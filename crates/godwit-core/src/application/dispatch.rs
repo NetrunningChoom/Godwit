@@ -95,6 +95,17 @@ impl Application {
             Action::LoadOwnProfile(account) => self.dispatch_load_own_profile(account),
             Action::SaveOwnProfile { account, edit } => self.dispatch_save_own_profile(account, edit),
             Action::SelectServer(server) => self.dispatch_select_server(server),
+            Action::CreateServer { account, name } => {
+                let name = name.trim();
+                if name.is_empty() || name.chars().count() > 32 || !self.state.accounts.iter().any(|a| a.id == account)
+                {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account,
+                    command: Command::CreateServer { name: name.to_owned() },
+                }]
+            }
             Action::SelectRoom(room) => {
                 self.state.marked_unread.retain(|r| *r != room);
                 // The member search box starts empty in each room.
