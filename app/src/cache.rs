@@ -174,11 +174,14 @@ fn cache_writer(backend: Arc<EncryptedCache>, queue: Arc<WriteQueue>) {
             while state.pending.is_empty() && !state.clear && !state.closed {
                 state = queue.ready.wait(state).unwrap_or_else(PoisonError::into_inner);
             }
-            if std::mem::take(&mut state.clear) {
+            // The flag stays set until the files are gone, so a `flush` in
+            // between keeps waiting (taking it first let one return early).
+            if state.clear {
                 drop(state);
                 if backend.clear().is_err() {
                     godwit_core::verbose!("note: clearing the encrypted cache failed");
                 }
+                queue.state.lock().unwrap_or_else(PoisonError::into_inner).clear = false;
                 queue.idle.notify_all();
                 continue;
             }
