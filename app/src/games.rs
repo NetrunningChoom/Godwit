@@ -66,9 +66,9 @@ fn name_of(state: &AppState, user: &UserId) -> String {
         .unwrap_or_else(|| user.raw.to_string())
 }
 
-/// The people the picker offers: anyone compared who isn't a friend (a
-/// group chat's member), then the account's friends by name. The order
-/// doesn't follow picking, so a row stays the same person under its toggle.
+/// The people the picker offers: whoever is picked first (anyone compared
+/// who isn't a friend, a group chat's member, among them), then the
+/// account's other friends; each part by when we last talked, then by name.
 pub fn candidates(state: &AppState, g: &GamesInCommon) -> Vec<(UserId, String, bool)> {
     let is_friend = |u: &UserId| state.friends.iter().any(|p| p.id == *u);
     let mut list: Vec<(UserId, String, bool)> = g
@@ -77,15 +77,22 @@ pub fn candidates(state: &AppState, g: &GamesInCommon) -> Vec<(UserId, String, b
         .skip(1)
         .filter(|u| !is_friend(u))
         .map(|u| (u.clone(), name_of(state, u), true))
+        .chain(
+            state
+                .friends
+                .iter()
+                .filter(|p| p.id.account == g.account)
+                .map(|p| (p.id.clone(), name_of(state, &p.id), g.people.contains(&p.id))),
+        )
         .collect();
-    let mut friends: Vec<(UserId, String, bool)> = state
-        .friends
-        .iter()
-        .filter(|p| p.id.account == g.account)
-        .map(|p| (p.id.clone(), name_of(state, &p.id), g.people.contains(&p.id)))
-        .collect();
-    friends.sort_by_cached_key(|(_, name, _)| name.to_lowercase());
-    list.extend(friends);
+    let seen = state.last_interactions();
+    list.sort_by_cached_key(|(u, name, picked)| {
+        (
+            !picked,
+            std::cmp::Reverse(seen.get(u).copied().unwrap_or(0)),
+            name.to_lowercase(),
+        )
+    });
     list
 }
 
@@ -595,7 +602,7 @@ mod tests {
     }
 
     #[test]
-    fn the_picker_lists_friends_by_name_whether_picked_or_not() {
+    fn the_picker_lists_the_picked_first_then_by_last_talk_then_name() {
         let (mut state, mut g) = setup(3, &[]);
         g.people.truncate(2);
         state.friends.push(Person {
@@ -604,15 +611,23 @@ mod tests {
             avatar_url: None,
             online: false,
         });
-        let names: Vec<(String, bool)> = candidates(&state, &g).into_iter().map(|(_, n, p)| (n, p)).collect();
+        let names = |state: &AppState| -> Vec<(String, bool)> {
+            candidates(state, &g).into_iter().map(|(_, n, p)| (n, p)).collect()
+        };
         assert_eq!(
-            names,
+            names(&state),
             [
-                ("aaron".to_owned(), false),
                 ("Ann".to_owned(), true),
+                ("aaron".to_owned(), false),
                 ("Bob".to_owned(), false)
             ]
         );
+        // A DM with Bob: he comes before the never-talked-with.
+        let with = UserId::new(g.account.clone(), "f2");
+        let mut dm = crate::demo::room("dm", "Bob", godwit_core::room::RoomKind::Direct { with }, false, 0);
+        dm.last_activity = 5;
+        state.rooms.push(Arc::new(dm));
+        assert_eq!(names(&state)[1].0, "Bob");
     }
 
     #[test]

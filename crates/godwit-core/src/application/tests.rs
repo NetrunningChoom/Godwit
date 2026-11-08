@@ -4487,3 +4487,35 @@ fn member_search_asks_only_where_the_room_can_and_drops_stale_answers() {
         "capability off"
     );
 }
+
+#[test]
+fn last_interactions_take_each_persons_newest_dm_and_calls_as_now() {
+    let mut state = AppState::default();
+    let mut a = dm(Network::Stoat, "d1", "ann");
+    a.last_activity = 100;
+    let mut a2 = dm(Network::Stoat, "d2", "ann");
+    a2.last_activity = 300;
+    let mut bob = dm(Network::Stoat, "d3", "bob");
+    bob.last_activity = 200;
+    // Never written in: not an interaction.
+    let cat = dm(Network::Stoat, "d4", "cat");
+    let call = dm(Network::Stoat, "d5", "dan");
+    state.voice.insert(
+        call.id.clone(),
+        vec![CallMember {
+            user: UserId::new(account(Network::Stoat), "dan"),
+            name: "Dan".into(),
+            avatar_url: None,
+            speaking: false,
+            muted: false,
+            deafened: false,
+        }],
+    );
+    state.rooms = [a, a2, bob, cat, call].into_iter().map(Arc::new).collect();
+    let seen = state.last_interactions();
+    let at = |who: &str| seen.get(&UserId::new(account(Network::Stoat), who)).copied();
+    assert_eq!(at("ann"), Some(300));
+    assert_eq!(at("bob"), Some(200));
+    assert_eq!(at("cat"), None);
+    assert_eq!(at("dan"), Some(i64::MAX));
+}

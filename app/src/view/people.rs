@@ -311,8 +311,18 @@ pub fn people(
             .iter()
             .any(|u| state.favourites.contains(u) || favourites.contains(&u.to_string()))
     };
-    // Favourites first (as the official clients put them on top), each part by name.
-    contacts.sort_by_cached_key(|c| (!starred(c), c.name.to_lowercase()));
+    // Favourites first (as the official clients put them on top), each part
+    // by when we last talked (on any of their accounts), then by name.
+    let seen = state.last_interactions();
+    let last = |c: &Metacontact| {
+        c.identities
+            .iter()
+            .filter_map(|u| seen.get(u))
+            .max()
+            .copied()
+            .unwrap_or(0)
+    };
+    contacts.sort_by_cached_key(|c| (!starred(c), std::cmp::Reverse(last(c)), c.name.to_lowercase()));
     let mut rows = Vec::with_capacity(contacts.len());
     let mut who = Vec::with_capacity(contacts.len());
     for c in &contacts {

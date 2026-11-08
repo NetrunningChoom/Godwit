@@ -369,4 +369,25 @@ impl AppState {
             .iter()
             .filter(|r| !matches!(r.kind, RoomKind::Channel { .. }))
     }
+
+    /// When we last talked with each person we have a DM with (Unix ms),
+    /// from what's loaded: the DM's newest message either way, or now
+    /// (`i64::MAX`) while a call is going on in it. An ended call counts
+    /// through the message the network leaves for it. Whoever isn't here
+    /// was never talked with (as far as we know).
+    pub fn last_interactions(&self) -> HashMap<&UserId, i64> {
+        let mut out: HashMap<&UserId, i64> = HashMap::new();
+        for r in &self.rooms {
+            let RoomKind::Direct { with } = &r.kind else {
+                continue;
+            };
+            let calling = self.voice.get(&r.id).is_some_and(|m| !m.is_empty());
+            let when = if calling { i64::MAX } else { r.last_activity };
+            if when > 0 {
+                let e = out.entry(with).or_insert(when);
+                *e = (*e).max(when);
+            }
+        }
+        out
+    }
 }
