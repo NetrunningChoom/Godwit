@@ -1329,7 +1329,10 @@ mod tests {
             panic!("no page: {out:?}")
         };
         assert_eq!(view.rules.len(), 1);
-        assert_eq!(&*view.rules[0].when_text, "Older than 90 days (keeps going)");
+        assert_eq!(
+            &*view.rules[0].when_text,
+            "Older than 90 days (keeps going), reading all history"
+        );
         let mut woken = false;
         while let Ok(cmd) = cmds.try_recv() {
             woken |= matches!(cmd, Cmd::AutoDelete(AutoDeleteCmd::AutoDeleteWake(_)));

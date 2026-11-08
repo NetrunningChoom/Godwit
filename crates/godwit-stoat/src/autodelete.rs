@@ -93,6 +93,11 @@ pub fn index_until(rule: &Rule, now_ms: i64) -> String {
     }
 }
 
+/// How far back a rule reads by default (days); see [`Rule::lookback_days`].
+pub const DEFAULT_LOOKBACK_DAYS: u32 = 365;
+/// The lookbacks the editor offers (days; 0 is all history).
+pub const LOOKBACK_CHOICES: [u32; 4] = [90, 365, 730, 0];
+
 /// Rolling windows shorter than this get the "are you sure" note.
 pub const ADVISED_MIN_DAYS: u32 = 30;
 
@@ -269,6 +274,16 @@ pub struct Rule {
     /// Purges leave pinned messages alone.
     #[serde(default = "yes")]
     pub keep_pinned: bool,
+    /// How far back the rule ever reads, in days (0: all history). Reading
+    /// history is the costly part (a page of 100 every few seconds), so the
+    /// indexer, purges and re-checks never go past it and older messages are
+    /// left alone. Saved rules without it get a year.
+    #[serde(default = "default_lookback")]
+    pub lookback_days: u32,
+}
+
+fn default_lookback() -> u32 {
+    DEFAULT_LOOKBACK_DAYS
 }
 
 fn yes() -> bool {
@@ -276,6 +291,22 @@ fn yes() -> bool {
 }
 
 impl Rule {
+    /// The oldest moment (ms) the rule reads, or None for all history.
+    pub fn floor_ms(&self, now_ms: i64) -> Option<i64> {
+        (self.lookback_days > 0).then(|| now_ms - self.lookback_days as i64 * 86_400_000)
+    }
+
+    /// The same as an id to read after ("" is the start of history).
+    pub fn floor(&self, now_ms: i64) -> String {
+        self.floor_ms(now_ms).map(ulid_at).unwrap_or_default()
+    }
+
+    /// Whether its cutoff is newer than its lookback (else there is nothing
+    /// to read or delete: everything it would delete is out of reach).
+    pub fn in_reach(&self, now_ms: i64) -> bool {
+        self.floor_ms(now_ms).is_none_or(|f| self.cutoff.at(now_ms) > f)
+    }
+
     /// The channels it works in now: a purge only where we may delete others'
     /// messages, and never in DMs or groups.
     pub fn channels<'a>(&self, known: &[ChannelRef<'a>]) -> Vec<&'a str> {
@@ -361,6 +392,38 @@ impl ChannelIndex {
             _ => out.push((cursor.map(str::to_owned), before.to_owned())),
         }
         out
+    }
+
+    /// The parts of [`from`, `before`) not seen yet, as [`Self::gaps`] (a
+    /// lookback's floor: older history doesn't count, and is never read).
+    /// An empty `from` is the start of history.
+    pub fn gaps_from(&self, from: &str, before: &str) -> Vec<(Option<String>, String)> {
+        if from.is_empty() {
+            return self.gaps(before);
+        }
+        let mut out = Vec::new();
+        let mut cursor = from;
+        for (a, b) in &self.known {
+            if a.as_str() >= before {
+                break;
+            }
+            if b.as_str() <= cursor {
+                continue;
+            }
+            if a.as_str() > cursor {
+                out.push((Some(cursor.to_owned()), a.clone()));
+            }
+            cursor = b;
+        }
+        if cursor < before {
+            out.push((Some(cursor.to_owned()), before.to_owned()));
+        }
+        out
+    }
+
+    /// Whether everything from `from` to `before` has been seen.
+    pub fn complete_between(&self, from: &str, before: &str) -> bool {
+        self.gaps_from(from, before).is_empty()
     }
 
     /// Whether everything before `before` has been seen.
@@ -528,13 +591,21 @@ impl AccountRules {
             return Vec::new();
         }
         let before = ulid_at(rule.cutoff.at(now_ms));
+        let floor = rule.floor(now_ms);
+        // Older than the lookback is left alone (and the range would be backwards).
+        if floor >= before {
+            return Vec::new();
+        }
         resolve(&rule.scope, known)
             .into_iter()
             .filter_map(|c| {
                 let ix = self.index.get(c)?;
                 let ids: Vec<String> = ix
                     .ids
-                    .range::<str, _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(before.as_str())))
+                    .range::<str, _>((
+                        std::ops::Bound::Included(floor.as_str()),
+                        std::ops::Bound::Excluded(before.as_str()),
+                    ))
                     .filter(|(_, k)| Kind::from_letter(**k).is_some_and(|k| rule.kinds.covers(k)))
                     .map(|(id, _)| id.clone())
                     .collect();
@@ -546,7 +617,11 @@ impl AccountRules {
     /// A rule's channels whose history before its cutoff isn't fully indexed
     /// (for a purge: swept) yet.
     pub fn unindexed(&self, rule: &Rule, known: &[ChannelRef], now_ms: i64) -> usize {
+        if !rule.in_reach(now_ms) {
+            return 0;
+        }
         let before = ulid_at(rule.cutoff.at(now_ms));
+        let floor = rule.floor(now_ms);
         if rule.everyone {
             let before = ulid_at(rule.cutoff.at(now_ms) - SWEPT_SLACK_MS);
             let swept = self.state.get(&rule.id).map(|s| &s.swept);
@@ -562,7 +637,11 @@ impl AccountRules {
         }
         resolve(&rule.scope, known)
             .into_iter()
-            .filter(|c| self.index.get(*c).is_none_or(|ix| !ix.complete_before(&before)))
+            .filter(|c| {
+                self.index
+                    .get(*c)
+                    .is_none_or(|ix| !ix.complete_between(&floor, &before))
+            })
             .count()
     }
 }
@@ -632,7 +711,14 @@ pub fn next_work(account: &AccountRules, known: &[ChannelRef], me: &str, now_ms:
     for rule in enabled.iter().filter(|r| r.everyone) {
         let before = ulid_at(rule.cutoff.at(now_ms));
         for channel in rule.channels(known) {
-            let after = account.state.get(&rule.id).and_then(|s| s.swept.get(channel)).cloned();
+            let swept = account.state.get(&rule.id).and_then(|s| s.swept.get(channel)).cloned();
+            // Never from before the lookback.
+            let floor = rule.floor(now_ms);
+            let after = match swept {
+                Some(s) if s >= floor => Some(s),
+                _ if floor.is_empty() => None,
+                _ => Some(floor),
+            };
             if after.as_deref().is_some_and(|a| a >= before.as_str()) {
                 continue;
             }
@@ -655,27 +741,42 @@ pub fn next_work(account: &AccountRules, known: &[ChannelRef], me: &str, now_ms:
     // How far back each channel needs to be known (the latest cutoff covering
     // it), and how far to read once it isn't: a day ahead of a rolling
     // cutoff, so it isn't read again for every minute the cutoff moves.
-    let mut need: BTreeMap<&str, (String, String)> = BTreeMap::new();
-    for rule in &enabled {
+    // (cutoff, until, floor): the floor is the widest lookback among them.
+    let mut need: BTreeMap<&str, (String, String, String)> = BTreeMap::new();
+    for rule in enabled.iter().filter(|r| r.in_reach(now_ms)) {
         let cutoff = ulid_at(rule.cutoff.at(now_ms));
         let until = index_until(rule, now_ms);
+        let floor = rule.floor(now_ms);
         for c in resolve(&rule.scope, known) {
-            let e = need.entry(c).or_insert_with(|| (cutoff.clone(), until.clone()));
+            let e = need
+                .entry(c)
+                .or_insert_with(|| (cutoff.clone(), until.clone(), floor.clone()));
             if cutoff > e.0 {
                 e.0 = cutoff.clone();
             }
             if until > e.1 {
                 e.1 = until.clone();
             }
+            if floor < e.2 {
+                e.2 = floor.clone();
+            }
         }
     }
     need.into_iter()
-        .filter(|(c, (cutoff, _))| account.index.get(*c).is_none_or(|ix| !ix.complete_before(cutoff)))
-        .filter_map(|(c, (_, until))| {
+        .filter(|(c, (cutoff, _, floor))| {
+            account
+                .index
+                .get(*c)
+                .is_none_or(|ix| !ix.complete_between(floor, cutoff))
+        })
+        .filter_map(|(c, (_, until, floor))| {
             let (after, before) = account
                 .index
                 .get(c)
-                .map_or_else(|| vec![(None, until.clone())], |ix| ix.gaps(&until))
+                .map_or_else(
+                    || ChannelIndex::default().gaps_from(&floor, &until),
+                    |ix| ix.gaps_from(&floor, &until),
+                )
                 .into_iter()
                 .next()?;
             Some(Job::Index {
@@ -990,6 +1091,8 @@ mod tests {
             cutoff,
             everyone: false,
             keep_pinned: true,
+            // These tests read from the start of history.
+            lookback_days: 0,
         }
     }
 
@@ -1263,5 +1366,116 @@ mod tests {
         assert_eq!(account.unindexed(&account.rules[0], &known, now), 0);
         account.recheck(1, &["mod"], now);
         assert_eq!(next_work(&account, &known, "me", now).len(), 1);
+    }
+
+    #[test]
+    fn lookback_bounds_reading_and_deleting() {
+        let day = 86_400_000;
+        let now = 1_700_000_000_000;
+        let mut r = rule(1, Cutoff::OlderThanDays(30));
+        r.lookback_days = 90;
+        assert_eq!(r.floor_ms(now), Some(now - 90 * day));
+        assert!(r.in_reach(now));
+        // A cutoff older than the lookback leaves nothing in reach.
+        r.cutoff = Cutoff::Before(now - 100 * day);
+        assert!(!r.in_reach(now));
+        r.lookback_days = 0;
+        assert!(r.in_reach(now) && r.floor(now).is_empty());
+
+        // Indexing starts at the floor, never at the start of history.
+        r.cutoff = Cutoff::OlderThanDays(30);
+        r.lookback_days = 90;
+        let mut account = AccountRules::default();
+        account.upsert(r.clone(), now);
+        let jobs = next_work(&account, &known(), "me", now);
+        assert!(!jobs.is_empty());
+        for j in &jobs {
+            let Job::Index { after, .. } = j else { panic!("{j:?}") };
+            assert_eq!(after.as_deref(), Some(r.floor(now).as_str()));
+        }
+        // Once floor..cutoff is known the channel is done, though history
+        // before the floor was never read.
+        let (lo, hi) = (r.floor(now), ulid_at(r.cutoff.at(now) + day));
+        for c in ["dm", "a1"] {
+            account.index.entry(c.into()).or_default().learn(&lo, &hi);
+        }
+        assert_eq!(account.unindexed(&r, &known(), now), 0);
+        assert!(next_work(&account, &known(), "me", now).is_empty());
+        // Deleting ignores what the index holds from before the floor.
+        let ix = account.index.get_mut("dm").unwrap();
+        ix.ids.insert(id(now - 200 * day, 'A'), 't');
+        ix.ids.insert(id(now - 60 * day, 'A'), 't');
+        let del = account.deletable(&r, &known(), now);
+        assert_eq!(del.len(), 1);
+        assert_eq!(del[0].1.len(), 1);
+    }
+
+    #[test]
+    fn purges_start_at_the_floor() {
+        let now = 1_700_000_000_000;
+        let mut r = rule(2, Cutoff::OlderThanDays(30));
+        r.everyone = true;
+        r.lookback_days = 90;
+        r.scope = Scope::default();
+        r.scope.channels.insert("mod".into());
+        let known = [ChannelRef {
+            id: "mod",
+            server: Some("A"),
+            private: false,
+            readable: true,
+            manage: true,
+        }];
+        let mut account = AccountRules::default();
+        account.upsert(r.clone(), now);
+        let jobs = next_work(&account, &known, "me", now);
+        let [Job::Purge { after, .. }] = jobs.as_slice() else {
+            panic!("{jobs:?}")
+        };
+        assert_eq!(after.as_deref(), Some(r.floor(now).as_str()));
+        // A sweep from before the floor (an older lookback) restarts at it.
+        account
+            .state
+            .entry(2)
+            .or_default()
+            .swept
+            .insert("mod".into(), "0".into());
+        let jobs = next_work(&account, &known, "me", now);
+        assert!(matches!(&jobs[0], Job::Purge { after, .. } if after.as_deref() == Some(r.floor(now).as_str())));
+    }
+
+    #[test]
+    fn gaps_start_at_the_floor() {
+        let mut ix = ChannelIndex::default();
+        assert_eq!(ix.gaps_from("D", "M"), vec![(Some("D".into()), "M".into())]);
+        ix.learn("F", "H");
+        assert_eq!(
+            ix.gaps_from("D", "M"),
+            vec![(Some("D".into()), "F".into()), (Some("H".into()), "M".into())]
+        );
+        // A floor inside a known range starts after it.
+        assert_eq!(ix.gaps_from("G", "M"), vec![(Some("H".into()), "M".into())]);
+        assert!(ix.complete_between("F", "H"));
+        assert!(ix.gaps_from("M", "D").is_empty());
+        assert_eq!(ix.gaps_from("", "M"), ix.gaps("M"));
+    }
+
+    #[test]
+    fn old_rules_get_a_year() {
+        let json = r#"{"id":1,"name":"x","enabled":true,"scope":{},"kinds":{},"cutoff":{"OlderThanDays":90}}"#;
+        let r: Rule = serde_json::from_str(json).unwrap();
+        assert_eq!(r.lookback_days, DEFAULT_LOOKBACK_DAYS);
+    }
+
+    #[test]
+    fn a_server_minus_channels_plus_single_channels() {
+        let mut scope = Scope::default();
+        scope.servers.insert("A".into(), ["a2".to_string()].into());
+        assert_eq!(resolve(&scope, &known()), vec!["a1"]);
+        // A channel of another server, picked on its own, adds to it.
+        scope.channels.insert("b1".into());
+        assert_eq!(resolve(&scope, &known()), vec!["a1", "b1"]);
+        // Picking an excluded channel singly brings it back.
+        scope.channels.insert("a2".into());
+        assert_eq!(resolve(&scope, &known()), vec!["a1", "a2", "b1"]);
     }
 }

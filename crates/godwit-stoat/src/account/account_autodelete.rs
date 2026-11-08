@@ -452,7 +452,12 @@ impl StoatAccount {
                     draft: draft_of(rule),
                     where_text: scope_summary(&rule.scope, &known).into(),
                     what_text: kinds_summary(rule.kinds).into(),
-                    when_text: cutoff_summary(rule.cutoff).into(),
+                    when_text: format!(
+                        "{}, {}",
+                        cutoff_summary(rule.cutoff),
+                        lookback_summary(rule.lookback_days)
+                    )
+                    .into(),
                     progress: progress.into(),
                     deleted: state.deleted,
                     last_error: state.last_error.map(Into::into),
@@ -466,6 +471,15 @@ impl StoatAccount {
             .map(|s| ServerChoice {
                 id: s.id.as_str().into(),
                 name: s.name.as_str().into(),
+                channels: known
+                    .iter()
+                    .filter(|c| c.readable && c.server.as_deref() == Some(s.id.as_str()))
+                    .map(|c| ServerChoice {
+                        id: c.id.as_str().into(),
+                        name: c.name.as_str().into(),
+                        channels: Vec::new(),
+                    })
+                    .collect(),
             })
             .collect();
         servers.sort_by_cached_key(|s| s.name.to_lowercase());
@@ -475,7 +489,14 @@ impl StoatAccount {
             .map(|c| ServerChoice {
                 id: c.id.as_str().into(),
                 name: c.name.as_str().into(),
+                channels: Vec::new(),
             })
+            .collect();
+        let indexed = account
+            .index
+            .iter()
+            .filter(|(_, ix)| !ix.known.is_empty())
+            .map(|(c, _)| Arc::from(c.as_str()))
             .collect();
         AutoDeleteView {
             on: account.is_on(),
@@ -486,6 +507,7 @@ impl StoatAccount {
             index_error: self.autodelete.index_error.as_deref().map(Into::into),
             servers,
             chats,
+            indexed,
         }
     }
 }
@@ -495,7 +517,14 @@ fn rule_from(d: &RuleDraft, id: u64) -> Rule {
     let scope = Scope {
         all_private: d.all_private,
         channels: d.channels.iter().map(|c| c.to_string()).collect(),
-        servers: d.servers.iter().map(|s| (s.to_string(), BTreeSet::new())).collect(),
+        servers: d
+            .servers
+            .iter()
+            .map(|s| {
+                let out = d.left_out.iter().filter(|(server, _)| server == s);
+                (s.to_string(), out.map(|(_, c)| c.to_string()).collect())
+            })
+            .collect(),
     };
     let cutoff = match (d.older_than_days, d.before_ms) {
         (Some(days), _) => Cutoff::OlderThanDays(days.max(1)),
@@ -519,6 +548,7 @@ fn rule_from(d: &RuleDraft, id: u64) -> Rule {
         cutoff,
         everyone: d.everyone,
         keep_pinned: d.keep_pinned,
+        lookback_days: d.lookback_days,
     }
 }
 
@@ -543,6 +573,13 @@ fn draft_of(r: &Rule) -> RuleDraft {
             Cutoff::Before(ms) => Some(ms),
             Cutoff::OlderThanDays(_) => None,
         },
+        left_out: r
+            .scope
+            .servers
+            .iter()
+            .flat_map(|(s, out)| out.iter().map(move |c| (Arc::from(s.as_str()), Arc::from(c.as_str()))))
+            .collect(),
+        lookback_days: r.lookback_days,
     }
 }
 
@@ -607,6 +644,16 @@ fn kinds_summary(k: Kinds) -> String {
         .unwrap_or_default()
 }
 
+fn lookback_summary(days: u32) -> String {
+    match days {
+        0 => "reading all history".into(),
+        90 => "reading back 3 months".into(),
+        365 => "reading back 1 year".into(),
+        730 => "reading back 2 years".into(),
+        d => format!("reading back {d} days"),
+    }
+}
+
 fn cutoff_summary(c: Cutoff) -> String {
     match c {
         Cutoff::OlderThanDays(d) => format!("Older than {d} day{} (keeps going)", if d == 1 { "" } else { "s" }),
@@ -665,6 +712,27 @@ mod tests {
         assert_eq!(back.id, Some(7));
         assert!(back.all_private && back.servers == vec![Arc::<str>::from("s1")]);
         assert!(back.text && back.links && !back.media);
+    }
+
+    #[test]
+    fn left_out_channels_and_lookback_round_trip() {
+        let draft = RuleDraft {
+            servers: vec!["s1".into(), "s2".into()],
+            channels: vec!["c9".into()],
+            left_out: vec![("s1".into(), "c1".into()), ("s1".into(), "c2".into())],
+            lookback_days: 730,
+            text: true,
+            older_than_days: Some(90),
+            ..RuleDraft::default()
+        };
+        let rule = rule_from(&draft, 1);
+        assert_eq!(rule.scope.servers["s1"].len(), 2);
+        assert!(rule.scope.servers["s2"].is_empty());
+        assert_eq!(rule.lookback_days, 730);
+        let back = draft_of(&rule);
+        assert_eq!(back.left_out, draft.left_out);
+        assert_eq!(back.lookback_days, 730);
+        assert_eq!(lookback_summary(365), "reading back 1 year");
     }
 
     #[test]

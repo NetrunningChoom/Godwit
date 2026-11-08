@@ -342,6 +342,12 @@ impl Shell {
         }
     }
 
+    pub fn autodelete_toggle_expand(&mut self, ui: &AppWindow, index: i32) {
+        if let Ok(index) = usize::try_from(index) {
+            self.autodelete_page.toggle_expand(ui, index);
+        }
+    }
+
     pub fn autodelete_search(&mut self, ui: &AppWindow, query: String) {
         self.autodelete_page.search(ui, query);
     }

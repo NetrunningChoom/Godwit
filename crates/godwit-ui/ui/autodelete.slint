@@ -5,7 +5,7 @@
 // 30 days" note and the confirmation are steps in the page itself.
 
 import { ScrollView } from "std-widgets.slint";
-import { Theme } from "theme.slint";
+import { Theme, Icons, Icon } from "theme.slint";
 import { Button, TextField, Toggle, SurfaceCard as Card } from "widgets.slint";
 
 export struct AdRuleItem {
@@ -20,11 +20,15 @@ export struct AdRuleItem {
     error: string,
 }
 
-// A row of the editor's "Where" list: a section heading, or a chat or server.
+// A row of the editor's "Where" list: a section heading, a chat, a server
+// (expandable to its channels) or one of a server's channels (`child`).
 export struct AdPlaceItem {
     name: string,
     chosen: bool,
     header: bool,
+    child: bool,
+    expandable: bool,
+    expanded: bool,
 }
 
 // Why deleting messages younger than 30 days is usually unwise (Godwit's words).
@@ -97,6 +101,10 @@ export global AdState {
     in-out property <bool> ed-rolling: true;
     in-out property <string> ed-days: "90";
     in-out property <string> ed-date;
+    // How far back the rule reads, in days (0: all history).
+    in-out property <int> ed-lookback: 365;
+    // What reading that costs, from what's known locally.
+    in property <string> ed-estimate;
     in property <string> ed-error;
     // What saving will do, in words (for the confirmation).
     in property <string> ed-summary;
@@ -108,6 +116,8 @@ export global AdState {
     callback recheck-rule(int);
     callback remove-rule(int);
     callback toggle-place(int);
+    // Open or close a server's channels.
+    callback toggle-expand(int);
     callback search-places(string);
     // "Whose" or "All DMs and groups" changed: the list follows.
     callback scope-changed();
@@ -370,11 +380,23 @@ export component AutoDeletePage inherits VerticalLayout {
                             vertical-alignment: bottom;
                         }
                         if !p.header: Check {
-                            x: 0;
-                            width: parent.width;
+                            x: p.child ? 28px : 0px;
+                            width: parent.width - self.x - (p.expandable ? 32px : 0px);
                             checked: p.chosen;
                             label: p.name;
                             toggled => { AdState.toggle-place(i); }
+                        }
+                        if p.expandable: Rectangle {
+                            x: parent.width - 28px;
+                            width: 28px;
+                            Icon {
+                                text: p.expanded ? Icons.expand-less : Icons.expand;
+                                color: Theme.on-surface-variant;
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { AdState.toggle-expand(i); }
+                            }
                         }
                     }
                     if AdState.places.length == 0: Text { text: "Nothing matches."; color: Theme.on-surface-variant; }
@@ -399,6 +421,24 @@ export component AutoDeletePage inherits VerticalLayout {
         }
         Check { checked: !AdState.ed-rolling; label: "Sent before a date (once)"; toggled => { AdState.ed-rolling = false; } }
         if !AdState.ed-rolling: TextField { width: 160px; text <=> AdState.ed-date; placeholder: "YYYY-MM-DD"; }
+        Text { text: "How far back to read"; font-size: Theme.text-small; color: Theme.on-surface-variant; }
+        HorizontalLayout {
+            alignment: start;
+            spacing: Theme.space-5;
+            Check { checked: AdState.ed-lookback == 90; label: "3 months"; toggled => { AdState.ed-lookback = 90; AdState.scope-changed(); } }
+            Check { checked: AdState.ed-lookback == 365; label: "1 year"; toggled => { AdState.ed-lookback = 365; AdState.scope-changed(); } }
+            Check { checked: AdState.ed-lookback == 730; label: "2 years"; toggled => { AdState.ed-lookback = 730; AdState.scope-changed(); } }
+            Check { checked: AdState.ed-lookback == 0; label: "All history"; toggled => { AdState.ed-lookback = 0; AdState.scope-changed(); } }
+        }
+        Text {
+            text: AdState.ed-lookback == 0
+                ? "All history reads every message ever sent in these channels, a page of 100 every few seconds, so a busy channel can take hours of background requests."
+                : "Messages older than this are never read and are left alone.";
+            wrap: word-wrap;
+            font-size: Theme.text-small;
+            color: Theme.on-surface-variant;
+        }
+        if AdState.ed-estimate != "": Text { text: AdState.ed-estimate; wrap: word-wrap; font-size: Theme.text-small; color: Theme.on-surface-variant; }
         Check { checked: AdState.ed-enabled; toggled => { AdState.ed-enabled = !AdState.ed-enabled; } label: "Rule on (eligible to run when account auto-delete is on)"; }
         if AdState.ed-error != "": Text { text: AdState.ed-error; color: Theme.error; wrap: word-wrap; }
         HorizontalLayout {

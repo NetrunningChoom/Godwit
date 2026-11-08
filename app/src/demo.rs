@@ -1320,6 +1320,8 @@ pub struct DemoAccount {
     outgoing: Vec<godwit_core::application::Person>,
     /// Roles, timeouts and nicknames given to members from their cards.
     members: std::collections::HashMap<String, DemoMember>,
+    /// The auto-delete page's rules.
+    autodelete: DemoAutoDelete,
 }
 
 /// A demo server's overview. Only the first server is ours to manage, so the
@@ -1525,7 +1527,9 @@ impl DemoAccount {
                 .collect()
         };
         let (incoming, outgoing) = (request(true), request(false));
+        let autodelete = DemoAutoDelete::new(app, &servers);
         Self {
+            autodelete,
             own_profile: demo_own_profile(),
             id: account(),
             names,
@@ -2181,6 +2185,13 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     result,
                 });
                 out
+            }
+            Command::AutoDelete(command) => {
+                self.autodelete.run(command);
+                vec![Event::AutoDelete {
+                    account: self.id.clone(),
+                    view: self.autodelete.view(),
+                }]
             }
             Command::LoadOwnProfile => vec![Event::OwnProfileLoaded {
                 account: self.id.clone(),
@@ -3366,5 +3377,110 @@ mod tests {
             .find(|m| &*m.id.0 == "08")
             .map(|m| m.reactions[0].count);
         assert_eq!(thumbs, Some(2), "ours taken back");
+    }
+}
+
+/// The demo's auto-delete page: the account's real servers and chats to pick
+/// from, and rules kept in memory (nothing is read or deleted).
+#[derive(Default)]
+struct DemoAutoDelete {
+    on: bool,
+    rules: Vec<godwit_core::autodelete::RuleDraft>,
+    servers: Vec<godwit_core::autodelete::ServerChoice>,
+    chats: Vec<godwit_core::autodelete::ServerChoice>,
+}
+
+impl DemoAutoDelete {
+    fn new(app: &Application, servers: &[Server]) -> Self {
+        use godwit_core::autodelete::ServerChoice;
+        let choice = |id: &str, name: &str, channels| ServerChoice {
+            id: id.into(),
+            name: name.into(),
+            channels,
+        };
+        let servers = servers
+            .iter()
+            .map(|s| {
+                let channels = s
+                    .rooms()
+                    .filter_map(|id| app.state().room(id))
+                    .map(|r| choice(&r.id.raw, &r.name, Vec::new()))
+                    .collect();
+                choice(&s.id.raw, &s.name, channels)
+            })
+            .collect();
+        let chats = app
+            .state()
+            .rooms
+            .iter()
+            .filter(|r| {
+                r.id.account == account()
+                    && matches!(
+                        r.kind,
+                        godwit_core::room::RoomKind::Direct { .. } | godwit_core::room::RoomKind::Group
+                    )
+            })
+            .map(|r| choice(&r.id.raw, &r.name, Vec::new()))
+            .collect();
+        Self {
+            servers,
+            chats,
+            ..Self::default()
+        }
+    }
+
+    fn view(&self) -> godwit_core::autodelete::AutoDeleteView {
+        use godwit_core::autodelete::{AutoDeleteView, RuleView};
+        let rules = self
+            .rules
+            .iter()
+            .map(|d| RuleView {
+                draft: d.clone(),
+                where_text: format!("{} server(s), {} chat(s)", d.servers.len(), d.channels.len()).into(),
+                what_text: "All messages".into(),
+                when_text: d
+                    .older_than_days
+                    .map_or_else(String::new, |n| format!("Older than {n} days (keeps going)"))
+                    .into(),
+                progress: "Demo: nothing is read or deleted".into(),
+                deleted: 0,
+                last_error: None,
+            })
+            .collect();
+        AutoDeleteView {
+            on: self.on,
+            rules,
+            gap_ms: 1500,
+            recheck_days: 90,
+            working: false,
+            index_error: None,
+            servers: self.servers.clone(),
+            chats: self.chats.clone(),
+            indexed: Vec::new(),
+        }
+    }
+
+    fn run(&mut self, command: godwit_core::autodelete::AutoDeleteCommand) {
+        use godwit_core::autodelete::AutoDeleteCommand as C;
+        match command {
+            C::Save(mut draft) => {
+                let id = draft
+                    .id
+                    .unwrap_or_else(|| self.rules.iter().filter_map(|r| r.id).max().unwrap_or(0) + 1);
+                draft.id = Some(id);
+                match self.rules.iter_mut().find(|r| r.id == Some(id)) {
+                    Some(old) => *old = draft,
+                    None => self.rules.push(draft),
+                }
+            }
+            C::Remove(id) => self.rules.retain(|r| r.id != Some(id)),
+            C::SetEnabled(id, on) => {
+                if let Some(r) = self.rules.iter_mut().find(|r| r.id == Some(id)) {
+                    r.enabled = on;
+                }
+            }
+            C::SetOn(on) => self.on = on,
+            C::Show | C::Recheck(_) | C::SetGap(_) | C::SetRecheckDays(_) | C::Stop => {}
+        }
     }
 }

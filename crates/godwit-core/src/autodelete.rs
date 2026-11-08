@@ -30,6 +30,10 @@ pub struct RuleDraft {
     pub older_than_days: Option<u32>,
     /// One-off: sent before this moment (ms since the epoch).
     pub before_ms: Option<i64>,
+    /// Channels left out of the whole servers: (server, channel) ids.
+    pub left_out: Vec<(Arc<str>, Arc<str>)>,
+    /// How far back the rule ever reads, in days (0: all history).
+    pub lookback_days: u32,
 }
 
 /// A rule in the list: what it does, in words, and how far it got.
@@ -50,6 +54,8 @@ pub struct RuleView {
 pub struct ServerChoice {
     pub id: Arc<str>,
     pub name: Arc<str>,
+    /// A server's channels it can read (to leave out or pick singly).
+    pub channels: Vec<ServerChoice>,
 }
 
 /// An account's auto-delete page.
@@ -68,6 +74,9 @@ pub struct AutoDeleteView {
     pub servers: Vec<ServerChoice>,
     /// DMs and groups, to pick one by one.
     pub chats: Vec<ServerChoice>,
+    /// Channels whose history the index has started on (what's known
+    /// locally, for the editor's estimate of how much is left to read).
+    pub indexed: Vec<Arc<str>>,
 }
 
 /// What the page asks of the network.

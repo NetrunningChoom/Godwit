@@ -1225,7 +1225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             size: Some((1280, 1000)),
             ..Scene::new(
                 "settings-autodelete-editor",
-                Box::new(|_, ui, _, _| {
+                Box::new(|app, ui, _, _| {
                     use slint::ComponentHandle;
                     ui.set_settings_open(true);
                     ui.set_settings_section(10);
@@ -1233,20 +1233,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ui.set_settings_account_profile(true);
                     ui.set_settings_account_autodelete(true);
                     ui.set_settings_account_tab(2);
+                    // The real page, filled the way the app does it: the demo
+                    // account answers the core, and the editor opens with the
+                    // lookback choice and a server open on its channels.
+                    use godwit_core::account::NetworkAccount;
+                    use godwit_core::autodelete::AutoDeleteCommand;
+                    let mut demo = godwit::demo::DemoAccount::new(app);
+                    for event in demo.run(godwit_core::application::Command::AutoDelete(AutoDeleteCommand::Show)) {
+                        app.apply(event);
+                    }
+                    let view = app.state().autodelete.get(&account()).cloned();
+                    let mut page = godwit::autodelete_page::AutoDeletePage::default();
+                    page.show(ui, view.as_ref(), "Stoat · Demo (@demo)");
+                    page.edit(ui, view.as_ref(), None);
                     let ad = ui.global::<godwit::ui::AdState>();
-                    let place = |name: &str, chosen, header| godwit::ui::AdPlaceItem {
-                        name: name.into(),
-                        chosen,
-                        header,
+                    let row = |name: &str| {
+                        use slint::Model;
+                        ad.get_places().iter().position(|p| !p.header && p.name == name)
                     };
-                    ad.set_places(slint::ModelRc::new(slint::VecModel::from(vec![
-                        place("Direct messages and groups", false, true),
-                        place("Xaxais", true, false),
-                        place("Dolor sit", false, false),
-                        place("Servers (each taken whole)", false, true),
-                        place("Lorem", true, false),
-                        place("Ipsum", false, false),
-                    ])));
+                    // The first server whole, then opened, with its first channel left out.
+                    let first = view.as_ref().and_then(|v| v.servers.first());
+                    if let Some(server) = first {
+                        if let Some(i) = row(&server.name) {
+                            page.toggle_place(ui, i);
+                            page.toggle_expand(ui, i);
+                        }
+                        if let Some(c) = server.channels.first()
+                            && let Some(i) = row(&c.name)
+                        {
+                            page.toggle_place(ui, i);
+                        }
+                    }
                     ad.set_step(1);
                     Screen::Main
                 }),

@@ -277,6 +277,7 @@ fn connect_callbacks(ui: &AppWindow) {
         callback!(ad.on_recheck_rule(i) => |sh, ui| sh.autodelete_rule(ui, i, C::Recheck));
         callback!(ad.on_remove_rule(i) => |sh, ui| sh.autodelete_rule(ui, i, C::Remove));
         callback!(ad.on_toggle_place(i) => |sh, ui| sh.autodelete_toggle_place(ui, i));
+        callback!(ad.on_toggle_expand(i) => |sh, ui| sh.autodelete_toggle_expand(ui, i));
         callback!(ad.on_scope_changed() => |sh, ui| sh.autodelete_scope_changed(ui));
         callback!(ad.on_search_places(q) => |sh, ui| sh.autodelete_search(ui, q.to_string()));
         callback!(ad.on_set_gentle(gentle) => |sh, ui| {
