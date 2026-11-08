@@ -524,26 +524,6 @@ export component Sidebar inherits Rectangle {
                 alignment: start;
                 spacing: Theme.space-1;
                 padding-bottom: Theme.gap-md;
-                // Everyone as one person across networks.
-                if root.home-navigation: MenuButton {
-                    glyph: Icons.link;
-                    label: "People";
-                    selected: root.people-selected;
-                    clicked => { root.show-people(); }
-                }
-                if root.home-navigation: MenuButton {
-                    glyph: Icons.group;
-                    label: "Add a friend";
-                    selected: root.friends-selected;
-                    clicked => { root.show-friends(); }
-                }
-                // Friends in calls and in games, across networks.
-                if root.home-navigation: MenuButton {
-                    glyph: Icons.group;
-                    label: "Active now";
-                    selected: root.active-selected;
-                    clicked => { root.show-active(); }
-                }
                 // Every alert, newest first, across networks (Godwit's own).
                 if root.home-navigation: MenuButton {
                     glyph: Icons.notifications;
@@ -552,12 +532,33 @@ export component Sidebar inherits Rectangle {
                     selected: root.notifications-selected;
                     clicked => { root.show-notifications(); }
                 }
+                // Friends in calls and in games, across networks.
+                if root.home-navigation: MenuButton {
+                    glyph: Icons.group;
+                    label: "Active now";
+                    selected: root.active-selected;
+                    clicked => { root.show-active(); }
+                }
+                // Everyone as one person across networks.
+                if root.home-navigation: MenuButton {
+                    glyph: Icons.link;
+                    label: "People";
+                    selected: root.people-selected;
+                    clicked => { root.show-people(); }
+                }
                 // Which games friends share, on the networks with game libraries.
                 if root.home-navigation && root.can-show-games: MenuButton {
                     glyph: Icons.group;
                     label: "Games in common";
                     selected: root.games-selected;
                     clicked => { root.show-games(); }
+                }
+                // Adding someone is an action, used rarely: last.
+                if root.home-navigation: MenuButton {
+                    glyph: Icons.group;
+                    label: "Add a friend";
+                    selected: root.friends-selected;
+                    clicked => { root.show-friends(); }
                 }
                 if root.home-navigation: Text {
                     x: Theme.space-4;
