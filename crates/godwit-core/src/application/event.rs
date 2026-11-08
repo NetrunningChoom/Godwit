@@ -46,6 +46,12 @@ pub enum Event {
         request: u64,
         result: Result<Option<crate::channel_settings::ChannelOverview>, Arc<str>>,
     },
+    /// A channel's overrides changed elsewhere (another admin, another
+    /// client): the open page shows them.
+    ChannelOverrides {
+        room: RoomId,
+        overrides: crate::channel_settings::ChannelOverrides,
+    },
     ServerOverview {
         server: ServerId,
         request: u64,

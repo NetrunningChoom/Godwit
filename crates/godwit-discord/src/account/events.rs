@@ -292,7 +292,15 @@ impl DiscordAccount {
                 self.sync_servers(out);
             }
             "CHANNEL_CREATE" | "CHANNEL_UPDATE" => {
+                let id = d["id"].as_str().unwrap_or_default();
+                let before = self.store.channels.get(id).map(|c| c.overwrites.clone());
                 self.store.put_channel(d);
+                // Someone changed its permissions: an open settings page shows them.
+                if event == "CHANNEL_UPDATE"
+                    && before.is_some_and(|b| self.store.channels.get(id).is_some_and(|c| c.overwrites != b))
+                {
+                    self.overrides_changed(id, out);
+                }
                 self.sync_rooms(out);
                 self.sync_servers(out);
             }

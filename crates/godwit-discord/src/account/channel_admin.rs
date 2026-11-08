@@ -5,8 +5,12 @@
 //! Managing channels and categories: settings, delete, create and move.
 
 use super::*;
-use godwit_core::channel_settings::{ChannelOverview, ChannelOverviewEdit};
+use crate::permissions::Overwrite;
+use godwit_core::channel_settings::{
+    ChannelOverride, ChannelOverrides, ChannelOverview, ChannelOverviewEdit, OverrideChoice, OverrideTarget,
+};
 use godwit_core::own_profile::ProfileImage;
+use godwit_core::server_settings::PermissionInfo;
 
 /// Modify Channel's limits (docs.discord.food/resources/channel): a name of
 /// 1 to 100 characters, a topic of up to 1024 (4096 for forums and media
@@ -15,6 +19,8 @@ const NAME_MAX: usize = 100;
 const TOPIC_MAX: u32 = 1024;
 const FORUM_TOPIC_MAX: u32 = 4096;
 const SLOWMODE_MAX: u32 = 21_600;
+/// Members listed to add an override for: only those we've seen, so cap it.
+const MEMBER_CHOICES_MAX: usize = 200;
 
 impl DiscordAccount {
     /// A server channel or category of this account we may manage: Manage
@@ -48,7 +54,217 @@ impl DiscordAccount {
             is_category: category,
             slowmode: (!category).then_some(c.slowmode),
             description_max: topic_max(c),
+            overrides: self.channel_overrides(c),
         })
+    }
+
+    /// The Permissions page: @everyone first, then the roles (highest
+    /// first) and members that have an override, as the official client's
+    /// channel permissions list them.
+    fn channel_overrides(&self, c: &store::Channel) -> Option<ChannelOverrides> {
+        let guild = self.store.guilds.get(c.guild.as_deref()?)?;
+        let target = |id: &str, member: bool| OverrideTarget { id: id.into(), member };
+        let colour = |r: &store::Role| (r.color != 0).then(|| format!("#{:06x}", r.color & 0xff_ffff).into());
+        let role_entry = |id: &str| -> Option<ChannelOverride> {
+            let r = guild.roles.get(id)?;
+            let o = c.overwrites.iter().find(|o| !o.member && o.id == id);
+            Some(ChannelOverride {
+                target: target(id, false),
+                name: if id == guild.id {
+                    "@everyone".into()
+                } else {
+                    r.name.as_str().into()
+                },
+                colour: colour(r),
+                everyone: id == guild.id,
+                allow: o.map_or(0, |o| o.allow),
+                deny: o.map_or(0, |o| o.deny),
+            })
+        };
+        let by_rank = |a: &&store::Role, b: &&store::Role| b.position.cmp(&a.position).then_with(|| a.id.cmp(&b.id));
+        let mut roles: Vec<&store::Role> = guild.roles.values().filter(|r| r.id != guild.id).collect();
+        roles.sort_by(by_rank);
+        let has = |id: &str, member: bool| c.overwrites.iter().any(|o| o.member == member && o.id == id);
+        let mut entries: Vec<ChannelOverride> = role_entry(&guild.id).into_iter().collect();
+        entries.extend(
+            roles
+                .iter()
+                .filter(|r| has(&r.id, false))
+                .filter_map(|r| role_entry(&r.id)),
+        );
+        // An overwrite of a role that's gone stays on the channel: list it so it can be removed.
+        entries.extend(
+            c.overwrites
+                .iter()
+                .filter(|o| !o.member && !guild.roles.contains_key(&o.id))
+                .map(|o| ChannelOverride {
+                    target: target(&o.id, false),
+                    name: "Deleted role".into(),
+                    colour: None,
+                    everyone: false,
+                    allow: o.allow,
+                    deny: o.deny,
+                }),
+        );
+        let mut members: Vec<ChannelOverride> = c
+            .overwrites
+            .iter()
+            .filter(|o| o.member)
+            .map(|o| ChannelOverride {
+                target: target(&o.id, true),
+                name: self.store.display_name(&o.id, c.guild.as_deref()).into(),
+                colour: None,
+                everyone: false,
+                allow: o.allow,
+                deny: o.deny,
+            })
+            .collect();
+        members.sort_by(|a, b| a.name.cmp(&b.name));
+        entries.extend(members);
+        let mut choices: Vec<OverrideChoice> = roles
+            .iter()
+            .filter(|r| !has(&r.id, false))
+            .map(|r| OverrideChoice {
+                target: target(&r.id, false),
+                name: r.name.as_str().into(),
+            })
+            .collect();
+        // Members as far as we've seen them: Discord has no list to ask for here.
+        let mut people: Vec<OverrideChoice> = self
+            .store
+            .members
+            .keys()
+            .filter(|(g, u)| *g == guild.id && !has(u, true))
+            .map(|(_, u)| OverrideChoice {
+                target: target(u, true),
+                name: self.store.display_name(u, c.guild.as_deref()).into(),
+            })
+            .collect();
+        // Only the first names alphabetically are listed: partition before sorting.
+        if people.len() > MEMBER_CHOICES_MAX {
+            people.select_nth_unstable_by(MEMBER_CHOICES_MAX, |a, b| a.name.cmp(&b.name));
+            people.truncate(MEMBER_CHOICES_MAX);
+        }
+        people.sort_by(|a, b| a.name.cmp(&b.name));
+        choices.extend(people);
+        let kind = match c.kind {
+            store::GUILD_VOICE => p::VOICE,
+            store::GUILD_STAGE_VOICE => p::STAGE,
+            store::GUILD_CATEGORY => p::TEXT | p::VOICE | p::STAGE,
+            _ => p::TEXT,
+        };
+        let mut last = "";
+        let permissions: Arc<[PermissionInfo]> = p::CHANNEL_ROWS
+            .iter()
+            .filter(|r| r.4 & kind != 0)
+            .map(|&(group, bit, title, description, _)| {
+                let heading = (group != last).then(|| group.into());
+                last = group;
+                PermissionInfo {
+                    bit,
+                    heading,
+                    title: title.into(),
+                    description: description.into(),
+                }
+            })
+            .collect();
+        Some(ChannelOverrides {
+            entries,
+            permissions,
+            choices,
+            can_edit: self.store.can(&c.id, p::MANAGE_ROLES),
+            grantable: self.grantable(c),
+        })
+    }
+
+    /// What we may allow or deny in a channel (Modify Channel Permissions,
+    /// docs.discord.food/resources/channel): what we have in the server or
+    /// in the channel's category, or everything with a Manage Roles
+    /// overwrite here. Administrators and owners have all; for anyone else
+    /// Manage Permissions itself is never grantable ("setting MANAGE_ROLES
+    /// in channels is only possible for administrators").
+    fn grantable(&self, c: &store::Channel) -> u64 {
+        let Some(guild) = c.guild.as_deref() else { return 0 };
+        if self.store.channel_permissions(&c.id) == p::ALL {
+            return p::ALL;
+        }
+        let Some(me) = self.store.me.as_ref() else { return 0 };
+        let roles = self
+            .store
+            .members
+            .get(&(guild.to_owned(), me.id.clone()))
+            .map(|m| m.roles.as_slice())
+            .unwrap_or_default();
+        let manages = c.overwrites.iter().any(|o| {
+            o.allow & p::MANAGE_ROLES != 0
+                && if o.member {
+                    o.id == me.id
+                } else {
+                    o.id == guild || roles.contains(&o.id)
+                }
+        });
+        let bits = if manages {
+            p::ALL
+        } else {
+            let parent = c.parent.as_deref().map_or(0, |p| self.store.channel_permissions(p));
+            self.store.guild_permissions(guild) | parent
+        };
+        bits & !p::MANAGE_ROLES
+    }
+
+    /// A channel's overrides changed (CHANNEL_UPDATE): tell an open page.
+    pub(super) fn overrides_changed(&self, channel: &str, out: &mut Vec<Event>) {
+        let (Some(room), Some(c)) = (self.room_id(channel), self.store.channels.get(channel)) else {
+            return;
+        };
+        if self.settings_channel.as_deref() == Some(channel)
+            && self.store.can(channel, p::MANAGE_CHANNELS)
+            && let Some(overrides) = self.channel_overrides(c)
+        {
+            out.push(Event::ChannelOverrides { room, overrides });
+        }
+    }
+
+    /// An override change we may make: Manage Permissions (and Manage
+    /// Channels, which opens the page), and only bits we can grant.
+    fn overwrite_for(
+        &self,
+        room: &RoomId,
+        target: &OverrideTarget,
+        change: Option<(u64, u64)>,
+    ) -> Result<Overwrite, &'static str> {
+        let c = self.managed_channel(room)?;
+        let Some(o) = self.channel_overrides(c).filter(|o| o.can_edit) else {
+            return Err("You need the Manage Permissions permission for this.");
+        };
+        let existing = o.entries.iter().find(|e| &e.target == target);
+        let (allow, deny) = match change {
+            Some((allow, deny)) if o.may_set(target, allow, deny) => (allow, deny),
+            Some(_) => return Err("You can't give permissions you don't have yourself."),
+            None if existing.is_some_and(|e| !e.everyone) => (0, 0),
+            None => return Err("That override can't be removed."),
+        };
+        Ok(Overwrite {
+            id: target.id.to_string(),
+            member: target.member,
+            allow,
+            deny,
+        })
+    }
+
+    /// Applies a set or removed overwrite to the store, as Discord's
+    /// CHANNEL_UPDATE echoes it (the PUT itself answers with nothing), and
+    /// tells an open page.
+    fn apply_overwrite(&mut self, channel: &str, overwrite: &Overwrite, remove: bool, out: &mut Vec<Event>) {
+        let Some(c) = self.store.channels.get_mut(channel) else {
+            return;
+        };
+        c.overwrites
+            .retain(|o| !(o.member == overwrite.member && o.id == overwrite.id));
+        if !remove {
+            c.overwrites.push(overwrite.clone());
+        }
+        self.overrides_changed(channel, out);
     }
 
     /// The Modify Channel body for an edit: only what changed.
@@ -101,6 +317,7 @@ impl DiscordAccount {
         };
         match command {
             Command::LoadChannelOverview { room, request } => {
+                self.settings_channel = Some(room.raw.to_string());
                 let result = self.channel_overview(&room).map(Some).map_err(Into::into);
                 out.push(Event::ChannelOverview { room, request, result });
             }
@@ -120,6 +337,28 @@ impl DiscordAccount {
                         body,
                     })),
                     Err(e) => return failed(room, request, &e),
+                }
+            }
+            Command::SetChannelOverride {
+                room,
+                request,
+                target,
+                change,
+            } => {
+                // The page is open on it, whatever loaded it.
+                self.settings_channel = Some(room.raw.to_string());
+                match self.overwrite_for(&room, &target, change) {
+                    Err(e) => return failed(room, request, e),
+                    Ok(overwrite) if self.demo.is_some() => {
+                        self.apply_overwrite(room.raw.as_ref(), &overwrite, change.is_none(), &mut out);
+                        self.channel_saved(room.raw.as_ref(), request, &mut out);
+                    }
+                    Ok(overwrite) => self.net.send(Cmd::Request(Request::ChannelOverwrite {
+                        channel: room.raw.to_string(),
+                        request,
+                        overwrite,
+                        remove: change.is_none(),
+                    })),
                 }
             }
             Command::DeleteChannel { room, request } => {
@@ -177,6 +416,9 @@ impl DiscordAccount {
             }
         }
         self.store.remove_channel(channel);
+        if self.settings_channel.as_deref() == Some(channel) {
+            self.settings_channel = None;
+        }
         self.sync_rooms(out);
         self.sync_servers(out);
         out.push(Event::ChannelOverview {
@@ -205,6 +447,23 @@ impl DiscordAccount {
                     request,
                     result: Err("Discord's answer wasn't what was expected.".into()),
                 }),
+                Err(e) => out.push(Event::ChannelOverview {
+                    room: RoomId::new(account, channel.as_str()),
+                    request,
+                    result: Err(e.into()),
+                }),
+            },
+            Answer::OverwriteSaved {
+                channel,
+                request,
+                overwrite,
+                remove,
+                result,
+            } => match result {
+                Ok(()) => {
+                    self.apply_overwrite(&channel, &overwrite, remove, out);
+                    self.channel_saved(&channel, request, out);
+                }
                 Err(e) => out.push(Event::ChannelOverview {
                     room: RoomId::new(account, channel.as_str()),
                     request,
@@ -876,5 +1135,335 @@ mod tests {
         ));
         // Its channels are loose now (the headingless group first).
         assert_eq!(names(&a)[0], ("".to_owned(), 3));
+    }
+
+    /// Gives @everyone (our only role in the test server) these permissions.
+    fn grant_everyone(a: &mut DiscordAccount, bits: u64) {
+        let g = a.store.guilds.get_mut("10").unwrap();
+        g.roles.get_mut("10").unwrap().permissions |= bits;
+    }
+
+    fn overrides_of(a: &mut DiscordAccount, id: &str) -> ChannelOverrides {
+        let out = a.channel_command(Command::LoadChannelOverview {
+            room: room(a, id),
+            request: 1,
+        });
+        overview(&out).unwrap().unwrap().overrides.unwrap()
+    }
+
+    fn everyone() -> OverrideTarget {
+        OverrideTarget {
+            id: "10".into(),
+            member: false,
+        }
+    }
+
+    #[test]
+    fn overwrites_send_string_bit_fields_and_a_type() {
+        let o = Overwrite {
+            id: "5".into(),
+            member: true,
+            allow: p::SEND_MESSAGES,
+            deny: 1 << 40,
+        };
+        assert_eq!(o.body(), json!({"type": 1, "allow": "2048", "deny": "1099511627776"}));
+        let r = Overwrite {
+            id: "6".into(),
+            ..Default::default()
+        };
+        assert_eq!(r.body(), json!({"type": 0, "allow": "0", "deny": "0"}));
+    }
+
+    #[test]
+    fn the_permissions_page_lists_everyone_first_and_what_fits_the_channel() {
+        let (mut a, _) = managed(true);
+        a.store.guilds.get_mut("10").unwrap().roles.insert(
+            "50".into(),
+            store::Role {
+                id: "50".into(),
+                name: "Mods".into(),
+                color: 0xff0000,
+                position: 3,
+                ..Default::default()
+            },
+        );
+        a.store.channels.get_mut("11").unwrap().overwrites = vec![
+            Overwrite {
+                id: "50".into(),
+                allow: p::SEND_MESSAGES,
+                ..Default::default()
+            },
+            Overwrite {
+                id: "10".into(),
+                deny: p::ATTACH_FILES,
+                ..Default::default()
+            },
+        ];
+        let o = overrides_of(&mut a, "11");
+        assert!(o.can_edit && o.grantable == p::ALL);
+        let names: Vec<_> = o.entries.iter().map(|e| e.name.as_ref()).collect();
+        assert_eq!(names, ["@everyone", "Mods"]);
+        assert!(o.entries[0].everyone && o.entries[0].deny == p::ATTACH_FILES);
+        assert_eq!(o.entries[1].colour.as_deref(), Some("#ff0000"));
+        assert!(o.choices.is_empty());
+        let has = |o: &ChannelOverrides, bit| o.permissions.iter().any(|r| r.bit == bit);
+        assert!(has(&o, p::SEND_MESSAGES) && !has(&o, p::CONNECT) && !has(&o, p::SPEAK));
+        assert_eq!(o.permissions[0].heading.as_deref(), Some("General Channel Permissions"));
+        let voice = overrides_of(&mut a, "13");
+        assert!(has(&voice, p::CONNECT) && has(&voice, p::SPEAK));
+        assert_eq!(voice.choices.len(), 1, "Mods can be added to the voice channel");
+        let category = overrides_of(&mut a, "1");
+        assert!(has(&category, p::CONNECT) && has(&category, p::SEND_MESSAGES));
+    }
+
+    #[test]
+    fn editing_needs_manage_roles_and_only_grants_what_we_have() {
+        let (mut a, mut cmds) = managed(false);
+        grant_everyone(&mut a, p::MANAGE_CHANNELS);
+        let o = overrides_of(&mut a, "11");
+        assert!(!o.can_edit, "Manage Channels alone doesn't change permissions");
+        let set = |a: &mut DiscordAccount, allow, deny| {
+            a.channel_command(Command::SetChannelOverride {
+                room: room(a, "11"),
+                request: 5,
+                target: everyone(),
+                change: Some((allow, deny)),
+            })
+        };
+        assert!(matches!(
+            set(&mut a, p::SEND_MESSAGES, 0)[..],
+            [Event::ChannelOverview { result: Err(_), .. }]
+        ));
+        grant_everyone(&mut a, p::MANAGE_ROLES);
+        let o = overrides_of(&mut a, "11");
+        assert!(o.can_edit && o.grantable & p::SEND_MESSAGES != 0 && o.grantable & p::ATTACH_FILES == 0);
+        // Attach Files isn't ours to give; denying a bit we lack is refused too.
+        assert!(matches!(
+            set(&mut a, p::ATTACH_FILES, 0)[..],
+            [Event::ChannelOverview { result: Err(_), .. }]
+        ));
+        assert!(matches!(
+            set(&mut a, 0, p::ATTACH_FILES)[..],
+            [Event::ChannelOverview { result: Err(_), .. }]
+        ));
+        // Allow and deny can't clash.
+        assert!(matches!(
+            set(&mut a, p::SEND_MESSAGES, p::SEND_MESSAGES)[..],
+            [Event::ChannelOverview { result: Err(_), .. }]
+        ));
+        assert!(sent(&mut cmds).is_empty());
+        assert!(set(&mut a, p::VIEW_CHANNEL, p::SEND_MESSAGES).is_empty());
+        assert!(matches!(
+            &sent(&mut cmds)[..],
+            [Request::ChannelOverwrite { channel, request: 5, overwrite, remove: false }]
+                if channel == "11" && overwrite.id == "10" && !overwrite.member
+                    && overwrite.allow == p::VIEW_CHANNEL && overwrite.deny == p::SEND_MESSAGES
+        ));
+        // @everyone's entry can't be removed.
+        let out = a.channel_command(Command::SetChannelOverride {
+            room: room(&a, "11"),
+            request: 6,
+            target: everyone(),
+            change: None,
+        });
+        assert!(matches!(out[..], [Event::ChannelOverview { result: Err(_), .. }]));
+    }
+
+    #[test]
+    fn a_saved_overwrite_reaches_the_store_and_the_open_page() {
+        let (mut a, _) = managed(true);
+        a.settings_channel = Some("11".into());
+        let mut out = Vec::new();
+        let o = Overwrite {
+            id: "10".into(),
+            allow: p::SEND_MESSAGES,
+            ..Default::default()
+        };
+        a.channel_answer(
+            Answer::OverwriteSaved {
+                channel: "11".into(),
+                request: 9,
+                overwrite: o.clone(),
+                remove: false,
+                result: Ok(()),
+            },
+            &mut out,
+        );
+        assert_eq!(a.store.channels["11"].overwrites, std::slice::from_ref(&o));
+        assert!(out.iter().any(
+            |e| matches!(e, Event::ChannelOverrides { overrides, .. } if overrides.entries[0].allow == p::SEND_MESSAGES)
+        ));
+        assert!(matches!(
+            out.last(),
+            Some(Event::ChannelOverview {
+                request: 9,
+                result: Ok(Some(_)),
+                ..
+            })
+        ));
+        // Removing it (the PUT's counterpart is a DELETE) empties the list.
+        let mut out = Vec::new();
+        a.channel_answer(
+            Answer::OverwriteSaved {
+                channel: "11".into(),
+                request: 10,
+                overwrite: o,
+                remove: true,
+                result: Ok(()),
+            },
+            &mut out,
+        );
+        assert!(a.store.channels["11"].overwrites.is_empty());
+        // A refusal shows on the page and changes nothing.
+        let mut out = Vec::new();
+        a.channel_answer(
+            Answer::OverwriteSaved {
+                channel: "11".into(),
+                request: 11,
+                overwrite: Overwrite::default(),
+                remove: false,
+                result: Err(crate::backend::RequestError::from("no")),
+            },
+            &mut out,
+        );
+        assert!(matches!(
+            out[..],
+            [Event::ChannelOverview {
+                request: 11,
+                result: Err(_),
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn another_clients_change_arrives_as_a_channel_update() {
+        let (mut a, _) = managed(true);
+        // Only the channel whose page is open is rebuilt.
+        let mut quiet = Vec::new();
+        let other = json!({"id": "11", "type": 0, "guild_id": "10", "name": "general", "parent_id": "1",
+            "permission_overwrites": [{"id": "10", "type": 0, "allow": "1", "deny": "0"}]});
+        a.dispatch("CHANNEL_UPDATE", &other, &mut quiet);
+        assert!(!quiet.iter().any(|e| matches!(e, Event::ChannelOverrides { .. })));
+        a.settings_channel = Some("11".into());
+        let mut out = Vec::new();
+        let d = json!({"id": "11", "type": 0, "guild_id": "10", "name": "general", "parent_id": "1",
+            "permission_overwrites": [{"id": "10", "type": 0, "allow": "0", "deny": p::SEND_MESSAGES.to_string()}]});
+        a.dispatch("CHANNEL_UPDATE", &d, &mut out);
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::ChannelOverrides { overrides, room }
+            if room.raw.as_ref() == "11" && overrides.entries[0].deny == p::SEND_MESSAGES))
+        );
+        // The same update again changes nothing, so the page isn't poked.
+        let mut out = Vec::new();
+        a.dispatch("CHANNEL_UPDATE", &d, &mut out);
+        assert!(!out.iter().any(|e| matches!(e, Event::ChannelOverrides { .. })));
+    }
+
+    #[test]
+    fn demo_sets_and_removes_an_override_and_answers_the_page() {
+        let ready = json!({
+            "user": {"id": "100", "username": "me_bloop"},
+            "guilds": [{
+                "id": "10",
+                "properties": {"name": "Qux Hall", "owner_id": "100"},
+                "roles": [{"id": "10", "name": "@everyone", "permissions": "0", "position": 0},
+                          {"id": "50", "name": "Mods", "permissions": "0", "position": 2}],
+                "channels": [{"id": "11", "type": 0, "name": "general", "position": 0}]
+            }],
+            "private_channels": [], "relationships": [], "merged_members": [[]],
+        });
+        let (mut a, _) = DiscordAccount::demo(ready, HashMap::new());
+        let mods = OverrideTarget {
+            id: "50".into(),
+            member: false,
+        };
+        let out = a.run(Command::SetChannelOverride {
+            room: room(&a, "11"),
+            request: 1,
+            target: mods.clone(),
+            change: Some((p::SEND_MESSAGES, p::ADD_REACTIONS)),
+        });
+        assert!(
+            out.iter().any(|e| matches!(e, Event::ChannelOverrides { .. })),
+            "{out:?}"
+        );
+        let Some(Event::ChannelOverview {
+            result: Ok(Some(o)), ..
+        }) = out.last()
+        else {
+            panic!("{out:?}")
+        };
+        let entry = &o.overrides.as_ref().unwrap().entries[1];
+        assert_eq!(
+            (entry.name.as_ref(), entry.allow, entry.deny),
+            ("Mods", p::SEND_MESSAGES, p::ADD_REACTIONS)
+        );
+        let out = a.run(Command::SetChannelOverride {
+            room: room(&a, "11"),
+            request: 2,
+            target: mods,
+            change: None,
+        });
+        let Some(Event::ChannelOverview {
+            result: Ok(Some(o)), ..
+        }) = out.last()
+        else {
+            panic!("{out:?}")
+        };
+        assert_eq!(o.overrides.as_ref().unwrap().entries.len(), 1);
+    }
+
+    #[test]
+    fn manage_permissions_is_never_grantable_and_the_category_counts() {
+        // Owners and administrators may give anything, Manage Permissions included.
+        let (mut a, _) = managed(true);
+        assert_eq!(overrides_of(&mut a, "11").grantable, p::ALL);
+        // Anyone else: not Manage Permissions, even with a Manage Roles overwrite.
+        let (mut a, _) = managed(false);
+        grant_everyone(&mut a, p::MANAGE_CHANNELS | p::MANAGE_ROLES);
+        a.store.channels.get_mut("11").unwrap().overwrites = vec![Overwrite {
+            id: "10".into(),
+            allow: p::MANAGE_ROLES,
+            ..Default::default()
+        }];
+        let g = overrides_of(&mut a, "11").grantable;
+        assert!(g & p::MANAGE_ROLES == 0 && g & p::ATTACH_FILES != 0, "{g:#x}");
+        // What the category gives us counts, as "the guild or parent channel".
+        a.store.channels.get_mut("11").unwrap().overwrites.clear();
+        assert_eq!(overrides_of(&mut a, "11").grantable & p::EMBED_LINKS, 0);
+        a.store.channels.get_mut("1").unwrap().overwrites = vec![Overwrite {
+            id: "10".into(),
+            allow: p::EMBED_LINKS,
+            ..Default::default()
+        }];
+        assert_ne!(overrides_of(&mut a, "11").grantable & p::EMBED_LINKS, 0);
+    }
+
+    #[test]
+    fn an_overwrite_of_a_deleted_role_is_listed_and_removable() {
+        let (mut a, mut cmds) = managed(true);
+        a.store.channels.get_mut("11").unwrap().overwrites = vec![Overwrite {
+            id: "99".into(),
+            deny: p::SEND_MESSAGES,
+            ..Default::default()
+        }];
+        let o = overrides_of(&mut a, "11");
+        assert_eq!(o.entries.last().map(|e| e.name.as_ref()), Some("Deleted role"));
+        let out = a.channel_command(Command::SetChannelOverride {
+            room: room(&a, "11"),
+            request: 3,
+            target: OverrideTarget {
+                id: "99".into(),
+                member: false,
+            },
+            change: None,
+        });
+        assert!(out.is_empty());
+        assert!(matches!(
+            &sent(&mut cmds)[..],
+            [Request::ChannelOverwrite { remove: true, .. }]
+        ));
     }
 }

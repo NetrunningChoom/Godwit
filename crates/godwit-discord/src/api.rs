@@ -872,6 +872,26 @@ impl Api {
             .map(drop)
     }
 
+    /// Sets a role's or member's permission overwrite in a channel (Modify
+    /// Channel Permissions, 204; docs.discord.food/resources/channel):
+    /// `allow` and `deny` are strings of digits, `type` 0 role or 1 member.
+    pub async fn put_overwrite(&self, channel: &str, overwrite: &crate::permissions::Overwrite) -> Result<()> {
+        self.empty(with_json(
+            self.request(
+                Method::PUT,
+                &format!("/channels/{channel}/permissions/{}", overwrite.id),
+            ),
+            &overwrite.body(),
+        ))
+        .await
+    }
+
+    /// Removes one (Delete Channel Permission, 204).
+    pub async fn delete_overwrite(&self, channel: &str, id: &str) -> Result<()> {
+        self.empty(self.request(Method::DELETE, &format!("/channels/{channel}/permissions/{id}")))
+            .await
+    }
+
     /// Moves channels and categories, `[{"id", "position", "parent_id",
     /// "lock_permissions"}, ...]` (Modify Guild Channel Positions, 204);
     /// Discord sends CHANNEL_UPDATE for each that changed.

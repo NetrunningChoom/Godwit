@@ -66,6 +66,10 @@ impl Application {
             }
             Action::SaveChannelOverview(edit) => self.dispatch_save_channel_overview(edit),
             Action::DeleteChannel => self.dispatch_delete_channel(),
+            Action::SetChannelOverride { target, allow, deny } => {
+                self.dispatch_channel_override(target, Some((allow, deny)))
+            }
+            Action::DeleteChannelOverride(target) => self.dispatch_channel_override(target, None),
             Action::OpenServerSettings(server) => self.dispatch_open_server_settings(server),
             Action::ServerSettingsPage(page) => {
                 let Some(s) = &mut self.state.server_settings else {

@@ -51,6 +51,14 @@ pub enum Command {
         room: RoomId,
         request: u64,
     },
+    /// Sets (Some((allow, deny))) or removes (None) a channel override;
+    /// answered with [`Event::ChannelOverview`] holding the channel as it is now.
+    SetChannelOverride {
+        room: RoomId,
+        request: u64,
+        target: crate::channel_settings::OverrideTarget,
+        change: Option<(u64, u64)>,
+    },
     LoadServerOverview {
         server: ServerId,
         request: u64,

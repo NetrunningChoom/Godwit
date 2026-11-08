@@ -3826,3 +3826,170 @@ fn slowmode_and_icons_only_go_out_where_the_network_has_them() {
     });
     assert_eq!(app.dispatch(Action::SaveChannelOverview(slow)).len(), 1);
 }
+
+fn overrides_page(app: &mut Application, can_edit: bool, grantable: u64) -> RoomId {
+    use crate::channel_settings::{ChannelOverride, ChannelOverrides, ChannelOverview, OverrideChoice, OverrideTarget};
+    use crate::server_settings::PermissionInfo;
+    let room = RoomId::new(account(Network::Stoat), "C");
+    let effects = app.dispatch(Action::OpenChannelSettings(room.clone()));
+    let [
+        Effect::Backend {
+            command: Command::LoadChannelOverview { request, .. },
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("expected a load, got {effects:?}");
+    };
+    let perm = |bit| PermissionInfo {
+        bit,
+        heading: None,
+        title: "p".into(),
+        description: "".into(),
+    };
+    let target = |id: &str| OverrideTarget {
+        id: id.into(),
+        member: false,
+    };
+    app.apply(Event::ChannelOverview {
+        room: room.clone(),
+        request: *request,
+        result: Ok(Some(ChannelOverview {
+            name: "general".into(),
+            can_manage: true,
+            overrides: Some(ChannelOverrides {
+                entries: vec![
+                    ChannelOverride {
+                        target: target("E"),
+                        name: "@everyone".into(),
+                        colour: None,
+                        everyone: true,
+                        allow: 0,
+                        deny: 0,
+                    },
+                    ChannelOverride {
+                        target: target("R"),
+                        name: "Mods".into(),
+                        colour: None,
+                        everyone: false,
+                        allow: 1,
+                        deny: 0,
+                    },
+                ],
+                permissions: vec![perm(1), perm(2), perm(4)].into(),
+                choices: vec![OverrideChoice {
+                    target: target("S"),
+                    name: "Subs".into(),
+                }],
+                can_edit,
+                grantable,
+            }),
+            ..Default::default()
+        })),
+    });
+    room
+}
+
+#[test]
+fn channel_overrides_go_out_only_for_listed_targets_and_grantable_bits() {
+    use crate::channel_settings::OverrideTarget;
+    let target = |id: &str| OverrideTarget {
+        id: id.into(),
+        member: false,
+    };
+    let set = |id: &str, allow, deny| Action::SetChannelOverride {
+        target: target(id),
+        allow,
+        deny,
+    };
+    // Without Manage Permissions nothing goes out, removing included.
+    let mut app = channel_settings_app();
+    overrides_page(&mut app, false, u64::MAX);
+    assert!(app.dispatch(set("R", 2, 0)).is_empty());
+    assert!(app.dispatch(Action::DeleteChannelOverride(target("R"))).is_empty());
+    // With it: a listed role or a choice, listed bits that don't clash.
+    let mut app = channel_settings_app();
+    overrides_page(&mut app, true, 0b011);
+    assert!(app.dispatch(set("ghost", 2, 0)).is_empty(), "not a role of this server");
+    assert!(
+        app.dispatch(set("R", 8, 0)).is_empty(),
+        "not a permission of this channel"
+    );
+    assert!(app.dispatch(set("R", 3, 2)).is_empty(), "allow and deny clash");
+    assert!(app.dispatch(set("R", 1 | 4, 0)).is_empty(), "4 isn't ours to give");
+    assert!(app.dispatch(set("R", 1, 4)).is_empty(), "nor to deny");
+    // The change that keeps a bit we can't give as it was is fine.
+    let effects = app.dispatch(set("R", 1, 2));
+    let [
+        Effect::Backend {
+            command: Command::SetChannelOverride { change, target: t, .. },
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("expected a set, got {effects:?}");
+    };
+    assert_eq!((*change, &*t.id), (Some((1, 2)), "R"));
+    // The page waits for the answer before anything else goes out.
+    assert!(app.dispatch(set("S", 1, 0)).is_empty());
+}
+
+#[test]
+fn channel_overrides_remove_only_existing_entries_but_never_everyone() {
+    use crate::channel_settings::OverrideTarget;
+    let target = |id: &str| OverrideTarget {
+        id: id.into(),
+        member: false,
+    };
+    let mut app = channel_settings_app();
+    overrides_page(&mut app, true, u64::MAX);
+    assert!(app.dispatch(Action::DeleteChannelOverride(target("E"))).is_empty());
+    assert!(app.dispatch(Action::DeleteChannelOverride(target("S"))).is_empty());
+    let effects = app.dispatch(Action::DeleteChannelOverride(target("R")));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend {
+            command: Command::SetChannelOverride { change: None, .. },
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn channel_overrides_changed_elsewhere_refresh_the_open_page() {
+    let mut app = channel_settings_app();
+    let room = overrides_page(&mut app, true, u64::MAX);
+    let mut changed = app
+        .state()
+        .channel_settings
+        .as_ref()
+        .and_then(|s| s.overview.as_ref())
+        .and_then(|o| o.overrides.clone())
+        .unwrap();
+    changed.entries[1].deny = 2;
+    app.apply(Event::ChannelOverrides {
+        room,
+        overrides: changed,
+    });
+    let o = app
+        .state()
+        .channel_settings
+        .as_ref()
+        .and_then(|s| s.overview.as_ref())
+        .unwrap();
+    assert_eq!(o.overrides.as_ref().map(|o| o.entries[1].deny), Some(2));
+    // Another channel's change is ignored.
+    let mut other = o.overrides.clone().unwrap();
+    other.entries[1].deny = 4;
+    app.apply(Event::ChannelOverrides {
+        room: RoomId::new(account(Network::Stoat), "other"),
+        overrides: other,
+    });
+    let o = app
+        .state()
+        .channel_settings
+        .as_ref()
+        .and_then(|s| s.overview.as_ref())
+        .unwrap();
+    assert_eq!(o.overrides.as_ref().map(|o| o.entries[1].deny), Some(2));
+}

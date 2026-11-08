@@ -63,6 +63,24 @@ impl Application {
         Vec::new()
     }
 
+    /// The open page's overrides, replaced by what the network now says.
+    pub(super) fn receive_channel_overrides(
+        &mut self,
+        room: RoomId,
+        overrides: crate::channel_settings::ChannelOverrides,
+    ) -> Vec<Effect> {
+        if let Some(o) = self
+            .state
+            .channel_settings
+            .as_mut()
+            .filter(|s| s.room == room)
+            .and_then(|s| s.overview.as_mut())
+        {
+            o.overrides = Some(overrides);
+        }
+        Vec::new()
+    }
+
     pub(super) fn receive_account_ready(
         &mut self,
         account: AccountId,

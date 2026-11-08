@@ -51,6 +51,15 @@ pub enum Action {
     CloseChannelSettings,
     SaveChannelOverview(crate::channel_settings::ChannelOverviewEdit),
     DeleteChannel,
+    /// Sets one role's or member's override on the open channel; a
+    /// permission in neither set is inherited.
+    SetChannelOverride {
+        target: crate::channel_settings::OverrideTarget,
+        allow: u64,
+        deny: u64,
+    },
+    /// Removes an override from the open channel.
+    DeleteChannelOverride(crate::channel_settings::OverrideTarget),
     OpenServerSettings(ServerId),
     CloseServerSettings,
     CloseInviteLink,

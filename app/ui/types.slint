@@ -686,6 +686,16 @@ export struct PermissionItem {
     allowed: bool,
 }
 
+// A permission on a channel's Permissions page; heading starts a group.
+// state: 0 inherit, 1 allow, 2 deny; locked: this account can't change it.
+export struct OverridePermItem {
+    heading: string,
+    title: string,
+    description: string,
+    state: int,
+    locked: bool,
+}
+
 // A row in Active now. kind 0: a call with friends in it (title: the room,
 // detail: server · network, who: the friends in it); kind 1: a friend doing
 // something (title: their name, detail: the network, who: "Playing …").

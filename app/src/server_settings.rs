@@ -74,7 +74,7 @@ fn parse_colour(text: &str) -> Result<Option<&str>, &'static str> {
 }
 
 /// `#rrggbb` (or `#rgb`) as a Slint colour.
-fn slint_colour(text: &str) -> Option<slint::Color> {
+pub(crate) fn slint_colour(text: &str) -> Option<slint::Color> {
     let hex = text.trim().strip_prefix('#').filter(|h| h.is_ascii())?;
     let expand = |s: &str| u8::from_str_radix(s, 16).ok();
     let (r, g, b) = match hex.len() {

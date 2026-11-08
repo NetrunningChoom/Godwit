@@ -75,6 +75,9 @@ pub struct DiscordAccount {
     events: mpsc::Receiver<Ev>,
     status: Status,
     account: Option<AccountId>,
+    /// The channel whose settings page was loaded last: only its overrides
+    /// are rebuilt when they change elsewhere (there is no close command).
+    settings_channel: Option<String>,
     store: Store,
     /// Messages with a poll, as Discord last sent them (id → message), so a
     /// vote's counts can change without fetching it again. Filled as
@@ -203,6 +206,7 @@ impl DiscordAccount {
             next_call: 0,
             ringing: HashMap::new(),
             demo: None,
+            settings_channel: None,
         }
     }
 
@@ -1201,6 +1205,7 @@ impl NetworkAccount for DiscordAccount {
             Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(&room, change)),
             Command::LoadChannelOverview { .. }
             | Command::SaveChannelOverview { .. }
+            | Command::SetChannelOverride { .. }
             | Command::DeleteChannel { .. } => out.extend(self.channel_command(command)),
             Command::LoadServerOverview { server, request } => {
                 let result = self

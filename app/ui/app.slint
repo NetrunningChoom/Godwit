@@ -12,7 +12,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, PermissionItem, PinItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -118,6 +118,19 @@ export component AppWindow inherits Window {
     in property <[string]> channel-edit-slowmode-choices;
     in-out property <int> channel-edit-slowmode-index;
     in property <string> channel-edit-description-hint;
+    in property <int> channel-edit-page;
+    in property <bool> channel-edit-has-overrides;
+    in property <[AdminRoleItem]> channel-edit-override-entries;
+    in property <int> channel-edit-override-index;
+    in property <[OverridePermItem]> channel-edit-override-perms;
+    in property <bool> channel-edit-override-can-edit;
+    in property <bool> channel-edit-override-dirty;
+    in property <bool> channel-edit-override-removable;
+    in property <[string]> channel-edit-override-choices;
+    in-out property <int> channel-edit-override-choice-index;
+    callback show-channel-edit-page(int); callback select-channel-override(int);
+    callback set-channel-override-permission(int, int); callback save-channel-override();
+    callback remove-channel-override(); callback add-channel-override(int);
     callback close-channel-settings(); callback save-channel-overview(); callback reset-channel-overview(); callback channel-overview-edited();
     callback pick-channel-image(); callback remove-channel-image(); callback delete-channel();
     in property <bool> server-edit-loaded;
@@ -1418,6 +1431,15 @@ export component AppWindow inherits Window {
         reset => { root.reset-channel-overview(); } changed => { root.channel-overview-edited(); }
         pick-image => { root.pick-channel-image(); } remove-image => { root.remove-channel-image(); }
         delete-channel => { root.delete-channel(); }
+        page: root.channel-edit-page; has-overrides: root.channel-edit-has-overrides;
+        override-entries: root.channel-edit-override-entries; override-index: root.channel-edit-override-index;
+        override-perms: root.channel-edit-override-perms; override-can-edit: root.channel-edit-override-can-edit;
+        override-dirty: root.channel-edit-override-dirty; override-removable: root.channel-edit-override-removable;
+        override-choices: root.channel-edit-override-choices; override-choice-index <=> root.channel-edit-override-choice-index;
+        show-page(p) => { root.show-channel-edit-page(p); } select-override(i) => { root.select-channel-override(i); }
+        set-override-permission(i, s) => { root.set-channel-override-permission(i, s); }
+        save-override => { root.save-channel-override(); } remove-override => { root.remove-channel-override(); }
+        add-override(i) => { root.add-channel-override(i); }
     }
     if root.settings-open && screen == Screen.main: Settings {
         reset-panels => {

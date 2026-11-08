@@ -355,6 +355,95 @@ fn channel_settings_scene() -> Scene<'static> {
     })
 }
 
+/// The Permissions page of a channel: @everyone and one role override, with
+/// a role left to add. The demo account has no overrides, so the page is
+/// filled from an overview made here.
+fn channel_permissions_scene() -> Scene<'static> {
+    Scene::new(
+        "channel-permissions",
+        Box::new(|app, ui, _, _| {
+            use godwit_core::channel_settings::{
+                ChannelOverride, ChannelOverrides, ChannelOverview, OverrideChoice, OverrideTarget,
+            };
+            use godwit_core::server_settings::PermissionInfo;
+            let room = RoomId::new(account(), "voice");
+            let mut request = 0;
+            for effect in app.dispatch(Action::OpenChannelSettings(room.clone())) {
+                if let godwit_core::application::Effect::Backend {
+                    command: godwit_core::application::Command::LoadChannelOverview { request: r, .. },
+                    ..
+                } = effect
+                {
+                    request = r;
+                }
+            }
+            let perm = |heading: Option<&str>, bit: u64, title: &str, description: &str| PermissionInfo {
+                bit,
+                heading: heading.map(Into::into),
+                title: title.into(),
+                description: description.into(),
+            };
+            let target = |id: &str| OverrideTarget {
+                id: id.into(),
+                member: false,
+            };
+            let entry = |id: &str, name: &str, everyone: bool, allow: u64, deny: u64| ChannelOverride {
+                target: target(id),
+                name: name.into(),
+                colour: (!everyone).then(|| "#e67e22".into()),
+                everyone,
+                allow,
+                deny,
+            };
+            app.apply(Event::ChannelOverview {
+                room,
+                request,
+                result: Ok(Some(ChannelOverview {
+                    name: "lounge".into(),
+                    can_manage: true,
+                    overrides: Some(ChannelOverrides {
+                        entries: vec![
+                            entry("E", "@everyone", true, 0, 2),
+                            entry("M", "Moderators", false, 1 | 4, 0),
+                        ],
+                        permissions: vec![
+                            perm(
+                                Some("General Channel Permissions"),
+                                1,
+                                "View Channel",
+                                "Allows members to view this channel.",
+                            ),
+                            perm(None, 2, "Create Invite", "Allows members to invite new people."),
+                            perm(
+                                Some("Text Channel Permissions"),
+                                4,
+                                "Send Messages",
+                                "Allows members to send messages in this channel.",
+                            ),
+                            perm(None, 8, "Attach Files", "Allows members to upload files or media."),
+                        ]
+                        .into(),
+                        choices: vec![OverrideChoice {
+                            target: target("S"),
+                            name: "Supporters".into(),
+                        }],
+                        can_edit: true,
+                        grantable: u64::MAX,
+                    }),
+                    ..Default::default()
+                })),
+            });
+            let mut images = Images::offline();
+            let mut editor = godwit::channel_settings::ChannelEditor::default();
+            editor.show(ui, app.state(), &mut images);
+            editor.show_page(1);
+            editor.select_override(app.state(), 1);
+            editor.show(ui, app.state(), &mut images);
+            Screen::Main
+        }),
+    )
+}
+
 /// A category's settings: just its name, and Delete Category.
 fn category_settings_scene() -> Scene<'static> {
     settings_scene("category-settings", |app| Action::OpenCategorySettings {
@@ -1117,6 +1206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         },
         channel_settings_scene(),
+        channel_permissions_scene(),
         category_settings_scene(),
         create_category_scene(),
         create_in_category_scene(),

@@ -211,7 +211,9 @@ impl DiscordAccount {
                 }
                 Err(e) => out.push(Event::Error(format!("Discord message request: {e}").into())),
             },
-            answer @ (Answer::ChannelSaved { .. } | Answer::ChannelDeleted { .. }) => self.channel_answer(answer, out),
+            answer @ (Answer::ChannelSaved { .. } | Answer::ChannelDeleted { .. } | Answer::OverwriteSaved { .. }) => {
+                self.channel_answer(answer, out)
+            }
             Answer::ThreadCreated(result) => match result {
                 // Opened at once; THREAD_CREATE will say the same again.
                 Ok(thread) => {

@@ -552,6 +552,12 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_save_channel_overview() => |sh, ui| sh.save_channel_overview(ui));
     callback!(ui.on_reset_channel_overview() => |sh, ui| sh.reset_channel_overview(ui));
     callback!(ui.on_channel_overview_edited() => |sh, ui| sh.channel_overview_edited(ui));
+    callback!(ui.on_show_channel_edit_page(page) => |sh, ui| sh.show_channel_edit_page(ui, page));
+    callback!(ui.on_select_channel_override(row) => |sh, ui| sh.select_channel_override(ui, row));
+    callback!(ui.on_set_channel_override_permission(row, value) => |sh, ui| sh.set_channel_override_permission(ui, row, value));
+    callback!(ui.on_save_channel_override() => |sh, ui| sh.save_channel_override(ui));
+    callback!(ui.on_remove_channel_override() => |sh, ui| sh.remove_channel_override(ui));
+    callback!(ui.on_add_channel_override(choice) => |sh, ui| sh.add_channel_override(ui, choice));
     callback!(ui.on_remove_channel_image() => |sh, ui| sh.remove_channel_icon(ui));
     callback!(ui.on_delete_channel() => |sh, ui| sh.act(ui, Action::DeleteChannel));
     ui.on_pick_channel_image({

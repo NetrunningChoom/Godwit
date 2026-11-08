@@ -138,6 +138,43 @@ impl Application {
         }]
     }
 
+    /// An override change on the open channel, only what its network
+    /// offers this account (`ChannelOverrides::may_set`); None removes it.
+    pub(super) fn dispatch_channel_override(
+        &mut self,
+        target: crate::channel_settings::OverrideTarget,
+        change: Option<(u64, u64)>,
+    ) -> Vec<Effect> {
+        let Some(s) = &mut self.state.channel_settings else {
+            return Vec::new();
+        };
+        let Some(o) = s.overview.as_ref().and_then(|o| o.overrides.as_ref()) else {
+            return Vec::new();
+        };
+        let allowed = match change {
+            Some((allow, deny)) => o.may_set(&target, allow, deny),
+            // @everyone's entry stays; removing needs an existing entry.
+            None => o.can_edit && o.entries.iter().any(|e| e.target == target && !e.everyone),
+        };
+        if s.busy || !allowed {
+            return Vec::new();
+        }
+        self.state.channel_settings_sequence = self.state.channel_settings_sequence.wrapping_add(1);
+        s.request = self.state.channel_settings_sequence;
+        s.busy = true;
+        s.saved = false;
+        s.error = None;
+        vec![Effect::Backend {
+            account: s.room.account.clone(),
+            command: Command::SetChannelOverride {
+                room: s.room.clone(),
+                request: s.request,
+                target,
+                change,
+            },
+        }]
+    }
+
     /// Role, timeout and nickname changes only go out for the member whose
     /// card is open, with the powers the network gave that card, and within
     /// the length limits (so a stale or forged action never reaches a network).

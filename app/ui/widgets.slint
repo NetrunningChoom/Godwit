@@ -756,3 +756,38 @@ export component MenuDivider inherits Rectangle {
     height: 9px;
     Rectangle { height: 1px; background: Theme.outline-variant; }
 }
+
+// A permission's three-way choice, as the official client's channel
+// permissions: Deny, Inherit (not set here) or Allow.
+// state: 0 inherit, 1 allow, 2 deny.
+export component TriState inherits Rectangle {
+    in property <int> state;
+    in property <bool> enabled: true;
+    callback chose(int);
+    width: 192px;
+    height: Theme.row-compact;
+    border-radius: Theme.radius-sm;
+    background: Theme.surface-high;
+    opacity: root.enabled ? 1.0 : 0.38;
+    HorizontalLayout {
+        for option[i] in [2, 0, 1]: Rectangle {
+            border-radius: Theme.radius-sm;
+            background: root.state == option
+                ? (option == 1 ? Theme.primary : option == 2 ? Theme.error : Theme.surface-highest)
+                : touch.has-hover && root.enabled ? Theme.surface-highest : transparent;
+            Text {
+                text: option == 1 ? "Allow" : option == 2 ? "Deny" : "Inherit";
+                font-size: Theme.text-small; font-weight: 600;
+                horizontal-alignment: center; vertical-alignment: center;
+                color: root.state == option
+                    ? (option == 1 ? Theme.on-primary : option == 2 ? Theme.on-error : Theme.on-surface)
+                    : Theme.on-surface-variant;
+            }
+            touch := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: pointer;
+                clicked => { root.chose(option); }
+            }
+        }
+    }
+}

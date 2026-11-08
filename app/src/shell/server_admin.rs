@@ -316,6 +316,33 @@ impl Shell {
         self.channel_editor.remove_icon(ui);
         self.show_channel_settings(ui);
     }
+    pub fn show_channel_edit_page(&mut self, ui: &AppWindow, page: i32) {
+        self.channel_editor.show_page(page);
+        self.show_channel_settings(ui);
+    }
+    pub fn select_channel_override(&mut self, ui: &AppWindow, row: i32) {
+        self.channel_editor.select_override(self.app.state(), row);
+        self.show_channel_settings(ui);
+    }
+    pub fn set_channel_override_permission(&mut self, ui: &AppWindow, row: i32, value: i32) {
+        self.channel_editor.set_permission(self.app.state(), row, value);
+        self.show_channel_settings(ui);
+    }
+    pub fn save_channel_override(&mut self, ui: &AppWindow) {
+        if let Some(action) = self.channel_editor.save_override(self.app.state()) {
+            self.act(ui, action);
+        }
+    }
+    pub fn remove_channel_override(&mut self, ui: &AppWindow) {
+        if let Some(action) = self.channel_editor.remove_override(self.app.state()) {
+            self.act(ui, action);
+        }
+    }
+    pub fn add_channel_override(&mut self, ui: &AppWindow, choice: i32) {
+        if let Some(action) = self.channel_editor.add_override(self.app.state(), choice) {
+            self.act(ui, action);
+        }
+    }
     pub fn channel_edit_token(&self) -> Option<(RoomId, u64)> {
         self.channel_editor.token()
     }

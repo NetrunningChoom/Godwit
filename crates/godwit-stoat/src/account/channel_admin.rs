@@ -37,6 +37,7 @@ impl StoatAccount {
             // Stoat has no slowmode.
             slowmode: None,
             description_max: 0,
+            overrides: None,
         })
     }
 

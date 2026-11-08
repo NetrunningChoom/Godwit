@@ -188,6 +188,7 @@ impl DiscordAccount {
             // Channel settings, creating and moving: answered as Discord's gateway would.
             Command::LoadChannelOverview { .. }
             | Command::SaveChannelOverview { .. }
+            | Command::SetChannelOverride { .. }
             | Command::DeleteChannel { .. } => return Some(self.channel_command(command.clone())),
             Command::ServerAdmin { server, op }
                 if matches!(

@@ -146,6 +146,14 @@ pub enum Request {
         request: u64,
         body: Value,
     },
+    /// Sets or (`remove`) deletes one permission overwrite of a channel;
+    /// answered with [`Answer::OverwriteSaved`].
+    ChannelOverwrite {
+        channel: String,
+        request: u64,
+        overwrite: crate::permissions::Overwrite,
+        remove: bool,
+    },
     /// Delete Channel (also a category).
     DeleteChannel {
         channel: String,
@@ -339,6 +347,14 @@ pub enum Answer {
         channel: String,
         request: u64,
         result: Result<Value, RequestError>,
+    },
+    /// An overwrite set or removed (a 204: the change is what was asked).
+    OverwriteSaved {
+        channel: String,
+        request: u64,
+        overwrite: crate::permissions::Overwrite,
+        remove: bool,
+        result: Result<(), RequestError>,
     },
     ChannelDeleted {
         channel: String,
@@ -901,6 +917,23 @@ async fn answer(api: &Api, request: Request) -> Answer {
             result: api.modify_channel(&channel, &body).await.map_err(RequestError::from),
             channel,
             request,
+        },
+        Request::ChannelOverwrite {
+            channel,
+            request,
+            overwrite,
+            remove,
+        } => Answer::OverwriteSaved {
+            result: if remove {
+                api.delete_overwrite(&channel, &overwrite.id).await
+            } else {
+                api.put_overwrite(&channel, &overwrite).await
+            }
+            .map_err(RequestError::from),
+            channel,
+            request,
+            overwrite,
+            remove,
         },
         Request::DeleteChannel { channel, request } => Answer::ChannelDeleted {
             result: api.delete_channel(&channel).await.map_err(RequestError::from),

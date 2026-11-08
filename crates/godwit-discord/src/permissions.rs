@@ -44,6 +44,271 @@ pub const MANAGE_GUILD_EXPRESSIONS: u64 = 1 << 30;
 pub const CREATE_GUILD_EXPRESSIONS: u64 = 1 << 43;
 pub const ALL: u64 = u64::MAX;
 
+/// Channel kinds for [`CHANNEL_ROWS`]: text (also announcement, forum and
+/// media), voice and stage.
+pub const TEXT: u8 = 1;
+pub const VOICE: u8 = 2;
+pub const STAGE: u8 = 4;
+
+/// The permissions a channel's Permissions page lists, in the official
+/// client's order and groups: (group, bit, title, description, kinds).
+/// Which apply where follows the Channel Type column of
+/// docs.discord.food/topics/permissions.
+pub const CHANNEL_ROWS: &[(&str, u64, &str, &str, u8)] = &[
+    (
+        "General Channel Permissions",
+        1 << 10,
+        "View Channel",
+        "Allows members to view this channel. Turn it off for private channels.",
+        7,
+    ),
+    (
+        "General Channel Permissions",
+        1 << 4,
+        "Manage Channel",
+        "Allows members to change this channel's name, description and settings, or delete it.",
+        7,
+    ),
+    (
+        "General Channel Permissions",
+        1 << 28,
+        "Manage Permissions",
+        "Allows members to change this channel's permissions.",
+        7,
+    ),
+    (
+        "General Channel Permissions",
+        1 << 29,
+        "Manage Webhooks",
+        "Allows members to create, edit and delete webhooks.",
+        7,
+    ),
+    (
+        "General Channel Permissions",
+        1 << 0,
+        "Create Invite",
+        "Allows members to invite new people to this server through this channel.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 11,
+        "Send Messages",
+        "Allows members to send messages in this channel.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 38,
+        "Send Messages in Threads",
+        "Allows members to send messages in threads.",
+        TEXT,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 35,
+        "Create Public Threads",
+        "Allows members to create threads that everyone in the channel can view.",
+        TEXT,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 36,
+        "Create Private Threads",
+        "Allows members to create invite-only threads.",
+        TEXT,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 14,
+        "Embed Links",
+        "Allows links that members share to show an embedded preview.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 15,
+        "Attach Files",
+        "Allows members to upload files or media.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 6,
+        "Add Reactions",
+        "Allows members to add new emoji reactions to a message.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 18,
+        "Use External Emoji",
+        "Allows members to use emoji from other servers.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 37,
+        "Use External Stickers",
+        "Allows members to use stickers from other servers.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 17,
+        "Mention @everyone, @here, and All Roles",
+        "Allows members to use @everyone and @here, and to mention all roles.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 13,
+        "Manage Messages",
+        "Allows members to delete messages by other members.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 51,
+        "Pin Messages",
+        "Allows members to pin or unpin any message.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 34,
+        "Manage Threads",
+        "Allows members to rename, delete, close and turn on slow mode for threads, and to view private threads.",
+        TEXT,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 16,
+        "Read Message History",
+        "Allows members to read earlier messages sent in this channel.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 12,
+        "Send Text-to-Speech Messages",
+        "Allows members to send text-to-speech messages by starting a message with /tts.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 31,
+        "Use Application Commands",
+        "Allows members to use commands from applications, including slash commands and context menu commands.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 46,
+        "Send Voice Messages",
+        "Allows members to send voice messages.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 49,
+        "Create Polls",
+        "Allows members to create polls.",
+        7,
+    ),
+    (
+        "Text Channel Permissions",
+        1 << 52,
+        "Bypass Slowmode",
+        "Allows members to send messages and create threads without waiting for slowmode.",
+        7,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 20,
+        "Connect",
+        "Allows members to join this voice channel and hear others.",
+        VOICE | STAGE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 21,
+        "Speak",
+        "Allows members to talk in this voice channel.",
+        VOICE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 9,
+        "Video",
+        "Allows members to share their video, screen share, or stream an application.",
+        VOICE | STAGE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 42,
+        "Use Soundboard",
+        "Allows members to send sounds from the server soundboard.",
+        VOICE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 45,
+        "Use External Sounds",
+        "Allows members to use sounds from other servers.",
+        VOICE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 25,
+        "Use Voice Activity",
+        "Allows members to speak by just talking. When off, members need push-to-talk.",
+        VOICE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 8,
+        "Priority Speaker",
+        "Allows members to be more easily heard: other people's volume goes down while they speak.",
+        VOICE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 22,
+        "Mute Members",
+        "Allows members to mute others in this channel.",
+        VOICE | STAGE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 23,
+        "Deafen Members",
+        "Allows members to deafen others in this channel.",
+        VOICE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 24,
+        "Move Members",
+        "Allows members to move others out of this channel into another one they can connect to.",
+        VOICE | STAGE,
+    ),
+    (
+        "Voice Channel Permissions",
+        1 << 48,
+        "Set Voice Channel Status",
+        "Allows members to create and edit voice channel status.",
+        VOICE,
+    ),
+    (
+        "Stage Channel Permissions",
+        1 << 32,
+        "Request to Speak",
+        "Allows members to request to speak in stage channels.",
+        STAGE,
+    ),
+];
+
 /// A channel's change to one role's or member's permissions.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Overwrite {
@@ -52,6 +317,17 @@ pub struct Overwrite {
     pub member: bool,
     pub allow: u64,
     pub deny: u64,
+}
+
+impl Overwrite {
+    /// The Modify Channel Permissions body: bit fields as strings.
+    pub fn body(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": u8::from(self.member),
+            "allow": self.allow.to_string(),
+            "deny": self.deny.to_string(),
+        })
+    }
 }
 
 /// A permission field: Discord sends them as strings of digits.

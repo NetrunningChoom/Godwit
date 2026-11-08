@@ -4,6 +4,7 @@
 //! only while the page is open.
 use crate::ids::RoomId;
 use crate::own_profile::ProfileImage;
+use crate::server_settings::PermissionInfo;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -24,6 +25,75 @@ pub struct ChannelOverview {
     pub slowmode: Option<u32>,
     /// The longest description in characters (0: not limited here).
     pub description_max: u32,
+    /// Per-role and per-member permission overrides, or None where the
+    /// network has none (the Permissions section stays hidden).
+    pub overrides: Option<ChannelOverrides>,
+}
+
+/// Who an override is for: a role or one member, by the network's id.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OverrideTarget {
+    pub id: Arc<str>,
+    pub member: bool,
+}
+
+/// One override as the Permissions page lists it. A permission in neither
+/// `allow` nor `deny` is inherited.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChannelOverride {
+    pub target: OverrideTarget,
+    pub name: Arc<str>,
+    /// `#rrggbb`, or None for no colour.
+    pub colour: Option<Arc<str>>,
+    /// The @everyone entry: always first, and it can't be removed.
+    pub everyone: bool,
+    pub allow: u64,
+    pub deny: u64,
+}
+
+/// A role or member an override could be added for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OverrideChoice {
+    pub target: OverrideTarget,
+    pub name: Arc<str>,
+}
+
+/// A channel's overrides and what the network lets this account do to them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChannelOverrides {
+    /// @everyone first, then the others as the network orders them.
+    pub entries: Vec<ChannelOverride>,
+    /// The permissions that apply to this kind of channel, in the order
+    /// the official client lists them.
+    pub permissions: Arc<[PermissionInfo]>,
+    /// Roles and members without an override yet.
+    pub choices: Vec<OverrideChoice>,
+    /// Whether this account may change overrides (Manage Permissions here).
+    pub can_edit: bool,
+    /// The permission bits this account may allow or deny: it can't grant
+    /// what it doesn't have itself (administrators and owners have all).
+    pub grantable: u64,
+}
+
+impl ChannelOverrides {
+    /// Whether setting `target` to (allow, deny) is something this account
+    /// may ask for: the bits are listed, don't clash, and every bit that
+    /// changes is one it may grant.
+    pub fn may_set(&self, target: &OverrideTarget, allow: u64, deny: u64) -> bool {
+        let listed = self.permissions.iter().fold(0, |m, p| m | p.bit);
+        let (old_allow, old_deny) = self
+            .entries
+            .iter()
+            .find(|e| &e.target == target)
+            .map_or((0, 0), |e| (e.allow, e.deny));
+        let known =
+            self.entries.iter().any(|e| &e.target == target) || self.choices.iter().any(|c| &c.target == target);
+        self.can_edit
+            && known
+            && allow & deny == 0
+            && (allow | deny) & !listed == 0
+            && ((allow ^ old_allow) | (deny ^ old_deny)) & !self.grantable == 0
+    }
 }
 
 /// The slowmode choices as the official Discord client lists them

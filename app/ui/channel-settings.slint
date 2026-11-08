@@ -4,12 +4,14 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Section } from "settings.slint";
-import { Avatar, Button, ConfirmDialog, Select, TextArea, TextField, Toggle } from "widgets.slint";
+import { Avatar, Button, ConfirmDialog, Select, TextArea, TextField, Toggle, TriState } from "widgets.slint";
+import { AdminRoleItem, OverridePermItem } from "types.slint";
 
 // A server channel's settings, as the official ChannelSettings: a sidebar
 // with Overview and (with Manage Channel) Delete Channel, and the Overview's
-// icon, name, description and mature switch. Webhooks and Permissions
-// pages come later.
+// icon, name, description and mature switch, and (where the network has
+// per-role overrides) Permissions: a list of roles and members, and for
+// each the allow / inherit / deny of every permission. Webhooks come later.
 export component ChannelSettings inherits Rectangle {
     in property <string> title;
     in property <bool> loaded;
@@ -32,6 +34,21 @@ export component ChannelSettings inherits Rectangle {
     in property <[string]> slowmode-choices;
     in-out property <int> slowmode-index;
     in property <string> description-hint;
+    // The Permissions page: which page is open (0 overview, 1 permissions),
+    // whether this network has it, the overrides and the one selected, its
+    // permissions (built only while the page is open) and what it may do.
+    in property <int> page;
+    in property <bool> has-overrides;
+    in property <[AdminRoleItem]> override-entries;
+    in property <int> override-index;
+    in property <[OverridePermItem]> override-perms;
+    in property <bool> override-can-edit;
+    in property <bool> override-dirty;
+    in property <bool> override-removable;
+    in property <[string]> override-choices;
+    in-out property <int> override-choice-index;
+    callback show-page(int); callback select-override(int); callback set-override-permission(int, int);
+    callback save-override(); callback remove-override(); callback add-override(int);
 
     callback close(); callback save(); callback reset(); callback changed();
     callback pick-image(); callback remove-image();
@@ -50,7 +67,8 @@ export component ChannelSettings inherits Rectangle {
                 VerticalLayout {
                     padding: Theme.space-4; spacing: Theme.space-1; alignment: start;
                     Text { text: root.title; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; overflow: elide; }
-                    Section { label: "Overview"; selected: true; }
+                    Section { label: "Overview"; selected: root.page == 0; clicked => { root.show-page(0); } }
+                    if root.has-overrides: Section { label: "Permissions"; selected: root.page == 1; clicked => { root.show-page(1); } }
                     if root.allowed: Rectangle { height: 12px; }
                     if root.allowed: Section { label: root.is-category ? "Delete Category" : "Delete Channel"; danger: true; clicked => { root.confirm-delete = true; } }
                 }
@@ -59,10 +77,10 @@ export component ChannelSettings inherits Rectangle {
                 horizontal-stretch: 1;
                 HorizontalLayout {
                     padding: Theme.space-5; spacing: Theme.space-4;
-                    Text { text: "Overview"; font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                    Text { text: root.page == 1 ? "Permissions" : "Overview"; font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
                     Button { text: "Close"; kind: "text"; clicked => { root.close(); } }
                 }
-                overview := ScrollView {
+                if root.page == 0: overview := ScrollView {
                     vertical-stretch: 1;
                     VerticalLayout {
                         width: min(overview.visible-width, 680px);
@@ -99,7 +117,67 @@ export component ChannelSettings inherits Rectangle {
                         }
                     }
                 }
-                HorizontalLayout {
+                // Per-role and per-member overrides: the list beside the selected one's permissions.
+                if root.page == 1: HorizontalLayout {
+                    vertical-stretch: 1;
+                    padding: Theme.space-5; spacing: Theme.space-5;
+                    VerticalLayout {
+                        width: 220px; spacing: Theme.space-3;
+                        if root.override-choices.length > 0: HorizontalLayout {
+                            spacing: Theme.space-3;
+                            Select { model: root.override-choices; current-index <=> root.override-choice-index; enabled: root.override-can-edit && !root.busy; }
+                            Button { y: 4px; text: "Add"; kind: "text"; enabled: root.override-can-edit && !root.busy && root.override-choice-index >= 0; clicked => { root.add-override(root.override-choice-index); } }
+                        }
+                        entry-list := ScrollView {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                width: entry-list.visible-width;
+                                spacing: Theme.space-1; alignment: start;
+                                for entry[i] in root.override-entries: Rectangle {
+                                    height: 36px; border-radius: Theme.radius-sm;
+                                    background: i == root.override-index ? Theme.primary-container : entry-touch.has-hover ? Theme.surface-highest : transparent;
+                                    HorizontalLayout {
+                                        padding-left: Theme.space-between; spacing: Theme.space-3;
+                                        Rectangle { y: (parent.height - 12px) / 2; width: 12px; height: 12px; border-radius: self.width / 2; background: entry.has-colour ? entry.colour : Theme.outline; }
+                                        Text { text: entry.name; vertical-alignment: center; overflow: elide; color: i == root.override-index ? Theme.on-primary-container : Theme.on-surface; }
+                                    }
+                                    entry-touch := TouchArea { mouse-cursor: pointer; clicked => { root.select-override(i); } }
+                                }
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1; spacing: Theme.space-4;
+                        if root.status != "": Text { text: root.status; wrap: word-wrap; color: root.failed ? Theme.error : Theme.on-surface-variant; }
+                        if root.loaded && !root.override-can-edit: Text { text: "You need Manage Permissions to change these."; wrap: word-wrap; color: Theme.on-surface-variant; }
+                        perms := ScrollView {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                width: perms.visible-width - 12px;
+                                spacing: Theme.space-2; alignment: start;
+                                for p[i] in root.override-perms: VerticalLayout {
+                                    spacing: Theme.space-2;
+                                    if p.heading != "": Text { text: p.heading; font-weight: 600; color: Theme.on-surface; height: 32px; vertical-alignment: bottom; }
+                                    HorizontalLayout {
+                                        spacing: Theme.space-5; padding-top: Theme.space-2; padding-bottom: Theme.space-2;
+                                        VerticalLayout {
+                                            horizontal-stretch: 1; alignment: center;
+                                            Text { text: p.title; color: Theme.on-surface; }
+                                            Text { text: p.description; font-size: Theme.text-small; color: Theme.outline; wrap: word-wrap; }
+                                        }
+                                        TriState { y: (parent.height - self.height) / 2; state: p.state; enabled: root.override-can-edit && !p.locked && !root.busy; chose(s) => { root.set-override-permission(i, s); } }
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.space-3; alignment: end;
+                            if root.override-removable: Button { text: "Remove override"; danger: true; enabled: root.override-can-edit && !root.busy; clicked => { root.remove-override(); } }
+                            Button { text: "Save"; kind: "filled"; enabled: root.override-can-edit && !root.busy && root.override-dirty; clicked => { root.save-override(); } }
+                        }
+                    }
+                }
+                if root.page == 0: HorizontalLayout {
                     padding: Theme.space-5; spacing: Theme.space-3; alignment: end;
                     Button { text: "Reset"; enabled: root.loaded && !root.busy; clicked => { root.reset(); } }
                     Button { text: "Save"; kind: "filled"; enabled: root.loaded && root.allowed && !root.busy && root.dirty; clicked => { root.save(); } }
