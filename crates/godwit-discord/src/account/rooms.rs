@@ -104,6 +104,8 @@ impl DiscordAccount {
                 p::SEND_MESSAGES
             });
         let capabilities = Capabilities {
+            // Discord's web client offers Leave Group for group DMs.
+            leave: c.kind == store::GROUP_DM,
             send,
             // Forwarding out: the server must allow it (its FORWARDING_DISABLED
             // feature) and we read the channel's history; in: we may send there

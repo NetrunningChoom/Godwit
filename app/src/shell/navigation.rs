@@ -376,6 +376,18 @@ impl Shell {
             self.open_games_for(ui, &room);
             return;
         }
+        if choice == 12 {
+            self.leave_group_pending = Some(room.clone());
+            ui.set_leave_group_name(
+                self.app
+                    .state()
+                    .room(&room)
+                    .map_or_else(|| "this group".into(), |r| r.name.to_string())
+                    .into(),
+            );
+            ui.set_confirm_leave_group(true);
+            return;
+        }
         if choice == 5 {
             self.settings.cycle_room_alerts(&room);
             self.presenter.muzzle = self.settings.clone();
@@ -450,6 +462,17 @@ impl Shell {
         };
         self.act(ui, action);
         self.save_room_prefs();
+    }
+
+    /// Confirmed in the shared destructive-action dialog before the backend is asked.
+    pub fn leave_group(&mut self, ui: &AppWindow) {
+        if let Some(room) = self
+            .leave_group_pending
+            .take()
+            .filter(|r| self.app.state().room(r).is_some_and(|room| room.capabilities.leave))
+        {
+            self.act(ui, Action::LeaveGroup(room));
+        }
     }
 
     /// A pinned chat dragged `by` rows among Home's pins (negative: up).

@@ -214,6 +214,8 @@ component RoomRow inherits Rectangle {
             if !room.header: MenuRow { glyph: Icons.unread; label: room.alerts == 1 ? "Notifications: all messages" : room.alerts == 2 ? "Notifications: off" : "Notifications: default"; clicked => { root.menu(5); } }
             if !room.header: MenuRow { glyph: Icons.schedule; label: room.muzzled ? "Unmuzzle repeat messages" : "Muzzle repeat messages"; clicked => { root.menu(4); } }
             if !room.header && room.games: MenuRow { glyph: Icons.group; label: "Games in common…"; clicked => { root.menu(7); } }
+            if !room.header && room.can-leave: MenuDivider { }
+            if !room.header && room.can-leave: MenuRow { glyph: Icons.logout; label: "Leave group"; danger: true; clicked => { root.menu(12); } }
             // The official channel menu's mute (with durations) and notification settings,
             // as rows (menu 20..=24 mute for a while, 26 until turned off, 27 unmute,
             // 30..=33 the level).

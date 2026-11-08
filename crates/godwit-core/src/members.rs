@@ -137,6 +137,8 @@ pub struct MutualFriend {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupModeration {
     pub room: crate::ids::RoomId,
+    #[serde(default)]
+    pub add_member: bool,
     pub remove_member: bool,
     pub transfer_ownership: bool,
 }

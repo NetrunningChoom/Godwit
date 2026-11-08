@@ -505,8 +505,17 @@ impl DiscordAccount {
                 let (query, room) = (query.clone(), room.clone());
                 self.demo_member_search(&room, &query, &mut out);
             }
-            Command::LoadMembers { .. } | Command::LoadServerOverview { .. } | Command::OpenDirect { .. } => {
+            Command::LoadMembers { .. }
+            | Command::LoadServerOverview { .. }
+            | Command::OpenDirect { .. }
+            | Command::AddGroupMember { .. }
+            | Command::RemoveGroupMember { .. } => {
                 return None;
+            }
+            // As the gateway's CHANNEL_DELETE after leaving would.
+            Command::LeaveGroup { room } => {
+                self.store.channels.remove(&*room.raw);
+                out.push(Event::RoomRemoved(room.clone()));
             }
             Command::ServerAdmin { op, .. } if op.is_load() => return None,
             // Nothing else is sent anywhere in the demo.

@@ -249,6 +249,7 @@ export component AppWindow inherits Window {
     callback moderate-member(bool, string, int);
     in-out property <bool> confirm-remove-group-member: false;
     callback remove-group-member();
+    callback leave-group();
     in-out property <bool> confirm-transfer-group-ownership: false;
     callback transfer-group-ownership();
     in-out property <bool> confirm-block-user: false;
@@ -378,6 +379,7 @@ export component AppWindow inherits Window {
     in-out property <string> new-channel-category;
     in-out property <string> new-channel-category-name;
     in-out property <bool> confirm-leave;
+    in-out property <bool> confirm-leave-group: false;
     // Signing out asks first: it ends the sign-in at the network (Discord and
     // Steam need a new QR code after). -2 none, -1 the current account, else
     // the Settings row.
@@ -391,6 +393,7 @@ export component AppWindow inherits Window {
     callback copy-invite-link();
     callback close-invite-link();
     in property <string> sidebar-title;
+    in property <string> leave-group-name: "this group";
     in property <image> sidebar-banner;
     in property <bool> sidebar-has-banner;
     in property <[RoomItem]> rooms;
@@ -1998,6 +2001,9 @@ export component AppWindow inherits Window {
         log-out => { root.log-out(); }
         log-out-account(i) => { root.log-out-account(i); }
         confirm-leave <=> root.confirm-leave;
+        confirm-leave-group <=> root.confirm-leave-group;
+        leave-group-name: root.leave-group-name;
+        leave-group => { root.leave-group(); }
         profile-switch-open <=> root.profile-switch-open;
         profile-switch-name: root.profile-switch-name;
         profile-switch-note: root.profile-switch-note;

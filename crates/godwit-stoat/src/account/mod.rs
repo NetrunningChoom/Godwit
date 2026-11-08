@@ -766,6 +766,7 @@ mod tests {
             "channels": [
                 { "_id": "N", "channel_type": "SavedMessages", "user": "ME" },
                 { "_id": "D", "channel_type": "DirectMessage", "recipients": ["ME", "ANN"], "active": true },
+                { "_id": "G", "channel_type": "Group", "recipients": ["ME", "ANN"], "name": "Group" },
                 { "_id": "C1", "channel_type": "TextChannel", "server": "S", "name": "general" },
                 { "_id": "C2", "channel_type": "TextChannel", "server": "S", "name": "chat" }
             ],
@@ -818,6 +819,26 @@ mod tests {
             Ok(Cmd::Server(ServerCmd::CreateServer { name })) if name == "New place"
         ));
         account.run(Command::CreateServer { name: "x".repeat(33) });
+        assert!(commands.try_recv().is_err());
+    }
+
+    #[test]
+    fn leaving_group_routes_to_channel_leave_but_not_saved_notes_or_dm() {
+        let (mut account, _, mut commands, _) = connected();
+        while commands.try_recv().is_ok() {}
+        let owner = AccountId::new(Network::Stoat, "ME");
+        account.run(Command::LeaveGroup {
+            room: RoomId::new(owner.clone(), "G"),
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::Channel(ChannelCmd::LeaveChannel { channel, silent: false })) if channel == "G")
+        );
+        account.run(Command::LeaveGroup {
+            room: RoomId::new(owner.clone(), "D"),
+        });
+        account.run(Command::LeaveGroup {
+            room: RoomId::new(owner, "N"),
+        });
         assert!(commands.try_recv().is_err());
     }
 
@@ -986,17 +1007,17 @@ mod tests {
         assert_eq!(&*account.user, "ME");
         assert_eq!(&**display_name, "Me Myself");
         let names: Vec<&str> = rooms.iter().map(|r| &*r.name).collect();
-        assert_eq!(names, ["Saved Notes", "Ann", "general", "chat"]);
+        assert_eq!(names, ["Saved Notes", "Group", "Ann", "general", "chat"]);
         // Saved Notes grants every permission, yet has no calls (official client).
         assert!(matches!(rooms[0].kind, RoomKind::Notes));
         assert!(!rooms[0].capabilities.voice && !rooms[0].capabilities.video);
-        assert!(matches!(&rooms[1].kind, RoomKind::Direct { with } if &*with.raw == "ANN"));
+        assert!(matches!(&rooms[2].kind, RoomKind::Direct { with } if &*with.raw == "ANN"));
         assert_eq!(
-            rooms[1].icon_url.as_deref(),
+            rooms[2].icon_url.as_deref(),
             Some("https://stoat.chat/api/users/ANN/default_avatar")
         );
-        assert_eq!(rooms[2].encryption, RoomEncryption::Unencrypted);
-        assert!(rooms[2].capabilities.send, "the owner can send");
+        assert_eq!(rooms[3].encryption, RoomEncryption::Unencrypted);
+        assert!(rooms[3].capabilities.send, "the owner can send");
 
         let [server] = &servers[..] else { panic!("one server") };
         let cats: Vec<(&str, Vec<&str>)> = server

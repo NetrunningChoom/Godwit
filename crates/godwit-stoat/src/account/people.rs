@@ -94,6 +94,7 @@ impl StoatAccount {
                 // current owner for another group recipient.
                 remove_member.then(|| godwit_core::members::GroupModeration {
                     room: RoomId::new(account, channel.as_str()),
+                    add_member: false,
                     remove_member,
                     transfer_ownership: c.owner.as_deref() == Some(me)
                         && user != me

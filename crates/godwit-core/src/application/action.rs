@@ -316,6 +316,8 @@ pub enum Action {
         name: String,
         users: Vec<UserId>,
     },
+    /// Leave a group conversation, where the network supports it.
+    LeaveGroup(RoomId),
     /// Talk to this person on `user`'s network from now on, and open that
     /// chat (the switcher in a merged person's chat).
     TalkOn(UserId),
@@ -353,6 +355,11 @@ pub enum Action {
     },
     /// Remove a member from a group conversation, when the shown profile allows it.
     RemoveGroupMember {
+        room: RoomId,
+        user: UserId,
+    },
+    /// Add a recipient to a group conversation.
+    AddGroupMember {
         room: RoomId,
         user: UserId,
     },

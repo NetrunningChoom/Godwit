@@ -155,6 +155,8 @@ pub struct Shell {
     card_selection: crate::selection::BlockSelection,
     /// The room each quick-switcher result opens.
     switch_rows: Vec<RoomId>,
+    /// The group awaiting the leave confirmation.
+    leave_group_pending: Option<RoomId>,
     /// The message the forward picker is for, and the room each result sends to.
     forward: Option<(RoomId, MessageId)>,
     forward_rows: Vec<RoomId>,
@@ -462,6 +464,7 @@ impl Shell {
             selection: crate::selection::ChatSelection::default(),
             card_selection: crate::selection::BlockSelection::default(),
             switch_rows: Vec::new(),
+            leave_group_pending: None,
             forward: None,
             forward_rows: Vec::new(),
             poll: poll::PollDraft::default(),

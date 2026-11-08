@@ -1035,6 +1035,64 @@ impl NetworkAccount for DiscordAccount {
                     }
                 }
             }
+            Command::CreateGroup { name, users } => {
+                let users: Vec<String> = users.into_iter().map(|u| u.raw.to_string()).collect();
+                if users.len() < 2 || users.len() > 9 || name.trim().is_empty() {
+                    return out;
+                }
+                req(
+                    &self.net,
+                    Request::CreateGroup {
+                        name: name.trim().to_owned(),
+                        users,
+                    },
+                );
+            }
+            Command::LeaveGroup { room } => {
+                if self
+                    .store
+                    .channels
+                    .get(&*room.raw)
+                    .is_some_and(|c| c.kind == store::GROUP_DM)
+                {
+                    let channel = room.raw.to_string();
+                    req(&self.net, Request::LeaveGroup { channel });
+                }
+            }
+            Command::AddGroupMember { room, user } => {
+                if self
+                    .store
+                    .channels
+                    .get(&*room.raw)
+                    .is_some_and(|c| c.kind == store::GROUP_DM)
+                {
+                    let channel = room.raw.to_string();
+                    req(
+                        &self.net,
+                        Request::AddGroupRecipient {
+                            channel,
+                            user: user.raw.to_string(),
+                        },
+                    );
+                }
+            }
+            Command::RemoveGroupMember { room, user } => {
+                if self
+                    .store
+                    .channels
+                    .get(&*room.raw)
+                    .is_some_and(|c| c.kind == store::GROUP_DM)
+                {
+                    let channel = room.raw.to_string();
+                    req(
+                        &self.net,
+                        Request::RemoveGroupRecipient {
+                            channel,
+                            user: user.raw.to_string(),
+                        },
+                    );
+                }
+            }
             Command::AddFriend { user } => req(
                 &self.net,
                 Request::AddFriend {
@@ -1637,6 +1695,28 @@ mod tests {
         let mut out = Vec::new();
         a.handle(Ev::Ready(Box::new(crate::store::test_ready())), &mut out);
         out
+    }
+
+    #[test]
+    fn leaving_group_dm_emits_channel_delete_and_demo_removes_room() {
+        let ready = json!({
+            "user": {"id": "100", "username": "me"},
+            "private_channels": [{"id": "50", "type": 3, "name": "friends", "recipients": [{"id": "7", "username": "robin"}]}],
+            "relationships": [], "merged_members": [],
+        });
+        let (mut account, mut commands, _) = account();
+        let mut events = Vec::new();
+        account.handle(Ev::Ready(Box::new(ready.clone())), &mut events);
+        let room = account.room_id("50").expect("group exists");
+        while commands.try_recv().is_ok() {}
+        let output = account.run(Command::LeaveGroup { room });
+        assert!(output.is_empty());
+        assert!(matches!(commands.try_recv(), Ok(Cmd::Request(Request::LeaveGroup { channel })) if channel == "50"));
+
+        let (mut demo, _) = DiscordAccount::demo(ready, HashMap::new());
+        let room = demo.room_id("50").expect("demo group exists");
+        let output = demo.run(Command::LeaveGroup { room: room.clone() });
+        assert!(output.contains(&Event::RoomRemoved(room)));
     }
 
     #[test]

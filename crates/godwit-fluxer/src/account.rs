@@ -717,6 +717,8 @@ impl FluxerAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            // Fluxer rooms do not currently expose group leave or recipient editing.
+            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
             // A server channel opened: subscribed, as Fluxer's client does.
             Command::Focus { room } => {
                 let opened = room

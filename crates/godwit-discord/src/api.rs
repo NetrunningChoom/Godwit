@@ -607,6 +607,35 @@ impl Api {
             .await
     }
 
+    /// Creates a group DM from recipients (Modify Channel Recipients).
+    pub async fn create_group(&self, name: &str, users: &[String]) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::POST, "/users/@me/channels"),
+            &json!({"recipients": users, "name": name}),
+        ))
+        .await
+    }
+
+    /// Leaves a group DM (Close Channel); `silent` is a query parameter
+    /// (docs.discord.food), and the web client leaves non-silently.
+    pub async fn leave_group(&self, channel: &str) -> Result<()> {
+        self.json(self.request(Method::DELETE, &format!("/channels/{channel}?silent=false")))
+            .await
+            .map(drop)
+    }
+
+    /// Adds a recipient to a group DM.
+    pub async fn add_group_recipient(&self, channel: &str, user: &str) -> Result<()> {
+        self.empty(self.request(Method::PUT, &format!("/channels/{channel}/recipients/{user}")))
+            .await
+    }
+
+    /// Removes a recipient from a group DM.
+    pub async fn remove_group_recipient(&self, channel: &str, user: &str) -> Result<()> {
+        self.empty(self.request(Method::DELETE, &format!("/channels/{channel}/recipients/{user}")))
+            .await
+    }
+
     /// Our account's own fields (`global_name`, `avatar` as a data URI), as
     /// the official client's Profiles page saves them (docs.discord.food,
     /// Modify Current User).

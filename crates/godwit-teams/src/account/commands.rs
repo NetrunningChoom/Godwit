@@ -226,6 +226,8 @@ impl TeamsAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            // Teams rooms do not currently expose group leave or recipient editing.
+            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
             Command::SetPresence(presence) => req(
                 &self.net,
                 Request::SetPresence {

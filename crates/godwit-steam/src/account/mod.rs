@@ -739,6 +739,8 @@ impl NetworkAccount for SteamAccount {
                 }
             }
             Command::LeaveCall => self.net.send(Cmd::CallCmd(SessionCmd::Leave)),
+            // Steam rooms do not yet advertise group leaving or member editing.
+            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
             Command::SetMuted(muted) => self.net.send(Cmd::CallCmd(SessionCmd::Muted(muted))),
             Command::SetDeafened(deafened) => self.net.send(Cmd::CallCmd(SessionCmd::Deafened(deafened))),
             // Steam's calls are voice only.

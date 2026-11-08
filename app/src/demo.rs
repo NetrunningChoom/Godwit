@@ -2436,6 +2436,8 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     Event::RoomOpened(RoomId::new(self.id.clone(), id)),
                 ]
             }
+            Command::LeaveGroup { room } => vec![Event::RoomRemoved(room)],
+            Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => Vec::new(),
             // Any room's members: a few made-up people, seeded by the room.
             Command::LoadMembers { room } => {
                 let seed = room.raw.bytes().map(u64::from).sum::<u64>();

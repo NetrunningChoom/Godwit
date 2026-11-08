@@ -155,6 +155,9 @@ export component ManagementDialogs inherits Rectangle {
     callback cancel-profile-switch();
     in property <string> sidebar-title;
     callback server-menu-leave();
+    in-out property <bool> confirm-leave-group;
+    in property <string> leave-group-name;
+    callback leave-group();
     in-out property <int> confirm-moderate;
     in property <string> card-name;
     in-out property <string> ban-reason;
@@ -272,6 +275,14 @@ export component ManagementDialogs inherits Rectangle {
         danger: true;
         cancelled => { root.confirm-leave = false; }
         confirmed => { root.confirm-leave = false; root.server-menu-leave(); }
+    }
+    if root.confirm-leave-group: ConfirmDialog {
+        title: "Leave group?";
+        message: "You will leave \"" + root.leave-group-name + "\" and it will disappear from your conversations.";
+        confirm-text: "Leave";
+        danger: true;
+        cancelled => { root.confirm-leave-group = false; }
+        confirmed => { root.confirm-leave-group = false; root.leave-group(); }
     }
     if root.profile-switch-open: ConfirmDialog {
         title: "Switch to " + root.profile-switch-name + "?";

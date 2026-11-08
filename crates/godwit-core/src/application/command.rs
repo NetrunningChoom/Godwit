@@ -105,6 +105,10 @@ pub enum Command {
         name: String,
         users: Vec<UserId>,
     },
+    /// Leave a group conversation.
+    LeaveGroup {
+        room: RoomId,
+    },
     /// Report `target`; answered with [`Event::Reported`].
     Report {
         target: crate::report::ReportTarget,
@@ -142,6 +146,11 @@ pub enum Command {
     },
     /// Remove a member from a group conversation.
     RemoveGroupMember {
+        room: RoomId,
+        user: UserId,
+    },
+    /// Add a recipient to a group conversation.
+    AddGroupMember {
         room: RoomId,
         user: UserId,
     },

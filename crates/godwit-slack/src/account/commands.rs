@@ -352,6 +352,8 @@ impl SlackAccount {
     pub(super) fn run_command(&mut self, command: Command) -> Vec<Event> {
         let mut out = Vec::new();
         match command {
+            // Slack rooms do not currently expose group leave or recipient editing.
+            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
             Command::LoadThreads { server, more } => self.refresh_threads(&server.raw, more),
             Command::SetPresence(presence) => {
                 if matches!(presence, Presence::Online | Presence::Idle) {

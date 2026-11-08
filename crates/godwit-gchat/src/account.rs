@@ -1005,6 +1005,8 @@ impl NetworkAccount for GChatAccount {
 
     fn run(&mut self, command: Command) -> Vec<Event> {
         match command {
+            // Google Chat rooms do not currently expose group leave or recipient editing.
+            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
             Command::MarkRead { room, .. } | Command::MarkRoomRead { room } => self.mark_read(&room.raw),
             Command::CreateThread {
                 room,

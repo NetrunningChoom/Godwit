@@ -2596,6 +2596,22 @@ fn server_creation_trims_and_checks_the_name_and_requires_a_signed_in_account() 
 }
 
 #[test]
+fn leaving_a_group_requires_the_room_capability() {
+    let mut app = Application::default();
+    let mut group = room(Network::Discord, "g1", RoomKind::Group);
+    let id = group.id.clone();
+    ready(&mut app, Network::Discord, vec![group.clone()]);
+    assert!(app.dispatch(Action::LeaveGroup(id.clone())).is_empty());
+
+    group.capabilities.leave = true;
+    app.apply(Event::RoomUpdated(group));
+    assert_eq!(
+        commands(&app.dispatch(Action::LeaveGroup(id.clone()))),
+        [&Command::LeaveGroup { room: id }]
+    );
+}
+
+#[test]
 fn a_created_server_opens_after_its_server_list_arrives() {
     let (mut app, _) = open_dm(&[]);
     let id = ServerId::new(account(Network::Stoat), "created");
@@ -2699,6 +2715,7 @@ fn profiles_open_load_and_ignore_stale_answers() {
     let mut owner_profile = profile(&ann);
     owner_profile.group_moderation = Some(crate::members::GroupModeration {
         room: id.clone(),
+        add_member: false,
         remove_member: false,
         transfer_ownership: true,
     });

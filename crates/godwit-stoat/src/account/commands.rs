@@ -217,6 +217,17 @@ impl StoatAccount {
                 }
                 Vec::new()
             }
+            // The current UI can add recipients only on accounts that advertise profile-card moderation.
+            Command::AddGroupMember { .. } => Vec::new(),
+            Command::LeaveGroup { room } => {
+                if self.store.channels.get(&*room.raw).is_some_and(|c| c.channel_type == "Group") {
+                    self.net.send(Cmd::Channel(ChannelCmd::LeaveChannel {
+                        channel: room.raw.to_string(),
+                        silent: false,
+                    }));
+                }
+                Vec::new()
+            }
             Command::TransferGroupOwnership { room, user } => {
                 let channel = room.raw.to_string();
                 let target = user.raw.to_string();

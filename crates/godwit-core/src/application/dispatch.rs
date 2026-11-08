@@ -517,6 +517,19 @@ impl Application {
                     command: Command::CreateGroup { name, users },
                 }]
             }
+            Action::LeaveGroup(room) => {
+                if !self
+                    .state
+                    .room(&room)
+                    .is_some_and(|r| matches!(r.kind, crate::room::RoomKind::Group) && r.capabilities.leave)
+                {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::LeaveGroup { room },
+                }]
+            }
             Action::AddFriend(user) => vec![Effect::Backend {
                 account: user.account.clone(),
                 command: Command::AddFriend { user },
@@ -574,6 +587,24 @@ impl Application {
                 vec![Effect::Backend {
                     account: room.account.clone(),
                     command: Command::RemoveGroupMember { room, user },
+                }]
+            }
+            Action::AddGroupMember { room, user } => {
+                let permitted = room.account == user.account
+                    && self.state.profile.as_ref().is_some_and(|(shown, profile)| {
+                        shown == &user
+                            && profile.as_ref().is_some_and(|p| {
+                                p.group_moderation
+                                    .as_ref()
+                                    .is_some_and(|m| m.add_member && m.room == room)
+                            })
+                    });
+                if !permitted {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::AddGroupMember { room, user },
                 }]
             }
             Action::TransferGroupOwnership { room, user } => {

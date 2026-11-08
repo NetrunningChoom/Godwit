@@ -95,6 +95,21 @@ pub enum Request {
     OpenDm {
         user: String,
     },
+    CreateGroup {
+        name: String,
+        users: Vec<String>,
+    },
+    LeaveGroup {
+        channel: String,
+    },
+    AddGroupRecipient {
+        channel: String,
+        user: String,
+    },
+    RemoveGroupRecipient {
+        channel: String,
+        user: String,
+    },
     Profile {
         user: String,
         guild: Option<String>,
@@ -912,6 +927,27 @@ async fn answer(api: &Api, request: Request) -> Answer {
             result: api.typing(&channel).await.map_err(RequestError::from),
         },
         Request::OpenDm { user } => Answer::DmOpened(api.open_dm(&user).await.map_err(RequestError::from)),
+        Request::CreateGroup { name, users } => {
+            Answer::DmOpened(api.create_group(&name, &users).await.map_err(RequestError::from))
+        }
+        Request::LeaveGroup { channel } => Answer::Done {
+            what: "Leaving group",
+            result: api.leave_group(&channel).await.map_err(RequestError::from),
+        },
+        Request::AddGroupRecipient { channel, user } => Answer::Done {
+            what: "Adding group recipient",
+            result: api
+                .add_group_recipient(&channel, &user)
+                .await
+                .map_err(RequestError::from),
+        },
+        Request::RemoveGroupRecipient { channel, user } => Answer::Done {
+            what: "Removing group recipient",
+            result: api
+                .remove_group_recipient(&channel, &user)
+                .await
+                .map_err(RequestError::from),
+        },
         Request::Profile { user, guild } => {
             let result = api.profile(&user, guild.as_deref()).await.map_err(RequestError::from);
             Answer::Profile { user, result }

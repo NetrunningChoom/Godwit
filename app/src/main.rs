@@ -402,6 +402,7 @@ fn connect_callbacks(ui: &AppWindow) {
         ui.set_timeout_choices(labels(&mut TIMEOUT_CHOICES.iter().map(|c| c.0)));
     }
     callback!(ui.on_remove_group_member() => |sh, ui| sh.remove_group_member(ui));
+    callback!(ui.on_leave_group() => |sh, ui| sh.leave_group(ui));
     callback!(ui.on_block_user() => |sh, ui| sh.block_profile(ui, true));
     callback!(ui.on_save_note(text) => |sh, ui| sh.save_note(ui, text.to_string()));
     callback!(ui.on_note_edited(text) => |sh, ui| sh.note_edited(ui, &text));

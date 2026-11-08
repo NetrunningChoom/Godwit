@@ -14,6 +14,9 @@ use crate::network::Network;
 /// per room (permissions, room settings).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Capabilities {
+    /// This group conversation can be left (the network removes it on confirmation).
+    #[serde(default)]
+    pub leave: bool,
     pub send: bool,
     pub edit: bool,
     pub delete: bool,
@@ -109,6 +112,7 @@ impl Capabilities {
     /// What a network's rooms normally allow a member to do.
     pub const fn of(network: Network) -> Self {
         let all = Self {
+            leave: false,
             send: true,
             edit: true,
             delete: true,
