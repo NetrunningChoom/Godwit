@@ -446,3 +446,163 @@ impl DiscordAccount {
         ))
     }
 }
+
+impl DiscordAccount {
+    /// Looks up members of `room`'s server by name that aren't loaded. Only
+    /// the user's own typing gets here (the UI debounces it); see
+    /// [`crate::member_search`] for the one-in-flight rule.
+    pub(super) fn search_members(&mut self, room: &RoomId, query: &str, _out: &mut Vec<Event>) {
+        let Some(guild) = self
+            .channel_of(room)
+            .and_then(|c| self.store.channels.get(&c).and_then(|c| c.guild.clone()))
+        else {
+            return;
+        };
+        if let Some(search) = self.member_search.ask(Instant::now(), room, &guild, query) {
+            self.send_member_search(&search);
+        }
+    }
+
+    fn send_member_search(&self, search: &crate::member_search::Search) {
+        if self.demo.is_none() {
+            self.net.send(Cmd::Gateway {
+                op: crate::member_search::REQUEST_GUILD_MEMBERS,
+                data: search.payload(),
+            });
+        }
+    }
+
+    /// GUILD_MEMBERS_CHUNK: the members are kept (the user looked for them,
+    /// so names and mentions resolve), and the search they answer, if it's
+    /// ours and still wanted, reports who it found.
+    pub(super) fn members_chunk(&mut self, d: &Value, out: &mut Vec<Event>) {
+        let Some((guild, nonce, members)) = crate::member_search::parse_chunk(d) else {
+            return;
+        };
+        for m in members {
+            self.store.put_member(guild, m);
+        }
+        let Some(done) = nonce.and_then(|n| self.member_search.answer(Instant::now(), n)) else {
+            return;
+        };
+        if let Some(next) = &done.next {
+            self.send_member_search(next);
+        }
+        if done.stale {
+            return;
+        }
+        let Some(account) = self.account.clone() else {
+            return;
+        };
+        let found: Vec<Member> = members
+            .iter()
+            .filter_map(|m| m["user"]["id"].as_str())
+            .map(|u| Member {
+                user: UserId::new(account.clone(), u),
+                name: self.store.display_name(u, Some(guild)).into(),
+                avatar_url: Some(self.avatar(u, Some(guild)).into()),
+                colour: self.store.colour(u, guild),
+                presence: self.presence(u),
+                status: None,
+            })
+            .collect();
+        out.push(Event::MemberSearch {
+            room: done.room,
+            query: done.query,
+            members: found,
+        });
+    }
+
+    /// Demo: answers a search with the chunk Discord would send, of made-up
+    /// members whose names start with the query.
+    pub(super) fn demo_member_search(&mut self, room: &RoomId, query: &str, out: &mut Vec<Event>) {
+        let Some(guild) = self
+            .channel_of(room)
+            .and_then(|c| self.store.channels.get(&c).and_then(|c| c.guild.clone()))
+        else {
+            return;
+        };
+        let Some(search) = self.member_search.ask(Instant::now(), room, &guild, query) else {
+            return;
+        };
+        let members: Vec<Value> = ["ina", "bert", "ley"]
+            .iter()
+            .enumerate()
+            .map(|(i, tail)| {
+                let name = format!("{query}{tail}");
+                json!({"user": {"id": format!("9000{i}"), "username": name.to_lowercase(), "global_name": name},
+                       "roles": [], "nick": null})
+            })
+            .collect();
+        let chunk = json!({"guild_id": guild, "members": members, "nonce": search.nonce,
+                           "chunk_index": 0, "chunk_count": 1});
+        self.dispatch("GUILD_MEMBERS_CHUNK", &chunk, out);
+    }
+}
+
+#[cfg(test)]
+mod member_search_tests {
+    use super::*;
+
+    #[test]
+    fn the_demo_answers_a_search_with_a_chunk_and_keeps_the_members() {
+        let ready = json!({
+            "user": {"id": "100", "username": "me_bloop"},
+            "guilds": [{
+                "id": "10",
+                "properties": {"name": "Qux Hall", "owner_id": "100"},
+                "roles": [{"id": "10", "name": "@everyone", "permissions": "0", "position": 0}],
+                "channels": [{"id": "11", "type": 0, "name": "general", "position": 0}]
+            }],
+            "private_channels": [], "relationships": [], "merged_members": [[]],
+        });
+        let (mut a, _) = DiscordAccount::demo(ready, HashMap::new());
+        let room = RoomId::new(a.account.clone().unwrap(), "11");
+        let out = a.run(Command::SearchMembers {
+            room: room.clone(),
+            query: "al".into(),
+        });
+        let Some(Event::MemberSearch {
+            room: got,
+            query,
+            members,
+        }) = out.last()
+        else {
+            panic!("no answer: {out:?}");
+        };
+        assert_eq!((got, query.as_str(), members.len()), (&room, "al", 3));
+        assert!(members.iter().all(|m| m.name.starts_with("al")));
+        assert!(
+            a.store.members.contains_key(&("10".to_owned(), "90000".to_owned())),
+            "kept for names and mentions"
+        );
+    }
+
+    #[test]
+    fn a_newer_query_waits_for_the_answer_and_the_stale_result_is_dropped() {
+        let mut a = DiscordAccount::demo(
+            json!({"user": {"id": "100", "username": "me"}, "guilds": [{
+            "id": "10", "properties": {"name": "Q", "owner_id": "100"},
+            "roles": [{"id": "10", "name": "@everyone", "permissions": "0", "position": 0}],
+            "channels": [{"id": "11", "type": 0, "name": "general", "position": 0}]}],
+            "private_channels": [], "relationships": [], "merged_members": [[]]}),
+            HashMap::new(),
+        )
+        .0;
+        let room = RoomId::new(a.account.clone().unwrap(), "11");
+        // Two asks before any answer (the real path sends nothing in demo, so ask by hand).
+        let first = a.member_search.ask(Instant::now(), &room, "10", "a").unwrap();
+        assert!(a.member_search.ask(Instant::now(), &room, "10", "al").is_none());
+        let mut out = Vec::new();
+        a.dispatch(
+            "GUILD_MEMBERS_CHUNK",
+            &json!({"guild_id": "10", "nonce": first.nonce, "members": [{"user": {"id": "5", "username": "ann"}}]}),
+            &mut out,
+        );
+        assert!(
+            !out.iter().any(|e| matches!(e, Event::MemberSearch { .. })),
+            "stale answer dropped"
+        );
+        assert!(a.store.members.contains_key(&("10".to_owned(), "5".to_owned())));
+    }
+}

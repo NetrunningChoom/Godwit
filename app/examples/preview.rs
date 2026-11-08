@@ -333,6 +333,56 @@ fn discord_scene(name: &'static str, dm: bool) -> Scene<'static> {
     )
 }
 
+/// The member list searched for "al": the loaded members that match, then
+/// the ones the demo's gateway found (`SearchMembers` answered as Discord's
+/// GUILD_MEMBERS_CHUNK would be).
+fn member_search_scene() -> Scene<'static> {
+    let open = discord_scene("discord-member-search", false).setup;
+    Scene::new(
+        "discord-member-search",
+        Box::new(move |app, ui, a, b| {
+            use godwit_core::account::NetworkAccount;
+            use godwit_core::members::{Member, MemberGroup, Presence};
+            let screen = open(app, ui, a, b);
+            let Some(room) = app.state().selected.clone() else {
+                return screen;
+            };
+            let member = |id: &str, name: &str| Member {
+                user: godwit_core::ids::UserId::new(room.account.clone(), id),
+                name: name.into(),
+                avatar_url: None,
+                colour: None,
+                presence: Presence::Online,
+                status: None,
+            };
+            app.apply(godwit_core::application::Event::Members {
+                room: room.clone(),
+                groups: vec![MemberGroup {
+                    title: "Online — 3".into(),
+                    members: vec![member("1", "Alice"), member("2", "Bob"), member("3", "Malik")],
+                }],
+            });
+            // The demo account answers the search itself, so the preview
+            // needs no network: the same path the shell takes.
+            let (ready, history) = godwit::demo::discord_world();
+            let (mut discord, events) = godwit_discord::account::DiscordAccount::demo(ready, history);
+            for event in events {
+                app.apply(event);
+            }
+            app.dispatch(Action::FilterMembers { query: "al".into() });
+            let mut effects = app.dispatch(Action::SearchMembers { query: "al".into() });
+            while let Some(effect) = effects.pop() {
+                if let godwit_core::application::Effect::Backend { command, .. } = effect {
+                    for event in discord.run(command) {
+                        effects.extend(app.apply(event));
+                    }
+                }
+            }
+            screen
+        }),
+    )
+}
+
 /// The Discord demo's forum: its post list with tags, the tag filter
 /// (the first tag chosen) and "Load older posts". The preview has no shell,
 /// so the list is filled by hand, as the shell would from the core's forum.
@@ -755,6 +805,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         discord_scene("discord-dm", true),
         // The picker's Stickers tab over a server channel (tiles filled below).
         discord_scene("discord-stickers", false),
+        member_search_scene(),
         forum_scene(),
         Scene::new(
             "discord-privacy",

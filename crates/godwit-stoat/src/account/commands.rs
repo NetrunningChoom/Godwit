@@ -232,7 +232,9 @@ impl StoatAccount {
                 Vec::new()
             }
             // Stoat sends whole member lists, not ranges.
-            Command::MemberRows { .. } => Vec::new(),
+            // Stoat loads every member of a server, so the member list's own filter finds them all
+            // (`member_search` stays off).
+            Command::MemberRows { .. } | Command::SearchMembers { .. } => Vec::new(),
             Command::LoadMembers { room } => {
                 let channel = room.raw.to_string();
                 // One member-list request per server per session, as officially.

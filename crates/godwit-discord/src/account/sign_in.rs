@@ -500,6 +500,11 @@ impl DiscordAccount {
             Command::Typing { .. } | Command::MarkRead { .. } | Command::MarkUnread { .. } | Command::Focus { .. } => {
                 return None;
             }
+            // The chunk Discord's gateway would answer with: a few more members.
+            Command::SearchMembers { room, query } => {
+                let (query, room) = (query.clone(), room.clone());
+                self.demo_member_search(&room, &query, &mut out);
+            }
             Command::LoadMembers { .. } | Command::LoadServerOverview { .. } | Command::OpenDirect { .. } => {
                 return None;
             }

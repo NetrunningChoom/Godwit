@@ -179,6 +179,13 @@ pub enum Command {
     LoadMembers {
         room: RoomId,
     },
+    /// Members of `room`'s server whose names start with `query`, for networks
+    /// that don't hold every member (`Capabilities::member_search`); answered
+    /// with [`Event::MemberSearch`]. Only ever sent for what the user typed.
+    SearchMembers {
+        room: RoomId,
+        query: String,
+    },
     /// The open member list's rows `first` to `last` are on screen (see
     /// [`Action::MemberRows`]); networks without ranges ignore it.
     MemberRows {

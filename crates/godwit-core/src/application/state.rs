@@ -265,6 +265,11 @@ pub struct AppState {
     /// The member list beside the room (the official default: shown).
     pub show_members: bool,
     pub members: HashMap<RoomId, Arc<Vec<MemberGroup>>>,
+    /// What the member list's search box holds (matches the loaded members).
+    pub member_filter: String,
+    /// The network's answer to the last member search: the room, the query
+    /// it answered and who it found. Answers to older queries are dropped.
+    pub member_found: Option<(RoomId, String, Arc<Vec<Member>>)>,
     /// Most recent last; the UI shows them until [`Action::ClearErrors`].
     pub errors: Vec<Arc<str>>,
     /// The last report's outcome (None while it is on its way, or none was

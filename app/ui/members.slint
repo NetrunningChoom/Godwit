@@ -4,7 +4,7 @@
 import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { MemberItem } from "types.slint";
-import { Avatar, EmojiText } from "widgets.slint";
+import { Avatar, EmojiText, TextField } from "widgets.slint";
 
 // The member list, as Godwit and the official sidebar: 44 px rows (uniform,
 // so only what's visible is drawn), group headings in 12 px semibold, a
@@ -15,6 +15,11 @@ export component Members inherits Rectangle {
     // The rows on screen, at most ~4 times a second while scrolling:
     // streamed lists (Discord, Fluxer) load the ranges around them.
     callback rows-visible(int, int);
+    // The search box: every edit filters what's loaded at once; the network
+    // is asked (for members not loaded yet) only after typing paused 250 ms.
+    callback filter(string);
+    callback search(string);
+    in-out property <string> query;
     property <bool> moved;
     in property <length> panel-width: Theme.sidebar-width;
     width: root.panel-width;
@@ -23,7 +28,25 @@ export component Members inherits Rectangle {
         running: root.moved;
         triggered => {
             root.moved = false;
-            root.rows-visible(floor(-list.content-y / Theme.row-member), floor((-list.content-y + list.visible-height) / Theme.row-member));
+            if root.query == "" { root.rows-visible(floor(-list.content-y / Theme.row-member), floor((-list.content-y + list.visible-height) / Theme.row-member)); }
+        }
+    }
+    Timer {
+        interval: 250ms;
+        running: root.typing;
+        triggered => {
+            root.typing = false;
+            root.search(root.query);
+        }
+    }
+    property <bool> typing;
+    VerticalLayout {
+    TextField {
+        placeholder: "Search members";
+        text <=> root.query;
+        edited => {
+            root.typing = true;
+            root.filter(root.query);
         }
     }
     list := ListView {
@@ -93,5 +116,6 @@ export component Members inherits Rectangle {
                 }
             }
         }
+    }
     }
 }

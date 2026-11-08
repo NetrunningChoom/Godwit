@@ -869,6 +869,8 @@ fn connect_callbacks(ui: &AppWindow) {
             last: u32::try_from(last).unwrap_or(0),
         }
     ));
+    callback!(ui.on_filter_members(q) => |sh, ui| sh.act(ui, Action::FilterMembers { query: q.to_string() }));
+    callback!(ui.on_search_members(q) => |sh, ui| sh.act(ui, Action::SearchMembers { query: q.to_string() }));
     callback!(ui.on_filter_home(n) => |sh, ui| sh.filter_home(ui, n.to_string()));
     callback!(ui.on_room_menu(row, choice) => |sh, ui| sh.room_menu(ui, row, choice));
     callback!(ui.on_toggle_category(row) => |sh, ui| sh.toggle_category(ui, row));

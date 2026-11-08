@@ -475,6 +475,9 @@ export component AppWindow inherits Window {
     in property <bool> call-screen-share;
     in property <bool> call-can-video;
     callback member-rows(int, int);
+    in-out property <string> member-query;
+    callback filter-members(string);
+    callback search-members(string);
     in property <bool> call-video-network;
     in property <[CallVideoItem]> call-videos;
     callback set-camera(bool);
@@ -1375,8 +1378,11 @@ export component AppWindow inherits Window {
                             Members {
                                 panel-width: root.members-w;
                                 rows: root.members;
+                                query <=> root.member-query;
                                 open-profile(i) => { root.open-member-profile(i); }
                                 rows-visible(first, last) => { root.member-rows(first, last); }
+                                filter(q) => { root.filter-members(q); }
+                                search(q) => { root.search-members(q); }
                             }
                         }
                     }

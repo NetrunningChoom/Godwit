@@ -85,6 +85,12 @@ pub struct Capabilities {
     /// it for our own and system messages).
     #[serde(default)]
     pub report: bool,
+    /// The network can look up members of this room's server by name when
+    /// they aren't loaded (Discord's gateway search); the member list's
+    /// search box and mention completion then ask it. Networks that load
+    /// every member leave it off: the local filter already finds them.
+    #[serde(default)]
+    pub member_search: bool,
     /// The channel's settings page opens, and the channel can be deleted
     /// (Stoat: Manage Channel on a server channel).
     #[serde(default)]
@@ -132,6 +138,7 @@ impl Capabilities {
             notify_settings: false,
             forum: false,
             report: false,
+            member_search: false,
         };
         match network {
             // Autumn takes attachments up to 20 MB (Stoat's own limit).

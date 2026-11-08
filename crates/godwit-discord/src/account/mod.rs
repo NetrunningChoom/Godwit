@@ -124,6 +124,8 @@ pub struct DiscordAccount {
     consents: Option<Vec<(String, bool)>>,
     /// The server whose Roles page is open, and the roles last sent.
     roles_watch: Option<(String, ServerRoles)>,
+    /// The member search in flight and the newest query waiting behind it.
+    member_search: crate::member_search::SearchGate,
     /// The server whose Emoji page is open, and the list last sent.
     emoji_page: Option<(String, godwit_core::server_settings::ServerEmojis)>,
     /// A DM being opened from a profile, to open once it exists.
@@ -202,6 +204,7 @@ impl DiscordAccount {
             own_profile: None,
             consents: None,
             roles_watch: None,
+            member_search: Default::default(),
             emoji_page: None,
             opening_dm: false,
             renewals: 0,
@@ -1150,6 +1153,7 @@ impl NetworkAccount for DiscordAccount {
                     self.ask_ranges(&guild, &channel, first, last);
                 }
             }
+            Command::SearchMembers { room, query } => self.search_members(&room, &query, &mut out),
             Command::LoadMembers { room } => {
                 let Some(channel) = self.channel_of(&room) else {
                     return out;

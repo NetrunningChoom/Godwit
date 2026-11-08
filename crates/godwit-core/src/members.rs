@@ -198,3 +198,100 @@ pub struct ModerationRole {
     pub colour: Option<[u8; 3]>,
     pub assigned: bool,
 }
+
+/// The heading of members found by a network search that the list doesn't show.
+pub const FOUND_HEADING: &str = "Search results";
+
+/// Whether `name` matches what was typed: a case-insensitive substring, as the
+/// official clients filter what they hold (a network's own search matches
+/// prefixes, which this includes).
+fn name_matches(name: &str, needle: &str) -> bool {
+    name.to_lowercase().contains(needle)
+}
+
+/// A heading like "Online — 3" with its count replaced (others are kept).
+fn recount(title: &str, n: usize) -> Arc<str> {
+    match title.rsplit_once(" — ") {
+        Some((name, count)) if count.chars().all(|c| c.is_ascii_digit()) && !count.is_empty() => {
+            format!("{name} — {n}").into()
+        }
+        _ => title.into(),
+    }
+}
+
+/// The member list narrowed to `query`: the loaded members whose names match,
+/// in their groups, then (under [`FOUND_HEADING`]) members the network found
+/// that aren't loaded. An empty query leaves the list as it is. Shared by
+/// every network, so the member list's search box and mention completion
+/// merge local and remote matches the same way.
+pub fn search_groups(groups: &[MemberGroup], found: &[Member], query: &str) -> Vec<MemberGroup> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return groups.to_vec();
+    }
+    let mut out: Vec<MemberGroup> = groups
+        .iter()
+        .filter_map(|g| {
+            let members: Vec<Member> = g
+                .members
+                .iter()
+                .filter(|m| name_matches(&m.name, &needle))
+                .cloned()
+                .collect();
+            (!members.is_empty()).then(|| MemberGroup {
+                title: recount(&g.title, members.len()),
+                members,
+            })
+        })
+        .collect();
+    let new: Vec<Member> = found
+        .iter()
+        .filter(|m| !out.iter().any(|g| g.members.iter().any(|l| l.user == m.user)))
+        .cloned()
+        .collect();
+    if !new.is_empty() {
+        out.push(MemberGroup {
+            title: FOUND_HEADING.into(),
+            members: new,
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    fn member(id: &str, name: &str) -> Member {
+        Member {
+            user: UserId::new(crate::ids::AccountId::new(crate::network::Network::Discord, "me"), id),
+            name: name.into(),
+            avatar_url: None,
+            colour: None,
+            presence: Presence::Offline,
+            status: None,
+        }
+    }
+
+    #[test]
+    fn local_matches_keep_their_groups_and_remote_ones_follow_without_repeats() {
+        let groups = vec![
+            MemberGroup {
+                title: "Mods".into(),
+                members: vec![member("1", "Alice"), member("2", "Bob")],
+            },
+            MemberGroup {
+                title: "Online — 9".into(),
+                members: vec![member("3", "Malice")],
+            },
+        ];
+        let found = vec![member("3", "Malice"), member("4", "alicia")];
+        let out = search_groups(&groups, &found, " ALIC ");
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].members.len(), 1);
+        assert_eq!(&*out[1].title, "Online — 1", "counts follow the matches");
+        assert_eq!(&*out[2].title, FOUND_HEADING);
+        assert_eq!(&*out[2].members[0].name, "alicia");
+        assert_eq!(search_groups(&groups, &found, "  "), groups);
+    }
+}

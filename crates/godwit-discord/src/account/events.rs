@@ -158,6 +158,7 @@ impl DiscordAccount {
         let me = self.me().to_owned();
         match event {
             "GUILD_MEMBER_LIST_UPDATE" => self.member_list_update(d, out),
+            "GUILD_MEMBERS_CHUNK" => self.members_chunk(d, out),
             "USER_SETTINGS_PROTO_UPDATE" => {
                 // Type 1 is the preloaded settings (status, server list).
                 if d["settings"]["type"].as_u64().unwrap_or(1) == 1

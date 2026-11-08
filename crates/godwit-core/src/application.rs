@@ -23,7 +23,7 @@ use crate::cache::{AccountSnapshot, CachedTimeline};
 use crate::call::{Call, CallMember, CallStatus};
 use crate::contacts::{ContactId, Contacts};
 use crate::ids::{AccountId, MessageId, RoomId, ServerId, UserId};
-use crate::members::{MemberGroup, Presence, Profile};
+use crate::members::{Member, MemberGroup, Presence, Profile};
 use crate::message::{Attachment, AttachmentKind, EmojiGroup, Markup, Message, Reaction};
 use crate::network::Network;
 use crate::own_profile::{OwnProfile, OwnProfileState, ProfileEdit};

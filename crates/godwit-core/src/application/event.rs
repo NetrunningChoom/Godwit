@@ -347,6 +347,12 @@ pub enum Event {
         account: AccountId,
         groups: Vec<EmojiGroup>,
     },
+    /// Who [`Command::SearchMembers`] found for `query` in `room`'s server.
+    MemberSearch {
+        room: RoomId,
+        query: String,
+        members: Vec<Member>,
+    },
     /// The member list of `room`, grouped.
     Members {
         room: RoomId,

@@ -24,6 +24,7 @@ pub mod gateway;
 pub mod limits;
 pub mod markdown;
 pub mod member_list;
+pub mod member_search;
 pub mod permissions;
 pub mod remote_auth;
 pub mod search;

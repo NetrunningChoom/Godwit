@@ -578,6 +578,14 @@ impl Application {
                 self.state.members.insert(room, Arc::new(groups));
                 Vec::new()
             }
+            Event::MemberSearch { room, query, members } => {
+                // Only the box's current text is still wanted: typing on
+                // makes an older answer stale.
+                if self.state.member_filter.trim() == query && self.state.selected.as_ref() == Some(&room) {
+                    self.state.member_found = Some((room, query, Arc::new(members)));
+                }
+                Vec::new()
+            }
             Event::VoiceOccupants { room, members } => {
                 if members.is_empty() {
                     self.state.voice.remove(&room);

@@ -97,6 +97,9 @@ impl Application {
             Action::SelectServer(server) => self.dispatch_select_server(server),
             Action::SelectRoom(room) => {
                 self.state.marked_unread.retain(|r| *r != room);
+                // The member search box starts empty in each room.
+                self.state.member_filter.clear();
+                self.state.member_found = None;
                 self.select(room)
             }
             Action::PinRoom { room, pinned } => {
@@ -593,6 +596,28 @@ impl Application {
                         vec![Effect::Backend {
                             account: room.account.clone(),
                             command: Command::LoadMembers { room },
+                        }]
+                    }
+                    _ => Vec::new(),
+                }
+            }
+            Action::FilterMembers { query } => {
+                if query.is_empty() {
+                    self.state.member_found = None;
+                }
+                self.state.member_filter = query;
+                Vec::new()
+            }
+            Action::SearchMembers { query } => {
+                let query = query.trim().to_owned();
+                match self.state.selected.clone() {
+                    Some(room)
+                        if !query.is_empty()
+                            && self.state.room(&room).is_some_and(|r| r.capabilities.member_search) =>
+                    {
+                        vec![Effect::Backend {
+                            account: room.account.clone(),
+                            command: Command::SearchMembers { room, query },
                         }]
                     }
                     _ => Vec::new(),

@@ -134,6 +134,9 @@ impl DiscordAccount {
             video: c.private() || (c.kind == store::GUILD_VOICE && can(p::CONNECT) && can(p::STREAM)),
             video_resolution: [1280, 720],
             pins: can(p::READ_MESSAGE_HISTORY),
+            // Servers hold only the members seen so far; the gateway finds
+            // the rest by name (as the web client's mention search does).
+            member_search: c.guild.is_some(),
             search: can(p::READ_MESSAGE_HISTORY),
             // A server's search also takes `in:` and the whole-server scope.
             search_filters: if c.guild.is_some() {

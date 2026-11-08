@@ -4443,3 +4443,47 @@ fn stickers_send_only_from_their_own_server_and_only_when_available() {
     });
     assert!(app.state().stickers.is_empty());
 }
+
+#[test]
+fn member_search_asks_only_where_the_room_can_and_drops_stale_answers() {
+    let mut app = Application::new(Contacts::default());
+    let server = ServerId::new(account(Network::Discord), "S");
+    let mut ch = room(Network::Discord, "c1", RoomKind::Channel { server: server.clone() });
+    ch.capabilities.member_search = true;
+    let plain = room(Network::Stoat, "c2", RoomKind::Channel { server });
+    let (ic, ip) = (ch.id.clone(), plain.id.clone());
+    ready(&mut app, Network::Discord, vec![ch]);
+    ready(&mut app, Network::Stoat, vec![plain]);
+    let searches = |effects: &[Effect]| {
+        commands(effects)
+            .iter()
+            .filter(|c| matches!(c, Command::SearchMembers { .. }))
+            .count()
+    };
+    app.dispatch(Action::SelectRoom(ic.clone()));
+    assert_eq!(
+        searches(&app.dispatch(Action::SearchMembers { query: "  ".into() })),
+        0,
+        "nothing typed"
+    );
+    assert_eq!(searches(&app.dispatch(Action::SearchMembers { query: "al".into() })), 1);
+    app.dispatch(Action::FilterMembers { query: "ali".into() });
+    let found = |query: &str| Event::MemberSearch {
+        room: ic.clone(),
+        query: query.into(),
+        members: Vec::new(),
+    };
+    app.apply(found("al"));
+    assert!(
+        app.state().member_found.is_none(),
+        "typed on: the older answer is stale"
+    );
+    app.apply(found("ali"));
+    assert!(app.state().member_found.is_some());
+    app.dispatch(Action::SelectRoom(ip));
+    assert_eq!(
+        searches(&app.dispatch(Action::SearchMembers { query: "al".into() })),
+        0,
+        "capability off"
+    );
+}

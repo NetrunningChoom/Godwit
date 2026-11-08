@@ -361,6 +361,15 @@ pub enum Action {
     },
     /// Show or hide the member list.
     ToggleMembers,
+    /// The member list's search box changed: filters what is loaded at once.
+    FilterMembers {
+        query: String,
+    },
+    /// The same query, once typing paused (the UI debounces): asks the network
+    /// for members that aren't loaded, where the room's capabilities allow.
+    SearchMembers {
+        query: String,
+    },
     /// The member list's rows `first` to `last` are on screen: networks that
     /// stream lists in ranges (Discord, Fluxer) ask for the ones around them.
     MemberRows {

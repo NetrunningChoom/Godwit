@@ -130,6 +130,8 @@ pub struct Presenter {
     pub member_rows: Vec<Option<UserId>>,
     /// The member list the model holds (rebuilt only when it changes).
     members_shown: Option<Arc<Vec<MemberGroup>>>,
+    /// The search box text and network results the member model was built with.
+    members_search: (String, Option<Arc<Vec<godwit_core::members::Member>>>),
     /// The timeline rows in view (first, last), as the list last said.
     pub window: Option<(usize, usize)>,
     /// Whose messages the timeline model holds.
@@ -1003,14 +1005,42 @@ impl Presenter {
         let has_members = matches!(room.kind, RoomKind::Channel { .. } | RoomKind::Group);
         ui.set_has_members(has_members);
         ui.set_members_shown(state.show_members);
+        if ui.get_member_query().as_str() != state.member_filter {
+            ui.set_member_query(state.member_filter.as_str().into());
+        }
         let groups = state.members.get(&room.id).cloned();
         let same = match (&groups, &self.members_shown) {
             (Some(a), Some(b)) => Arc::ptr_eq(a, b),
             (None, None) => true,
             _ => false,
         };
-        if !same || self.images_changed {
-            let (rows, who) = groups.as_deref().map(|g| view::members(g, images)).unwrap_or_default();
+        let found = state
+            .member_found
+            .as_ref()
+            .filter(|(r, q, _)| *r == room.id && q.as_str() == state.member_filter.trim())
+            .map(|(_, _, m)| m.clone());
+        let same_search = self.members_search.0 == state.member_filter
+            && match (&self.members_search.1, &found) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            };
+        if !same || !same_search || self.images_changed {
+            // The search box narrows the loaded members, and adds those the
+            // network found (see `members::search_groups`).
+            let shown = groups.as_deref().map(|g| {
+                if state.member_filter.trim().is_empty() {
+                    g.clone()
+                } else {
+                    godwit_core::members::search_groups(
+                        g,
+                        found.as_deref().map_or(&[], Vec::as_slice),
+                        &state.member_filter,
+                    )
+                }
+            });
+            let (rows, who) = shown.as_deref().map(|g| view::members(g, images)).unwrap_or_default();
+            self.members_search = (state.member_filter.clone(), found);
             view::sync(&self.members, rows);
             self.member_rows = who;
             self.members_shown = groups;
