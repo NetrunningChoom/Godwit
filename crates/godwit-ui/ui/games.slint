@@ -4,7 +4,7 @@
 import { ListView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import { GamesFriendItem, GameRowItem } from "types.slint";
-import { Toggle, PageHeader, TextField, ChoiceChip } from "widgets.slint";
+import { Toggle, PageHeader, TextField, ChoiceChip, IconButton } from "widgets.slint";
 
 // A Venn region's count: picking it lists that region's games below.
 component RegionCount inherits Rectangle {
@@ -63,6 +63,9 @@ export component GamesPage inherits Rectangle {
     callback pick-friend(int, bool);
     callback pick-region(int);
     callback games-scrolled(int);
+    // Every list (each region, or everyone and everyone-but) as Markdown on
+    // the clipboard, to send to a friend or a group.
+    callback copy-list();
 
     property <length> row-height: 48px;
 
@@ -70,6 +73,11 @@ export component GamesPage inherits Rectangle {
         PageHeader {
             label: "Games in common";
             glyph: Icons.group;
+            if root.rows.length > 0: IconButton {
+                glyph: Icons.copy;
+                tooltip: "Copy all lists";
+                clicked => { root.copy-list(); }
+            }
         }
         if root.accounts.length > 1: HorizontalLayout {
             padding-left: Theme.gap-lg;

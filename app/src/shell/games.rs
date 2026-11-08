@@ -118,6 +118,14 @@ impl Shell {
         );
     }
 
+    /// The copy button: every list as Markdown on the clipboard.
+    pub fn games_copy_list(&mut self) {
+        let state = self.app.state();
+        if let Some(text) = state.games.as_ref().and_then(|g| crate::games::markdown(state, g)) {
+            copy_to_clipboard(text);
+        }
+    }
+
     /// The picker's search, as typed.
     pub fn games_search(&mut self, ui: &AppWindow, query: &str) {
         self.games.query = query.to_owned();

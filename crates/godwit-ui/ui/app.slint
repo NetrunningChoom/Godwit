@@ -596,6 +596,7 @@ export component AppWindow inherits Window {
     callback games-pick-friend(int, bool);
     callback games-pick-region(int);
     callback games-scrolled(int);
+    callback games-copy-list();
     in property <bool> members-shown;
     in property <[MemberItem]> members;
     // The open profile card.
@@ -1151,6 +1152,7 @@ export component AppWindow inherits Window {
                                         pick-friend(i, on) => { root.games-pick-friend(i, on); }
                                         pick-region(m) => { root.games-pick-region(m); }
                                         games-scrolled(first) => { root.games-scrolled(first); }
+                                        copy-list => { root.games-copy-list(); }
                                     }
                                     if root.showing-threads: Threads {
                                         horizontal-stretch: 1;

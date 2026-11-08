@@ -215,6 +215,51 @@ pub fn contents(state: &AppState, g: &GamesInCommon, region: u32) -> Contents {
     out
 }
 
+/// Every list as Markdown, to paste to a friend or a group: each Venn region
+/// (everyone's first, then by how many own them), or for four or more people
+/// everyone's and each "everyone but". Empty lists are left out; `None` when
+/// there's nothing to compare yet.
+pub fn markdown(state: &AppState, g: &GamesInCommon) -> Option<String> {
+    let base = contents(state, g, 0);
+    let rows: Vec<Row> = if base.venn > 0 {
+        let all = games::everyone_mask(base.venn);
+        let mut masks: Vec<u32> = (1..=all).collect();
+        masks.sort_by_key(|m| (std::cmp::Reverse(m.count_ones()), *m));
+        masks.into_iter().flat_map(|m| contents(state, g, m).rows).collect()
+    } else {
+        base.rows
+    };
+    let names: Vec<String> = g.people.iter().map(|u| name_of(state, u)).collect();
+    let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let mut out = format!("**Games in common: {}**\n", markdown_escape(&and_list(&name_refs)));
+    let mut any = false;
+    for (i, row) in rows.iter().enumerate() {
+        if row.header {
+            // A heading only when games follow it.
+            if rows.get(i + 1).is_some_and(|next| !next.header) {
+                out.push_str(&format!("\n### {}\n", markdown_escape(&row.title)));
+            }
+        } else {
+            any = true;
+            out.push_str(&format!("- {}\n", markdown_escape(&row.title)));
+        }
+    }
+    any.then_some(out)
+}
+
+/// Game names can hold Markdown's own characters ("*", "_", "#"…): escaped,
+/// so a chat shows them as written.
+fn markdown_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(c, '\\' | '*' | '_' | '`' | '[' | ']' | '#' | '~' | '|' | '<' | '>') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// What contents were made from: who, how many libraries, which region.
 type Key = (Vec<UserId>, usize, u32);
 
@@ -376,6 +421,32 @@ mod tests {
         assert_eq!(c.legend, "Left: You · Right: Ann");
         let only_me = contents(&state, &g, 1);
         assert_eq!(titles(&only_me), ["Only You (1)", "Dota"]);
+    }
+
+    #[test]
+    fn copies_every_region_as_markdown_everyone_first() {
+        let lib = |g: &[OwnedGame]| Library::Games(g.to_vec().into());
+        let (state, g) = setup(
+            2,
+            &[
+                lib(&[game(1, "Portal"), game(2, "Dota"), game(3, "Half_Life")]),
+                lib(&[game(1, "Portal"), game(4, "Celeste")]),
+            ],
+        );
+        let md = markdown(&state, &g).unwrap();
+        assert_eq!(
+            md,
+            "**Games in common: You and Ann**\n\
+             \n### Everyone owns (1)\n- Portal\n\
+             \n### Only You (2)\n- Dota\n- Half\\_Life\n\
+             \n### Only Ann (1)\n- Celeste\n"
+        );
+    }
+
+    #[test]
+    fn nothing_to_copy_before_two_libraries() {
+        let (state, g) = setup(2, &[Library::Games(vec![game(1, "x")].into()), Library::Private]);
+        assert_eq!(markdown(&state, &g), None);
     }
 
     #[test]

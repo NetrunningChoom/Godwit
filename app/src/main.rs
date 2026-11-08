@@ -454,6 +454,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_games_search(q) => |sh, ui| sh.games_search(ui, &q));
     callback!(ui.on_games_pick_friend(i, picked) => |sh, ui| sh.games_pick_friend(ui, i, picked));
     callback!(ui.on_games_pick_region(region) => |sh, ui| sh.games_pick_region(ui, region));
+    callback!(ui.on_games_copy_list() => |sh, _ui| sh.games_copy_list());
     callback!(ui.on_games_scrolled(first) => |sh, ui| sh.games_scrolled(ui, first));
     callback!(ui.on_pin_jump(i) => |sh, ui| sh.pin_jump(ui, i));
     callback!(ui.on_pin_unpin(i) => |sh, ui| sh.pin_unpin(ui, i));
