@@ -85,6 +85,9 @@ export component AppWindow inherits Window {
     callback login-copy(string);
     in property <bool> login-busy;
     in property <string> login-error;
+    // A failed outgoing message stays visible long enough to read, then clears.
+    in property <string> send-error;
+    callback dismiss-send-error();
     in property <bool> login-can-cancel;
     in property <image> login-qr;
     in property <bool> login-has-qr;
@@ -1996,5 +1999,31 @@ export component AppWindow inherits Window {
         close-report => { root.close-report(); }
         confirm-delete <=> root.confirm-delete;
         delete(i) => { root.delete(i); }
+    }
+    if root.send-error != "" && screen == Screen.main: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 24px;
+        width: min(600px, parent.width - 32px);
+        height: 56px;
+        border-radius: 6px;
+        background: Theme.error;
+        TouchArea {
+            clicked => { root.dismiss-send-error(); }
+            Text {
+                x: 16px;
+                y: 0;
+                width: parent.width - 32px;
+                height: parent.height;
+                text: root.send-error + "   ×";
+                color: Theme.on-error;
+                vertical-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+        Timer {
+            interval: 5s;
+            running: true;
+            triggered => { root.dismiss-send-error(); }
+        }
     }
 }

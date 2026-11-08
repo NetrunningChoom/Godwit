@@ -105,6 +105,8 @@ pub struct Shell {
     wake: Waker,
     /// Wakes the UI when the oldest "… is typing" runs out (see `pump`).
     typing_timer: slint::Timer,
+    /// A failed outgoing message, shown briefly in the chat window.
+    send_error: String,
     /// Prevent idle lock/sleep only while a call video is being watched or sent.
     media_awake: keep_awake::MediaAwake,
     /// The demo's stand-in network (`godwit --demo`).
@@ -407,6 +409,7 @@ impl Shell {
             mic_test: None,
             wake: wake.clone(),
             typing_timer: slint::Timer::default(),
+            send_error: String::new(),
             media_awake: keep_awake::MediaAwake::new(),
             demo_steam: demo_account.as_ref().map(|_| crate::demo::DemoSteam::default()),
             demo: demo_account,
@@ -763,6 +766,11 @@ impl Shell {
         let has_events = !events.is_empty();
         let mut back_offline = Vec::new();
         for event in events {
+            match &event {
+                Event::MessageFailed { error, .. } => self.send_error = error.to_string(),
+                Event::MessageConfirmed { .. } => self.send_error.clear(),
+                _ => {}
+            }
             if matches!(
                 &event,
                 Event::CallEnded { .. } | Event::AccountLost { .. } | Event::RoomRemoved(_)
@@ -961,6 +969,7 @@ impl Shell {
     }
 
     pub fn refresh(&mut self, ui: &AppWindow) {
+        ui.set_send_error(self.send_error.clone().into());
         let media_active =
             self.app.state().call.as_ref().is_some_and(|call| {
                 call.camera || call.screen_share || call.streams.iter().any(|stream| stream.watching)
@@ -1147,6 +1156,11 @@ impl Shell {
         if self.viewer.is_some() || self.viewer_shown {
             self.show_viewer(ui);
         }
+    }
+
+    pub fn dismiss_send_error(&mut self, ui: &AppWindow) {
+        self.send_error.clear();
+        ui.set_send_error("".into());
     }
 }
 
