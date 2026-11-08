@@ -1,0 +1,124 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { ForumPostItem, ForumTagItem } from "types.slint";
+import { Button, ChoiceChip, Select } from "widgets.slint";
+
+// A forum's posts as a list: a tag filter, the sort, each post's tags,
+// preview and counts, and "Load older posts" for the archived ones. The
+// forum's default layout (gallery) is not drawn; posts are always listed.
+export component ForumView inherits Rectangle {
+    in property <[ForumPostItem]> posts;
+    // The filter: every tag the forum has (chosen = filtering by it).
+    in property <[ForumTagItem]> filter-tags;
+    in property <[string]> sort-labels;
+    in property <int> sort-index;
+    in property <bool> can-post;
+    in property <bool> has-older;
+    in property <bool> loading;
+    in property <bool> failed;
+    in property <bool> loading-older;
+    callback open-post(int);
+    callback toggle-tag(int);
+    callback set-sort(int);
+    callback load-older();
+    callback new-post();
+
+    VerticalLayout {
+        HorizontalLayout {
+            padding: Theme.gap-md;
+            padding-left: Theme.gap-lg;
+            padding-right: Theme.gap-lg;
+            spacing: Theme.gap-md;
+            Select {
+                width: 200px;
+                model: root.sort-labels;
+                current-index: root.sort-index;
+                selected(i) => { root.set-sort(i); }
+            }
+            Flickable {
+                horizontal-stretch: 1;
+                content-width: chips.preferred-width;
+                height: Theme.chip-height;
+                chips := HorizontalLayout {
+                    spacing: Theme.gap-sm;
+                    for t[i] in root.filter-tags: ChoiceChip {
+                        label: t.label;
+                        chosen: t.chosen;
+                        choose => { root.toggle-tag(i); }
+                    }
+                }
+            }
+            if root.can-post: Button { text: "New post"; kind: "filled"; clicked => { root.new-post(); } }
+        }
+        if root.loading || root.failed || root.posts.length == 0: HorizontalLayout {
+            padding: Theme.gap-lg;
+            Text {
+                text: root.failed ? "Couldn't load the posts." : root.loading ? "Loading…" : "No posts here yet.";
+                color: root.failed ? Theme.error : Theme.on-surface-variant;
+                horizontal-alignment: center;
+            }
+        }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                padding-left: Theme.gap-lg;
+                padding-right: Theme.gap-lg;
+                padding-bottom: Theme.gap-lg;
+                spacing: Theme.gap-md;
+                for p[i] in root.posts: Rectangle {
+                    border-radius: Theme.radius-lg;
+                    background: touch.has-hover ? Theme.surface-highest : Theme.surface-high;
+                    height: card.preferred-height;
+                    touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open-post(i); }
+                        card := VerticalLayout {
+                            padding: Theme.gap-lg;
+                            spacing: Theme.gap-sm;
+                            Text {
+                                text: p.title;
+                                color: Theme.on-surface;
+                                font-size: Theme.text-title;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                            if p.preview != "": Text {
+                                text: p.preview;
+                                color: Theme.on-surface-variant;
+                                wrap: word-wrap;
+                                overflow: elide;
+                                max-height: 2 * self.font-size * 1.5;
+                            }
+                            if p.tags.length > 0: HorizontalLayout {
+                                spacing: Theme.gap-sm;
+                                alignment: start;
+                                for tag in p.tags: Rectangle {
+                                    height: Theme.chip-compact-height;
+                                    width: tag-text.preferred-width + 2 * Theme.space-3;
+                                    border-radius: Theme.radius-xs;
+                                    background: Theme.secondary-container;
+                                    tag-text := Text {
+                                        text: tag;
+                                        color: Theme.on-secondary-container;
+                                        font-size: Theme.text-small;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            Text { text: p.meta; color: Theme.outline; font-size: Theme.text-small; }
+                        }
+                    }
+                }
+                if root.has-older: HorizontalLayout {
+                    alignment: center;
+                    Button { text: root.loading-older ? "Loading…" : "Load older posts"; kind: "tonal"; enabled: !root.loading-older; clicked => { root.load-older(); } }
+                }
+            }
+        }
+    }
+}

@@ -422,6 +422,11 @@ fn connect_callbacks(ui: &AppWindow) {
     });
     callback!(ui.on_create_thread(row) => |sh, ui| sh.create_thread_from(ui, row));
     callback!(ui.on_new_post() => |sh, ui| sh.new_post(ui));
+    callback!(ui.on_thread_toggle_tag(i) => |sh, ui| sh.thread_toggle_tag(ui, i));
+    callback!(ui.on_forum_open_post(i) => |sh, ui| sh.forum_open_post(ui, i));
+    callback!(ui.on_forum_toggle_tag(i) => |sh, ui| sh.forum_toggle_tag(ui, i));
+    callback!(ui.on_forum_set_sort(i) => |sh, ui| sh.forum_set_sort(ui, i));
+    callback!(ui.on_forum_load_older() => |sh, ui| sh.act(ui, Action::LoadMoreForum));
     callback!(ui.on_thread_confirm() => |sh, ui| sh.thread_confirm(ui));
     callback!(ui.on_open_search() => |sh, ui| sh.act(ui, Action::Search(String::new())));
     callback!(ui.on_search(query) => |sh, ui| sh.act(ui, Action::Search(query.to_string())));

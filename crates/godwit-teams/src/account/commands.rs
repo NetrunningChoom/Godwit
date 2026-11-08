@@ -239,6 +239,7 @@ impl TeamsAccount {
                 name,
                 message: Some(root),
                 text,
+                ..
             } => {
                 if let Some(id) = self.remember_thread(&room.raw, &root.0, None) {
                     if let Some(c) = self.conversations.get_mut(&id)

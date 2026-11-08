@@ -1089,6 +1089,36 @@ pub fn discord_world() -> (
                              "roles": [{"id": id, "name": "@everyone", "permissions": view_send, "position": 0}], "channels": []}));
         }
     }
+    // A forum with tags, open posts, and archived ones behind "Load older
+    // posts" (kept under `archived:<forum>` for the demo's thread search).
+    let forum = flake(108);
+    let (tag_q, tag_s, tag_r) = (flake(130), flake(131), flake(132));
+    let post = |minute: u64, last: u64, name: &str, tags: Vec<&String>, replies: u32, archived: bool, seed: u64| {
+        json!({"id": flake(minute), "type": 11, "guild_id": guild, "parent_id": forum, "name": name,
+               "applied_tags": tags, "message_count": replies, "last_message_id": flake(last),
+               "thread_metadata": {"archived": archived}, "demo_first": filler(seed, 12)})
+    };
+    let open = [
+        post(140, 205, "How do I get started?", vec![&tag_q], 3, false, 331),
+        post(150, 215, "My weekend build", vec![&tag_s], 8, false, 332),
+        post(160, 160, "Ideas for the next event", vec![], 0, false, 333),
+    ];
+    let archived = [
+        post(100, 120, "Is the server down?", vec![&tag_q, &tag_r], 5, true, 334),
+        post(110, 111, "Old showcase", vec![&tag_s], 2, true, 335),
+        post(90, 95, "Welcome thread", vec![], 1, true, 336),
+    ];
+    if let Some(g) = ready["guilds"].get_mut(0) {
+        if let Some(list) = g["channels"].as_array_mut() {
+            list.push(json!({"id": forum, "type": 15, "name": "community", "position": 3, "flags": 16, "default_sort_order": 0,
+                "available_tags": [
+                    {"id": tag_q, "name": "Question", "emoji_name": "❓", "moderated": false},
+                    {"id": tag_s, "name": "Showcase", "emoji_name": "✨", "moderated": false},
+                    {"id": tag_r, "name": "Resolved", "emoji_name": "✅", "moderated": true}
+                ]}));
+        }
+        g["threads"] = json!(open);
+    }
     ready["user_settings"] = json!({"guild_folders": [
         {"id": null, "name": null, "color": null, "guild_ids": [guild]},
         {"id": 4242, "name": null, "color": 0x0058_65f2, "guild_ids": [second, third]},
@@ -1164,7 +1194,7 @@ pub fn discord_world() -> (
         });
         v
     };
-    let history = [
+    let mut history: std::collections::HashMap<String, Vec<serde_json::Value>> = [
         (general, general_msgs),
         (memes, memes_msgs),
         (dm, dm_msgs),
@@ -1173,6 +1203,7 @@ pub fn discord_world() -> (
     .into_iter()
     .map(|(c, v)| (c, newest_first(v)))
     .collect();
+    history.insert(format!("archived:{forum}"), archived.to_vec());
     (ready, history)
 }
 

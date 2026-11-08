@@ -945,9 +945,40 @@ impl Api {
     }
 
     /// An invite's preview, as an invite card shows it.
+    /// A forum's archived posts, as the web client's list asks (Yapfast's
+    /// `search_threads`): in `sort` order, [`crate::forum::THREAD_PAGE`] from
+    /// the `offset`th, narrowed to `tag` (`tag` and `tag_setting` are in
+    /// docs.discord.food, Channel, "Search Threads").
+    pub async fn search_threads(
+        &self,
+        channel: &str,
+        sort: godwit_core::forum::ForumSort,
+        tag: Option<&str>,
+        offset: usize,
+    ) -> Result<Value> {
+        let mut path = format!(
+            "/channels/{channel}/threads/search?archived=true&sort_by={}&sort_order=desc&limit={}&tag_setting=match_some",
+            crate::forum::sort_by(sort),
+            crate::forum::THREAD_PAGE
+        );
+        if let Some(tag) = tag {
+            path.push_str(&format!("&tag={}", encode(tag)));
+        }
+        path.push_str(&format!("&offset={offset}"));
+        self.json(self.request(Method::GET, &path)).await
+    }
+
     /// Starts a thread from `message`, or (no message) a forum post whose
-    /// first message is `text`, as the web client does; the thread channel.
-    pub async fn create_thread(&self, channel: &str, message: Option<&str>, name: &str, text: &str) -> Result<Value> {
+    /// first message is `text` and tags `tags` (by id), as the web client
+    /// does; the thread channel.
+    pub async fn create_thread(
+        &self,
+        channel: &str,
+        message: Option<&str>,
+        name: &str,
+        text: &str,
+        tags: &[String],
+    ) -> Result<Value> {
         let (path, body) = match message {
             Some(m) => (
                 format!("/channels/{channel}/messages/{m}/threads"),
@@ -955,7 +986,7 @@ impl Api {
             ),
             None => (
                 format!("/channels/{channel}/threads"),
-                serde_json::json!({ "name": name, "auto_archive_duration": 4320, "message": { "content": text } }),
+                serde_json::json!({ "name": name, "auto_archive_duration": 4320, "applied_tags": tags, "message": { "content": text } }),
             ),
         };
         self.json(with_json(self.request(Method::POST, &path), &body)).await

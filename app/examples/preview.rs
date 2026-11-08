@@ -312,6 +312,81 @@ fn discord_scene(name: &'static str, dm: bool) -> Scene<'static> {
     )
 }
 
+/// The Discord demo's forum: its post list with tags, the tag filter
+/// (the first tag chosen) and "Load older posts". The preview has no shell,
+/// so the list is filled by hand, as the shell would from the core's forum.
+fn forum_scene() -> Scene<'static> {
+    Scene::new(
+        "discord-forum",
+        Box::new(|app, ui, _, _| {
+            use godwit_core::account::NetworkAccount;
+            use slint::{ModelRc, VecModel};
+            let (ready, history) = godwit::demo::discord_world();
+            let (mut discord, events) = godwit_discord::account::DiscordAccount::demo(ready, history);
+            for event in events {
+                app.apply(event);
+            }
+            let room = app
+                .state()
+                .rooms
+                .iter()
+                .find(|r| r.capabilities.forum)
+                .map(|r| r.id.clone());
+            if let Some(room) = room {
+                let mut effects = Vec::new();
+                if let Some(RoomKind::Channel { server }) = app.state().room(&room).map(|r| r.kind.clone()) {
+                    effects.extend(app.dispatch(Action::SelectServer(Some(server))));
+                }
+                effects.extend(app.dispatch(Action::SelectRoom(room)));
+                while let Some(effect) = effects.pop() {
+                    if let godwit_core::application::Effect::Backend { command, .. } = effect {
+                        for event in discord.run(command) {
+                            effects.extend(app.apply(event));
+                        }
+                    }
+                }
+            }
+            let tag = |label: &str, chosen| godwit::ui::ForumTagItem {
+                label: label.into(),
+                chosen,
+            };
+            let post = |title: &str, preview: &str, meta: &str, tags: &[&str]| godwit::ui::ForumPostItem {
+                title: title.into(),
+                preview: preview.into(),
+                meta: meta.into(),
+                tags: ModelRc::new(VecModel::from(
+                    tags.iter().map(|t| (*t).into()).collect::<Vec<slint::SharedString>>(),
+                )),
+            };
+            ui.set_forum_posts(ModelRc::new(VecModel::from(vec![
+                post(
+                    "How do I get started?",
+                    &filler(331, 12),
+                    "3 replies · active 2h",
+                    &["❓ Question"],
+                ),
+                post(
+                    "Is the server down?",
+                    &filler(334, 12),
+                    "5 replies · active 3 Nov",
+                    &["❓ Question", "✅ Resolved"],
+                ),
+            ])));
+            ui.set_forum_filter_tags(ModelRc::new(VecModel::from(vec![
+                tag("❓ Question", true),
+                tag("✨ Showcase", false),
+                tag("✅ Resolved", false),
+            ])));
+            ui.set_forum_sort_labels(ModelRc::new(VecModel::from(vec![
+                "Recent activity".into(),
+                "Creation date".into(),
+            ])));
+            ui.set_forum_has_older(true);
+            Screen::Main
+        }),
+    )
+}
+
 /// Server settings on an admin page, filled the way the app does it: the
 /// demo account answers the core, and the real editor shows the result.
 fn server_admin_scene(name: &'static str, page: i32) -> Scene<'static> {
@@ -657,6 +732,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         discord_scene("discord-channel", false),
         discord_scene("discord-dm", true),
+        forum_scene(),
         Scene::new(
             "discord-privacy",
             Box::new(|_, ui, _, _| {

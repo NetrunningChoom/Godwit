@@ -364,6 +364,16 @@ pub enum Event {
         rooms: Vec<RoomId>,
         messages: Option<Vec<Message>>,
     },
+    /// A forum's posts, as asked with [`Command::LoadForum`].
+    Forum(Box<crate::forum::ForumPage>),
+    /// Loading a forum's posts failed.
+    ForumFailed {
+        room: RoomId,
+        /// For older posts in `sort` with `tag` (else the open list).
+        archived: bool,
+        sort: crate::forum::ForumSort,
+        tag: Option<Arc<str>>,
+    },
     /// `room`'s pinned messages, the latest pinned first (None: loading failed).
     Pins {
         room: RoomId,

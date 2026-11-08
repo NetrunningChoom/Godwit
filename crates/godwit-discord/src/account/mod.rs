@@ -46,6 +46,7 @@ use crate::voice::states::VoiceStates;
 use godwit_voice::call::VoiceSettings;
 
 mod calls;
+mod forum;
 
 /// Where signing in stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -705,6 +706,25 @@ impl NetworkAccount for DiscordAccount {
         match command {
             Command::Focus { room } => {
                 self.viewing = room.as_ref().and_then(|r| self.channel_of(r));
+                // Leaving a forum (and its posts) lets go of its loaded
+                // archived posts.
+                if !self.store.opened_archived.is_empty() {
+                    let in_forum = self
+                        .viewing
+                        .as_ref()
+                        .and_then(|c| self.store.channels.get(c))
+                        .is_some_and(|c| {
+                            c.forum()
+                                || c.parent
+                                    .as_ref()
+                                    .and_then(|p| self.store.channels.get(p))
+                                    .is_some_and(|p| p.forum())
+                        });
+                    if !in_forum {
+                        self.forget_archived();
+                        self.sync_rooms(&mut out);
+                    }
+                }
                 // Subscribing, as opening a channel in the web client does,
                 // brings the server's typing notices and the channel's
                 // member list (its first hundred rows).
@@ -1207,6 +1227,7 @@ impl NetworkAccount for DiscordAccount {
                 name,
                 message,
                 text,
+                tags,
             } => {
                 if let Some(channel) = self.channel_of(&room) {
                     self.net.send(Cmd::Request(Request::CreateThread {
@@ -1214,7 +1235,26 @@ impl NetworkAccount for DiscordAccount {
                         message: message.map(|m| m.0.to_string()),
                         name,
                         text,
+                        tags: tags.iter().map(|t| t.to_string()).collect(),
                     }));
+                }
+            }
+            Command::LoadForum {
+                room,
+                sort,
+                tag,
+                offset,
+            } => {
+                if let Some(channel) = self.channel_of(&room) {
+                    match offset {
+                        None => self.forum_open(&room, &channel, &mut out),
+                        Some(offset) => self.net.send(Cmd::Request(Request::ForumThreads {
+                            channel,
+                            sort,
+                            tag: tag.map(|t| t.to_string()),
+                            offset,
+                        })),
+                    }
                 }
             }
             Command::SearchMessages { room, query, offset } => {

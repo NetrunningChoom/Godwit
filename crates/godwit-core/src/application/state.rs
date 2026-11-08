@@ -270,6 +270,8 @@ pub struct AppState {
     pub report_outcome: Option<Result<(), Arc<str>>>,
     /// The pinned messages panel, for the selected room.
     pub pins: Option<Pins>,
+    /// The post list of the selected forum (or of the forum a selected post is in).
+    pub forum: Option<crate::forum::Forum>,
     /// The "Games in common" dialog, while open.
     pub games: Option<GamesInCommon>,
     /// The message search, for the selected room.

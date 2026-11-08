@@ -564,7 +564,7 @@ impl StoatAccount {
                 self.sync_rooms(&mut out);
                 out
             }
-            Command::LoadThreads { .. } => Vec::new(),
+            Command::LoadThreads { .. } | Command::LoadForum { .. } => Vec::new(),
         }
     }
 }

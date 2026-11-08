@@ -361,6 +361,7 @@ impl Application {
             Event::Members { room, .. }
             | Event::VoiceSince { room, .. }
             | Event::Pins { room, .. }
+            | Event::ForumFailed { room, .. }
             | Event::SearchResults { room, .. }
             | Event::VoiceOccupants { room, .. }
             | Event::Typing { room, .. }
@@ -570,6 +571,15 @@ impl Application {
         }
         self.forget_old_timelines(&room);
         let mut effects = Vec::new();
+        // A forum lists its posts; opening one of them keeps the list.
+        let keep = self
+            .state
+            .forum
+            .as_ref()
+            .is_some_and(|f| f.room == room || r.parent.as_ref().is_some_and(|p| *p == f.room.raw));
+        if !keep {
+            self.state.forum = r.capabilities.forum.then(|| crate::forum::Forum::new(room.clone()));
+        }
         // The previous room's account loses focus if it's another account.
         if let Some(prev) = self.state.selected.take()
             && prev.account != room.account
@@ -604,6 +614,18 @@ impl Application {
                 room: Some(room.clone()),
             },
         });
+        if r.capabilities.forum {
+            let sort = self.state.forum.as_ref().map(|f| f.sort).unwrap_or_default();
+            effects.push(Effect::Backend {
+                account: account.clone(),
+                command: Command::LoadForum {
+                    room: room.clone(),
+                    sort,
+                    tag: None,
+                    offset: None,
+                },
+            });
+        }
         // An invite has nothing to read until it's accepted.
         if r.invited_by.is_some() {
             return effects;

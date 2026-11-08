@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { Theme } from "theme.slint";
-import { Dialog, Button, TextField, TextArea } from "widgets.slint";
+import { ForumTagItem } from "types.slint";
+import { Dialog, Button, ChoiceChip, TextField, TextArea } from "widgets.slint";
 
 // The "Create thread" / "New post" dialog.
 export component ThreadDialog inherits Dialog {
@@ -11,6 +12,13 @@ export component ThreadDialog inherits Dialog {
     in-out property <bool> thread-open;
     in property <bool> thread-post;
     in-out property <string> thread-text;
+    // A forum post's tags to pick from (the ones we may give), and whether
+    // the forum needs one.
+    in property <[ForumTagItem]> thread-tags;
+    in property <bool> thread-tags-required;
+    // Required, and none is picked yet.
+    in property <bool> thread-tags-missing;
+    callback thread-toggle-tag(int);
 
     title: root.thread-post ? "New post" : "Create thread";
     card-width: 480px;
@@ -23,6 +31,22 @@ export component ThreadDialog inherits Dialog {
     }
     if root.thread-post: Text { text: "Message"; color: Theme.on-surface; }
     if root.thread-post: TextArea { height: 140px; text <=> root.thread-text; }
+    if root.thread-post && root.thread-tags.length > 0: Text {
+        text: root.thread-tags-required ? "Tags (pick at least one)" : "Tags";
+        color: Theme.on-surface;
+    }
+    if root.thread-post && root.thread-tags.length > 0: Flickable {
+        height: Theme.chip-height;
+        content-width: tag-row.preferred-width;
+        tag-row := HorizontalLayout {
+            spacing: Theme.gap-sm;
+            for t[i] in root.thread-tags: ChoiceChip {
+                label: t.label;
+                chosen: t.chosen;
+                choose => { root.thread-toggle-tag(i); }
+            }
+        }
+    }
     HorizontalLayout {
         alignment: end;
         spacing: Theme.gap-sm;
@@ -30,7 +54,7 @@ export component ThreadDialog inherits Dialog {
         Button {
             text: root.thread-post ? "Post" : "Create";
             kind: "filled";
-            enabled: root.thread-name != "" && (!root.thread-post || root.thread-text != "");
+            enabled: root.thread-name != "" && (!root.thread-post || (root.thread-text != "" && !root.thread-tags-missing));
             clicked => { root.thread-confirm(); }
         }
     }

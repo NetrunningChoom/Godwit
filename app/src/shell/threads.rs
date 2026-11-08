@@ -141,6 +141,8 @@ impl Shell {
     /// "New post" in a forum: the dialog, empty.
     pub fn new_post(&mut self, ui: &AppWindow) {
         self.thread_from = None;
+        self.post_tags.clear();
+        self.render_forum(ui);
         ui.set_thread_post(true);
         ui.set_thread_name("".into());
         ui.set_thread_text("".into());
@@ -155,7 +157,181 @@ impl Shell {
         } else {
             self.thread_from.take()
         };
-        self.act(ui, Action::CreateThread { name, message, text });
+        let tags = if message.is_none() {
+            std::mem::take(&mut self.post_tags)
+        } else {
+            Vec::new()
+        };
+        self.act(
+            ui,
+            Action::CreateThread {
+                name,
+                message,
+                text,
+                tags,
+            },
+        );
+    }
+
+    /// A tag's chip text: its emoji, then its name.
+    fn tag_label(t: &godwit_core::forum::ForumTag) -> SharedString {
+        match &t.emoji {
+            Some(e) => format!("{e} {}", t.name).into(),
+            None => t.name.to_string().into(),
+        }
+    }
+
+    /// The tags a new post may pick from: moderated ones only for those who
+    /// may give them.
+    fn postable_tags(&self) -> Vec<&godwit_core::forum::ForumTag> {
+        let Some(info) = self.app.state().forum.as_ref().and_then(|f| f.info.as_ref()) else {
+            return Vec::new();
+        };
+        info.tags
+            .iter()
+            .filter(|t| !t.moderated || info.moderate_tags)
+            .collect()
+    }
+
+    /// A tag picked or unpicked in the new-post dialog.
+    pub fn thread_toggle_tag(&mut self, ui: &AppWindow, index: i32) {
+        let Some(id) = usize::try_from(index)
+            .ok()
+            .and_then(|i| self.postable_tags().get(i).map(|t| t.id.clone()))
+        else {
+            return;
+        };
+        match self.post_tags.iter().position(|t| *t == id) {
+            Some(at) => {
+                self.post_tags.remove(at);
+            }
+            // Discord takes at most five tags on a post.
+            None if self.post_tags.len() < godwit_core::forum::MAX_POST_TAGS => self.post_tags.push(id),
+            None => {}
+        }
+        self.render_forum(ui);
+    }
+
+    /// The forum's post list and the new-post dialog's tags, from the core.
+    /// Only when the forum changed since last shown: a refresh for another
+    /// reason (a message arriving) rebuilds nothing.
+    pub(super) fn show_forum(&self, ui: &AppWindow) {
+        let state = self.app.state().forum.as_ref();
+        if self.forum_shown.borrow().as_ref() == state {
+            return;
+        }
+        self.render_forum(ui);
+    }
+
+    /// Builds the forum's models now (also when the dialog's picks changed).
+    fn render_forum(&self, ui: &AppWindow) {
+        use godwit_core::forum::ForumSort;
+        let Some(f) = self.app.state().forum.as_ref() else {
+            *self.forum_shown.borrow_mut() = None;
+            ui.set_forum_posts(ModelRc::default());
+            return;
+        };
+        *self.forum_shown.borrow_mut() = Some(f.clone());
+        let info = f.info.as_ref();
+        let now = chrono::Utc::now().timestamp_millis();
+        let tag_of = |id: &str| info.and_then(|i| i.tags.iter().find(|t| &*t.id == id));
+        let posts: Vec<crate::ui::ForumPostItem> = f
+            .visible()
+            .into_iter()
+            .map(|p| {
+                let (word, at) = match f.sort {
+                    ForumSort::LatestActivity => ("active", p.last_activity.max(p.created)),
+                    ForumSort::CreationDate => ("started", p.created),
+                };
+                let replies = match p.replies {
+                    1 => "1 reply".to_owned(),
+                    n => format!("{n} replies"),
+                };
+                let when = if at > 0 {
+                    format!(" · {word} {}", crate::notifications::ago(at, now))
+                } else {
+                    String::new()
+                };
+                let tags: Vec<SharedString> = p.tags.iter().filter_map(|id| tag_of(id)).map(Self::tag_label).collect();
+                crate::ui::ForumPostItem {
+                    title: p.title.to_string().into(),
+                    preview: p.preview.as_deref().unwrap_or_default().into(),
+                    meta: format!("{replies}{when}").into(),
+                    tags: ModelRc::new(VecModel::from(tags)),
+                }
+            })
+            .collect();
+        ui.set_forum_posts(ModelRc::new(VecModel::from(posts)));
+        let filter: Vec<crate::ui::ForumTagItem> = info
+            .map(|i| {
+                i.tags
+                    .iter()
+                    .map(|t| crate::ui::ForumTagItem {
+                        label: Self::tag_label(t),
+                        chosen: f.tag.as_ref() == Some(&t.id),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        ui.set_forum_filter_tags(ModelRc::new(VecModel::from(filter)));
+        let labels: Vec<SharedString> = ForumSort::ALL.iter().map(|s| s.label().into()).collect();
+        ui.set_forum_sort_labels(ModelRc::new(VecModel::from(labels)));
+        ui.set_forum_sort_index(ForumSort::ALL.iter().position(|s| *s == f.sort).unwrap_or(0) as i32);
+        ui.set_forum_loading(info.is_none() && !f.failed);
+        ui.set_forum_failed(f.failed);
+        ui.set_forum_has_older(info.is_some() && f.older.is_some());
+        ui.set_forum_loading_older(f.loading_older);
+        let dialog: Vec<crate::ui::ForumTagItem> = self
+            .postable_tags()
+            .into_iter()
+            .map(|t| crate::ui::ForumTagItem {
+                label: Self::tag_label(t),
+                chosen: self.post_tags.contains(&t.id),
+            })
+            .collect();
+        let required = info.is_some_and(|i| i.require_tag);
+        ui.set_thread_tags(ModelRc::new(VecModel::from(dialog)));
+        ui.set_thread_tags_required(required);
+        ui.set_thread_tags_missing(required && self.post_tags.is_empty());
+    }
+
+    /// A post in the forum's list: it opens.
+    pub fn forum_open_post(&mut self, ui: &AppWindow, index: i32) {
+        let room = self
+            .app
+            .state()
+            .forum
+            .as_ref()
+            .and_then(|f| f.visible().get(usize::try_from(index).ok()?).map(|p| p.room.clone()));
+        if let Some(room) = room {
+            self.act(ui, Action::SelectRoom(room));
+        }
+    }
+
+    /// A tag chip in the forum's filter: filter by it, or clear it.
+    pub fn forum_toggle_tag(&mut self, ui: &AppWindow, index: i32) {
+        let Some(f) = self.app.state().forum.as_ref() else {
+            return;
+        };
+        let Some(tag) = f
+            .info
+            .as_ref()
+            .and_then(|i| i.tags.get(usize::try_from(index).ok()?))
+            .map(|t| t.id.clone())
+        else {
+            return;
+        };
+        let next = (f.tag.as_ref() != Some(&tag)).then_some(tag);
+        self.act(ui, Action::SetForumTag(next));
+    }
+
+    pub fn forum_set_sort(&mut self, ui: &AppWindow, index: i32) {
+        if let Some(sort) = usize::try_from(index)
+            .ok()
+            .and_then(|i| godwit_core::forum::ForumSort::ALL.get(i).copied())
+        {
+            self.act(ui, Action::SetForumSort(sort));
+        }
     }
 
     /// "Pin message" in a message's menu.

@@ -19,6 +19,7 @@ pub mod api;
 pub mod backend;
 pub mod captcha;
 pub mod client;
+pub mod forum;
 pub mod gateway;
 pub mod limits;
 pub mod markdown;

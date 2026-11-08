@@ -214,6 +214,17 @@ pub enum Command {
         name: String,
         message: Option<MessageId>,
         text: String,
+        /// A forum post's tags, by id (already checked against the forum's).
+        tags: Vec<Arc<str>>,
+    },
+    /// A forum's posts: with no `offset` its tags, rules and open posts;
+    /// with one, the older (archived) posts from there in `sort` order,
+    /// narrowed to `tag`. Answered with [`Event::Forum`].
+    LoadForum {
+        room: RoomId,
+        sort: crate::forum::ForumSort,
+        tag: Option<Arc<str>>,
+        offset: Option<usize>,
     },
     /// These people's game libraries (networks with
     /// [`Network::has_game_libraries`]); answered with an

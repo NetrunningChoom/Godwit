@@ -4,7 +4,8 @@
 import { Slider, ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { Anim, Players, CallFrames, Select, BlockItem, MessageItem, AttachmentItem, EmbedItem, InviteItem, ReactionItem, FileItem, CallMemberItem, EmojiRowItem, StreamItem } from "types.slint";
-import { CallVideoItem } from "types.slint";
+import { CallVideoItem, ForumPostItem, ForumTagItem } from "types.slint";
+import { ForumView } from "forum-view.slint";
 import { EmojiPicker } from "picker.slint";
 import { TextBlock } from "textblock.slint";
 import { Gifs, GifPicker } from "gif-picker.slint";
@@ -72,6 +73,19 @@ export component Timeline inherits Rectangle {
     // Threads can be started from messages here; a forum takes posts instead.
     in property <bool> can-thread;
     in property <bool> is-forum;
+    // The forum's posts list (shown in place of the messages).
+    in property <[ForumPostItem]> forum-posts;
+    in property <[ForumTagItem]> forum-filter-tags;
+    in property <[string]> forum-sort-labels;
+    in property <int> forum-sort-index;
+    in property <bool> forum-loading;
+    in property <bool> forum-failed;
+    in property <bool> forum-has-older;
+    in property <bool> forum-loading-older;
+    callback forum-open-post(int);
+    callback forum-toggle-tag(int);
+    callback forum-set-sort(int);
+    callback forum-load-older();
     callback create-thread(int);
     callback new-post();
     in property <bool> can-pin;
@@ -811,8 +825,28 @@ export component Timeline inherits Rectangle {
         // estimated heights broke scrolling). Memory is saved where it
         // matters: each row says whether it crosses the view's top or bottom
         // edge, giving the visible range, and only rows near it get pictures.
-        list := ScrollView {
+        // A forum has no messages of its own: its posts are listed instead.
+        if root.is-forum: ForumView {
             vertical-stretch: 1;
+            posts: root.forum-posts;
+            filter-tags: root.forum-filter-tags;
+            sort-labels: root.forum-sort-labels;
+            sort-index: root.forum-sort-index;
+            can-post: root.can-thread;
+            has-older: root.forum-has-older;
+            loading: root.forum-loading;
+            failed: root.forum-failed;
+            loading-older: root.forum-loading-older;
+            open-post(i) => { root.forum-open-post(i); }
+            toggle-tag(i) => { root.forum-toggle-tag(i); }
+            set-sort(i) => { root.forum-set-sort(i); }
+            load-older() => { root.forum-load-older(); }
+            new-post() => { root.new-post(); }
+        }
+        list := ScrollView {
+            // Out of the layout for a forum.
+            max-height: root.is-forum ? 0px : 1000000px;
+            vertical-stretch: root.is-forum ? 0 : 1;
             // Small on purpose: its content is every loaded row, and that as
             // its preferred height left no room to share, so the call's video
             // above never grew past its minimum (stretch shares only spare room).
@@ -1044,23 +1078,6 @@ export component Timeline inherits Rectangle {
                 }
             }
         }
-        // A forum has no chat of its own: its posts are threads, listed under it.
-        if root.is-forum: Rectangle {
-            height: forum-row.preferred-height + Theme.gap-md * 2;
-            forum-row := HorizontalLayout {
-                padding: Theme.gap-md;
-                padding-left: Theme.gap-lg;
-                spacing: Theme.gap-md;
-                Text {
-                    text: "This is a forum: its posts are listed under it in the sidebar.";
-                    color: Theme.on-surface-variant;
-                    vertical-alignment: center;
-                    wrap: word-wrap;
-                    horizontal-stretch: 1;
-                }
-                if root.can-thread: Button { text: "New post"; kind: "filled"; clicked => { root.new-post(); } }
-            }
-        }
         if root.files.length > 0: HorizontalLayout {
             padding-left: Theme.gap-lg;
             padding-right: Theme.gap-lg;
@@ -1086,7 +1103,9 @@ export component Timeline inherits Rectangle {
             }
         }
         Rectangle {
-            height: composer.preferred-height + Theme.gap-md * 2;
+            // A forum has no composer (its posts are started from the list).
+            visible: !root.is-forum;
+            height: root.is-forum ? 0px : composer.preferred-height + Theme.gap-md * 2;
             attach-menu := PopupWindow {
                 x: Theme.gap-lg;
                 y: -88px;

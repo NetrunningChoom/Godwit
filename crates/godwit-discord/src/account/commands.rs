@@ -247,6 +247,13 @@ impl DiscordAccount {
                 }
                 Err(e) => out.push(Event::Error(format!("Couldn't start the thread: {e}").into())),
             },
+            Answer::ForumThreads {
+                channel,
+                sort,
+                tag,
+                offset,
+                result,
+            } => self.forum_older(&channel, sort, tag, offset, result, out),
             Answer::Search {
                 channel,
                 query,

@@ -117,6 +117,16 @@ pub struct Channel {
     pub nsfw: bool,
     /// Channel.rate_limit_per_user: slowmode seconds (0: off).
     pub slowmode: u32,
+    /// A forum's `available_tags`, in its order.
+    pub tags: Vec<godwit_core::forum::ForumTag>,
+    /// Channel.flags (a forum's REQUIRE_TAG, a post's PINNED).
+    pub flags: u64,
+    /// A forum's `default_sort_order` (0 latest activity, 1 creation date).
+    pub default_sort: u64,
+    /// A post's `applied_tags`, by id.
+    pub applied_tags: Vec<String>,
+    /// A thread's `message_count` (replies and all but the first message).
+    pub message_count: u32,
 }
 
 impl Channel {
@@ -150,6 +160,17 @@ impl Channel {
                 .as_u64()
                 .and_then(|n| n.try_into().ok())
                 .unwrap_or(0),
+            tags: crate::forum::tags(v),
+            flags: v["flags"].as_u64().unwrap_or_default(),
+            default_sort: v["default_sort_order"].as_u64().unwrap_or_default(),
+            applied_tags: v["applied_tags"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect(),
+            message_count: v["message_count"].as_u64().and_then(|n| n.try_into().ok()).unwrap_or(0),
         })
     }
 
@@ -275,6 +296,9 @@ pub struct Store {
     pub folder_of: HashMap<String, Arc<godwit_core::server::ServerFolder>>,
     pub guilds: HashMap<String, Guild>,
     pub channels: HashMap<String, Channel>,
+    /// Archived forum posts the user loaded: listed as rooms (not in the
+    /// sidebar) so they can be opened.
+    pub opened_archived: std::collections::HashSet<String>,
     /// Members as seen: (guild, user).
     pub members: HashMap<(String, String), Member>,
     pub read: HashMap<String, ReadState>,

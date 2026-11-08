@@ -4288,3 +4288,72 @@ fn only_our_open_polls_can_be_ended() {
     assert!(app.dispatch(Action::EndPoll(MessageId("p2".into()))).is_empty());
     assert!(app.dispatch(Action::EndPoll(MessageId("nope".into()))).is_empty());
 }
+
+#[test]
+fn a_forum_loads_its_posts_and_a_required_tag_gates_new_posts() {
+    use crate::forum::{ForumInfo, ForumPage, ForumSort, ForumTag};
+    let mut r = dm(Network::Discord, "f1", "them");
+    r.capabilities.forum = true;
+    r.capabilities.threads = true;
+    let id = r.id.clone();
+    let mut app = Application::default();
+    ready(&mut app, Network::Discord, vec![r]);
+    let effects = app.dispatch(Action::SelectRoom(id.clone()));
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            Effect::Backend {
+                command: Command::LoadForum { offset: None, .. },
+                ..
+            }
+        )),
+        "opening a forum asks for its posts"
+    );
+    let tag = |id: &str, moderated| ForumTag {
+        id: id.into(),
+        name: id.into(),
+        emoji: None,
+        moderated,
+    };
+    app.apply(Event::Forum(Box::new(ForumPage {
+        room: id.clone(),
+        info: Some(ForumInfo {
+            tags: vec![tag("a", false), tag("m", true)],
+            require_tag: true,
+            default_sort: ForumSort::LatestActivity,
+            moderate_tags: false,
+        }),
+        posts: Vec::new(),
+        archived: false,
+        replace_older: false,
+        sort: ForumSort::LatestActivity,
+        tag: None,
+        next_offset: None,
+    })));
+    let post = |tags: &[&str]| Action::CreateThread {
+        name: "Title".into(),
+        message: None,
+        text: "Body".into(),
+        tags: tags.iter().map(|t| Arc::<str>::from(*t)).collect(),
+    };
+    assert!(app.dispatch(post(&[])).is_empty(), "a tag is required");
+    assert!(
+        app.dispatch(post(&["m"])).is_empty(),
+        "a moderated tag isn't ours to give"
+    );
+    let effects = app.dispatch(post(&["a", "m"]));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend { command: Command::CreateThread { tags, .. }, .. }] if tags.len() == 1
+    ));
+    // "Load older posts" asks from the start, once.
+    let more = app.dispatch(Action::LoadMoreForum);
+    assert!(matches!(
+        more.as_slice(),
+        [Effect::Backend {
+            command: Command::LoadForum { offset: Some(0), .. },
+            ..
+        }]
+    ));
+    assert!(app.dispatch(Action::LoadMoreForum).is_empty(), "not while loading");
+}

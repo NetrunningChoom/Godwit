@@ -162,7 +162,15 @@ pub enum Action {
         name: String,
         message: Option<MessageId>,
         text: String,
+        /// A forum post's tags, by id.
+        tags: Vec<Arc<str>>,
     },
+    /// Order the open forum's posts.
+    SetForumSort(crate::forum::ForumSort),
+    /// Show only the open forum's posts with this tag (None: all).
+    SetForumTag(Option<Arc<str>>),
+    /// "Load older posts" in the open forum.
+    LoadMoreForum,
     /// The Games in common page on `account`, comparing us with `with`
     /// (loading the libraries not yet known). Leaving the page drops it.
     OpenGamesInCommon {

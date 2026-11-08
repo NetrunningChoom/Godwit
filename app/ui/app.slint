@@ -25,6 +25,7 @@ import { Members } from "members.slint";
 import { Login } from "login.slint";
 import { Rail } from "rail.slint";
 import { Sidebar } from "sidebar.slint";
+import { ForumPostItem, ForumTagItem } from "types.slint";
 import { Timeline } from "timeline.slint";
 import { Friends } from "friends.slint";
 import { JoinServer } from "join-server.slint";
@@ -493,6 +494,22 @@ export component AppWindow inherits Window {
     callback open-search();
     in property <bool> can-thread;
     in property <bool> is-forum;
+    in property <[ForumPostItem]> forum-posts;
+    in property <[ForumTagItem]> forum-filter-tags;
+    in property <[string]> forum-sort-labels;
+    in property <int> forum-sort-index;
+    in property <bool> forum-loading;
+    in property <bool> forum-failed;
+    in property <bool> forum-has-older;
+    in property <bool> forum-loading-older;
+    callback forum-open-post(int);
+    callback forum-toggle-tag(int);
+    callback forum-set-sort(int);
+    callback forum-load-older();
+    in property <[ForumTagItem]> thread-tags;
+    in property <bool> thread-tags-required;
+    in property <bool> thread-tags-missing;
+    callback thread-toggle-tag(int);
     callback create-thread(int);
     callback new-post();
     // The "Create thread" / "New post" dialog.
@@ -1247,6 +1264,18 @@ export component AppWindow inherits Window {
                                         has-search: root.has-search;
                                         can-thread: root.can-thread;
                                         is-forum: root.is-forum;
+                                        forum-posts: root.forum-posts;
+                                        forum-filter-tags: root.forum-filter-tags;
+                                        forum-sort-labels: root.forum-sort-labels;
+                                        forum-sort-index: root.forum-sort-index;
+                                        forum-loading: root.forum-loading;
+                                        forum-failed: root.forum-failed;
+                                        forum-has-older: root.forum-has-older;
+                                        forum-loading-older: root.forum-loading-older;
+                                        forum-open-post(i) => { root.forum-open-post(i); }
+                                        forum-toggle-tag(i) => { root.forum-toggle-tag(i); }
+                                        forum-set-sort(i) => { root.forum-set-sort(i); }
+                                        forum-load-older() => { root.forum-load-older(); }
                                         create-thread(i) => { root.create-thread(i); }
                                         new-post => { root.new-post(); }
                                         open-search => { root.open-search(); }
@@ -1725,6 +1754,10 @@ export component AppWindow inherits Window {
         thread-open <=> root.thread-open;
         thread-post: root.thread-post;
         thread-text <=> root.thread-text;
+        thread-tags: root.thread-tags;
+        thread-tags-required: root.thread-tags-required;
+        thread-tags-missing: root.thread-tags-missing;
+        thread-toggle-tag(i) => { root.thread-toggle-tag(i); }
     }
     if root.search-open && screen == Screen.main: SearchDialog {
         close-search() => { root.close-search(); }

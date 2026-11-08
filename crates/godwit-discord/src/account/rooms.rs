@@ -52,7 +52,9 @@ impl DiscordAccount {
         let c = self.store.channels.get(channel)?;
         // Forums are rooms too (their posts are listed under them), but
         // archived threads aren't listed.
-        if !(c.has_messages() || c.forum()) || (c.thread() && c.archived) {
+        if !(c.has_messages() || c.forum())
+            || (c.thread() && c.archived && !self.store.opened_archived.contains(channel))
+        {
             return None;
         }
         let perms = self.store.channel_permissions(channel);

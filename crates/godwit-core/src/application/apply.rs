@@ -539,6 +539,23 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::Forum(page) => {
+                if let Some(f) = self.state.forum.as_mut() {
+                    f.apply(*page);
+                }
+                Vec::new()
+            }
+            Event::ForumFailed {
+                room,
+                archived,
+                sort,
+                tag,
+            } => {
+                if let Some(f) = self.state.forum.as_mut().filter(|f| f.room == room) {
+                    f.fail(archived, sort, tag);
+                }
+                Vec::new()
+            }
             Event::Pins { room, messages } => {
                 if let Some(p) = self.state.pins.as_mut().filter(|p| p.room == room) {
                     p.failed = messages.is_none();

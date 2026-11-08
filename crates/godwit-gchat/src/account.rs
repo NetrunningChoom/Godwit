@@ -1011,6 +1011,7 @@ impl NetworkAccount for GChatAccount {
                 name,
                 message: Some(root),
                 text,
+                ..
             } => {
                 if let Some(target) = self.target(&room, &root) {
                     let raw = format!("{}#{}", target.group, target.topic);

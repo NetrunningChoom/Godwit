@@ -488,6 +488,7 @@ impl SlackAccount {
                 name,
                 message: Some(root),
                 text,
+                ..
             } => {
                 if let Some((team, channel, None)) = self.target(&room) {
                     let ts = root.0.to_string();

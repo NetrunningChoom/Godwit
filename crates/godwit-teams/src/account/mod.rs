@@ -435,6 +435,7 @@ mod tests {
             name: "Plan".into(),
             message: Some(MessageId(root.into())),
             text: "First reply".into(),
+            tags: Vec::new(),
         });
         let thread = a.room(&expected).unwrap();
         assert_eq!(thread.parent.as_deref(), Some(CHANNEL));

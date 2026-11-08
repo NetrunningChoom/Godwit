@@ -694,6 +694,7 @@ impl Application {
         name: String,
         message: Option<MessageId>,
         text: String,
+        tags: Vec<Arc<str>>,
     ) -> Vec<Effect> {
         let Some(room) = self.state.selected.clone().filter(|r| self.allows(r, |c| c.threads)) else {
             return Vec::new();
@@ -702,6 +703,25 @@ impl Application {
         if name.is_empty() {
             return Vec::new();
         }
+        // A forum's post takes only tags the forum has (moderated ones only
+        // for those who may), and at least one where the forum requires it.
+        let tags = if message.is_none() && self.allows(&room, |c| c.forum) {
+            match self.state.forum.as_ref().filter(|f| f.room == room) {
+                Some(f) => match f.post_tags(&tags) {
+                    Some(tags) => tags,
+                    None => return Vec::new(),
+                },
+                // Without the forum's rules, a required tag can't be checked.
+                None => {
+                    self.state
+                        .errors
+                        .push("This forum's tags haven't loaded yet, try again in a moment.".into());
+                    return Vec::new();
+                }
+            }
+        } else {
+            Vec::new()
+        };
         vec![Effect::Backend {
             account: room.account.clone(),
             command: Command::CreateThread {
@@ -709,6 +729,36 @@ impl Application {
                 name,
                 message,
                 text,
+                tags,
+            },
+        }]
+    }
+
+    /// Changes how the open forum lists its posts (a new order or filter
+    /// drops the older posts, which load again on request).
+    pub(super) fn dispatch_forum(&mut self, change: impl FnOnce(&mut crate::forum::Forum)) -> Vec<Effect> {
+        if let Some(f) = self.state.forum.as_mut() {
+            change(f);
+        }
+        Vec::new()
+    }
+
+    /// "Load older posts": the next page of the open forum's archived posts.
+    pub(super) fn dispatch_forum_more(&mut self) -> Vec<Effect> {
+        let Some(f) = self.state.forum.as_mut() else {
+            return Vec::new();
+        };
+        let Some(offset) = f.older.filter(|_| !f.loading_older) else {
+            return Vec::new();
+        };
+        f.loading_older = true;
+        vec![Effect::Backend {
+            account: f.room.account.clone(),
+            command: Command::LoadForum {
+                room: f.room.clone(),
+                sort: f.sort,
+                tag: f.tag.clone(),
+                offset: Some(offset),
             },
         }]
     }

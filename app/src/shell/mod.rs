@@ -92,6 +92,11 @@ pub struct Shell {
     crop: Option<crate::cropper::Crop>,
     /// The message a thread is being started from (the dialog's).
     thread_from: Option<MessageId>,
+    /// The tags picked in the new-post dialog, by id.
+    post_tags: Vec<std::sync::Arc<str>>,
+    /// The forum list as last shown, so a refresh that changed nothing
+    /// there rebuilds nothing.
+    forum_shown: std::cell::RefCell<Option<godwit_core::forum::Forum>>,
     /// Settings → Voice's test call, while it runs, and the timer showing its level.
     mic_test: Option<(godwit_voice::mictest::MicTest, slint::Timer)>,
     /// Wakes the UI: new accounts' network threads get it.
@@ -372,6 +377,8 @@ impl Shell {
             viewer_anim: None,
             crop: None,
             thread_from: None,
+            post_tags: Vec::new(),
+            forum_shown: std::cell::RefCell::new(None),
             mic_test: None,
             wake: wake.clone(),
             typing_timer: slint::Timer::default(),
@@ -1089,6 +1096,7 @@ impl Shell {
         self.remember_call(ui);
         self.show_incoming_call(ui);
         self.show_pins(ui);
+        self.show_forum(ui);
         self.show_games(ui);
         self.show_search(ui);
         if self.viewer.is_some() || self.viewer_shown {

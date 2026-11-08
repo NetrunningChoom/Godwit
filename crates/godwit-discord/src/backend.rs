@@ -160,11 +160,19 @@ pub enum Request {
         channel: String,
         accept: bool,
     },
+    /// A forum's archived posts (see `Api::search_threads`).
+    ForumThreads {
+        channel: String,
+        sort: godwit_core::forum::ForumSort,
+        tag: Option<String>,
+        offset: usize,
+    },
     CreateThread {
         channel: String,
         message: Option<String>,
         name: String,
         text: String,
+        tags: Vec<String>,
     },
     /// Modify Channel: the fields in `body` (name, topic, nsfw,
     /// rate_limit_per_user); answered with [`Answer::ChannelSaved`].
@@ -370,6 +378,13 @@ pub enum Answer {
         result: Result<Value, RequestError>,
     },
     ThreadCreated(Result<Value, RequestError>),
+    ForumThreads {
+        channel: String,
+        sort: godwit_core::forum::ForumSort,
+        tag: Option<String>,
+        offset: usize,
+        result: Result<Value, RequestError>,
+    },
     /// A channel edit's answer: the channel as Discord now has it.
     ChannelSaved {
         channel: String,
@@ -981,11 +996,27 @@ async fn answer(api: &Api, request: Request) -> Answer {
             message,
             name,
             text: content,
+            tags,
         } => Answer::ThreadCreated(
-            api.create_thread(&channel, message.as_deref(), &name, &content)
+            api.create_thread(&channel, message.as_deref(), &name, &content, &tags)
                 .await
                 .map_err(RequestError::from),
         ),
+        Request::ForumThreads {
+            channel,
+            sort,
+            tag,
+            offset,
+        } => Answer::ForumThreads {
+            result: api
+                .search_threads(&channel, sort, tag.as_deref(), offset)
+                .await
+                .map_err(RequestError::from),
+            channel,
+            sort,
+            tag,
+            offset,
+        },
         Request::ModifyChannel { channel, request, body } => Answer::ChannelSaved {
             result: api.modify_channel(&channel, &body).await.map_err(RequestError::from),
             channel,

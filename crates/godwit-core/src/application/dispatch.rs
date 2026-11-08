@@ -239,7 +239,15 @@ impl Application {
                 self.state.search = None;
                 Vec::new()
             }
-            Action::CreateThread { name, message, text } => self.dispatch_create_thread(name, message, text),
+            Action::CreateThread {
+                name,
+                message,
+                text,
+                tags,
+            } => self.dispatch_create_thread(name, message, text, tags),
+            Action::SetForumSort(sort) => self.dispatch_forum(|f| f.set_sort(sort)),
+            Action::SetForumTag(tag) => self.dispatch_forum(|f| f.set_tag(tag)),
+            Action::LoadMoreForum => self.dispatch_forum_more(),
             Action::OpenPins => {
                 let Some(room) = self.state.selected.clone().filter(|r| self.allows(r, |c| c.pins)) else {
                     return Vec::new();

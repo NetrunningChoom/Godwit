@@ -470,6 +470,21 @@ export struct GameRowItem {
     has-image: bool,
 }
 
+// A tag of a forum: a filter chip, or a choice when starting a post.
+export struct ForumTagItem {
+    label: string,
+    chosen: bool,
+}
+
+// A forum's post, as its list shows it.
+export struct ForumPostItem {
+    title: string,
+    preview: string,
+    // "3 replies · started 2d ago"
+    meta: string,
+    tags: [string],
+}
+
 // A pinned message, as the pins panel lists it.
 export struct PinItem {
     author: string,

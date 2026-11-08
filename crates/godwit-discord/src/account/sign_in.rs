@@ -51,6 +51,63 @@ impl DiscordAccount {
                     &mut out,
                 );
             }
+            // The open posts come from the store, as when signed in.
+            Command::LoadForum { room, offset: None, .. } => {
+                if let Some(channel) = self.channel_of(room) {
+                    self.forum_open(room, &channel, &mut out);
+                }
+            }
+            // A forum's older posts answer from the canned archive (thread
+            // objects under "archived:<forum>", with the first message's text
+            // in `demo_first`), paged as Discord's thread search does.
+            Command::LoadForum {
+                room,
+                sort,
+                tag,
+                offset: Some(offset),
+            } => {
+                let channel = room.raw.to_string();
+                let mut list: Vec<Value> = history
+                    .get(&format!("archived:{channel}"))
+                    .into_iter()
+                    .flatten()
+                    .filter(|t| {
+                        tag.as_ref().is_none_or(|tag| {
+                            t["applied_tags"]
+                                .as_array()
+                                .is_some_and(|a| a.iter().any(|x| x == &**tag))
+                        })
+                    })
+                    .cloned()
+                    .collect();
+                let key = |t: &Value| {
+                    match sort {
+                        godwit_core::forum::ForumSort::CreationDate => t["id"].as_str().map(str::to_owned),
+                        godwit_core::forum::ForumSort::LatestActivity => {
+                            t["last_message_id"].as_str().map(str::to_owned)
+                        }
+                    }
+                    .unwrap_or_default()
+                };
+                list.sort_by_key(|t| std::cmp::Reverse((key(t).len(), key(t))));
+                let total = list.len();
+                let page: Vec<Value> = list.into_iter().skip(*offset).take(crate::forum::THREAD_PAGE).collect();
+                let first: Vec<Value> = page
+                    .iter()
+                    .map(|t| json!({"channel_id": t["id"], "content": t["demo_first"]}))
+                    .collect();
+                let has_more = offset + page.len() < total;
+                self.answer(
+                    Answer::ForumThreads {
+                        channel,
+                        sort: *sort,
+                        tag: tag.as_ref().map(|t| t.to_string()),
+                        offset: *offset,
+                        result: Ok(json!({"threads": page, "first_messages": first, "has_more": has_more, "total_results": total})),
+                    },
+                    &mut out,
+                );
+            }
             // A search answers from the demo history, newest first, as
             // Discord's pages do (25 groups, `total_results`).
             Command::SearchMessages { room, query, offset } => {

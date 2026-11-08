@@ -23,6 +23,8 @@ pub const SEND_MESSAGES: u64 = 1 << 11;
 pub const SEND_MESSAGES_IN_THREADS: u64 = 1 << 38;
 pub const CREATE_PUBLIC_THREADS: u64 = 1 << 35;
 pub const MANAGE_MESSAGES: u64 = 1 << 13;
+/// Moderated forum tags, and archiving or locking others' threads.
+pub const MANAGE_THREADS: u64 = 1 << 34;
 pub const EMBED_LINKS: u64 = 1 << 14;
 pub const ATTACH_FILES: u64 = 1 << 15;
 pub const READ_MESSAGE_HISTORY: u64 = 1 << 16;
