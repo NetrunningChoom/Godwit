@@ -307,11 +307,15 @@ impl Shell {
 
     /// A Home row's menu: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide,
     /// 4 muzzle mode on/off for this chat, 5 its notifications (cycles),
-    /// 6 its channel settings.
+    /// 6 its channel settings, 7 "Games in common…".
     pub fn room_menu(&mut self, ui: &AppWindow, row: i32, choice: i32) {
         let Some(room) = usize::try_from(row).ok().and_then(|r| self.room_at(r)) else {
             return;
         };
+        if choice == 7 {
+            self.open_games_for(ui, &room);
+            return;
+        }
         if choice == 5 {
             self.settings.cycle_room_alerts(&room);
             self.presenter.muzzle = self.settings.clone();

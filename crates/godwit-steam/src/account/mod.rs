@@ -133,6 +133,10 @@ pub struct SteamAccount {
     asked_apps: HashSet<u32>,
     /// Messages whose game invite cards wait for a game's name.
     name_waits: Vec<games::NameWait>,
+    /// Game libraries loaded for "Games in common", kept for the session
+    /// (Steam is asked once per person), and the ones on their way.
+    libraries: HashMap<u64, godwit_core::games::Library>,
+    loading_libraries: HashSet<u64>,
     chats: HashMap<u64, Chat>,
     /// The room on screen, if one of ours: its messages are read as they come.
     viewing: Option<u64>,
@@ -214,6 +218,8 @@ impl SteamAccount {
             app_names: HashMap::new(),
             asked_apps: HashSet::new(),
             name_waits: Vec::new(),
+            libraries: HashMap::new(),
+            loading_libraries: HashSet::new(),
             chats: HashMap::new(),
             viewing: None,
             profile_for: None,
@@ -338,6 +344,19 @@ impl NetworkAccount for SteamAccount {
             Command::RemoveFriend { user } => {
                 if let Ok(friend) = user.raw.parse::<u64>() {
                     self.net.send(Cmd::RemoveFriend(friend));
+                }
+            }
+            Command::LoadGameLibraries { users } => {
+                for user in users {
+                    let Ok(id) = user.raw.parse::<u64>() else { continue };
+                    if let Some(library) = self.libraries.get(&id) {
+                        out.push(Event::GameLibrary {
+                            user,
+                            library: library.clone(),
+                        });
+                    } else if self.loading_libraries.insert(id) {
+                        self.net.send(Cmd::OwnedGames(id));
+                    }
                 }
             }
             Command::LoadProfile { user, .. } => {
@@ -1320,6 +1339,42 @@ mod tests {
         );
         account.handle(Ev::NeedPersonas, &mut Vec::new());
         assert!(matches!(commands.try_recv(), Ok(Cmd::RequestPersonas(ids)) if ids == vec![friend]));
+    }
+
+    #[test]
+    fn game_libraries_are_asked_once_and_kept() {
+        use godwit_core::games::Library;
+        let (mut a, _tx, mut commands) = ready_with_commands();
+        while commands.try_recv().is_ok() {}
+        let account = a.id().cloned().unwrap();
+        let friend = backend::steam_id(2);
+        let user = UserId::new(account, friend.to_string());
+        let load = || Command::LoadGameLibraries {
+            users: vec![user.clone()],
+        };
+        assert!(a.run(load()).is_empty());
+        assert!(matches!(commands.try_recv(), Ok(Cmd::OwnedGames(id)) if id == friend));
+        // Still loading: not asked again.
+        a.run(load());
+        assert!(commands.try_recv().is_err());
+        let mut out = Vec::new();
+        a.handle(
+            Ev::Library {
+                steam_id: friend,
+                library: Library::Private,
+            },
+            &mut out,
+        );
+        assert_eq!(
+            out,
+            [Event::GameLibrary {
+                user: user.clone(),
+                library: Library::Private
+            }]
+        );
+        // Known for the session: answered without a request.
+        assert_eq!(a.run(load()).len(), 1);
+        assert!(commands.try_recv().is_err());
     }
 
     #[test]

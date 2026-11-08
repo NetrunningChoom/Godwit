@@ -414,6 +414,7 @@ impl Presenter {
                 && !state.showing_friends
                 && !state.showing_people
                 && !state.showing_active
+                && !state.showing_notifications
                 && !state.showing_threads,
         );
 
@@ -730,6 +731,7 @@ impl Presenter {
         ui.set_self_deafened(state.self_deafened);
         ui.set_showing_friends(state.showing_friends);
         ui.set_showing_active(state.showing_active);
+        ui.set_showing_notifications(state.showing_notifications);
         ui.set_showing_threads(state.showing_threads);
         ui.set_can_show_threads(
             state

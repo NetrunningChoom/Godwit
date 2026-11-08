@@ -191,6 +191,12 @@ pub enum Command {
         message: Option<MessageId>,
         text: String,
     },
+    /// These people's game libraries (networks with
+    /// [`Network::has_game_libraries`]); answered with an
+    /// [`Event::GameLibrary`] for each.
+    LoadGameLibraries {
+        users: Vec<UserId>,
+    },
     /// `room`'s pinned messages; answered with [`Event::Pins`].
     LoadPins {
         room: RoomId,

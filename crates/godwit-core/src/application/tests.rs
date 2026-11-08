@@ -3405,3 +3405,88 @@ fn favourites_reach_only_networks_that_keep_them_and_follow_their_list() {
     assert!(app.state.favourites.contains(&other));
     assert!(app.dispatch(star(false)).is_empty());
 }
+
+#[test]
+fn games_in_common_loads_each_library_once_and_keeps_us_in() {
+    let mut app = Application::new(Contacts::default());
+    // Networks without libraries offer nothing.
+    ready(&mut app, Network::Stoat, Vec::new());
+    let stoat = account(Network::Stoat);
+    assert!(
+        app.dispatch(Action::OpenGamesInCommon {
+            account: stoat,
+            with: Vec::new()
+        })
+        .is_empty()
+    );
+    assert!(app.state().games.is_none());
+
+    ready(&mut app, Network::Steam, Vec::new());
+    let steam = account(Network::Steam);
+    let me = UserId::new(steam.clone(), "me");
+    let (a, b) = (UserId::new(steam.clone(), "a"), UserId::new(steam.clone(), "b"));
+    let effects = app.dispatch(Action::OpenGamesInCommon {
+        account: steam.clone(),
+        with: vec![a.clone(), a.clone(), me.clone()],
+    });
+    assert_eq!(
+        commands(&effects),
+        [&Command::LoadGameLibraries {
+            users: vec![me.clone(), a.clone()]
+        }]
+    );
+    app.apply(Event::GameLibrary {
+        user: a.clone(),
+        library: crate::games::Library::Private,
+    });
+    let games = app.state().games.as_ref().expect("open");
+    assert_eq!(games.libraries.get(&a), Some(&crate::games::Library::Private));
+    // Picking someone new loads theirs; taking them out and back doesn't.
+    let effects = app.dispatch(Action::PickForGames {
+        user: b.clone(),
+        picked: true,
+    });
+    assert_eq!(
+        commands(&effects),
+        [&Command::LoadGameLibraries { users: vec![b.clone()] }]
+    );
+    app.dispatch(Action::PickForGames {
+        user: a.clone(),
+        picked: false,
+    });
+    assert!(
+        app.dispatch(Action::PickForGames {
+            user: a.clone(),
+            picked: true
+        })
+        .is_empty()
+    );
+    // We can't be taken out.
+    app.dispatch(Action::PickForGames {
+        user: me.clone(),
+        picked: false,
+    });
+    assert_eq!(
+        app.state().games.as_ref().map(|g| g.people.clone()),
+        Some(vec![me, b, a])
+    );
+    app.dispatch(Action::CloseGamesInCommon);
+    assert!(app.state().games.is_none());
+}
+
+#[test]
+fn notifications_page_replaces_the_room_until_one_is_opened() {
+    let (mut app, room) = open_dm(&["m1"]);
+    app.dispatch(Action::ShowNotifications);
+    let s = app.state();
+    assert!(s.showing_notifications && !s.showing_active && !s.showing_people && !s.showing_friends);
+    app.dispatch(Action::ShowActive);
+    assert!(!app.state().showing_notifications && app.state().showing_active);
+    app.dispatch(Action::ShowNotifications);
+    app.dispatch(Action::SelectRoom(room.clone()));
+    assert!(!app.state().showing_notifications);
+    assert_eq!(app.state().selected.as_ref(), Some(&room));
+    app.dispatch(Action::ShowNotifications);
+    app.dispatch(Action::ShowFriends);
+    assert!(!app.state().showing_notifications && app.state().showing_friends);
+}

@@ -407,6 +407,10 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_pin(row, pinned) => |sh, ui| sh.pin_row(ui, row, pinned));
     callback!(ui.on_remove_reactions(row, reaction) => |sh, ui| sh.remove_reactions_row(ui, row, reaction));
     callback!(ui.on_remove_all_reactions(row) => |sh, ui| sh.remove_all_reactions_row(ui, row));
+    callback!(ui.on_close_games() => |sh, ui| sh.close_games(ui));
+    callback!(ui.on_games_pick_friend(i, picked) => |sh, ui| sh.games_pick_friend(ui, i, picked));
+    callback!(ui.on_games_pick_region(region) => |sh, ui| sh.games_pick_region(ui, region));
+    callback!(ui.on_games_scrolled(first) => |sh, ui| sh.games_scrolled(ui, first));
     callback!(ui.on_pin_jump(i) => |sh, ui| sh.pin_jump(ui, i));
     callback!(ui.on_pin_unpin(i) => |sh, ui| sh.pin_unpin(ui, i));
     callback!(ui.on_crop_done(original) => |sh, ui| sh.crop_done(ui, original));
@@ -950,6 +954,9 @@ fn connect_callbacks(ui: &AppWindow) {
         if let Some(room) = sh.thread_at(row) { sh.act(ui, Action::SelectRoom(room)); }
     });
     callback!(ui.on_show_active() => |sh, ui| sh.act(ui, Action::ShowActive));
+    callback!(ui.on_show_notifications() => |sh, ui| sh.act(ui, Action::ShowNotifications));
+    callback!(ui.on_notification_open(row) => |sh, ui| sh.notification_open(ui, row));
+    callback!(ui.on_notifications_clear() => |sh, ui| sh.notifications_clear(ui));
     // Active now: a call opens its room, a person a chat with them.
     callback!(ui.on_active_open(row) => |sh, ui| {
         match sh.active_at(row) {

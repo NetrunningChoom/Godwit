@@ -600,6 +600,7 @@ impl Application {
         self.state.showing_friends = true;
         self.state.showing_people = false;
         self.state.showing_active = false;
+        self.state.showing_notifications = false;
         self.state.showing_threads = false;
         self.state.selected_server = None;
         self.state
@@ -891,6 +892,57 @@ impl Application {
                 emoji,
                 add,
             },
+        }]
+    }
+
+    /// "Games in common…": us and `with` (people of the same account), and
+    /// a request for every library. The network keeps what it loaded for
+    /// the session, so opening the dialog again costs no new requests.
+    pub(super) fn dispatch_open_games(&mut self, account: AccountId, with: Vec<UserId>) -> Vec<Effect> {
+        if !account.network.has_game_libraries() || !self.state.accounts.iter().any(|a| a.id == account) {
+            return Vec::new();
+        }
+        let me = UserId::new(account.clone(), account.user.as_ref());
+        let mut people = vec![me];
+        for user in with {
+            if user.account == account && !people.contains(&user) && people.len() < crate::games::MAX_PEOPLE {
+                people.push(user);
+            }
+        }
+        self.state.games = Some(GamesInCommon {
+            account: account.clone(),
+            people: people.clone(),
+            libraries: HashMap::new(),
+        });
+        vec![Effect::Backend {
+            account,
+            command: Command::LoadGameLibraries { users: people },
+        }]
+    }
+
+    /// A checkbox in "Games in common": someone joins the comparison (their
+    /// library loads unless it's known) or leaves it. We always stay in.
+    pub(super) fn dispatch_pick_for_games(&mut self, user: UserId, picked: bool) -> Vec<Effect> {
+        let Some(g) = self.state.games.as_mut().filter(|g| g.account == user.account) else {
+            return Vec::new();
+        };
+        if user.raw == user.account.user {
+            return Vec::new();
+        }
+        if !picked {
+            g.people.retain(|p| *p != user);
+            return Vec::new();
+        }
+        if g.people.contains(&user) || g.people.len() >= crate::games::MAX_PEOPLE {
+            return Vec::new();
+        }
+        g.people.push(user.clone());
+        if g.libraries.contains_key(&user) {
+            return Vec::new();
+        }
+        vec![Effect::Backend {
+            account: user.account.clone(),
+            command: Command::LoadGameLibraries { users: vec![user] },
         }]
     }
 }

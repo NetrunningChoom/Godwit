@@ -31,9 +31,12 @@ component Entry inherits Rectangle {
 component MenuButton inherits Entry {
     in property <string> glyph;
     in property <string> label;
+    // A count after the label (Notifications' unseen), none at 0.
+    in property <int> badge;
     height: 42px;
     HorizontalLayout {
         padding-left: Theme.space-4;
+        padding-right: Theme.space-3;
         spacing: Theme.space-3;
         Icon {
             width: 20px;
@@ -44,8 +47,13 @@ component MenuButton inherits Entry {
         Text {
             text: root.label;
             vertical-alignment: center;
+            horizontal-stretch: 1;
             font-weight: 600;
             color: root.selected ? Theme.on-secondary-container : Theme.on-surface;
+        }
+        if root.badge > 0: Badge {
+            y: (parent.height - self.height) / 2;
+            count: root.badge;
         }
     }
 }
@@ -114,6 +122,7 @@ component RoomRow inherits Rectangle {
             // Cycles: the network's rules → every message → off.
             if !room.header: MenuRow { glyph: Icons.unread; label: room.alerts == 1 ? "Notifications: all messages" : room.alerts == 2 ? "Notifications: off" : "Notifications: default"; clicked => { root.menu(5); } }
             if !room.header: MenuRow { glyph: Icons.schedule; label: room.muzzled ? "Unmuzzle repeat messages" : "Muzzle repeat messages"; clicked => { root.menu(4); } }
+            if room.games: MenuRow { glyph: Icons.group; label: "Games in common…"; clicked => { root.menu(7); } }
             if room.kind != 2: MenuDivider { }
             if room.kind != 2: MenuRow { glyph: Icons.close; label: room.hidden ? "Unhide" : "Hide"; clicked => { root.menu(3); } }
             // The official channel menu's "Open channel settings".
@@ -322,7 +331,10 @@ export component Sidebar inherits Rectangle {
     in property <bool> friends-selected;
     in property <bool> people-selected;
     in property <bool> active-selected;
-    property <bool> home-navigation: root.home || root.people-selected || root.friends-selected || root.active-selected;
+    in property <bool> notifications-selected;
+    // Alerts not yet seen on Notifications (its badge).
+    in property <int> notifications-unseen;
+    property <bool> home-navigation: root.home || root.people-selected || root.friends-selected || root.active-selected || root.notifications-selected;
     in property <bool> can-show-threads;
     in property <bool> threads-selected;
     callback show-threads();
@@ -351,6 +363,7 @@ export component Sidebar inherits Rectangle {
     callback show-friends();
     callback show-people();
     callback show-active();
+    callback show-notifications();
     callback select-room(int);
     callback room-menu(int, int);
     in-out property <string> home-query;
@@ -490,6 +503,14 @@ export component Sidebar inherits Rectangle {
                     label: "Active now";
                     selected: root.active-selected;
                     clicked => { root.show-active(); }
+                }
+                // Every alert, newest first, across networks (Godwit's own).
+                if root.home-navigation: MenuButton {
+                    glyph: Icons.notifications;
+                    label: "Notifications";
+                    badge: root.notifications-unseen;
+                    selected: root.notifications-selected;
+                    clicked => { root.show-notifications(); }
                 }
                 if root.home-navigation: Text {
                     x: Theme.space-4;

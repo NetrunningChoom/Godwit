@@ -102,6 +102,12 @@ impl Network {
         matches!(self, Self::Stoat | Self::Discord)
     }
 
+    /// People's game libraries can be loaded ([`crate::games`]), for
+    /// "Games in common…" with friends.
+    pub fn has_game_libraries(self) -> bool {
+        matches!(self, Self::Steam)
+    }
+
     /// A custom status line can be set (Steam has none).
     pub fn has_status_text(self) -> bool {
         self != Self::Steam && self.has_presence()
@@ -536,6 +542,8 @@ mod tests {
             .filter(|n| n.official_app().is_some())
             .collect();
         assert_eq!(apps, [Steam]);
+        let libraries: Vec<_> = Network::ALL.into_iter().filter(|n| n.has_game_libraries()).collect();
+        assert_eq!(libraries, [Steam]);
     }
 
     #[test]

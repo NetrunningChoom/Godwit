@@ -12,7 +12,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, PermissionItem, PinItem, StreamItem, GroupPersonItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, PermissionItem, PinItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -30,6 +30,7 @@ import { ShareSettings } from "share-settings.slint";
 import { ShareSource } from "share-source.slint";
 import { People } from "people.slint";
 import { Active } from "active.slint";
+import { Notifications } from "notifications.slint";
 import { Threads } from "threads.slint";
 import { ServerSettings } from "server-settings.slint";
 import { ChannelSettings } from "channel-settings.slint";
@@ -42,6 +43,7 @@ import { ImageViewer } from "image-viewer.slint";
 import { FullscreenVideo } from "fullscreen-video.slint";
 import { CallPip } from "call-pip.slint";
 import { PinsDialog } from "pins-dialog.slint";
+import { GamesDialog } from "games-dialog.slint";
 import { SearchDialog } from "search-dialog.slint";
 import { ThreadDialog } from "thread-dialog.slint";
 import { ProfilePopup } from "profile-popup.slint";
@@ -50,7 +52,7 @@ import { CallDialogs, ManagementDialogs } from "app-dialogs.slint";
 export {
     Palette,
     Theme, Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
-    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem, PinItem, ActiveItem, ThreadItem
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem, PinItem, ActiveItem, NotificationItem, ThreadItem
 }
 
 export component AppWindow inherits Window {
@@ -358,6 +360,9 @@ export component AppWindow inherits Window {
     in property <bool> showing-friends;
     in property <bool> showing-people;
     in property <bool> showing-active;
+    in property <bool> showing-notifications;
+    in property <int> notifications-unseen;
+    in property <[NotificationItem]> notification-items;
     in property <bool> showing-threads;
     in property <bool> can-show-threads;
     in property <[ThreadItem]> thread-items;
@@ -370,7 +375,7 @@ export component AppWindow inherits Window {
     in property <[ContactItem]> people;
     in property <[MergeItem]> merges;
     // Friends, People or Active now is open in place of a room.
-    property <bool> page: root.showing-friends || root.showing-people || root.showing-active || root.showing-threads;
+    property <bool> page: root.showing-friends || root.showing-people || root.showing-active || root.showing-notifications || root.showing-threads;
     in property <[PersonItem]> friends;
     in property <[GroupPersonItem]> group-people;
     in property <int> group-selected-count;
@@ -472,6 +477,19 @@ export component AppWindow inherits Window {
     callback close-pins();
     callback pin-jump(int);
     callback pin-unpin(int);
+    // "Games in common" (see games-dialog.slint).
+    in property <bool> games-open;
+    in property <[GamesFriendItem]> games-friends;
+    in property <[string]> games-notes;
+    in property <int> games-venn;
+    in property <string> games-legend;
+    in property <[int]> games-regions;
+    in property <int> games-region;
+    in property <[GameRowItem]> games-rows;
+    callback close-games();
+    callback games-pick-friend(int, bool);
+    callback games-pick-region(int);
+    callback games-scrolled(int);
     in property <bool> members-shown;
     in property <[MemberItem]> members;
     // The open profile card.
@@ -707,6 +725,9 @@ export component AppWindow inherits Window {
     callback show-active();
     callback active-open(int);
     callback active-join(int);
+    callback show-notifications();
+    callback notification-open(int);
+    callback notifications-clear();
     callback set-presence(int);
     // Our presence on the first account (see ProfileCard).
     in property <bool> account-has-presence;
@@ -908,6 +929,9 @@ export component AppWindow inherits Window {
                             show-threads => { root.show-threads(); }
                             active-selected: root.showing-active;
                             show-active => { root.show-active(); }
+                            notifications-selected: root.showing-notifications;
+                            notifications-unseen: root.notifications-unseen;
+                            show-notifications => { root.show-notifications(); }
                             in-call: root.in-call;
                             call-status: root.call-status;
                             call-quality: root.call-quality;
@@ -961,6 +985,12 @@ export component AppWindow inherits Window {
                                         items: root.active-items;
                                         open(i) => { root.active-open(i); }
                                         join(i) => { root.active-join(i); }
+                                    }
+                                    if root.showing-notifications: Notifications {
+                                        horizontal-stretch: 1;
+                                        items: root.notification-items;
+                                        open(i) => { root.notification-open(i); }
+                                        clear => { root.notifications-clear(); }
                                     }
                                     if root.showing-threads: Threads {
                                         horizontal-stretch: 1;
@@ -1557,6 +1587,19 @@ export component AppWindow inherits Window {
             root.pin(root.confirm-pin, root.confirm-pin-value);
             root.confirm-pin = -1;
         }
+    }
+    if root.games-open && screen == Screen.main: GamesDialog {
+        friends: root.games-friends;
+        notes: root.games-notes;
+        venn: root.games-venn;
+        legend: root.games-legend;
+        regions: root.games-regions;
+        region: root.games-region;
+        rows: root.games-rows;
+        close-games() => { root.close-games(); }
+        pick-friend(i, on) => { root.games-pick-friend(i, on); }
+        pick-region(m) => { root.games-pick-region(m); }
+        games-scrolled(first) => { root.games-scrolled(first); }
     }
     if root.crop-open && screen == Screen.main: Cropper {
         crop-cancel() => { root.crop-cancel(); }

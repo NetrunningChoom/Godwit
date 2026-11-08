@@ -885,6 +885,118 @@ pub fn steam_pictures(images: &mut Images) {
     images.put(emoticon, EMOJI, 40, 40, &disc(40, [0x6b, 0xcb, 0x77]));
     let sticker = "https://community.fastly.steamstatic.com/economy/sticker/Goose%20Chase";
     images.put(sticker, JUMBO, 192, 192, &disc(192, [0xff, 0xc8, 0x3d]));
+    capsule_pictures(images);
+}
+
+/// The demo's made-up games (names and ids invented), for "Games in common…".
+const DEMO_GAMES: [(u64, &str); 10] = [
+    (1010, "Goose Chase"),
+    (1020, "Harbour Lights"),
+    (1030, "Star Forge"),
+    (1040, "Tiny Kingdoms"),
+    (1050, "Deep Rally"),
+    (1060, "Pixel Siege"),
+    (1070, "Moss & Stone"),
+    (1080, "Night Courier"),
+    (1090, "Sky Orchard"),
+    (1100, "Rune Diner"),
+];
+
+/// Stand-ins for the demo games' store capsules, at their real addresses.
+fn capsule_pictures(images: &mut Images) {
+    for (i, (id, _)) in DEMO_GAMES.iter().enumerate() {
+        let shade = u8::try_from(40 + i * 18).unwrap_or(u8::MAX);
+        let rgba: Vec<u8> = (0..184 * 69).flat_map(|_| [shade, 0x60, 0xa0, 0xff]).collect();
+        images.put(
+            &godwit_steam::library::capsule_url(*id),
+            crate::games::CAPSULE,
+            184,
+            69,
+            &rgba,
+        );
+    }
+}
+
+/// The demo Steam account (see [`multi`]): its people's game libraries,
+/// so "Games in common…" can be tried; it answers nothing else.
+pub struct DemoSteam {
+    id: AccountId,
+}
+
+impl Default for DemoSteam {
+    fn default() -> Self {
+        Self { id: steam_account() }
+    }
+}
+
+impl DemoSteam {
+    /// Which demo games each one owns (indices into `DEMO_GAMES`); friend 2's
+    /// library is private.
+    fn library(user: &UserId) -> godwit_core::games::Library {
+        use godwit_core::games::{Library, OwnedGame};
+        let me = user.raw == user.account.user;
+        let owned: &[usize] = match user
+            .raw
+            .parse::<u64>()
+            .ok()
+            .map(|n| n.wrapping_sub(76_561_190_000_000_100))
+        {
+            _ if me => &[0, 1, 2, 3, 4, 5, 6, 7],
+            Some(0) => &[0, 1, 2, 3, 5, 9],
+            Some(1) => &[0, 1, 2, 4, 5, 7],
+            Some(3) => &[0, 1, 3, 4, 6, 8, 9],
+            _ => return Library::Private,
+        };
+        let games: Vec<OwnedGame> = owned
+            .iter()
+            .filter_map(|i| DEMO_GAMES.get(*i))
+            .map(|(id, name)| OwnedGame {
+                id: *id,
+                name: (*name).into(),
+                image_url: Some(godwit_steam::library::capsule_url(*id).into()),
+            })
+            .collect();
+        Library::Games(games.into())
+    }
+}
+
+impl godwit_core::account::NetworkAccount for DemoSteam {
+    fn network(&self) -> Network {
+        Network::Steam
+    }
+
+    fn id(&self) -> Option<&AccountId> {
+        Some(&self.id)
+    }
+
+    fn poll(&mut self) -> Vec<Event> {
+        Vec::new()
+    }
+
+    fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
+        match command {
+            godwit_core::application::Command::LoadGameLibraries { users } => users
+                .into_iter()
+                .map(|user| Event::GameLibrary {
+                    library: Self::library(&user),
+                    user,
+                })
+                .collect(),
+            // As with no account to carry it: the text comes back.
+            godwit_core::application::Command::SendMessage { room, nonce, .. } => vec![Event::MessageFailed {
+                room,
+                nonce,
+                error: "Not signed in to this account.".into(),
+            }],
+            _ => Vec::new(),
+        }
+    }
+
+    fn message_link(&self, _room: &RoomId, _message: &MessageId) -> Option<String> {
+        None
+    }
+
+    fn log_out(&mut self) {}
 }
 
 /// The demo's Discord account: a READY and canned history for
@@ -2053,11 +2165,90 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
     fn log_out(&mut self) {}
 }
 
+/// Notifications for the demo: the newest messages from others in the
+/// loaded chats (every account's), a few direct messages and a call that
+/// rang, spread over the last day so the times read naturally. Oldest
+/// first, as they'd have come in.
+pub fn notifications(state: &godwit_core::application::AppState) -> Vec<crate::notifications::Notification> {
+    use crate::notifications::Notification;
+    use godwit_core::application::AlertKind;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+    let mut latest: Vec<(&RoomId, &std::sync::Arc<Message>)> = state
+        .timelines
+        .iter()
+        .flat_map(|(room, t)| {
+            t.messages
+                .iter()
+                .filter(|m| m.author.raw != room.account.user && !m.system && !m.text.is_empty())
+                .map(move |m| (room, m))
+        })
+        .collect();
+    latest.sort_by(|(ra, a), (rb, b)| b.sent_ms.cmp(&a.sent_ms).then_with(|| ra.raw.cmp(&rb.raw)));
+    latest.truncate(5);
+    let mut out: Vec<Notification> = latest
+        .iter()
+        .enumerate()
+        .map(|(i, (room, m))| Notification {
+            room: (*room).clone(),
+            kind: AlertKind::Message,
+            from: Some(m.author.clone()),
+            author: m.author_name.clone(),
+            avatar: m.author_avatar.clone(),
+            preview: m.text.clone(),
+            message: Some(m.id.clone()),
+            at_ms: now - [2, 9, 34, 180, 420].get(i).copied().unwrap_or(600) * 60_000,
+        })
+        .collect();
+    // Direct messages (their history isn't loaded: they open the chat), the
+    // first of them a call that rang while away.
+    let direct = state
+        .rooms
+        .iter()
+        .filter_map(|r| match &r.kind {
+            RoomKind::Direct { with } if r.id.account == account() => Some((r, with)),
+            _ => None,
+        })
+        .take(3);
+    for (i, (room, with)) in direct.enumerate() {
+        let call = i == 0;
+        out.push(Notification {
+            room: room.id.clone(),
+            kind: if call { AlertKind::Call } else { AlertKind::Message },
+            from: Some(with.clone()),
+            author: room.name.clone(),
+            avatar: Some(format!("preview://avatar/{}", with.raw).into()),
+            preview: if call {
+                "Incoming call".into()
+            } else {
+                filler(70 + i as u64, 9).into()
+            },
+            message: None,
+            at_ms: now - [50, 95, 1600].get(i).copied().unwrap_or(2000) * 60_000,
+        });
+    }
+    out.sort_by_key(|n| n.at_ms);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use godwit_core::account::NetworkAccount;
     use godwit_core::application::{Action, Command, Effect};
+
+    #[test]
+    fn demo_notifications_open_listed_chats_newest_last() {
+        let (app, _, _) = world(Contacts::default());
+        let notes = notifications(app.state());
+        assert!(notes.len() >= 3);
+        assert!(notes.iter().all(|n| app.state().room(&n.room).is_some()));
+        assert!(
+            notes.windows(2).all(|w| w[0].at_ms <= w[1].at_ms),
+            "pushed oldest first"
+        );
+    }
 
     fn feed(app: &mut Application, demo: &mut DemoAccount, command: Command) {
         for event in demo.run(command) {

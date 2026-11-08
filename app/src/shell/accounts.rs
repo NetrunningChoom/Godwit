@@ -162,10 +162,13 @@ impl Shell {
     /// Every account, in the registry's order, then the demo's.
     pub(super) fn accounts(&mut self) -> impl Iterator<Item = &mut dyn NetworkAccount> {
         let demo = self.demo.as_mut().map(|d| d as &mut dyn NetworkAccount);
+        // The demo's Steam stand-in answers only for game libraries.
+        let demo_steam = self.demo_steam.as_mut().map(|d| d as &mut dyn NetworkAccount);
         self.live
             .iter_mut()
             .map(|a| &mut **a as &mut dyn NetworkAccount)
             .chain(demo)
+            .chain(demo_steam)
     }
 
     /// Keep newly signed-in accounts' authenticated media available to the
@@ -181,10 +184,12 @@ impl Shell {
     /// The account signed in as `id`.
     pub(super) fn account(&self, id: &AccountId) -> Option<&dyn NetworkAccount> {
         let demo = self.demo.as_ref().map(|d| d as &dyn NetworkAccount);
+        let demo_steam = self.demo_steam.as_ref().map(|d| d as &dyn NetworkAccount);
         self.live
             .iter()
             .map(|a| &**a as &dyn NetworkAccount)
             .chain(demo)
+            .chain(demo_steam)
             .find(|a| a.id() == Some(id))
     }
 

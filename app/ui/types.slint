@@ -130,6 +130,9 @@ export struct RoomItem {
     category-collapsed: bool,
     // Home: when you last talked ("14:05", "Tue", "Mar 3", "2023"); "" for none.
     when: string,
+    // The menu offers "Games in common…" (its account's network keeps
+    // game libraries; direct and group chats).
+    games: bool,
 }
 
 export struct EmojiCellItem {
@@ -422,6 +425,21 @@ export struct StreamItem {
     muted: bool,
 }
 
+// Someone "Games in common" can compare with, and whether they're picked.
+export struct GamesFriendItem {
+    name: string,
+    picked: bool,
+}
+
+// A row of "Games in common": a section's heading ("Everyone owns (12)") or
+// a game with its store picture (decoded only while near the view).
+export struct GameRowItem {
+    header: bool,
+    title: string,
+    image: image,
+    has-image: bool,
+}
+
 // A pinned message, as the pins panel lists it.
 export struct PinItem {
     author: string,
@@ -637,6 +655,23 @@ export struct PermissionItem {
 // A row in Active now. kind 0: a call with friends in it (title: the room,
 // detail: server · network, who: the friends in it); kind 1: a friend doing
 // something (title: their name, detail: the network, who: "Playing …").
+// A Notifications row: an alert, newest first, across networks.
+export struct NotificationItem {
+    // The network's key, for its icon.
+    network: string,
+    // The chat, or "Server · channel".
+    place: string,
+    author: string,
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    preview: string,
+    // How long ago: "now", "5m", "3h", then the day.
+    when: string,
+    // A call rang (else a message).
+    call: bool,
+}
+
 export struct ActiveItem {
     kind: int,
     title: string,

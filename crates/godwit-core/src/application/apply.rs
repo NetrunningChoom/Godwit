@@ -503,6 +503,12 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::GameLibrary { user, library } => {
+                if let Some(g) = self.state.games.as_mut().filter(|g| g.account == user.account) {
+                    g.libraries.insert(user, library);
+                }
+                Vec::new()
+            }
             Event::Members { room, groups } => {
                 self.state.members.insert(room, Arc::new(groups));
                 Vec::new()

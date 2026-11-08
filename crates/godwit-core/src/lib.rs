@@ -15,6 +15,7 @@ pub mod config_dir;
 pub mod contacts;
 pub mod emoji_packs;
 pub mod encoding;
+pub mod games;
 pub mod gifs;
 pub mod hooks;
 pub mod ids;

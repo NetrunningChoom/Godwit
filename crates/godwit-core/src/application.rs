@@ -55,6 +55,16 @@ impl Application {
     }
 }
 
+/// The pages shown in place of a room (see `show_page`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Page {
+    People,
+    Active,
+    Notifications,
+    /// Threads sets its own flag (it keeps a server selected).
+    Threads,
+}
+
 /// How many rooms keep their loaded messages.
 const KEEP_TIMELINES: usize = 8;
 
@@ -344,6 +354,7 @@ impl Application {
             | Event::InviteLoaded { account, .. }
             | Event::CustomEmoji { account, .. } => signed_in(account),
             Event::Profile(p) => signed_in(&p.user.account),
+            Event::GameLibrary { user, .. } => signed_in(&user.account),
             Event::Directory { server, .. } => signed_in(&server.account),
             Event::Members { room, .. }
             | Event::VoiceSince { room, .. }
@@ -481,11 +492,12 @@ impl Application {
     /// does: the one last open there, else its first text channel; Home
     /// without a previous DM shows Friends. Without this the DM stayed open
     /// beside the server's channel list until a channel was clicked.
-    /// People (or, `active`, Active now) in place of the open room.
-    fn show_page(&mut self, active: bool) -> Vec<Effect> {
+    /// People, Active now or Notifications in place of the open room.
+    fn show_page(&mut self, page: Page) -> Vec<Effect> {
         self.state.showing_threads = false;
-        self.state.showing_people = !active;
-        self.state.showing_active = active;
+        self.state.showing_people = page == Page::People;
+        self.state.showing_active = page == Page::Active;
+        self.state.showing_notifications = page == Page::Notifications;
         self.state.showing_friends = false;
         self.state.selected_server = None;
         self.state
@@ -511,6 +523,7 @@ impl Application {
             && !self.state.showing_friends
             && !self.state.showing_people
             && !self.state.showing_active
+            && !self.state.showing_notifications
             && !self.state.showing_threads
         {
             return Vec::new();
@@ -565,6 +578,7 @@ impl Application {
         self.state.showing_friends = false;
         self.state.showing_people = false;
         self.state.showing_active = false;
+        self.state.showing_notifications = false;
         self.state.showing_threads = false;
         // A channel shows its server; anything else lives in Home.
         self.state.selected_server = match &r.kind {

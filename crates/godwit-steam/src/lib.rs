@@ -12,6 +12,7 @@ pub mod backend;
 pub mod bbcode;
 pub mod favourites;
 pub mod groups;
+pub mod library;
 pub mod media;
 pub mod session;
 mod vdf;

@@ -352,6 +352,11 @@ pub enum Event {
         room: RoomId,
         messages: Option<Vec<Message>>,
     },
+    /// `user`'s game library, as asked with [`Command::LoadGameLibraries`].
+    GameLibrary {
+        user: UserId,
+        library: crate::games::Library,
+    },
     /// Who is in `room`'s call, seen from outside it (empty: nobody).
     VoiceOccupants {
         room: RoomId,

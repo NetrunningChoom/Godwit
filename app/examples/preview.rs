@@ -557,6 +557,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Screen::Main
             }),
         ),
+        // Notifications, from the demo's made-up alerts (the badge as it
+        // shows elsewhere; on the page itself it clears).
+        Scene::new(
+            "notifications",
+            Box::new(|app, ui, _, _| {
+                godwit::demo::multi(app);
+                app.dispatch(Action::ShowNotifications);
+                let mut list = godwit::notifications::Notifications::default();
+                for n in godwit::demo::notifications(app.state()) {
+                    list.push(n);
+                }
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis() as i64);
+                let rows = godwit::notifications::rows(&list, app.state(), now, |_| (slint::Image::default(), false));
+                ui.set_notification_items(slint::ModelRc::new(slint::VecModel::from(rows)));
+                ui.set_notifications_unseen(3);
+                Screen::Main
+            }),
+        ),
         Scene::new("login", Box::new(|_, _, _, _| Screen::Login)),
         Scene {
             late: true,
@@ -747,6 +767,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ])));
                 ui.set_can_pin(true);
                 ui.set_pins_open(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "games",
+            Box::new(|_, ui, _, _| {
+                use slint::{ModelRc, VecModel};
+                let friend = |n: &str, picked: bool| godwit::ui::GamesFriendItem { name: n.into(), picked };
+                ui.set_games_friends(ModelRc::new(VecModel::from(vec![
+                    friend("Robin", true),
+                    friend("Sam", true),
+                    friend("Kai", false),
+                ])));
+                ui.set_games_notes(ModelRc::new(VecModel::from(vec![slint::SharedString::from(
+                    "Kai's games are private.",
+                )])));
+                ui.set_games_venn(3);
+                ui.set_games_legend("Left: You · Right: Robin · Bottom: Sam".into());
+                ui.set_games_regions(ModelRc::new(VecModel::from(vec![0, 4, 2, 3, 1, 5, 2, 6])));
+                ui.set_games_region(7);
+                let row = |header: bool, t: &str| godwit::ui::GameRowItem {
+                    header,
+                    title: t.into(),
+                    image: slint::Image::default(),
+                    has_image: false,
+                };
+                ui.set_games_rows(ModelRc::new(VecModel::from(vec![
+                    row(true, "Everyone owns (6)"),
+                    row(false, "Goose Chase"),
+                    row(false, "Harbour Lights"),
+                    row(false, "Star Forge"),
+                ])));
+                ui.set_games_open(true);
                 Screen::Main
             }),
         ),

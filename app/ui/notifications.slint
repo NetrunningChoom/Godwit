@@ -1,0 +1,104 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme, Icons, Icon } from "theme.slint";
+import { NotificationItem } from "types.slint";
+import { Avatar, Button, PageHeader, EmptyState } from "widgets.slint";
+import { NetworkIcon } from "network-icon.slint";
+import { ListView } from "std-widgets.slint";
+
+// Notifications (Godwit's own, across every network): each alert, newest
+// first, including those Do Not Disturb or muzzle mode kept quiet. A row
+// opens its chat; Clear empties the list.
+export component Notifications inherits Rectangle {
+    in property <[NotificationItem]> items;
+    callback open(int);
+    callback clear();
+
+    VerticalLayout {
+        PageHeader {
+            label: "Notifications";
+            glyph: Icons.notifications;
+            if root.items.length > 0: Button {
+                y: (parent.height - self.height) / 2;
+                text: "Clear";
+                clicked => { root.clear(); }
+            }
+        }
+        if root.items.length == 0: EmptyState {
+            text: "Nothing yet. Mentions, direct messages and calls show up here, also while Do Not Disturb is on.";
+            wrap: word-wrap;
+        }
+        // Rows are all one height, so a ListView: only those on screen are made.
+        if root.items.length > 0: ListView {
+            vertical-stretch: 1;
+            for item[i] in root.items: Rectangle {
+                height: 64px;
+                background: touch.has-hover ? Theme.surface-high : transparent;
+                border-radius: Theme.radius-sm;
+                touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.open(i); }
+                }
+                HorizontalLayout {
+                    padding-left: Theme.gap-lg;
+                    padding-right: Theme.gap-lg;
+                    spacing: Theme.gap-md;
+                    Avatar {
+                        y: (parent.height - self.height) / 2;
+                        size: Theme.avatar-large;
+                        source: item.avatar;
+                        has-image: item.has-avatar;
+                        initials: item.initials;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        HorizontalLayout {
+                            spacing: Theme.space-2;
+                            NetworkIcon {
+                                y: (parent.height - self.height) / 2;
+                                network: item.network;
+                                width: 14px;
+                                height: 14px;
+                            }
+                            Text {
+                                text: item.author;
+                                overflow: elide;
+                                font-weight: 600;
+                                color: Theme.on-surface;
+                                horizontal-stretch: 0;
+                            }
+                            Text {
+                                text: item.place;
+                                overflow: elide;
+                                font-size: Theme.text-small;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                color: Theme.outline;
+                            }
+                            Text {
+                                text: item.when;
+                                font-size: Theme.text-small;
+                                vertical-alignment: center;
+                                horizontal-stretch: 0;
+                                color: Theme.outline;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.space-2;
+                            if item.call: Icon { text: Icons.call; font-size: Theme.text-body; width: 16px; color: Theme.on-surface-variant; }
+                            Text {
+                                text: item.preview;
+                                overflow: elide;
+                                font-size: Theme.text-label;
+                                horizontal-stretch: 1;
+                                color: Theme.on-surface-variant;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

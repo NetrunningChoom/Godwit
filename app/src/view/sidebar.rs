@@ -230,6 +230,7 @@ pub(super) fn room_row(r: &Room, selected: bool, occupants: Option<&Vec<CallMemb
         } else {
             SharedString::new()
         },
+        games: r.network().has_game_libraries() && matches!(r.kind, RoomKind::Direct { .. } | RoomKind::Group),
         ..RoomItem::default()
     }
 }
@@ -291,7 +292,11 @@ fn category_header(title: &str, images: &mut Images) -> RoomItem {
 pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, collapsed: &[String]) -> SidebarRows {
     // Non-room pages keep the last room in core state for context (drafts,
     // profiles, returning to Home), but it isn't the currently open row.
-    let selected = (!state.showing_friends && !state.showing_people && !state.showing_active && !state.showing_threads)
+    let selected = (!state.showing_friends
+        && !state.showing_people
+        && !state.showing_active
+        && !state.showing_notifications
+        && !state.showing_threads)
         .then_some(state.selected.as_ref())
         .flatten();
     let mut rows = Vec::new();

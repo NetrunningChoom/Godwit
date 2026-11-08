@@ -129,6 +129,18 @@ pub enum Action {
         message: Option<MessageId>,
         text: String,
     },
+    /// "Games in common…" on `account`, comparing us with `with` (loading
+    /// the libraries not yet known).
+    OpenGamesInCommon {
+        account: AccountId,
+        with: Vec<UserId>,
+    },
+    /// Add someone to the comparison, or take them out.
+    PickForGames {
+        user: UserId,
+        picked: bool,
+    },
+    CloseGamesInCommon,
     /// Show the selected room's pinned messages (loading them).
     OpenPins,
     ClosePins,
@@ -170,6 +182,8 @@ pub enum Action {
     ShowPeople,
     /// Show Active now: friends in calls and in games, across networks.
     ShowActive,
+    /// Show Notifications: every alert, newest first, across networks.
+    ShowNotifications,
     /// Recent subscribed threads in the selected Slack workspace.
     ShowThreads,
     /// The Threads page scrolled near its end: fetch the next page.

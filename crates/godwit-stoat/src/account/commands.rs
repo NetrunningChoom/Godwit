@@ -60,6 +60,8 @@ impl StoatAccount {
                 }));
                 Vec::new()
             }
+            // Stoat keeps no game libraries.
+            Command::LoadGameLibraries { .. } => Vec::new(),
             Command::ServerAdmin { server, op } => self.server_admin(server, op),
             Command::LoadChannelOverview { .. } | Command::SaveChannelOverview { .. } | Command::DeleteChannel { .. } => {
                 self.channel_command(command)

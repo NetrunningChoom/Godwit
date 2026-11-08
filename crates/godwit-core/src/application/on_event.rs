@@ -121,6 +121,7 @@ impl Application {
                     && !self.state.showing_friends
                     && !self.state.showing_people
                     && !self.state.showing_active
+                    && !self.state.showing_notifications
                     && !self.state.showing_threads =>
             {
                 let timeline = self.state.timelines.entry(room.clone()).or_default();
@@ -325,6 +326,7 @@ impl Application {
             && !self.state.showing_friends
             && !self.state.showing_people
             && !self.state.showing_active
+            && !self.state.showing_notifications
             && !self.state.showing_threads
             && !self.state.marked_unread.contains(&room);
         let unread = self.state.room(&room).is_some_and(|r| r.unread || r.mentions > 0);
@@ -348,12 +350,14 @@ impl Application {
             && !self.state.showing_friends
             && !self.state.showing_people
             && !self.state.showing_active
+            && !self.state.showing_notifications
             && !self.state.showing_threads;
         if is_open
             && !message.pending
             && !self.state.showing_friends
             && !self.state.showing_people
             && !self.state.showing_active
+            && !self.state.showing_notifications
             && !self.state.showing_threads
         {
             self.mark_read_local(&room, Some(message_id.clone()));

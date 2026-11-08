@@ -164,6 +164,19 @@ impl SteamAccount {
                     out.push(Event::Favourites { account, users });
                 }
             }
+            Ev::Library { steam_id, library } => {
+                self.loading_libraries.remove(&steam_id);
+                // A failure isn't kept, so opening the dialog again retries.
+                if !matches!(library, godwit_core::games::Library::Failed(_)) {
+                    self.libraries.insert(steam_id, library.clone());
+                }
+                if let Some(account) = self.account.clone() {
+                    out.push(Event::GameLibrary {
+                        user: UserId::new(account, steam_id.to_string()),
+                        library,
+                    });
+                }
+            }
             Ev::AppNames(names) => {
                 let mut changed_rooms = Vec::new();
                 self.app_names.extend(names);

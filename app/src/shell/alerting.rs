@@ -37,13 +37,14 @@ impl Shell {
             .iter()
             .find(|a| a.id == room.account)
             .is_some_and(|a| a.presence == Some(godwit_core::members::Presence::Focus));
+        // Worth an alert apart from Do Not Disturb: it's listed either way.
         if !crate::alerts::notify_message(
             ours,
             message.system,
             message.pending,
             state.selected.as_ref() == Some(room),
             self.window_focused,
-            dnd,
+            false,
         ) {
             return;
         }
@@ -53,15 +54,12 @@ impl Shell {
             godwit_core::room::RoomKind::Group => format!("{} ({})", message.author_name, r.name),
             _ => format!("{} · {}", message.author_name, r.name),
         };
-        let text = message.snippet.as_deref().unwrap_or(&message.source);
-        let mut body: String = text.chars().take(200).collect();
-        if text.chars().count() > 200 {
-            body.push('…');
-        }
-        if body.trim().is_empty() && !message.attachments.is_empty() {
-            body = "Sent a file".into();
-        }
+        let body = message_body(message);
         if self.alerted_lately(room) {
+            return;
+        }
+        self.note_message(room, message, &body);
+        if dnd {
             return;
         }
         let (room, from) = (room.clone(), message.author.clone());
@@ -107,6 +105,17 @@ impl Shell {
                 title,
                 body,
             } => {
+                // Every network: the chat on screen stays quiet only while
+                // the window is focused.
+                if *kind == godwit_core::application::AlertKind::Message
+                    && self.window_focused
+                    && self.app.state().selected.as_ref() == Some(room)
+                {
+                    return;
+                }
+                // Listed before Do Not Disturb, the account's mode or muzzle
+                // mode decide on a banner and a sound.
+                self.note_alert(room, *kind, from.as_ref(), title, body);
                 if *kind == godwit_core::application::AlertKind::Message
                     && !room.account.network.raises_alerts()
                     && self
@@ -115,14 +124,6 @@ impl Shell {
                         .accounts
                         .iter()
                         .any(|a| a.id == room.account && a.presence == Some(godwit_core::members::Presence::Focus))
-                {
-                    return;
-                }
-                // Every network: the chat on screen stays quiet only while
-                // the window is focused.
-                if *kind == godwit_core::application::AlertKind::Message
-                    && self.window_focused
-                    && self.app.state().selected.as_ref() == Some(room)
                 {
                     return;
                 }
@@ -160,13 +161,14 @@ impl Shell {
                     .iter()
                     .find(|a| a.id == room.account)
                     .is_some_and(|a| a.presence == Some(godwit_core::members::Presence::Focus));
+                // Worth an alert apart from Do Not Disturb: listed either way.
                 if !crate::alerts::notify_message(
                     ours,
                     message.system,
                     message.pending,
                     state.selected.as_ref() == Some(room),
                     self.window_focused,
-                    dnd,
+                    false,
                 ) {
                     return;
                 }
@@ -176,13 +178,10 @@ impl Shell {
                     godwit_core::room::RoomKind::Group => format!("{} ({})", message.author_name, r.name),
                     _ => return,
                 };
-                let text = message.snippet.as_deref().unwrap_or(&message.source);
-                let mut body: String = text.chars().take(200).collect();
-                if text.chars().count() > 200 {
-                    body.push('…');
-                }
-                if body.trim().is_empty() && !message.attachments.is_empty() {
-                    body = "Sent a file".into();
+                let body = message_body(message);
+                self.note_message(room, message, &body);
+                if dnd {
+                    return;
                 }
                 let (room, from) = (room.clone(), message.author.clone());
                 self.alerts.alert(
@@ -251,6 +250,71 @@ impl Shell {
         }
     }
 
+    /// A message alert for the Notifications page.
+    fn note_message(&mut self, room: &RoomId, message: &godwit_core::message::Message, body: &str) {
+        self.notifications.push(crate::notifications::Notification {
+            room: room.clone(),
+            kind: godwit_core::application::AlertKind::Message,
+            from: Some(message.author.clone()),
+            author: message.author_name.clone(),
+            avatar: message.author_avatar.clone(),
+            preview: body.into(),
+            message: Some(message.id.clone()),
+            at_ms: now_ms(),
+        });
+    }
+
+    /// A network's own alert for the Notifications page. It names no
+    /// message, so the sender's newest in the chat (if it came just now)
+    /// gives the name, picture and the message to jump to; else the alert's
+    /// title stands in.
+    fn note_alert(
+        &mut self,
+        room: &RoomId,
+        kind: godwit_core::application::AlertKind,
+        from: Option<&godwit_core::ids::UserId>,
+        title: &str,
+        body: &str,
+    ) {
+        let now = now_ms();
+        let state = self.app.state();
+        let message = from.and_then(|from| {
+            state
+                .timelines
+                .get(room)?
+                .messages
+                .iter()
+                .rev()
+                .find(|m| m.author == *from && !m.pending)
+                .filter(|m| (now - m.sent_ms).abs() < 60_000)
+                .cloned()
+        });
+        let friend = from.and_then(|from| state.friends.iter().find(|p| p.id == *from));
+        let author = message
+            .as_ref()
+            .map(|m| m.author_name.clone())
+            .or_else(|| friend.map(|p| p.name.clone()))
+            .unwrap_or_else(|| title.into());
+        let avatar = message
+            .as_ref()
+            .and_then(|m| m.author_avatar.clone())
+            .or_else(|| friend.and_then(|p| p.avatar_url.clone()));
+        let preview = match kind {
+            godwit_core::application::AlertKind::Call if body.trim().is_empty() => "Incoming call".into(),
+            _ => body.into(),
+        };
+        self.notifications.push(crate::notifications::Notification {
+            room: room.clone(),
+            kind,
+            from: from.cloned(),
+            author,
+            avatar,
+            preview,
+            message: message.map(|m| m.id.clone()),
+            at_ms: now,
+        });
+    }
+
     pub(super) fn show_quiet_notice(&self, ui: &AppWindow) {
         let name = self.quiet_notice.as_ref().map(|id| {
             self.app
@@ -275,4 +339,23 @@ impl Shell {
         self.save_settings();
         self.show_quiet_notice(ui);
     }
+}
+
+/// A message's text for an alert: up to 200 characters, or that it's a file.
+fn message_body(message: &godwit_core::message::Message) -> String {
+    let text = message.snippet.as_deref().unwrap_or(&message.source);
+    let mut body: String = text.chars().take(200).collect();
+    if text.chars().count() > 200 {
+        body.push('…');
+    }
+    if body.trim().is_empty() && !message.attachments.is_empty() {
+        body = "Sent a file".into();
+    }
+    body
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }

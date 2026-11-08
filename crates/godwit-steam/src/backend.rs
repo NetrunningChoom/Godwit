@@ -99,6 +99,8 @@ pub enum Cmd {
     RequestPersonas(Vec<u64>),
     /// Ask for these Steam games' names (the persona gives only their app id).
     AppNames(Vec<u32>),
+    /// Load this account's game library ([`Ev::Library`]).
+    OwnedGames(u64),
     /// Call `partner`, or answer Steam's call `incoming` from them; `call`
     /// tags its [`Ev::Call`]s. Ends any call under way first.
     Call {
@@ -220,6 +222,11 @@ pub enum Ev {
     Favourites(Vec<u32>),
     /// Steam games' names, by app id, as asked with [`Cmd::AppNames`].
     AppNames(Vec<(u32, String)>),
+    /// A game library asked for with [`Cmd::OwnedGames`].
+    Library {
+        steam_id: u64,
+        library: godwit_core::games::Library,
+    },
     /// A message with `friend` (`mine`: ours, from another of our devices).
     Incoming {
         friend: u64,
@@ -938,6 +945,21 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                         out.send(Ev::AppNames(names));
                     }
                 });
+            }
+        }
+        Cmd::OwnedGames(steam_id) => {
+            let out = out.clone();
+            match st.conn.clone() {
+                Some(conn) => {
+                    tokio::spawn(async move {
+                        let library = crate::library::owned_games(&conn, steam_id).await;
+                        out.send(Ev::Library { steam_id, library });
+                    });
+                }
+                None => out.send(Ev::Library {
+                    steam_id,
+                    library: godwit_core::games::Library::Failed("Not connected to Steam.".into()),
+                }),
             }
         }
         Cmd::SetPersona(state) => {

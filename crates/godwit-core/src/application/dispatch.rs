@@ -244,6 +244,12 @@ impl Application {
                 Vec::new()
             }
             Action::Report { target, reason, detail } => self.dispatch_report(target, reason, detail),
+            Action::OpenGamesInCommon { account, with } => self.dispatch_open_games(account, with),
+            Action::PickForGames { user, picked } => self.dispatch_pick_for_games(user, picked),
+            Action::CloseGamesInCommon => {
+                self.state.games = None;
+                Vec::new()
+            }
             Action::SetPinned { message, pinned } => self.dispatch_set_pinned(message, pinned),
             Action::JumpToPresent => self.dispatch_jump_to_present(),
             Action::CancelCompose => {
@@ -269,8 +275,9 @@ impl Application {
                 Vec::new()
             }
             Action::ShowFriends => self.dispatch_show_friends(),
-            Action::ShowPeople => self.show_page(false),
-            Action::ShowActive => self.show_page(true),
+            Action::ShowPeople => self.show_page(super::Page::People),
+            Action::ShowActive => self.show_page(super::Page::Active),
+            Action::ShowNotifications => self.show_page(super::Page::Notifications),
             Action::ShowThreads => {
                 if let Some(server) = self
                     .state
@@ -278,8 +285,7 @@ impl Application {
                     .clone()
                     .filter(|s| s.account.network.thread_style() == crate::network::ThreadStyle::Panel)
                 {
-                    let mut effects = self.show_page(false);
-                    self.state.showing_people = false;
+                    let mut effects = self.show_page(super::Page::Threads);
                     self.state.showing_threads = true;
                     self.state.selected = None;
                     self.state.selected_server = Some(server.clone());

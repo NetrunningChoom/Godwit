@@ -120,6 +120,17 @@ pub struct Pins {
     pub failed: bool,
 }
 
+/// The "Games in common" dialog: whose libraries are compared.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GamesInCommon {
+    pub account: AccountId,
+    /// Who is compared: us first, then the people picked, in picking order.
+    pub people: Vec<UserId>,
+    /// The libraries loaded so far (someone missing is still loading). Kept
+    /// for people taken out again, so picking them back needs no request.
+    pub libraries: HashMap<UserId, crate::games::Library>,
+}
+
 /// Everything the UI shows. Plain data; the UI never mutates it directly.
 #[derive(Clone, Debug, Default)]
 pub struct AppState {
@@ -190,6 +201,9 @@ pub struct AppState {
     pub showing_people: bool,
     /// Active now is open (in place of a room).
     pub showing_active: bool,
+    /// Notifications is open (in place of a room). The list itself is the
+    /// app's (it follows the app's alert settings), only the page is here.
+    pub showing_notifications: bool,
     pub showing_threads: bool,
     /// What people are doing ("Playing …"), from [`Event::Activities`].
     pub activities: HashMap<UserId, Arc<str>>,
@@ -235,6 +249,8 @@ pub struct AppState {
     pub report_outcome: Option<Result<(), Arc<str>>>,
     /// The pinned messages panel, for the selected room.
     pub pins: Option<Pins>,
+    /// The "Games in common" dialog, while open.
+    pub games: Option<GamesInCommon>,
     /// The message search, for the selected room.
     pub search: Option<Search>,
     /// The GIF picker's contents, per account.

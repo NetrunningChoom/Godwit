@@ -6,10 +6,12 @@
 mod accounts;
 mod alerting;
 mod calls;
+mod games;
 mod keep_awake;
 mod media;
 mod messages;
 mod navigation;
+mod notifications;
 mod report;
 mod server_admin;
 mod settings_pages;
@@ -51,6 +53,9 @@ pub struct Shell {
     window_focused: bool,
     /// When each chat last alerted (see `alerted_lately`).
     recent_alerts: std::collections::HashMap<RoomId, std::time::Instant>,
+    /// The Notifications page's list (fed in `alerting`), and its rows.
+    notifications: crate::notifications::Notifications,
+    notification_items: Rc<VecModel<crate::ui::NotificationItem>>,
     /// Stoat accounts, each with its own saved session (a `session_file`
     /// slot). Their sign-in, voice and devices are Stoat-specific, so they
     /// keep their own field; everything else goes through
@@ -95,6 +100,8 @@ pub struct Shell {
     media_awake: keep_awake::MediaAwake,
     /// The demo's stand-in network (`godwit --demo`).
     demo: Option<crate::demo::DemoAccount>,
+    /// The demo's Steam account's game libraries ("Games in common…").
+    demo_steam: Option<crate::demo::DemoSteam>,
     /// Networks' own media schemes and fetchers (for attachments to save).
     media: Vec<(String, MediaFetch)>,
     images: Images,
@@ -122,6 +129,8 @@ pub struct Shell {
     picker_room: Option<RoomId>,
     /// The GIF picker's tiles (gifs.rs).
     gif_tiles: crate::gifs::GifTiles,
+    /// The "Games in common" dialog's models (games.rs).
+    games: crate::games::GamesDialog,
     /// The timeline's text selection (selection.rs).
     selection: crate::selection::ChatSelection,
     /// Text selected in the profile card (its row `view::CARD_ROW`).
@@ -177,6 +186,7 @@ enum NavigationTarget {
     Friends,
     People,
     Active,
+    Notifications,
     Threads,
 }
 
@@ -335,6 +345,8 @@ impl Shell {
             replaying_navigation: false,
             window_focused: false,
             recent_alerts: std::collections::HashMap::new(),
+            notifications: Default::default(),
+            notification_items: Rc::default(),
             live,
             steam_qr: None,
             discord_captcha: None,
@@ -355,6 +367,7 @@ impl Shell {
             wake: wake.clone(),
             typing_timer: slint::Timer::default(),
             media_awake: keep_awake::MediaAwake::new(),
+            demo_steam: demo_account.as_ref().map(|_| crate::demo::DemoSteam::default()),
             demo: demo_account,
             images,
             inline_players,
@@ -379,6 +392,7 @@ impl Shell {
             picker_for: None,
             picker_room: None,
             gif_tiles,
+            games: crate::games::GamesDialog::default(),
             selection: crate::selection::ChatSelection::default(),
             card_selection: crate::selection::BlockSelection::default(),
             switch_rows: Vec::new(),
@@ -409,6 +423,7 @@ impl Shell {
             pushed_voice: None,
         };
         ui.set_emoji_rows(ModelRc::from(shell.picker.model.clone()));
+        ui.set_notification_items(ModelRc::from(shell.notification_items.clone()));
         ui.set_networks(ModelRc::from(shell.networks.clone()));
         // The version and, for a build from a checkout, its commit.
         let commit = env!("GODWIT_COMMIT");
@@ -420,6 +435,11 @@ impl Shell {
         let mut shell = shell;
         // The picker's first screens load now, so it opens drawn.
         shell.picker_search("");
+        if shell.demo.is_some() {
+            for n in crate::demo::notifications(shell.app.state()) {
+                shell.notifications.push(n);
+            }
+        }
         shell.presenter.server_order = shell.settings.server_order.clone();
         shell.presenter.account_order = shell.settings.account_order.clone();
         shell.presenter.muzzle = shell.settings.clone();
@@ -533,6 +553,7 @@ impl Shell {
                     | Action::ShowFriends
                     | Action::ShowPeople
                     | Action::ShowActive
+                    | Action::ShowNotifications
                     | Action::ShowThreads
             )
         {
@@ -541,6 +562,8 @@ impl Shell {
                 Some(NavigationTarget::Threads)
             } else if state.showing_active {
                 Some(NavigationTarget::Active)
+            } else if state.showing_notifications {
+                Some(NavigationTarget::Notifications)
             } else if state.showing_people {
                 Some(NavigationTarget::People)
             } else if state.showing_friends {
@@ -666,6 +689,7 @@ impl Shell {
             NavigationTarget::Friends => Action::ShowFriends,
             NavigationTarget::People => Action::ShowPeople,
             NavigationTarget::Active => Action::ShowActive,
+            NavigationTarget::Notifications => Action::ShowNotifications,
             NavigationTarget::Threads => Action::ShowThreads,
             NavigationTarget::Room(_) => return,
         };
@@ -1042,9 +1066,11 @@ impl Shell {
         self.show_share_dialog(ui);
         self.show_discord_privacy(ui);
         self.show_quiet_notice(ui);
+        self.show_notifications(ui);
         self.remember_call(ui);
         self.show_incoming_call(ui);
         self.show_pins(ui);
+        self.show_games(ui);
         self.show_search(ui);
         if self.viewer.is_some() || self.viewer_shown {
             self.show_viewer(ui);
