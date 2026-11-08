@@ -424,10 +424,15 @@ impl Shell {
             self.open_viewer(ui, id, at);
             return;
         }
-        if let Some((_, fetch)) = self.media.iter().find(|(scheme, _)| url.starts_with(scheme.as_str())) {
+        if let Some((scheme, fetch)) = self.media.iter().find(|(scheme, _)| url.starts_with(scheme.as_str())) {
             // The whole file, not the thumbnail a `#…` part asks for.
             let whole = url.split('#').next().unwrap_or(&url).to_owned();
-            save_and_open(fetch.clone(), whole, name.to_string(), kind);
+            let network = self
+                .media_networks
+                .iter()
+                .find(|(prefix, _)| prefix == scheme)
+                .map_or("network", |(_, name)| name.as_str());
+            save_and_open(fetch.clone(), network.to_owned(), whole, name.to_string(), kind);
         } else if url.starts_with("http://") || url.starts_with("https://") {
             open_external(&url);
         }

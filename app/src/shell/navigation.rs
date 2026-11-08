@@ -573,7 +573,12 @@ impl Shell {
     }
 
     pub fn room_at(&self, row: usize) -> Option<RoomId> {
-        self.presenter.room_rows.get(row).cloned().flatten()
+        self.presenter
+            .room_rows
+            .get(row)
+            .cloned()
+            .flatten()
+            .map(|room| self.app.state().preferred_chat_room(&room))
     }
 
     pub(super) fn observe_invite_result(&mut self, event: &Event) {

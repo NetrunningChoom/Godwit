@@ -184,11 +184,18 @@ impl Shell {
     /// Keep newly signed-in accounts' authenticated media available to the
     /// worker threads and attachment downloads, including additional slots.
     pub(super) fn sync_media(&mut self) {
-        let media: Vec<_> = self.accounts().filter_map(|a| a.media()).collect();
+        let (media, media_networks): (Vec<_>, Vec<_>) = self
+            .accounts()
+            .filter_map(|a| {
+                a.media()
+                    .map(|(prefix, fetch)| ((prefix.clone(), fetch), (prefix, a.network().name().to_owned())))
+            })
+            .unzip();
         if self.media.iter().map(|(p, _)| p).ne(media.iter().map(|(p, _)| p)) {
             self.images.set_media(media.clone());
             self.media = media;
         }
+        self.media_networks = media_networks;
     }
 
     /// The account signed in as `id`.

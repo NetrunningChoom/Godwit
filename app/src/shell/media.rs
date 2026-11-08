@@ -207,7 +207,12 @@ impl Shell {
             .unwrap_or(-1);
         ui.set_viewer_player(player);
         // Animated pictures (GIFs) move here too, through the shared animator.
-        let picture = self.images.get_animated(&url, crate::images::VIEWER);
+        let mut picture = self.images.get_animated(&url, crate::images::VIEWER);
+        // The preview is already decoded in the timeline under the same URL;
+        // keep it visible while the larger viewer decode is queued.
+        if picture.is_none() {
+            picture = self.images.get_animated(&url, crate::images::PREVIEW);
+        }
         // The size it opens at: the picture's own (shrunk as the viewer
         // shrinks it), else the decoded one's once loaded.
         let size = dimensions
@@ -283,9 +288,14 @@ impl Shell {
         let web = url.starts_with("https://") || url.starts_with("http://");
         if external && web {
             open_external(&url);
-        } else if let Some((_, fetch)) = self.media.iter().find(|(scheme, _)| url.starts_with(scheme.as_str())) {
+        } else if let Some((scheme, fetch)) = self.media.iter().find(|(scheme, _)| url.starts_with(scheme.as_str())) {
             let whole = url.split('#').next().unwrap_or(&url).to_owned();
-            save_and_open(fetch.clone(), whole, name, kind);
+            let network = self
+                .media_networks
+                .iter()
+                .find(|(prefix, _)| prefix == scheme)
+                .map_or("network", |(_, name)| name.as_str());
+            save_and_open(fetch.clone(), network.to_owned(), whole, name, kind);
         } else if web {
             save_download(url, name);
         }

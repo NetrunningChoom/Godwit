@@ -36,9 +36,10 @@ impl EncryptedCache {
         let key: &[u8; 32] = key
             .try_into()
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "cache key must be 32 bytes"))?;
+        let dir = dir.into();
         let name_key = blake3::derive_key("Godwit encrypted cache filename key", key);
         Ok(Self {
-            dir: dir.into(),
+            dir,
             cipher: XChaCha20Poly1305::new(key.into()),
             name_key,
         })

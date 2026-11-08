@@ -49,6 +49,8 @@ use crate::theme;
 use crate::ui::{AppWindow, NetworkItem, ProblemItem, Screen};
 use crate::view;
 
+type RegisteredMedia = (Vec<(String, MediaFetch)>, Vec<(String, String)>);
+
 pub struct Shell {
     app: Application,
     navigation_back: Vec<NavigationTarget>,
@@ -115,6 +117,7 @@ pub struct Shell {
     demo_steam: Option<crate::demo::DemoSteam>,
     /// Networks' own media schemes and fetchers (for attachments to save).
     media: Vec<(String, MediaFetch)>,
+    media_networks: Vec<(String, String)>,
     images: Images,
     inline_players: InlinePlayers,
     fullscreen_player: Option<crate::player_window::FullscreenPlayer>,
@@ -312,7 +315,14 @@ impl Shell {
         theme::apply(ui, settings.accent(), settings.style, settings.dark);
         crate::emoji::set_pack(&settings.emoji_pack);
         profiles::apply_widths(ui, &settings);
-        let media: Vec<(String, MediaFetch)> = live.iter().take(1).filter_map(|a| a.media()).collect();
+        let (media, media_networks): RegisteredMedia = live
+            .iter()
+            .take(1)
+            .filter_map(|a| {
+                a.media()
+                    .map(|(prefix, fetch)| ((prefix.clone(), fetch), (prefix, a.network().name().to_owned())))
+            })
+            .unzip();
         let (app, demo_account) = if demo {
             let (mut app, _, _) = crate::demo::world(contacts);
             let account = crate::demo::DemoAccount::new(&app);
@@ -427,6 +437,7 @@ impl Shell {
             animator,
             inline_wake: wake,
             media,
+            media_networks,
             contacts_path,
             cache,
             cached_accounts: HashSet::new(),
@@ -827,6 +838,8 @@ impl Shell {
                     }
                 }
                 Event::AccountLost { account, reason } => {
+                    // Syncing media will drop the fetcher, but cached private
+                    // images are removed by their opaque scope before then.
                     // Signed out by the network (we sign out with no reason):
                     // kept in the rail as "sign in again".
                     if !reason.is_empty() {
@@ -1294,13 +1307,14 @@ fn save_download(url: String, name: String) {
 /// Downloads folder, off the UI thread. Pictures, video and sound then open;
 /// other files only show their folder, since opening a downloaded file
 /// could run it.
-fn save_and_open(fetch: MediaFetch, url: String, name: String, kind: AttachmentKind) {
+fn save_and_open(fetch: MediaFetch, network: String, url: String, name: String, kind: AttachmentKind) {
     let spawned = std::thread::Builder::new().name("download".into()).spawn(move || {
         let Some(dir) = directories::UserDirs::new().and_then(|d| d.download_dir().map(PathBuf::from)) else {
             return eprintln!("error: no Downloads folder");
         };
-        let Some(bytes) = fetch(&url) else {
-            return eprintln!("error: downloading an attachment failed");
+        let bytes = match fetch(&url) {
+            Ok(bytes) => bytes,
+            Err(error) => return eprintln!("error: downloading a {network} attachment failed ({error})"),
         };
         let path = unique_path(&dir, &safe_file_name(&name));
         if let Err(e) = std::fs::write(&path, bytes) {

@@ -17,7 +17,7 @@ use crate::network::Network;
 /// Downloads one of a network's own media addresses (Matrix's `mxc://`,
 /// which need a signed-in download). Blocking: picture loader threads and
 /// downloads call it, never the UI thread.
-pub type MediaFetch = Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
+pub type MediaFetch = Arc<dyn Fn(&str) -> Result<Vec<u8>, crate::media::MediaError> + Send + Sync>;
 
 pub trait NetworkAccount {
     fn network(&self) -> Network;

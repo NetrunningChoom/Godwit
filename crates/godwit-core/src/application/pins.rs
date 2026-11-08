@@ -9,6 +9,30 @@ use crate::ids::RoomId;
 use crate::room::RoomKind;
 
 impl AppState {
+    /// The direct room Home should open for a person. Keep the room already
+    /// selected in this merged chat for the session; otherwise honour Talk on.
+    pub fn preferred_chat_room(&self, room: &RoomId) -> RoomId {
+        let Some(RoomKind::Direct { with }) = self.room(room).map(|r| r.kind.clone()) else {
+            return room.clone();
+        };
+        let Some(contact) = self.contacts.of(&with) else {
+            return room.clone();
+        };
+        let rooms = self.chat_rooms(room);
+        if let Some(selected) = self.selected.as_ref().filter(|selected| rooms.contains(selected)) {
+            return selected.clone();
+        }
+        contact
+            .best_identity(|user| self.accounts.iter().any(|account| account.id == user.account))
+            .and_then(|user| {
+                rooms.into_iter().find(|candidate| {
+                    self.room(candidate)
+                        .is_some_and(|r| matches!(&r.kind, RoomKind::Direct { with } if with == user))
+                })
+            })
+            .unwrap_or_else(|| room.clone())
+    }
+
     /// The rooms that make up `room`'s Home chat: every DM with a person
     /// merged across networks (signed in on more than one of them, as Home
     /// merges them), else the room alone.
@@ -163,6 +187,7 @@ impl Application {
 mod tests {
     use super::*;
     use crate::application::{Action, Event};
+    use crate::application::{Command, Effect};
     use crate::ids::{AccountId, UserId};
     use crate::network::Network;
     use crate::room::{Capabilities, Room, RoomEncryption};
@@ -327,6 +352,67 @@ mod tests {
         });
         assert!(pins(&app).is_empty());
         assert!(!app.state().is_pinned(&id(s, "a")));
+    }
+
+    #[test]
+    fn same_network_accounts_share_a_chat_and_resolve_to_talk_on() {
+        let mut app = Application::default();
+        let first = account(Network::Stoat);
+        let second = AccountId::new(Network::Stoat, "work");
+        app.apply(Event::AccountReady {
+            account: first.clone(),
+            display_name: "Personal".into(),
+            username: "me".into(),
+            avatar_url: None,
+            rooms: vec![dm(Network::Stoat, "personal-dm", "alex")],
+            servers: Vec::new(),
+        });
+        let work_user = UserId::new(second.clone(), "alex");
+        app.apply(Event::AccountReady {
+            account: second.clone(),
+            display_name: "Work".into(),
+            username: "me".into(),
+            avatar_url: None,
+            rooms: vec![Room {
+                notify: Default::default(),
+                id: RoomId::new(second.clone(), "work-dm"),
+                name: "Alex".into(),
+                kind: RoomKind::Direct {
+                    with: work_user.clone(),
+                },
+                icon_url: None,
+                capabilities: Capabilities::of(Network::Stoat),
+                encryption: RoomEncryption::Unencrypted,
+                unread: false,
+                mentions: 0,
+                last_read: None,
+                invited_by: None,
+                presence: None,
+                status: None,
+                member_count: None,
+                last_activity: 0,
+                parent: None,
+            }],
+            servers: Vec::new(),
+        });
+        let contact = app.state.contacts.ensure(UserId::new(first.clone(), "alex"), "Alex");
+        let other = app.state.contacts.ensure(work_user.clone(), "Alex");
+        app.state.contacts.merge(contact, other);
+        app.dispatch(Action::PreferIdentity {
+            contact,
+            user: work_user,
+        });
+
+        let personal = RoomId::new(first.clone(), "personal-dm");
+        let work = RoomId::new(second.clone(), "work-dm");
+        assert_eq!(app.state().chat_rooms(&personal).len(), 2);
+        assert_eq!(app.state().preferred_chat_room(&personal), work);
+        app.dispatch(Action::SelectRoom(personal));
+        assert_eq!(app.state().chat_rooms(&work).len(), 2);
+        app.dispatch(Action::SelectRoom(work.clone()));
+        app.dispatch(Action::SetDraft("hello".into()));
+        let effects = app.dispatch(Action::Send { now_ms: 1 });
+        assert!(effects.iter().any(|effect| matches!(effect, Effect::Backend { account, command: Command::SendMessage { room, .. } } if account == &second && room == &work)));
     }
 
     #[test]

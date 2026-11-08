@@ -39,8 +39,12 @@ impl Platform for Offscreen {
 }
 
 /// A made-up 800×450 picture for `demo://photo/N`, as PNG bytes.
-fn photo(url: &str) -> Option<Vec<u8>> {
-    let n: u32 = url.rsplit('/').next()?.parse().ok()?;
+fn photo(url: &str) -> Result<Vec<u8>, godwit_core::media::MediaError> {
+    let n: u32 = url
+        .rsplit('/')
+        .next()
+        .and_then(|part| part.parse().ok())
+        .ok_or(godwit_core::media::MediaError::BadAddress)?;
     let img = image::RgbImage::from_fn(800, 450, |x, y| {
         image::Rgb([
             ((x + n * 37) % 256) as u8,
@@ -49,8 +53,9 @@ fn photo(url: &str) -> Option<Vec<u8>> {
         ])
     });
     let mut out = std::io::Cursor::new(Vec::new());
-    img.write_to(&mut out, image::ImageFormat::Png).ok()?;
-    Some(out.into_inner())
+    img.write_to(&mut out, image::ImageFormat::Png)
+        .map_err(|_| godwit_core::media::MediaError::BodyRead)?;
+    Ok(out.into_inner())
 }
 
 struct Bench {

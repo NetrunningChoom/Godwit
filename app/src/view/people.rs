@@ -184,10 +184,7 @@ pub fn identity_label(state: &AppState, user: &UserId) -> String {
 pub fn dm_account_label(state: &AppState, user: &UserId) -> String {
     let name = identity_name(state, user).unwrap_or_else(|| "Unknown person".to_owned());
     let mut label = format!("{}: {name}", user.network().name());
-    let own_accounts = state.accounts.iter().filter(|a| a.id.network == user.network());
-    if own_accounts.count() > 1
-        && let Some(account) = state.accounts.iter().find(|a| a.id == user.account)
-    {
+    if let Some(account) = state.accounts.iter().find(|a| a.id == user.account) {
         label.push_str(&format!(" (via {})", account.display_name));
     }
     label

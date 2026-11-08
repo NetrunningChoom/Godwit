@@ -94,6 +94,37 @@ type Pixels = SharedPixelBuffer<Rgba8Pixel>;
 /// animated one plays.
 type Decoded = (Key, Option<(Pixels, Moving)>);
 
+/// Namespaces private-media bytes by their opaque account address. The address
+/// carries no signed target URL; scope cleanup remains account-local.
+fn disk_key(url: &str) -> String {
+    if is_account_media(url) {
+        format!("picture/private/{url}")
+    } else {
+        format!("picture/{url}")
+    }
+}
+
+fn is_account_media(url: &str) -> bool {
+    url.split_once("://")
+        .is_some_and(|(scheme, _)| scheme.ends_with("-media"))
+}
+
+#[cfg(test)]
+#[cfg(test)]
+mod image_cache_key_tests {
+    use super::*;
+
+    #[test]
+    fn private_media_cache_keys_keep_the_account_scope_and_hide_target_url() {
+        let address = "matrix-media://opaque-scope/https%3A%2F%2Fexample.invalid%2Fmedia";
+        let key = disk_key(address);
+        assert!(key.starts_with("picture/private/matrix-media://opaque-scope/"));
+        assert!(is_account_media(address));
+        assert!(!is_account_media("https://example.invalid/image.png"));
+        assert_ne!(disk_key(address), disk_key("matrix-media://other-scope/item"));
+    }
+}
+
 /// How a picture moves, as a worker hands it over.
 enum Moving {
     Still,
@@ -254,6 +285,7 @@ struct Worker {
     disk: Option<Arc<EncryptedCache>>,
     /// Pictures written to disk, shared by the workers (see `PRUNE_EVERY`).
     written: Arc<std::sync::atomic::AtomicUsize>,
+    private_keys: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
 impl Worker {
@@ -291,15 +323,16 @@ impl Worker {
             .iter()
             .find(|(scheme, _)| url.starts_with(scheme.as_str()))
             .map(|(_, f)| f.clone());
-        let (bytes, from_disk) = if let Some(f) = fetcher {
-            (f(url).filter(|b| b.len() as u64 <= MAX_BYTES), false)
-        } else if let Some((disk, bytes)) = self
+        let cache_key = disk_key(url);
+        let (bytes, from_disk) = if let Some((disk, bytes)) = self
             .disk
             .as_ref()
-            .and_then(|d| Some((d, d.get_bytes(url).ok().flatten()?)))
+            .and_then(|d| Some((d, d.get_bytes(&cache_key).ok().flatten()?)))
         {
-            let _ = disk.touch(url);
+            let _ = disk.touch(&cache_key);
             (Some(bytes), true)
+        } else if let Some(fetcher) = fetcher {
+            (fetcher(url).ok().filter(|b| b.len() as u64 <= MAX_BYTES), false)
         } else {
             match fetch(&self.agent, url) {
                 Ok(bytes) => (Some(bytes), false),
@@ -316,8 +349,23 @@ impl Worker {
             let mut on_disk = from_disk;
             if pixels.is_none() && from_disk {
                 // Unreadable from disk: gone, so the next try downloads it.
-                let _ = disk.remove(url);
-            } else if pixels.is_some() && web && !from_disk && disk.set_bytes(url, &bytes).is_ok() {
+                let _ = disk.remove(&cache_key);
+            } else if pixels.is_some()
+                && (web || is_account_media(url))
+                && !from_disk
+                && disk.set_bytes(&cache_key, &bytes).is_ok()
+            {
+                if is_account_media(url) {
+                    let mut scopes = self.private_keys.lock().unwrap_or_else(PoisonError::into_inner);
+                    let scope = url.split_once("://").map(|(scheme, _)| scheme).unwrap_or_default();
+                    let keys = scopes.entry(scope.to_owned()).or_default();
+                    if keys.len() == 4096 {
+                        keys.remove(0);
+                    }
+                    if !keys.contains(&cache_key) {
+                        keys.push(cache_key.clone());
+                    }
+                }
                 on_disk = true;
                 let written = self.written.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                 if written.is_multiple_of(PRUNE_EVERY) {
@@ -330,7 +378,7 @@ impl Worker {
                 && let Some((_, Moving::Stream(source))) = pixels.as_mut()
                 && let Some(source) = Arc::get_mut(source)
             {
-                source.reloadable(disk.clone(), url.clone());
+                source.reloadable(disk.clone(), cache_key.clone().into());
             }
         }
         Some(pixels)
@@ -402,6 +450,7 @@ pub struct Images {
     animator: Option<Rc<RefCell<Animator>>>,
     /// The pictures kept on disk (None in demo mode and offline).
     disk: Option<Arc<EncryptedCache>>,
+    private_keys: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
 impl Images {
@@ -436,6 +485,7 @@ impl Images {
         let kept = disk.clone();
         let retries = Retries::start(queue.clone());
         let written = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let private_keys = Arc::new(Mutex::new(HashMap::new()));
         for i in 0..WORKERS {
             let worker = Worker {
                 queue: queue.clone(),
@@ -444,6 +494,7 @@ impl Images {
                 media: media.clone(),
                 disk: disk.clone(),
                 written: written.clone(),
+                private_keys: private_keys.clone(),
             };
             let (done, wake) = (done.clone(), wake.clone());
             let spawned = std::thread::Builder::new().name(format!("images-{i}")).spawn(move || {
@@ -478,6 +529,7 @@ impl Images {
             settled: std::time::Instant::now(),
             animator: None,
             disk: kept,
+            private_keys,
             media,
         }
     }
@@ -485,7 +537,36 @@ impl Images {
     /// Accounts may be added after the loader starts. The workers share this
     /// registry; a fetch happens after releasing the registry lock.
     pub fn set_media(&mut self, media: Vec<(String, MediaFetch)>) {
+        let active: HashSet<String> = media.iter().map(|(scope, _)| scope.clone()).collect();
+        let removed: Vec<String> = self
+            .media
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|(scope, _)| scope.clone())
+            .filter(|scope| !active.contains(scope))
+            .collect();
         *self.media.write().unwrap_or_else(PoisonError::into_inner) = media;
+        for scope in removed {
+            self.remove_media_scope(&scope);
+        }
+    }
+
+    fn remove_media_scope(&self, scope: &str) {
+        let keys = self
+            .private_keys
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(scope);
+        if let (Some(disk), Some(keys)) = (self.disk.clone(), keys) {
+            let _ = std::thread::Builder::new()
+                .name("images-remove-scope".into())
+                .spawn(move || {
+                    for key in keys {
+                        let _ = disk.remove(&key);
+                    }
+                });
+        }
     }
 
     /// Bytes the pictures kept on disk take.
@@ -521,6 +602,7 @@ impl Images {
             settled: std::time::Instant::now(),
             animator: None,
             disk: None,
+            private_keys: Arc::default(),
             media: Arc::default(),
         }
     }
@@ -1089,12 +1171,48 @@ mod tests {
     fn authenticated_fetchers_can_be_registered_after_workers_start() {
         let mut images = Images::offline();
         let workers = images.media.clone();
-        let fake: MediaFetch = Arc::new(|_| Some(vec![1, 2, 3]));
+        let fake: MediaFetch = Arc::new(|_| Ok(vec![1, 2, 3]));
         images.set_media(vec![("account-media://1/".into(), fake)]);
         let fetch = workers.read().unwrap()[0].1.clone();
-        assert_eq!(fetch("account-media://1/file"), Some(vec![1, 2, 3]));
+        assert_eq!(fetch("account-media://1/file"), Ok(vec![1, 2, 3]));
         images.set_media(Vec::new());
         assert!(workers.read().unwrap().is_empty());
+    }
+
+    #[test]
+    fn worker_uses_disk_before_authenticated_fetcher_and_persists_private_media() {
+        let temp = std::env::temp_dir().join(format!(
+            "godwit-images-cache-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&temp);
+        let disk = EncryptedCache::new(&temp, &[9; 32]).unwrap();
+        let url = "matrix-media://scope/item";
+        let key = (Arc::<str>::from(url), Fit::Within(8, 8));
+        let expected = red_png();
+        disk.set_bytes(&disk_key(url), &expected).unwrap();
+        let fetched = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = fetched.clone();
+        let fetcher: MediaFetch = Arc::new(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Err(godwit_core::media::MediaError::Transport)
+        });
+        let worker = Worker {
+            queue: Arc::default(),
+            retries: Retries(mpsc::channel().0),
+            agent: ureq::Agent::new_with_defaults(),
+            media: Arc::new(RwLock::new(vec![("matrix-media://".into(), fetcher)])),
+            disk: Some(Arc::new(disk)),
+            written: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            private_keys: Arc::default(),
+        };
+        assert!(worker.load(&key, 0).is_some_and(|image| image.is_some()));
+        assert_eq!(fetched.load(std::sync::atomic::Ordering::Relaxed), 0);
+        let _ = std::fs::remove_dir_all(temp);
     }
 
     #[test]

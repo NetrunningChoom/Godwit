@@ -14,7 +14,57 @@ use std::time::Duration;
 use crate::account::MediaFetch;
 
 const MAX_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_REDIRECTS: usize = 10;
 static NEXT: AtomicU64 = AtomicU64::new(1);
+
+/// Safe, network-neutral media download failures. Never carries request or
+/// response data, which can contain signed URLs or credentials.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MediaError {
+    BadAddress,
+    SignedOut,
+    Transport,
+    HttpStatus(u16),
+    BadRedirect,
+    TooManyRedirects,
+    TooLarge,
+    BodyRead,
+}
+
+fn map_status(status: u16) -> MediaError {
+    MediaError::HttpStatus(status)
+}
+
+fn redirect_result(redirects_followed: usize) -> Result<(), MediaError> {
+    if redirects_followed >= MAX_REDIRECTS {
+        Err(MediaError::TooManyRedirects)
+    } else {
+        Ok(())
+    }
+}
+
+fn declared_size_result(size: u64) -> Result<(), MediaError> {
+    if size > MAX_BYTES {
+        Err(MediaError::TooLarge)
+    } else {
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for MediaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BadAddress => f.write_str("invalid media address"),
+            Self::SignedOut => f.write_str("signed-out account scope"),
+            Self::Transport => f.write_str("transport error"),
+            Self::HttpStatus(status) => write!(f, "HTTP {status}"),
+            Self::BadRedirect => f.write_str("unsafe or invalid redirect"),
+            Self::TooManyRedirects => f.write_str("redirect limit exceeded"),
+            Self::TooLarge => f.write_str("attachment is too large"),
+            Self::BodyRead => f.write_str("response body read failed"),
+        }
+    }
+}
 
 /// Credentials for one set of service-owned hosts. No Debug implementation:
 /// even diagnostic output must not contain these headers.
@@ -130,8 +180,12 @@ impl Media {
             .collect()
     }
 
-    fn fetch(&self, address: &str) -> Option<Vec<u8>> {
-        let (scope, mut url) = self.target(address)?;
+    pub fn fetch(&self, address: &str) -> Result<Vec<u8>, MediaError> {
+        self.fetch_with_agent(address, None)
+    }
+
+    fn fetch_with_agent(&self, address: &str, agent_override: Option<ureq::Agent>) -> Result<Vec<u8>, MediaError> {
+        let (scope, mut url) = self.target(address).ok_or(MediaError::BadAddress)?;
         // Missing/cleared credentials mean signed out, even for a public
         // redirect. An old image-loader closure must not keep a login alive.
         if !self
@@ -140,7 +194,7 @@ impl Media {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains_key(&scope)
         {
-            return None;
+            return Err(MediaError::SignedOut);
         }
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(60)))
@@ -149,8 +203,8 @@ impl Media {
             .max_redirects(0)
             .http_status_as_error(false)
             .build();
-        let agent = crate::public_address::PublicResolver::agent(config, |_| false);
-        for _ in 0..10 {
+        let agent = agent_override.unwrap_or_else(|| crate::public_address::PublicResolver::agent(config, |_| false));
+        for _ in 0..MAX_REDIRECTS {
             let mut request = agent.get(url.as_str());
             for (name, value) in self.headers(&scope, &url) {
                 request = request.header(name, value);
@@ -161,14 +215,20 @@ impl Media {
                 }
             }
             // Errors can contain signed URLs: deliberately return no detail.
-            let mut response = request.call().ok()?;
+            let mut response = request.call().map_err(|_| MediaError::Transport)?;
             if response.status().is_redirection() {
-                let location = response.headers().get("location")?.to_str().ok()?;
-                url = https(url.join(location).ok()?.as_str())?;
+                let location = response
+                    .headers()
+                    .get("location")
+                    .ok_or(MediaError::BadRedirect)?
+                    .to_str()
+                    .map_err(|_| MediaError::BadRedirect)?;
+                url = https(url.join(location).map_err(|_| MediaError::BadRedirect)?.as_str())
+                    .ok_or(MediaError::BadRedirect)?;
                 continue;
             }
             if !response.status().is_success() {
-                return None;
+                return Err(map_status(response.status().as_u16()));
             }
             if response
                 .headers()
@@ -177,7 +237,8 @@ impl Media {
                 .and_then(|v| v.parse::<u64>().ok())
                 .is_some_and(|n| n > MAX_BYTES)
             {
-                return None;
+                declared_size_result(MAX_BYTES + 1)?;
+                return Err(MediaError::TooLarge);
             }
             let mut bytes = Vec::new();
             response
@@ -185,10 +246,15 @@ impl Media {
                 .as_reader()
                 .take(MAX_BYTES + 1)
                 .read_to_end(&mut bytes)
-                .ok()?;
-            return (bytes.len() as u64 <= MAX_BYTES).then_some(bytes);
+                .map_err(|_| MediaError::BodyRead)?;
+            return if bytes.len() as u64 <= MAX_BYTES {
+                Ok(bytes)
+            } else {
+                Err(MediaError::TooLarge)
+            };
         }
-        None
+        redirect_result(MAX_REDIRECTS)?;
+        Err(MediaError::TooManyRedirects)
     }
 }
 
@@ -278,7 +344,6 @@ pub fn mime(name: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn private_addresses_are_scoped_and_round_trip_signed_urls() {
         let a = Media::new("chat");
@@ -316,5 +381,20 @@ mod tests {
         assert!(m.headers("T2", &https("https://chat.example/file").unwrap()).is_empty());
         m.clear();
         assert!(m.headers("T1", &https("https://chat.example/file").unwrap()).is_empty());
+    }
+
+    #[test]
+    fn reports_http_status_without_response_details() {
+        assert_eq!(map_status(403), MediaError::HttpStatus(403));
+    }
+
+    #[test]
+    fn reports_redirect_limit() {
+        assert_eq!(redirect_result(MAX_REDIRECTS), Err(MediaError::TooManyRedirects));
+    }
+
+    #[test]
+    fn rejects_declared_body_over_limit() {
+        assert_eq!(declared_size_result(MAX_BYTES + 1), Err(MediaError::TooLarge));
     }
 }
