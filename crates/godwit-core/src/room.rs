@@ -43,6 +43,9 @@ pub struct Capabilities {
     pub spoilers: bool,
     pub pins: bool,
     pub search: bool,
+    /// Which filters its search takes (`from:`, `has:`, ...); only with `search`.
+    #[serde(default)]
+    pub search_filters: crate::search::SearchFilters,
     /// Threads can be started here (from a message, or as a forum's post).
     pub threads: bool,
     /// A forum: no messages of its own, its posts are threads under it.
@@ -108,6 +111,7 @@ impl Capabilities {
             spoilers: true,
             pins: true,
             search: true,
+            search_filters: crate::search::SearchFilters::NONE,
             threads: false,
             voice: true,
             voice_user_limit: None,

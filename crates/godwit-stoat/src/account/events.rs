@@ -553,7 +553,12 @@ impl StoatAccount {
                     Some("pins") => out.push(Event::Pins { room, messages }),
                     Some("search") => out.push(Event::SearchResults {
                         room,
-                        query: query.unwrap_or_default().to_owned(),
+                        query: godwit_core::search::SearchQuery::text_only(query.unwrap_or_default()),
+                        offset: 0,
+                        next_offset: None,
+                        total: None,
+                        notice: None,
+                        rooms: Vec::new(),
                         messages,
                     }),
                     _ => {}

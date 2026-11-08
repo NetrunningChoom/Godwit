@@ -894,7 +894,8 @@ mod tests {
         );
         a.run(Command::SearchMessages {
             room: room("D"),
-            query: "lunch".into(),
+            query: godwit_core::search::SearchQuery::text_only("lunch"),
+            offset: 0,
         });
         let Ok(Cmd::Message(MessageCmd::SearchMessages { key, body, .. })) = cmds.try_recv() else {
             panic!("a search")
@@ -909,7 +910,7 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|e| matches!(e, Event::SearchResults { query, .. } if query == "lunch"))
+                .any(|e| matches!(e, Event::SearchResults { query, .. } if query.text == "lunch"))
         );
     }
 

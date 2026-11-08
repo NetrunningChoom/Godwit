@@ -425,6 +425,11 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_thread_confirm() => |sh, ui| sh.thread_confirm(ui));
     callback!(ui.on_open_search() => |sh, ui| sh.act(ui, Action::Search(String::new())));
     callback!(ui.on_search(query) => |sh, ui| sh.act(ui, Action::Search(query.to_string())));
+    callback!(ui.on_search_scope(server) => |sh, ui| {
+        let scope = if server { godwit_core::search::SearchScope::Server } else { godwit_core::search::SearchScope::Channel };
+        sh.act(ui, Action::SearchScope(scope));
+    });
+    callback!(ui.on_load_more_results() => |sh, ui| sh.act(ui, Action::SearchMore));
     callback!(ui.on_close_search() => |sh, ui| sh.act(ui, Action::CloseSearch));
     callback!(ui.on_search_jump(i) => |sh, ui| sh.search_jump(ui, i));
     callback!(ui.on_open_pins() => |sh, ui| sh.act(ui, Action::OpenPins));

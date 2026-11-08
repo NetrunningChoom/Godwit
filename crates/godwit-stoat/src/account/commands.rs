@@ -291,7 +291,11 @@ impl StoatAccount {
                 }));
                 Vec::new()
             }
-            Command::SearchMessages { room, query } => {
+            // Stoat's filters aren't mapped (it advertises none), and it
+            // has one page: the text only.
+            Command::SearchMessages { offset, .. } if offset > 0 => Vec::new(),
+            Command::SearchMessages { room, query, .. } => {
+                let query = query.text;
                 let channel = room.raw.to_string();
                 // Stoat takes at most 64 characters.
                 let asked: String = query.chars().take(64).collect();

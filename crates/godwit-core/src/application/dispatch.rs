@@ -233,6 +233,8 @@ impl Application {
             } => self.dispatch_create_poll(question, answers, hours, multi),
             Action::EndPoll(message) => self.dispatch_end_poll(message),
             Action::Search(query) => self.dispatch_search(query),
+            Action::SearchScope(scope) => self.dispatch_search_scope(scope),
+            Action::SearchMore => self.dispatch_search_more(),
             Action::CloseSearch => {
                 self.state.search = None;
                 Vec::new()

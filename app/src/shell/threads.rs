@@ -23,24 +23,67 @@ impl Shell {
             ui.set_search_open(false);
             return;
         };
-        let items: Vec<crate::ui::PinItem> = s.messages.iter().flatten().map(|m| Self::list_item(m)).collect();
+        let items: Vec<crate::ui::PinItem> = s
+            .messages
+            .iter()
+            .flatten()
+            .enumerate()
+            .map(|(i, m)| {
+                let mut item = Self::list_item(m);
+                // A hit from another channel names it, as the official
+                // client's result header does.
+                if let Some(other) = s.rooms.get(i).filter(|r| **r != s.room)
+                    && let Some(r) = self.app.state().room(other)
+                {
+                    item.author = format!("{} · #{}", item.author, r.name).into();
+                }
+                item
+            })
+            .collect();
         ui.set_search_results(ModelRc::new(VecModel::from(items)));
         ui.set_search_busy(s.messages.is_none());
         ui.set_search_failed(s.failed);
         ui.set_search_asked(!s.query.is_empty());
+        // Only the filters the room's network takes, and the scope toggle
+        // only for a server channel (`in:` and the scope are its own).
+        let caps = self
+            .app
+            .state()
+            .room(&s.room)
+            .map(|r| r.capabilities.search_filters)
+            .unwrap_or_default();
+        ui.set_search_hint(caps.hint().into());
+        ui.set_search_can_scope(caps.has(godwit_core::search::SearchFilter::Scope));
+        ui.set_search_scope_server(s.scope == godwit_core::search::SearchScope::Server);
+        let mut notice = s.errors.clone();
+        notice.extend(s.notice.clone());
+        ui.set_search_notice(notice.join("\n").into());
+        ui.set_search_total(
+            match s.total {
+                Some(1) => "1 result".to_owned(),
+                Some(n) => format!("{n} results"),
+                None => String::new(),
+            }
+            .into(),
+        );
+        ui.set_search_more(s.next_offset.is_some());
+        ui.set_search_loading_more(s.loading_more);
         ui.set_search_open(true);
     }
 
     /// "Jump" on a search result: the dialog closes, the message shows.
     pub fn search_jump(&mut self, ui: &AppWindow, index: i32) {
-        let id = self.app.state().search.as_ref().and_then(|s| {
-            s.messages
-                .as_ref()?
-                .get(usize::try_from(index).ok()?)
-                .map(|m| m.id.clone())
+        let hit = self.app.state().search.as_ref().and_then(|s| {
+            let i = usize::try_from(index).ok()?;
+            let id = s.messages.as_ref()?.get(i)?.id.clone();
+            Some((id, s.rooms.get(i).unwrap_or(&s.room).clone()))
         });
-        if let Some(id) = id {
+        if let Some((id, room)) = hit {
             self.act(ui, Action::CloseSearch);
+            // A hit in another channel: open that one first.
+            if self.app.state().selected.as_ref() != Some(&room) {
+                self.act(ui, Action::SelectRoom(room));
+            }
             self.act(ui, Action::JumpTo(id));
         }
     }

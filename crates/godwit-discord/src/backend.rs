@@ -151,7 +151,9 @@ pub enum Request {
     Search {
         guild: Option<String>,
         channel: String,
-        query: String,
+        /// What was asked, echoed in the answer.
+        query: Box<godwit_core::search::SearchQuery>,
+        params: Box<crate::search::SearchParams>,
     },
     /// Accept or ignore a message request.
     AnswerRequest {
@@ -363,7 +365,8 @@ pub enum Answer {
     GifCategories(Result<Value, RequestError>),
     Search {
         channel: String,
-        query: String,
+        query: Box<godwit_core::search::SearchQuery>,
+        offset: usize,
         result: Result<Value, RequestError>,
     },
     ThreadCreated(Result<Value, RequestError>),
@@ -1027,12 +1030,22 @@ async fn answer(api: &Api, request: Request) -> Answer {
             guild,
             previous,
         },
-        Request::Search { guild, channel, query } => {
+        Request::Search {
+            guild,
+            channel,
+            query,
+            params,
+        } => {
             let result = api
-                .search(guild.as_deref(), &channel, &query)
+                .search(guild.as_deref(), &channel, &params)
                 .await
                 .map_err(RequestError::from);
-            Answer::Search { channel, query, result }
+            Answer::Search {
+                channel,
+                query,
+                offset: params.offset,
+                result,
+            }
         }
         Request::CreatePoll { channel, body } => Answer::Done {
             what: "creating a poll",

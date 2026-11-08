@@ -1217,10 +1217,14 @@ impl NetworkAccount for DiscordAccount {
                     }));
                 }
             }
-            Command::SearchMessages { room, query } => {
-                if let Some(channel) = self.channel_of(&room) {
-                    let guild = self.store.channels.get(&channel).and_then(|c| c.guild.clone());
-                    self.net.send(Cmd::Request(Request::Search { guild, channel, query }));
+            Command::SearchMessages { room, query, offset } => {
+                if let Some((guild, channel, params)) = self.search_request(&room, &query, offset) {
+                    self.net.send(Cmd::Request(Request::Search {
+                        guild,
+                        channel,
+                        query: Box::new(query),
+                        params: Box::new(params),
+                    }));
                 }
             }
             Command::VotePoll { room, message, answer } => {
@@ -1559,20 +1563,62 @@ mod tests {
         a.handle(
             Ev::Answer(crate::backend::Answer::Search {
                 channel,
-                query: "lunch".into(),
+                query: Box::new(godwit_core::search::SearchQuery::text_only("lunch")),
+                offset: 0,
                 result: Ok(json!({"retry_after": 2, "documents_indexed": 0})),
             }),
             &mut out,
         );
         assert!(
-            out.iter()
-                .any(|e| matches!(e, Event::Error(t) if t.contains("still preparing")))
+            out.iter().any(|e| matches!(
+                e,
+                Event::SearchResults { notice: Some(t), messages: None, .. } if t == "Search is indexing, try again in 2s"
+            )),
+            "failed, so searching again asks again: {out:?}"
         );
-        assert!(
-            out.iter()
-                .any(|e| matches!(e, Event::SearchResults { messages: None, .. })),
-            "failed, so searching again asks again"
-        );
+    }
+
+    #[test]
+    fn demo_search_answers_filtered_pages_with_a_total() {
+        let ready = json!({
+            "user": {"id": "100", "username": "me_bloop"},
+            "guilds": [],
+            "private_channels": [{"id": "50", "type": 1, "recipients": [{"id": "7", "username": "robin"}]}],
+            "relationships": [], "merged_members": [],
+        });
+        let msg = |id: u64, text: &str, author: &str| {
+            json!({"id": id.to_string(), "content": text, "type": 0, "timestamp": "2026-11-01T10:00:00+00:00",
+                   "author": {"id": author, "username": "u"}})
+        };
+        let history = HashMap::from([(
+            "50".to_owned(),
+            vec![
+                msg(3, "Lunch?", "7"),
+                msg(2, "lunch at noon", "100"),
+                msg(1, "hello", "7"),
+            ],
+        )]);
+        let (mut a, _) = DiscordAccount::demo(ready, history);
+        let room = a.room_id("50").expect("the DM");
+        let mut query = godwit_core::search::SearchQuery::text_only("lunch");
+        let out = a.run(Command::SearchMessages {
+            room: room.clone(),
+            query: query.clone(),
+            offset: 0,
+        });
+        let Some(Event::SearchResults {
+            total,
+            next_offset,
+            messages: Some(m),
+            ..
+        }) = out.last()
+        else {
+            panic!("{out:?}")
+        };
+        assert_eq!((m.len(), *total, *next_offset), (2, Some(2), None));
+        query.from = Some(godwit_core::ids::UserId::new(room.account.clone(), "100"));
+        let out = a.run(Command::SearchMessages { room, query, offset: 0 });
+        assert!(matches!(out.last(), Some(Event::SearchResults { messages: Some(m), .. }) if m.len() == 1));
     }
 
     #[test]

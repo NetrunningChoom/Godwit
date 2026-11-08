@@ -507,6 +507,16 @@ export component AppWindow inherits Window {
     in property <bool> search-failed;
     in property <bool> search-asked;
     in property <[PinItem]> search-results;
+    // Filter hint line, filter errors or the network's word, the count.
+    in property <string> search-hint;
+    in property <string> search-notice;
+    in property <string> search-total;
+    in property <bool> search-can-scope;
+    in property <bool> search-scope-server;
+    in property <bool> search-more;
+    in property <bool> search-loading-more;
+    callback search-scope(bool);
+    callback load-more-results();
     callback search(string);
     callback close-search();
     callback search-jump(int);
@@ -1724,6 +1734,15 @@ export component AppWindow inherits Window {
         search-failed: root.search-failed;
         search-jump(a0) => { root.search-jump(a0); }
         search-results: root.search-results;
+        search-hint: root.search-hint;
+        search-notice: root.search-notice;
+        search-total: root.search-total;
+        search-can-scope: root.search-can-scope;
+        search-scope-server: root.search-scope-server;
+        search-more: root.search-more;
+        search-loading-more: root.search-loading-more;
+        search-scope(a0) => { root.search-scope(a0); }
+        load-more-results() => { root.load-more-results(); }
     }
     if root.pins-open && screen == Screen.main: PinsDialog {
         can-pin: root.can-pin;

@@ -1153,6 +1153,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     item("Sam", "lunch was great, thanks"),
                 ])));
                 ui.set_search_asked(true);
+                // Filters typed as in Discord's client: the hint line, the
+                // scope toggle, the count and "Load more".
+                ui.set_search_hint("Filters: from: mentions: has: before: after: during: in: pinned:".into());
+                ui.set_search_can_scope(true);
+                ui.set_search_scope_server(true);
+                ui.set_search_total("2 results".into());
+                ui.set_search_more(true);
                 ui.set_search_open(true);
                 Screen::Main
             }),

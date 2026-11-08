@@ -105,10 +105,29 @@ impl std::fmt::Debug for Secret {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Search {
     pub room: RoomId,
+    /// What was typed, filters and all.
     pub query: String,
+    /// The typed search resolved; None when nothing was sent (nothing
+    /// asked, or `errors`).
+    pub parsed: Option<crate::search::SearchQuery>,
+    /// "This channel" or "whole server" (server channels, where supported).
+    pub scope: crate::search::SearchScope,
     /// None while searching (or before anything is asked).
     pub messages: Option<Vec<Arc<Message>>>,
+    /// The room of each of `messages` (a server-wide search finds other
+    /// channels' messages).
+    pub rooms: Vec<RoomId>,
     pub failed: bool,
+    /// Filter values nobody matches, shown instead of searching.
+    pub errors: Vec<String>,
+    /// The network's word on this search (such as "indexing, try later").
+    pub notice: Option<String>,
+    /// How many matches there are in all, if the network says.
+    pub total: Option<u64>,
+    /// Where "load more" continues; None: no more.
+    pub next_offset: Option<usize>,
+    /// A further page was asked for and hasn't come yet.
+    pub loading_more: bool,
 }
 
 /// The pinned messages panel: whose, and the list once loaded.

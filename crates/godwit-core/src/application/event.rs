@@ -350,7 +350,18 @@ pub enum Event {
     /// Messages matching a search of `room`, newest first (None: it failed).
     SearchResults {
         room: RoomId,
-        query: String,
+        query: crate::search::SearchQuery,
+        /// Where this page started.
+        offset: usize,
+        /// Where the next page starts; None: that was all.
+        next_offset: Option<usize>,
+        /// How many matches there are in all, if known.
+        total: Option<u64>,
+        /// A word to show with the results (such as "still indexing").
+        notice: Option<String>,
+        /// The room of each message when they aren't all `room`'s (a
+        /// server-wide search); empty otherwise.
+        rooms: Vec<RoomId>,
         messages: Option<Vec<Message>>,
     },
     /// `room`'s pinned messages, the latest pinned first (None: loading failed).

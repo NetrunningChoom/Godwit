@@ -25,6 +25,7 @@ pub mod markdown;
 pub mod member_list;
 pub mod permissions;
 pub mod remote_auth;
+pub mod search;
 pub mod session;
 pub mod settings;
 pub mod store;

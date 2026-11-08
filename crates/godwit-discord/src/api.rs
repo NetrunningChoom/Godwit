@@ -979,17 +979,16 @@ impl Api {
         self.empty(with_json(self.request(Method::PATCH, &path), &body)).await
     }
 
-    /// Messages matching `content`: a server's search narrowed to `channel`,
-    /// or a DM's own (Yapfast's `search`). Discord answers groups of messages
-    /// with the matches first in each.
-    pub async fn search(&self, guild: Option<&str>, channel: &str, content: &str) -> Result<Value> {
-        let path = match guild {
-            Some(guild) => format!(
-                "/guilds/{guild}/messages/search?content={}&channel_id={channel}",
-                encode(content)
-            ),
-            None => format!("/channels/{channel}/messages/search?content={}", encode(content)),
-        };
+    /// Messages matching `params`: a server's search (narrowed by its
+    /// `channel_id`), or a DM's own (Yapfast's `search`). Discord answers
+    /// groups of messages; a 202 body (`retry_after`) means it is indexing.
+    pub async fn search(
+        &self,
+        guild: Option<&str>,
+        channel: &str,
+        params: &crate::search::SearchParams,
+    ) -> Result<Value> {
+        let path = params.path(guild, channel);
         self.json(self.request(Method::GET, &path)).await
     }
 

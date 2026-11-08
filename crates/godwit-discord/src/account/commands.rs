@@ -7,6 +7,26 @@
 use super::*;
 
 impl DiscordAccount {
+    /// A search of `room` as Discord takes it: the server (None for a DM),
+    /// the channel it was opened in, and the query's parameters.
+    pub(super) fn search_request(
+        &self,
+        room: &RoomId,
+        query: &godwit_core::search::SearchQuery,
+        offset: usize,
+    ) -> Option<(Option<String>, String, crate::search::SearchParams)> {
+        let channel = self.channel_of(room)?;
+        let (guild, nsfw) = self
+            .store
+            .channels
+            .get(&channel)
+            .map_or((None, false), |c| (c.guild.clone(), c.nsfw));
+        let in_channel = query.in_room.as_ref().and_then(|r| self.channel_of(r));
+        let params =
+            crate::search::SearchParams::from_query(query, guild.is_some(), &channel, in_channel, nsfw, offset);
+        Some((guild, channel, params))
+    }
+
     pub(super) fn answer(&mut self, answer: Answer, out: &mut Vec<Event>) {
         match answer {
             Answer::History {
@@ -227,39 +247,65 @@ impl DiscordAccount {
                 }
                 Err(e) => out.push(Event::Error(format!("Couldn't start the thread: {e}").into())),
             },
-            Answer::Search { channel, query, result } => {
+            Answer::Search {
+                channel,
+                query,
+                offset,
+                result,
+            } => {
                 let Some(room) = self.room_id(&channel) else { return };
                 if let Err(e) = &result {
                     out.push(Event::Error(format!("Discord search: {e}").into()));
                 }
-                // Discord answers 202 with `retry_after` while it indexes a
-                // chat for search: say so, rather than "no results". Not
-                // retried by itself (no polling); searching again will.
-                let indexing = matches!(&result, Ok(v) if v["messages"].is_null() && !v["retry_after"].is_null());
-                if indexing {
-                    out.push(Event::Error(
-                        "Discord is still preparing search for this chat. Try again in a few seconds.".into(),
-                    ));
-                }
-                let result = result.ok().filter(|_| !indexing);
-                // Each group holds a match and some context; the match is the
-                // one marked `hit`, or the first.
-                let messages = result.map(|v| {
-                    v["messages"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|group| {
-                            let list = group.as_array()?;
-                            let hit = list
+                let mut notice = None;
+                let (mut messages, mut total, mut next_offset) = (None, None, None);
+                let mut rooms = Vec::new();
+                if let Ok(v) = &result {
+                    // 202 with `retry_after` while Discord indexes a chat
+                    // for search: say so, rather than "no results". Not
+                    // retried by itself (no polling); searching again will.
+                    match crate::search::page(v, offset) {
+                        crate::search::Page::Indexing(secs) => {
+                            notice = Some(format!("Search is indexing, try again in {secs}s"));
+                        }
+                        crate::search::Page::Found {
+                            groups,
+                            total: t,
+                            next_offset: n,
+                        } => {
+                            // Each group holds a match; it's the one marked
+                            // `hit`, or the first.
+                            let hits: Vec<(RoomId, Message)> = groups
                                 .iter()
-                                .find(|m| m["hit"].as_bool() == Some(true))
-                                .or(list.first())?;
-                            self.message(hit)
-                        })
-                        .collect()
+                                .filter_map(|group| {
+                                    let list = group.as_array()?;
+                                    let hit = list
+                                        .iter()
+                                        .find(|m| m["hit"].as_bool() == Some(true))
+                                        .or(list.first())?;
+                                    // A server-wide search finds other channels.
+                                    let at = hit["channel_id"].as_str().and_then(|c| self.room_id(c));
+                                    Some((at.unwrap_or_else(|| room.clone()), self.message(hit)?))
+                                })
+                                .collect();
+                            if hits.iter().any(|(r, _)| *r != room) {
+                                rooms = hits.iter().map(|(r, _)| r.clone()).collect();
+                            }
+                            messages = Some(hits.into_iter().map(|(_, m)| m).collect());
+                            (total, next_offset) = (t, n);
+                        }
+                    }
+                }
+                out.push(Event::SearchResults {
+                    room,
+                    query: *query,
+                    rooms,
+                    offset,
+                    next_offset,
+                    total,
+                    notice,
+                    messages,
                 });
-                out.push(Event::SearchResults { room, query, messages });
             }
             Answer::Pins { channel, result } => {
                 let Some(room) = self.room_id(&channel) else { return };

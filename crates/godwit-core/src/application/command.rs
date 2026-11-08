@@ -194,10 +194,12 @@ pub enum Command {
         room: RoomId,
         message: MessageId,
     },
-    /// Messages of `room` matching `query`; answered with [`Event::SearchResults`].
+    /// Messages of `room` matching `query`, from the `offset`th match;
+    /// answered with [`Event::SearchResults`].
     SearchMessages {
         room: RoomId,
-        query: String,
+        query: crate::search::SearchQuery,
+        offset: usize,
     },
     /// Refresh the network's own subscribed-thread index; with `more`,
     /// fetch its next (older) page instead.

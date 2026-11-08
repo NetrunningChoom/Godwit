@@ -133,6 +133,12 @@ impl DiscordAccount {
             video_resolution: [1280, 720],
             pins: can(p::READ_MESSAGE_HISTORY),
             search: can(p::READ_MESSAGE_HISTORY),
+            // A server's search also takes `in:` and the whole-server scope.
+            search_filters: if c.guild.is_some() {
+                godwit_core::search::SearchFilters::ALL
+            } else {
+                godwit_core::search::SearchFilters::DIRECT
+            },
             // In DMs anyone may pin; in servers it takes the permission.
             pin_messages: c.private() || can(p::PIN_MESSAGES) || can(p::MANAGE_MESSAGES),
             // Starting threads (from a message, or a forum's post); not inside a thread.

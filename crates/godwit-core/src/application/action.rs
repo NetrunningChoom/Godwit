@@ -151,6 +151,10 @@ pub enum Action {
     /// Search the selected room's messages (a server channel searches its
     /// channel); empty opens the search with nothing asked yet.
     Search(String),
+    /// Search the same words in this channel or the whole server.
+    SearchScope(crate::search::SearchScope),
+    /// The next page of the shown search.
+    SearchMore,
     CloseSearch,
     /// Start a thread in the selected room: from `message`, or (a forum) a
     /// new post whose first message is `text`. The thread opens once made.

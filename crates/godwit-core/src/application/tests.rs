@@ -1914,11 +1914,16 @@ fn search_asks_the_network_and_keeps_only_the_latest_answer() {
         "opening asks nothing"
     );
     let effects = app.dispatch(Action::Search(" lunch ".into()));
-    assert!(matches!(commands(&effects)[..], [Command::SearchMessages { query, .. }] if query == "lunch"));
+    assert!(matches!(commands(&effects)[..], [Command::SearchMessages { query, .. }] if query.text == "lunch"));
     app.dispatch(Action::Search("dinner".into()));
     app.apply(Event::SearchResults {
         room: id.clone(),
-        query: "lunch".into(),
+        query: crate::search::SearchQuery::text_only("lunch"),
+        offset: 0,
+        next_offset: None,
+        total: None,
+        notice: None,
+        rooms: Vec::new(),
         messages: Some(vec![msg("old")]),
     });
     assert!(
@@ -1927,7 +1932,12 @@ fn search_asks_the_network_and_keeps_only_the_latest_answer() {
     );
     app.apply(Event::SearchResults {
         room: id,
-        query: "dinner".into(),
+        query: crate::search::SearchQuery::text_only("dinner"),
+        offset: 0,
+        next_offset: None,
+        total: None,
+        notice: None,
+        rooms: Vec::new(),
         messages: Some(vec![msg("d")]),
     });
     assert_eq!(
@@ -1947,6 +1957,98 @@ fn search_asks_the_network_and_keeps_only_the_latest_answer() {
     assert_eq!(commands(&app.dispatch(Action::Search("dinner".into()))).len(), 1);
     app.dispatch(Action::CloseSearch);
     assert!(app.state().search.is_none());
+}
+
+#[test]
+fn search_filters_resolve_members_page_and_switch_scope() {
+    use crate::search::{SearchFilters, SearchScope};
+    let mut app = Application::default();
+    let mut r = dm(Network::Discord, "c1", "robin");
+    r.name = "Robin".into();
+    r.capabilities.search = true;
+    r.capabilities.search_filters = SearchFilters::ALL;
+    let id = r.id.clone();
+    ready(&mut app, Network::Discord, vec![r]);
+    app.dispatch(Action::SelectRoom(id.clone()));
+    // A name nobody has: nothing is sent, the hint says why.
+    assert!(app.dispatch(Action::Search("from:ghost hi".into())).is_empty());
+    assert_eq!(app.state().search.as_ref().map(|s| s.errors.len()), Some(1));
+    // The DM's other person resolves, case-insensitively.
+    let effects = app.dispatch(Action::Search("from:ROBIN has:link hi".into()));
+    let [Command::SearchMessages { query, offset: 0, .. }] = commands(&effects)[..] else {
+        panic!("one search");
+    };
+    assert_eq!(
+        (query.text.as_str(), query.from.is_some(), query.has.len()),
+        ("hi", true, 1)
+    );
+    let query = query.clone();
+    let page = |offset, next| Event::SearchResults {
+        room: id.clone(),
+        query: query.clone(),
+        offset,
+        next_offset: next,
+        total: Some(3),
+        notice: None,
+        rooms: Vec::new(),
+        messages: Some(vec![msg("m")]),
+    };
+    // Load more only after a page said there is more, one at a time.
+    assert!(app.dispatch(Action::SearchMore).is_empty());
+    app.apply(page(0, Some(2)));
+    let effects = app.dispatch(Action::SearchMore);
+    assert!(matches!(
+        commands(&effects)[..],
+        [Command::SearchMessages { offset: 2, .. }]
+    ));
+    assert!(app.dispatch(Action::SearchMore).is_empty(), "one at a time");
+    app.apply(page(2, None));
+    let s = app.state().search.as_ref().expect("search");
+    assert_eq!(
+        (s.messages.as_ref().map(Vec::len), s.total, s.next_offset),
+        (Some(2), Some(3), None)
+    );
+    // The scope toggle asks again, only where the network has one.
+    let effects = app.dispatch(Action::SearchScope(SearchScope::Server));
+    assert!(matches!(
+        commands(&effects)[..],
+        [Command::SearchMessages { query, .. }] if query.scope == SearchScope::Server
+    ));
+}
+
+#[test]
+fn a_hit_from_another_channel_is_jumped_to_in_its_own_room() {
+    let mut app = Application::default();
+    let (mut a, mut b) = (dm(Network::Discord, "c1", "x"), dm(Network::Discord, "c2", "y"));
+    (a.capabilities.search, b.capabilities.search) = (true, true);
+    let (ia, ib) = (a.id.clone(), b.id.clone());
+    ready(&mut app, Network::Discord, vec![a, b]);
+    app.dispatch(Action::SelectRoom(ia.clone()));
+    let effects = app.dispatch(Action::Search("hi".into()));
+    let [Command::SearchMessages { query, .. }] = commands(&effects)[..] else {
+        panic!("one search")
+    };
+    app.apply(Event::SearchResults {
+        room: ia.clone(),
+        query: query.clone(),
+        offset: 0,
+        next_offset: None,
+        total: Some(2),
+        notice: None,
+        rooms: vec![ia.clone(), ib.clone()],
+        messages: Some(vec![msg("m1"), msg("m2")]),
+    });
+    let s = app.state().search.as_ref().expect("search");
+    assert_eq!(s.rooms, [ia, ib.clone()]);
+    // What the shell does for the second hit: close, select its room, jump.
+    app.dispatch(Action::CloseSearch);
+    app.dispatch(Action::SelectRoom(ib.clone()));
+    let effects = app.dispatch(Action::JumpTo(MessageId("m2".into())));
+    assert!(
+        commands(&effects)
+            .iter()
+            .any(|c| matches!(c, Command::LoadAround { room, .. } if *room == ib))
+    );
 }
 
 #[test]

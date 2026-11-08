@@ -51,6 +51,59 @@ impl DiscordAccount {
                     &mut out,
                 );
             }
+            // A search answers from the demo history, newest first, as
+            // Discord's pages do (25 groups, `total_results`).
+            Command::SearchMessages { room, query, offset } => {
+                let Some((guild, channel, params)) = self.search_request(room, query, *offset) else {
+                    return Some(out);
+                };
+                let needle = params.content.to_lowercase();
+                let mut found: Vec<Value> = history
+                    .iter()
+                    .filter(|(ch, _)| match (&params.channel_id, &guild) {
+                        (Some(only), _) => *ch == only,
+                        (None, Some(g)) => {
+                            self.store.channels.get(ch.as_str()).and_then(|c| c.guild.as_ref()) == Some(g)
+                        }
+                        (None, None) => **ch == channel,
+                    })
+                    .flat_map(|(ch, list)| {
+                        list.iter().map(move |m| {
+                            let mut m = m.clone();
+                            m["channel_id"] = json!(ch);
+                            m
+                        })
+                    })
+                    .filter(|m| {
+                        m["content"]
+                            .as_str()
+                            .is_some_and(|c| c.to_lowercase().contains(&needle))
+                            && params
+                                .author_id
+                                .as_deref()
+                                .is_none_or(|a| m["author"]["id"].as_str() == Some(a))
+                            && (!params.pinned || m["pinned"] == true)
+                    })
+                    .collect();
+                found.sort_by_key(|m| std::cmp::Reverse(m["id"].as_str().and_then(|i| i.parse::<u64>().ok())));
+                let total = found.len();
+                let groups: Vec<Value> = found
+                    .into_iter()
+                    .skip(*offset)
+                    .take(crate::search::PAGE)
+                    .map(|m| json!([m]))
+                    .collect();
+                let result = json!({"total_results": total, "messages": groups});
+                self.answer(
+                    Answer::Search {
+                        channel,
+                        query: Box::new(query.clone()),
+                        offset: *offset,
+                        result: Ok(result),
+                    },
+                    &mut out,
+                );
+            }
             Command::SendMessage {
                 room,
                 text,

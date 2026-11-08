@@ -15,6 +15,15 @@ export component SearchDialog inherits Dialog {
     in property <bool> search-failed;
     callback search-jump(int);
     in property <[PinItem]> search-results;
+    in property <string> search-hint;
+    in property <string> search-notice;
+    in property <string> search-total;
+    in property <bool> search-can-scope;
+    in property <bool> search-scope-server;
+    in property <bool> search-more;
+    in property <bool> search-loading-more;
+    callback search-scope(bool);
+    callback load-more-results();
 
     title: "Search messages";
     card-width: 560px;
@@ -24,9 +33,35 @@ export component SearchDialog inherits Dialog {
         autofocus: true;
         accepted => { root.search(self.text); }
     }
+    if root.search-hint != "": Text {
+        text: root.search-hint;
+        color: Theme.on-surface-variant;
+        font-size: Theme.text-small;
+        wrap: word-wrap;
+    }
+    if root.search-can-scope: HorizontalLayout {
+        spacing: Theme.space-2;
+        alignment: start;
+        Button {
+            text: "This channel";
+            kind: !root.search-scope-server ? "tonal" : "text";
+            clicked => { root.search-scope(false); }
+        }
+        Button {
+            text: "Whole server";
+            kind: root.search-scope-server ? "tonal" : "text";
+            clicked => { root.search-scope(true); }
+        }
+    }
+    if root.search-notice != "": Text {
+        text: root.search-notice;
+        color: Theme.error;
+        wrap: word-wrap;
+    }
+    if root.search-total != "": Text { text: root.search-total; color: Theme.on-surface-variant; }
     if root.search-busy: Text { text: "Searching…"; color: Theme.on-surface-variant; }
-    if root.search-failed: Text { text: "The search didn't work. Try again in a moment."; color: Theme.error; }
-    if root.search-asked && !root.search-busy && !root.search-failed && root.search-results.length == 0: Text {
+    if root.search-failed && root.search-notice == "": Text { text: "The search didn't work. Try again in a moment."; color: Theme.error; }
+    if root.search-asked && !root.search-busy && !root.search-failed && root.search-notice == "" && root.search-results.length == 0: Text {
         text: "Nothing found.";
         color: Theme.on-surface-variant;
     }
@@ -43,6 +78,11 @@ export component SearchDialog inherits Dialog {
                 snippet: r.text;
                 action-spacing: 0px;
                 Button { text: "Jump"; kind: "text"; clicked => { root.search-jump(i); } }
+            }
+            if root.search-more: Button {
+                text: root.search-loading-more ? "Loading…" : "Load more";
+                enabled: !root.search-loading-more;
+                clicked => { root.load-more-results(); }
             }
         }
     }

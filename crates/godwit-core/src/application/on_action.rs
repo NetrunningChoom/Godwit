@@ -501,10 +501,108 @@ impl Application {
     }
 
     pub(super) fn dispatch_search(&mut self, query: String) -> Vec<Effect> {
-        let Some(room) = self.state.selected.clone().filter(|r| self.state.room(r).is_some()) else {
+        let Some(room) = self.state.selected.clone() else {
             return Vec::new();
         };
+        let scope = self
+            .state
+            .search
+            .as_ref()
+            .filter(|s| s.room == room)
+            .map_or_else(Default::default, |s| s.scope);
+        self.run_search(room, query, scope)
+    }
+
+    /// The same words, in the other scope (only where the network has one).
+    pub(super) fn dispatch_search_scope(&mut self, scope: crate::search::SearchScope) -> Vec<Effect> {
+        let Some(s) = self.state.search.as_ref() else {
+            return Vec::new();
+        };
+        let (room, query) = (s.room.clone(), s.query.clone());
+        if !self.allows(&room, |c| c.search_filters.has(crate::search::SearchFilter::Scope)) || s.scope == scope {
+            return Vec::new();
+        }
+        self.run_search(room, query, scope)
+    }
+
+    /// "Load more": the next page of the shown search, once at a time.
+    pub(super) fn dispatch_search_more(&mut self) -> Vec<Effect> {
+        let Some(s) = self.state.search.as_mut() else {
+            return Vec::new();
+        };
+        let (Some(query), Some(offset)) = (s.parsed.clone(), s.next_offset) else {
+            return Vec::new();
+        };
+        if s.loading_more || s.messages.is_none() {
+            return Vec::new();
+        }
+        s.loading_more = true;
+        let room = s.room.clone();
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::SearchMessages { room, query, offset },
+        }]
+    }
+
+    /// Who a typed `from:` or `mentions:` can name: the room's members, its
+    /// recent authors, the other person of a DM.
+    fn search_people(&self, room: &RoomId) -> Vec<(UserId, String)> {
+        let mut people: Vec<(UserId, String)> = Vec::new();
+        let mut seen: std::collections::HashSet<(UserId, String)> = std::collections::HashSet::new();
+        let mut add = |id: &UserId, name: &str| {
+            if seen.insert((id.clone(), name.to_owned())) {
+                people.push((id.clone(), name.to_owned()));
+            }
+        };
+        for group in self.state.members.get(room).into_iter().flat_map(|g| g.iter()) {
+            for m in &group.members {
+                add(&m.user, &m.name);
+            }
+        }
+        for m in self
+            .state
+            .timelines
+            .get(room)
+            .into_iter()
+            .flat_map(|t| t.messages.iter())
+        {
+            add(&m.author, &m.author_name);
+        }
+        if let Some(r) = self.state.room(room)
+            && let RoomKind::Direct { with } = &r.kind
+        {
+            add(with, &r.name);
+        }
+        people
+    }
+
+    /// The other channels of the room's server, for `in:#channel`.
+    fn search_channels(&self, room: &RoomId) -> Vec<(RoomId, String)> {
+        let Some(RoomKind::Channel { server }) = self.state.room(room).map(|r| r.kind.clone()) else {
+            return Vec::new();
+        };
+        self.state
+            .rooms
+            .iter()
+            .filter(|r| {
+                r.id.account == room.account && matches!(&r.kind, RoomKind::Channel { server: s } if *s == server)
+            })
+            .map(|r| (r.id.clone(), r.name.to_string()))
+            .collect()
+    }
+
+    fn run_search(&mut self, room: RoomId, query: String, scope: crate::search::SearchScope) -> Vec<Effect> {
+        if self.state.room(&room).is_none() {
+            return Vec::new();
+        }
         let remote = self.allows(&room, |c| c.search);
+        let filters = if remote {
+            self.state
+                .room(&room)
+                .map_or_else(Default::default, |r| r.capabilities.search_filters)
+        } else {
+            crate::search::SearchFilters::NONE
+        };
         let query = query.trim().to_owned();
         let asked = !query.is_empty();
         // The same search again (Enter pressed twice) while it's
@@ -514,17 +612,49 @@ impl Application {
                 .state
                 .search
                 .as_ref()
-                .is_some_and(|s| s.room == room && s.query == query && !s.failed)
+                .is_some_and(|s| s.room == room && s.query == query && s.scope == scope && !s.failed)
         {
             return Vec::new();
         }
-        self.state.search = Some(Search {
+        let mut search = Search {
             room: room.clone(),
             query: query.clone(),
+            parsed: None,
+            scope,
             messages: if asked { None } else { Some(Vec::new()) },
+            rooms: Vec::new(),
             failed: false,
-        });
-        if !asked {
+            errors: Vec::new(),
+            notice: None,
+            total: None,
+            next_offset: None,
+            loading_more: false,
+        };
+        if asked && remote {
+            let parsed = crate::search::parse(&query, filters);
+            // Only look people and channels up when a filter names them.
+            let people = if parsed.from.is_some() || parsed.mentions.is_some() {
+                self.search_people(&room)
+            } else {
+                Vec::new()
+            };
+            let channels = if parsed.in_channel.is_some() {
+                self.search_channels(&room)
+            } else {
+                Vec::new()
+            };
+            match crate::search::resolve(parsed, scope, &people, &channels) {
+                Ok(q) => search.parsed = Some(q),
+                Err(errors) => {
+                    // Nothing is sent: say what didn't match.
+                    search.errors = errors;
+                    search.messages = Some(Vec::new());
+                }
+            }
+        }
+        let parsed = search.parsed.clone();
+        self.state.search = Some(search);
+        if !asked || (remote && parsed.is_none()) {
             return Vec::new();
         }
         if !remote {
@@ -551,7 +681,11 @@ impl Application {
         }
         vec![Effect::Backend {
             account: room.account.clone(),
-            command: Command::SearchMessages { room, query },
+            command: Command::SearchMessages {
+                room,
+                query: parsed.unwrap_or_default(),
+                offset: 0,
+            },
         }]
     }
 

@@ -484,16 +484,58 @@ impl Application {
                 self.refresh_reaction_images(&account);
                 Vec::new()
             }
-            Event::SearchResults { room, query, messages } => {
+            Event::SearchResults {
+                room,
+                query,
+                offset,
+                next_offset,
+                total,
+                notice,
+                rooms,
+                messages,
+            } => {
                 // Only the latest search's answer counts.
                 if let Some(s) = self
                     .state
                     .search
                     .as_mut()
-                    .filter(|s| s.room == room && s.query == query)
+                    .filter(|s| s.room == room && s.parsed.as_ref() == Some(&query))
                 {
-                    s.failed = messages.is_none();
-                    s.messages = Some(messages.unwrap_or_default().into_iter().map(Arc::new).collect());
+                    let more = offset > 0;
+                    // A page nobody asked for (the first, while the list is
+                    // there already) is dropped.
+                    if more && !s.loading_more {
+                        return Vec::new();
+                    }
+                    s.loading_more = false;
+                    s.notice = notice;
+                    let page = messages
+                        .as_ref()
+                        .map(|m| m.iter().cloned().map(Arc::new).collect::<Vec<_>>());
+                    if more && page.is_none() {
+                        // The page failed: keep what's shown and let "load
+                        // more" be tried again.
+                        return Vec::new();
+                    }
+                    s.failed = page.is_none();
+                    let page = page.unwrap_or_default();
+                    let rooms = if rooms.len() == page.len() {
+                        rooms
+                    } else {
+                        vec![room.clone(); page.len()]
+                    };
+                    match (more, s.messages.as_mut()) {
+                        (true, Some(list)) => {
+                            list.extend(page);
+                            s.rooms.extend(rooms);
+                        }
+                        _ => {
+                            s.messages = Some(page);
+                            s.rooms = rooms;
+                        }
+                    }
+                    s.next_offset = next_offset;
+                    s.total = total;
                 }
                 Vec::new()
             }

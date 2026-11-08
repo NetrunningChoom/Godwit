@@ -31,6 +31,7 @@ pub mod report;
 pub mod rich;
 pub mod room;
 pub mod room_sync;
+pub mod search;
 pub mod server;
 pub mod server_settings;
 
