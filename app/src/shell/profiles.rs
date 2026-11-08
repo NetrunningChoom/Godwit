@@ -172,10 +172,25 @@ impl Shell {
                 Err(e) => eprintln!("error: starting a {} account: {e}", entry.network.name()),
             }
         }
-        // Nothing left to sign in to: the default network's form waits.
-        if self.live.is_empty() {
-            self.signing(registry::default_network());
-        }
+        // Nothing running: a calm empty state, not a sign-in form (the
+        // profile may just have no accounts; "Add an account" opens the picker).
+        self.empty_profile = self.live.is_empty();
+    }
+
+    /// Closes Settings and every editor in it. They may refer to an account
+    /// that was just unloaded, and a page of the old profile means nothing in
+    /// the new one.
+    fn close_settings(&mut self, ui: &AppWindow) {
+        ui.set_settings_open(false);
+        ui.set_settings_account(-1);
+        // The server and channel editors close with the core's state
+        // (`reset_view`) on the next refresh.
+        self.profile_editor = Default::default();
+        self.autodelete_page = Default::default();
+        self.account_pages = Default::default();
+        self.privacy_sources.clear();
+        self.report_links.clear();
+        self.close_join_server(ui);
     }
 
     /// Makes profile `id` the one in use (the UI has asked first, see
@@ -202,8 +217,11 @@ impl Shell {
         if self.demo.is_none() {
             self.contacts_path = contacts_store::path_for(id);
         }
-        let contacts = load_contacts(self.contacts_path.as_deref());
-        self.app.set_contacts(contacts);
+        // The demo's made-up contacts are in no file.
+        if self.demo.is_none() {
+            let contacts = load_contacts(self.contacts_path.as_deref());
+            self.app.set_contacts(contacts);
+        }
         // Sign-in forms are cancelled; a form's state goes with it.
         self.adding = false;
         self.login_network = None;
@@ -216,6 +234,9 @@ impl Shell {
         self.notifications.clear();
         self.recent_alerts.clear();
         self.incoming_call = None;
+        // Its ringtone too: a shared account's call would ring with no prompt.
+        self.alerts.stop_ringing();
+        self.close_settings(ui);
         self.quiet_notice = None;
         self.viewer = None;
         self.crop = None;

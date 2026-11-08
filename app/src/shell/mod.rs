@@ -158,6 +158,10 @@ pub struct Shell {
     login_network: Option<Network>,
     /// "Add an account" was chosen while signed in.
     adding: bool,
+    /// A profile switch (or taking its last account out) left nothing
+    /// running: the empty state shows, not a sign-in form. Ends once an
+    /// account is up.
+    empty_profile: bool,
     networks: Rc<VecModel<NetworkItem>>,
     /// Whether the picker was last built signed in (availability changes).
     networks_signed_in: Option<Vec<bool>>,
@@ -434,6 +438,7 @@ impl Shell {
             settings_path,
             login_network: None,
             adding: false,
+            empty_profile: false,
             networks: Rc::new(VecModel::default()),
             networks_signed_in: None,
             devices_shown: false,
@@ -803,6 +808,11 @@ impl Shell {
                         });
                         self.save_settings();
                     }
+                    if reason.is_empty() && self.demo.is_none() {
+                        // A log-out: no profile keeps it, nothing to start again.
+                        self.settings.forget_account(&settings::account_key(account));
+                        self.save_settings();
+                    }
                     self.cached_accounts.remove(account);
                     self.cache_loads_finished.remove(account);
                     self.saved_cache.remove(account);
@@ -1008,8 +1018,13 @@ impl Shell {
             }
             _ => ui.set_login_error("".into()),
         }
+        if signed_in {
+            self.empty_profile = false;
+        }
         let screen = if signed_in && !self.adding {
             Screen::Main
+        } else if self.empty_profile && !self.adding {
+            Screen::Empty
         } else {
             match status {
                 Status::NeedsMfa { .. } => {
@@ -1050,7 +1065,8 @@ impl Shell {
                 .and_then(|i| i32::try_from(i).ok())
                 .unwrap_or(-1),
         );
-        ui.set_login_can_cancel(signed_in);
+        // From the empty state the picker can go back to it.
+        ui.set_login_can_cancel(signed_in || self.empty_profile);
         let available: Vec<bool> = view::ACCOUNT_NETWORKS
             .iter()
             .map(|n| self.network_available(*n))

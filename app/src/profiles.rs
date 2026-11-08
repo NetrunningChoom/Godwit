@@ -230,15 +230,28 @@ impl Settings {
         }
     }
 
-    /// Where a newly signed-in account goes: the current profile, unless
-    /// some profile already has it. Returns the profile it joined, if any.
+    /// An account running (and ready) in the current profile belongs to it:
+    /// a switch only keeps the current profile's accounts running, so one
+    /// seen ready is one just added, an old sign-in seen for the first time,
+    /// or the same user signed in again under a new slot (which another
+    /// profile may already list). Returns the profile if it joined now.
     pub fn profile_of_new_account(&mut self, key: &str) -> Option<u32> {
-        if self.profiles.iter().any(|p| p.accounts.iter().any(|k| k == key)) {
+        if self.in_current_profile(key) {
             return None;
         }
         let id = self.current_profile;
         self.assign_account(id, key);
         self.profile(id).map(|_| id)
+    }
+
+    /// An account was signed out by the user: no profile lists it and its
+    /// slot is forgotten (the sign-in itself is gone), so a switch never
+    /// tries to start it again.
+    pub fn forget_account(&mut self, key: &str) {
+        self.known_accounts.retain(|k| k.key != key);
+        for p in &mut self.profiles {
+            p.accounts.retain(|k| k != key);
+        }
     }
 
     /// Remembers where an account's sign-in is kept (updated each time it
@@ -249,6 +262,11 @@ impl Settings {
             network: network.to_owned(),
             slot,
         };
+        // A slot holds one sign-in: another key remembered for it is stale
+        // (signed out, the slot then used by someone else) and would make a
+        // profile start this account.
+        self.known_accounts
+            .retain(|k| k.key == key || k.network != network || k.slot != slot);
         match self.known_accounts.iter_mut().find(|k| k.key == key) {
             Some(k) => *k = known,
             None => self.known_accounts.push(known),
@@ -522,7 +540,26 @@ mod tests {
         assert_eq!(s.profile_of_new_account("discord:9"), Some(a));
         assert!(s.in_current_profile("discord:9"));
         assert_eq!(s.profile_of_new_account("discord:9"), None);
-        assert_eq!(s.profile_of_new_account("stoat:me"), None, "already in Default");
+        assert_eq!(
+            s.profile_of_new_account("stoat:me"),
+            Some(a),
+            "running here, so it belongs here even if Default has it"
+        );
+        s.forget_account("discord:9");
+        assert!(!s.in_current_profile("discord:9"));
+    }
+
+    #[test]
+    fn a_slot_remembers_one_account() {
+        let mut s = Settings::default();
+        s.record_known("steam:1", "steam", 0);
+        s.record_known("steam:2", "steam", 0);
+        assert_eq!(s.known_accounts.len(), 1);
+        assert_eq!(s.known_accounts[0].key, "steam:2");
+        s.record_known("stoat:x", "stoat", 0);
+        assert_eq!(s.known_accounts.len(), 2, "another network's slot 0 is its own");
+        s.forget_account("steam:2");
+        assert_eq!(s.known_accounts.len(), 1);
     }
 
     #[test]

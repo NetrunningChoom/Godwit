@@ -936,6 +936,22 @@ export component AppWindow inherits Window {
         log-in(s, u, p) => { root.log-in(s, u, p); }
         submit-mfa(c) => { root.submit-mfa(c); }
     }
+    // A profile with no accounts: calm, with a way to add one.
+    if screen == Screen.empty: VerticalLayout {
+        alignment: center;
+        spacing: Theme.space-3;
+        Text {
+            text: "No accounts in this profile";
+            horizontal-alignment: center;
+            font-size: Theme.text-title;
+            font-weight: 600;
+            color: Theme.on-surface;
+        }
+        HorizontalLayout {
+            alignment: center;
+            Button { text: "Add an account"; clicked => { root.add-account(); } }
+        }
+    }
     if screen == Screen.connecting: VerticalLayout {
         alignment: center;
         spacing: Theme.space-3;

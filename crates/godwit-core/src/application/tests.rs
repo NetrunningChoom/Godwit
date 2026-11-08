@@ -4608,3 +4608,14 @@ fn unloading_an_account_closes_its_friend_request_without_an_error() {
     assert!(app.state.friend_request_pending.is_none());
     assert!(app.state.friend_request_status.is_none());
 }
+
+#[test]
+fn reset_view_closes_settings_dialogs_and_contact_links() {
+    let mut app = Application::default();
+    ready(&mut app, Network::Steam, vec![]);
+    app.state.invite_link = Some((ServerId::new(account(Network::Steam), "s"), None));
+    app.state.link_request = Some((crate::contacts::ContactId(1), 1));
+    app.reset_view();
+    assert!(app.state.invite_link.is_none() && app.state.link_request.is_none());
+    assert!(app.state.server_settings.is_none() && app.state.channel_settings.is_none());
+}

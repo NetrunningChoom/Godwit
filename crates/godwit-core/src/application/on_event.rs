@@ -367,6 +367,12 @@ impl Application {
         st.member_found = None;
         st.friend_request_status = None;
         st.report_outcome = None;
+        // Settings pages and dialogs of a shared account stay otherwise.
+        st.server_settings = None;
+        st.channel_settings = None;
+        st.invite_link = None;
+        // A contact id belongs to the contacts that were swapped out.
+        st.link_request = None;
     }
 
     pub(super) fn receive_room_removed(&mut self, id: RoomId) -> Vec<Effect> {

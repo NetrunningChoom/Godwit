@@ -79,6 +79,16 @@ impl Shell {
                 .iter()
                 .filter(|a| a.network() == network)
                 .map(|a| a.slot())
+                // Other profiles' accounts aren't running, but their sign-ins
+                // are kept in these slots: a form must never take one over.
+                .chain((entry.saved)())
+                .chain(
+                    self.settings
+                        .known_accounts
+                        .iter()
+                        .filter(|k| k.network == network.key())
+                        .map(|k| k.slot),
+                )
                 .collect();
             // Session slots are persistent identifiers, not a cap on how
             // many accounts can be added. Once the scanned range is full,

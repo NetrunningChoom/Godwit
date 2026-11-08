@@ -146,6 +146,11 @@ impl Alerts {
         self.muzzled.retain(|(room, _), _| room.account != *account);
     }
 
+    /// Whatever is ringing stops (a profile switch drops the call prompt).
+    pub fn stop_ringing(&mut self) {
+        self.ringing = None;
+    }
+
     /// `room`'s call stopped ringing (answered, declined or gone).
     pub fn done(&mut self, room: &RoomId) {
         if self.ringing.as_ref().is_some_and(|(r, _)| r == room) {
