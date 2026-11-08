@@ -110,6 +110,12 @@ pub struct Channel {
     /// A DM from someone who isn't a friend, waiting to be accepted (or
     /// flagged as spam): Discord's message requests.
     pub request: bool,
+    /// Channel.topic (a forum's guidelines).
+    pub topic: String,
+    /// Channel.nsfw: age-restricted.
+    pub nsfw: bool,
+    /// Channel.rate_limit_per_user: slowmode seconds (0: off).
+    pub slowmode: u32,
 }
 
 impl Channel {
@@ -137,6 +143,12 @@ impl Channel {
             archived: v["thread_metadata"]["archived"] == true,
             user_limit: v["user_limit"].as_u64().and_then(|n| n.try_into().ok()),
             request: v["is_message_request"] == true || v["is_spam"] == true,
+            topic: v["topic"].as_str().unwrap_or_default().to_owned(),
+            nsfw: v["nsfw"] == true,
+            slowmode: v["rate_limit_per_user"]
+                .as_u64()
+                .and_then(|n| n.try_into().ok())
+                .unwrap_or(0),
         })
     }
 

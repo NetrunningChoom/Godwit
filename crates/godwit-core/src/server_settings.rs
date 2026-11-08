@@ -259,10 +259,30 @@ pub enum ServerAdmin {
     /// The server's notification level (see [`crate::server::ServerRights::notify`]).
     SetNotify(u8),
     Leave,
+    /// A new channel (or category) in the server, inside `category` (that
+    /// category's id from [`crate::server::Category::id`]) for a channel.
     CreateChannel {
         name: Arc<str>,
-        voice: bool,
+        kind: NewChannelKind,
+        category: Option<Arc<str>>,
     },
+    /// Moves a channel or category (`id`: the room's raw id, or the
+    /// category's) one place up or down in the server's list. A channel
+    /// at the edge of its category crosses into the neighbouring one.
+    MoveChannel {
+        id: Arc<str>,
+        category: bool,
+        up: bool,
+    },
+}
+
+/// What the Create channel dialog makes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NewChannelKind {
+    Text,
+    Voice,
+    /// A group of channels (needs [`crate::server::ServerRights::manage_categories`]).
+    Category,
 }
 
 /// The ban dialog's "delete message history" choices, as the official

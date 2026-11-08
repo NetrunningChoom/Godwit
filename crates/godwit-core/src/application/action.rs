@@ -37,6 +37,11 @@ pub enum Action {
     },
     /// A server channel's settings page (see [`crate::channel_settings`]).
     OpenChannelSettings(RoomId),
+    /// A category's settings (name, delete): the same page as a channel's.
+    OpenCategorySettings {
+        server: crate::ids::ServerId,
+        category: Arc<str>,
+    },
     CloseChannelSettings,
     SaveChannelOverview(crate::channel_settings::ChannelOverviewEdit),
     DeleteChannel,

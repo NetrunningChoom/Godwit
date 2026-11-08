@@ -139,6 +139,18 @@ pub enum Request {
         name: String,
         text: String,
     },
+    /// Modify Channel: the fields in `body` (name, topic, nsfw,
+    /// rate_limit_per_user); answered with [`Answer::ChannelSaved`].
+    ModifyChannel {
+        channel: String,
+        request: u64,
+        body: Value,
+    },
+    /// Delete Channel (also a category).
+    DeleteChannel {
+        channel: String,
+        request: u64,
+    },
     /// Our notification level for a server (0 all, 1 mentions, 2 nothing).
     GuildNotify {
         guild: String,
@@ -206,10 +218,15 @@ pub enum Admin {
     CreateInvite {
         channel: String,
     },
+    /// A channel or category: `kind` is Discord's channel type (0 text, 2
+    /// voice, 4 category), `parent` the category a channel goes in.
     CreateChannel {
         name: String,
-        voice: bool,
+        kind: u64,
+        parent: Option<String>,
     },
+    /// Modify Guild Channel Positions: `[{id, position, parent_id?}]`.
+    MoveChannels(Value),
     Leave,
     Delete,
     ModifyGuild(Value),
@@ -289,6 +306,17 @@ pub enum Answer {
         result: Result<Value, RequestError>,
     },
     ThreadCreated(Result<Value, RequestError>),
+    /// A channel edit's answer: the channel as Discord now has it.
+    ChannelSaved {
+        channel: String,
+        request: u64,
+        result: Result<Value, RequestError>,
+    },
+    ChannelDeleted {
+        channel: String,
+        request: u64,
+        result: Result<(), RequestError>,
+    },
     RequestAnswered {
         channel: String,
         accept: bool,
@@ -608,6 +636,13 @@ impl std::fmt::Display for RequestError {
         std::fmt::Display::fmt(&self.0, f)
     }
 }
+impl RequestError {
+    /// The thing asked about no longer exists (a 404).
+    pub fn is_gone(&self) -> bool {
+        gone(&self.0)
+    }
+}
+
 impl std::error::Error for RequestError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(self.0.as_ref())
@@ -831,6 +866,16 @@ async fn answer(api: &Api, request: Request) -> Answer {
                 .await
                 .map_err(RequestError::from),
         ),
+        Request::ModifyChannel { channel, request, body } => Answer::ChannelSaved {
+            result: api.modify_channel(&channel, &body).await.map_err(RequestError::from),
+            channel,
+            request,
+        },
+        Request::DeleteChannel { channel, request } => Answer::ChannelDeleted {
+            result: api.delete_channel(&channel).await.map_err(RequestError::from),
+            channel,
+            request,
+        },
         Request::GuildNotify { guild, level } => Answer::Done {
             what: "notification setting",
             result: api.guild_notify(&guild, level).await.map_err(RequestError::from),
@@ -946,14 +991,18 @@ async fn admin(api: &Api, guild: &str, op: Admin) -> anyhow::Result<AdminAnswer>
             AdminAnswer::Done
         }
         Admin::CreateInvite { channel } => AdminAnswer::InviteCreated(api.create_invite(&channel).await?),
-        Admin::CreateChannel { name, voice } => {
-            let kind = if voice {
-                crate::store::GUILD_VOICE
-            } else {
-                crate::store::GUILD_TEXT
-            };
-            api.create_channel(guild, &json!({"name": name, "type": kind, "permission_overwrites": []}))
-                .await?;
+        // The new channel arrives as CHANNEL_CREATE.
+        Admin::CreateChannel { name, kind, parent } => {
+            let mut body = json!({"name": name, "type": kind, "permission_overwrites": []});
+            if let Some(parent) = parent {
+                body["parent_id"] = json!(parent);
+            }
+            api.create_channel(guild, &body).await?;
+            AdminAnswer::Done
+        }
+        // Each moved channel arrives as CHANNEL_UPDATE.
+        Admin::MoveChannels(moves) => {
+            api.move_channels(guild, &moves).await?;
             AdminAnswer::Done
         }
         Admin::Leave => {

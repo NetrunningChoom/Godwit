@@ -52,6 +52,33 @@ impl Application {
         }]
     }
 
+    /// A category's settings: the channel page, aimed at the category.
+    pub(super) fn dispatch_open_category_settings(
+        &mut self,
+        server: ServerId,
+        category: std::sync::Arc<str>,
+    ) -> Vec<Effect> {
+        let allowed = self.state.server(&server).is_some_and(|s| {
+            s.categories
+                .iter()
+                .any(|c| c.id.as_ref() == Some(&category) && c.can_manage)
+        });
+        if !allowed || self.state.channel_settings.as_ref().is_some_and(|s| s.busy) {
+            return Vec::new();
+        }
+        let room = RoomId::new(server.account, &*category);
+        self.state.channel_settings_sequence = self.state.channel_settings_sequence.wrapping_add(1);
+        let request = self.state.channel_settings_sequence;
+        self.state.channel_settings = Some(crate::channel_settings::ChannelSettingsState::new(
+            room.clone(),
+            request,
+        ));
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::LoadChannelOverview { room, request },
+        }]
+    }
+
     pub(super) fn dispatch_save_channel_overview(
         &mut self,
         edit: crate::channel_settings::ChannelOverviewEdit,
@@ -65,6 +92,16 @@ impl Application {
         s.error = None;
         s.saved = edit.is_empty();
         if edit.is_empty() {
+            return Vec::new();
+        }
+        // Only what this channel's network offers: slowmode and the icon are
+        // network capabilities, and a category has just its name.
+        if let Some(o) = &s.overview
+            && ((edit.slowmode.is_some() && o.slowmode.is_none())
+                || (edit.icon != crate::own_profile::ProfileImage::Keep && !o.icons)
+                || (o.is_category && (edit.description.is_some() || edit.mature.is_some())))
+        {
+            s.error = Some("This channel doesn't have that setting.".into());
             return Vec::new();
         }
         self.state.channel_settings_sequence = self.state.channel_settings_sequence.wrapping_add(1);
@@ -131,6 +168,39 @@ impl Application {
         }
     }
 
+    /// Creating and moving channels and categories only goes out with the
+    /// rights the network gave this server (a category's parent must be one
+    /// of its categories, and only a channel goes inside one).
+    fn structure_change_allowed(&self, server: &ServerId, op: &crate::server_settings::ServerAdmin) -> bool {
+        use crate::server_settings::{NewChannelKind, ServerAdmin as A};
+        let Some(s) = self.state.server(server) else {
+            return false;
+        };
+        match op {
+            A::CreateChannel { kind, category, .. } => {
+                let kind_ok = match kind {
+                    NewChannelKind::Category => s.rights.manage_categories && category.is_none(),
+                    _ => true,
+                };
+                kind_ok
+                    && s.rights.create_channels
+                    && category
+                        .as_ref()
+                        // Manage Channels on that category too.
+                        .is_none_or(|id| s.categories.iter().any(|c| c.id.as_ref() == Some(id) && c.can_manage))
+            }
+            A::MoveChannel { id, category, .. } => {
+                s.rights.reorder_channels
+                    && if *category {
+                        s.categories.iter().any(|c| c.id.as_ref() == Some(id))
+                    } else {
+                        s.rooms().any(|r| r.raw == *id)
+                    }
+            }
+            _ => true,
+        }
+    }
+
     pub(super) fn dispatch_server_admin(
         &mut self,
         server: ServerId,
@@ -139,7 +209,7 @@ impl Application {
         if self.state.server(&server).is_none() {
             return Vec::new();
         }
-        if !self.member_change_allowed(&server, &op) {
+        if !self.member_change_allowed(&server, &op) || !self.structure_change_allowed(&server, &op) {
             return Vec::new();
         }
         if op == crate::server_settings::ServerAdmin::CreateInvite {

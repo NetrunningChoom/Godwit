@@ -783,6 +783,8 @@ fn selecting_a_channel_selects_its_server() {
         icon_url: None,
         banner_url: None,
         categories: vec![Category {
+            id: None,
+            can_manage: false,
             title: "".into(),
             rooms: vec![cid.clone()],
         }],
@@ -1317,6 +1319,8 @@ fn picking_a_server_opens_its_last_or_first_text_channel_and_home_its_last_dm() 
             icon_url: None,
             banner_url: None,
             categories: vec![Category {
+                id: None,
+                can_manage: false,
                 title: "".into(),
                 rooms: ["talk", "general", "memes"]
                     .map(|r| RoomId::new(account(n), r))
@@ -3602,4 +3606,189 @@ fn member_changes_need_the_open_card_and_its_powers() {
     assert_eq!(app.dispatch(timeout(None)).len(), 1, "lifting");
     assert!(app.dispatch(timeout(Some(29 * 86_400))).is_empty(), "28 days at most");
     assert!(app.dispatch(timeout(Some(0))).is_empty());
+}
+
+/// A server `S` with a real category `K` (we may manage it) holding `C`, and
+/// `rights` as the network gave them.
+fn structured_server(app: &mut Application, rights: crate::server::ServerRights) -> ServerId {
+    let n = Network::Stoat;
+    let server = ServerId::new(account(n), "S");
+    app.apply(Event::ServersChanged {
+        account: account(n),
+        servers: vec![crate::server::Server {
+            id: server.clone(),
+            name: "S".into(),
+            icon_url: None,
+            banner_url: None,
+            categories: vec![
+                Category {
+                    id: None,
+                    can_manage: false,
+                    title: "".into(),
+                    rooms: vec![RoomId::new(account(n), "L")],
+                },
+                Category {
+                    id: Some("K".into()),
+                    can_manage: true,
+                    title: "Talk".into(),
+                    rooms: vec![RoomId::new(account(n), "C")],
+                },
+                Category {
+                    id: Some("J".into()),
+                    can_manage: false,
+                    title: "Locked".into(),
+                    rooms: Vec::new(),
+                },
+            ],
+            muted: false,
+            rights,
+        }],
+    });
+    server
+}
+
+#[test]
+fn creating_and_moving_channels_needs_the_servers_rights() {
+    use crate::server_settings::{NewChannelKind, ServerAdmin};
+    let mut app = channel_settings_app();
+    let server = structured_server(
+        &mut app,
+        crate::server::ServerRights {
+            create_channels: true,
+            ..Default::default()
+        },
+    );
+    let create = |kind, category: Option<&str>| Action::ServerAdmin {
+        server: server.clone(),
+        op: ServerAdmin::CreateChannel {
+            name: "new".into(),
+            kind,
+            category: category.map(Into::into),
+        },
+    };
+    let mv = |id: &str, category| Action::ServerAdmin {
+        server: server.clone(),
+        op: ServerAdmin::MoveChannel {
+            id: id.into(),
+            category,
+            up: true,
+        },
+    };
+    // Text and voice channels, also inside a category of the server.
+    assert_eq!(app.dispatch(create(NewChannelKind::Text, None)).len(), 1);
+    assert_eq!(app.dispatch(create(NewChannelKind::Voice, Some("K"))).len(), 1);
+    // Not inside a category the server doesn't have.
+    assert!(app.dispatch(create(NewChannelKind::Text, Some("nope"))).is_empty());
+    // Nor into one we can't manage.
+    assert!(app.dispatch(create(NewChannelKind::Text, Some("J"))).is_empty());
+    // Categories and moving need their own rights.
+    assert!(app.dispatch(create(NewChannelKind::Category, None)).is_empty());
+    assert!(app.dispatch(mv("C", false)).is_empty());
+    assert!(app.dispatch(mv("K", true)).is_empty());
+
+    structured_server(
+        &mut app,
+        crate::server::ServerRights {
+            create_channels: true,
+            manage_categories: true,
+            reorder_channels: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(app.dispatch(create(NewChannelKind::Category, None)).len(), 1);
+    // A category can't go inside another.
+    assert!(app.dispatch(create(NewChannelKind::Category, Some("K"))).is_empty());
+    assert_eq!(app.dispatch(mv("C", false)).len(), 1);
+    assert_eq!(app.dispatch(mv("K", true)).len(), 1);
+    // Only things the server has.
+    assert!(app.dispatch(mv("ghost", false)).is_empty());
+    assert!(app.dispatch(mv("C", true)).is_empty());
+}
+
+#[test]
+fn category_settings_open_only_for_categories_we_manage() {
+    let mut app = channel_settings_app();
+    let server = structured_server(&mut app, Default::default());
+    let open = |category: &str| Action::OpenCategorySettings {
+        server: server.clone(),
+        category: category.into(),
+    };
+    assert!(app.dispatch(open("ghost")).is_empty());
+    let effects = app.dispatch(open("K"));
+    let [
+        Effect::Backend {
+            command: Command::LoadChannelOverview { room, request },
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("expected a load, got {effects:?}");
+    };
+    assert_eq!(&*room.raw, "K");
+    // A category takes a name only: the page's other fields are refused.
+    app.apply(Event::ChannelOverview {
+        room: room.clone(),
+        request: *request,
+        result: Ok(Some(crate::channel_settings::ChannelOverview {
+            name: "Talk".into(),
+            can_manage: true,
+            is_category: true,
+            ..Default::default()
+        })),
+    });
+    let mature = crate::channel_settings::ChannelOverviewEdit {
+        mature: Some(true),
+        ..Default::default()
+    };
+    assert!(app.dispatch(Action::SaveChannelOverview(mature)).is_empty());
+    assert!(app.state().channel_settings.as_ref().is_some_and(|s| s.error.is_some()));
+    let rename = crate::channel_settings::ChannelOverviewEdit {
+        name: Some("Chat".into()),
+        ..Default::default()
+    };
+    assert_eq!(app.dispatch(Action::SaveChannelOverview(rename)).len(), 1);
+}
+
+#[test]
+fn slowmode_and_icons_only_go_out_where_the_network_has_them() {
+    use crate::channel_settings::{ChannelOverview, ChannelOverviewEdit};
+    use crate::own_profile::ProfileImage;
+    let slow = ChannelOverviewEdit {
+        slowmode: Some(30),
+        ..Default::default()
+    };
+    // No slowmode on this channel: refused, with a reason.
+    let mut app = channel_settings_app();
+    open_channel_settings(&mut app, true);
+    assert!(app.dispatch(Action::SaveChannelOverview(slow.clone())).is_empty());
+    assert!(app.state().channel_settings.as_ref().is_some_and(|s| s.error.is_some()));
+    let icon = ChannelOverviewEdit {
+        icon: ProfileImage::Remove,
+        ..Default::default()
+    };
+    assert!(app.dispatch(Action::SaveChannelOverview(icon)).is_empty());
+    // With slowmode (and no icons) offered, the change goes out.
+    let mut app = channel_settings_app();
+    let room = RoomId::new(account(Network::Stoat), "C");
+    let effects = app.dispatch(Action::OpenChannelSettings(room.clone()));
+    let [
+        Effect::Backend {
+            command: Command::LoadChannelOverview { request, .. },
+            ..
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("expected a load, got {effects:?}");
+    };
+    app.apply(Event::ChannelOverview {
+        room,
+        request: *request,
+        result: Ok(Some(ChannelOverview {
+            name: "general".into(),
+            can_manage: true,
+            slowmode: Some(0),
+            ..Default::default()
+        })),
+    });
+    assert_eq!(app.dispatch(Action::SaveChannelOverview(slow)).len(), 1);
 }

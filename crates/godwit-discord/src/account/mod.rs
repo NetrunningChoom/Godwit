@@ -7,6 +7,7 @@
 //! requests, and messages. Requests go out only for something the user did,
 //! and only when Discord would allow them (see `permissions`).
 
+mod channel_admin;
 mod commands;
 mod events;
 mod messages;
@@ -30,7 +31,7 @@ use godwit_core::network::Network;
 use godwit_core::room::{Capabilities, Room, RoomEncryption, RoomKind};
 use godwit_core::server::{Category, Server as CoreServer, ServerRights};
 use godwit_core::server_settings::{
-    ServerAdmin, ServerAdminResult, ServerBan, ServerInvite, ServerOverview, ServerRole, ServerRoles,
+    NewChannelKind, ServerAdmin, ServerAdminResult, ServerBan, ServerInvite, ServerOverview, ServerRole, ServerRoles,
 };
 use serde_json::{Value, json};
 
@@ -1193,6 +1194,9 @@ impl NetworkAccount for DiscordAccount {
             }
             Command::JoinInvite { code } => req(&self.net, Request::JoinInvite { code: code.to_string() }),
             Command::ServerAdmin { server, op } => out.extend(self.server_admin(server, op)),
+            Command::LoadChannelOverview { .. }
+            | Command::SaveChannelOverview { .. }
+            | Command::DeleteChannel { .. } => out.extend(self.channel_command(command)),
             Command::LoadServerOverview { server, request } => {
                 let result = self
                     .overview(&server.raw)

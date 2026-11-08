@@ -346,6 +346,8 @@ impl TeamsAccount {
                 icon_url: None,
                 banner_url: None,
                 categories: vec![Category {
+                    id: None,
+                    can_manage: false,
                     title: "".into(),
                     rooms: t
                         .channels

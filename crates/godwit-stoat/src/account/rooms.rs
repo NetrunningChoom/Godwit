@@ -137,6 +137,9 @@ impl StoatAccount {
                     .ordered_categories(s)
                     .into_iter()
                     .map(|cat| CoreCategory {
+                        // Stoat's categories aren't managed from here yet.
+                        id: None,
+                        can_manage: false,
                         // The implicit first category has no heading, as officially.
                         title: if cat.id == "default" {
                             "".into()
@@ -159,6 +162,8 @@ impl StoatAccount {
                     godwit_core::server::ServerRights {
                         invite: can(p::INVITE_OTHERS),
                         create_channels: can(p::MANAGE_CHANNEL),
+                        manage_categories: false,
+                        reorder_channels: false,
                         settings: can(p::MANAGE_SERVER) || can(p::MANAGE_ROLE) || can(p::BAN_MEMBERS),
                         owner: account.user.as_ref() == s.owner,
                         // The official client's levels (default "mention");

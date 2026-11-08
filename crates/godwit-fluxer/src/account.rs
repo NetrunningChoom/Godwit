@@ -266,10 +266,14 @@ impl FluxerAccount {
                         .collect::<Vec<_>>()
                 };
                 let mut categories = vec![Category {
+                    id: None,
+                    can_manage: false,
                     title: "".into(),
                     rooms: rooms_in(None),
                 }];
                 categories.extend(cats.iter().map(|cat| Category {
+                    id: None,
+                    can_manage: false,
                     title: cat.name.as_str().into(),
                     rooms: rooms_in(Some(cat.id.as_str())),
                 }));

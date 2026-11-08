@@ -4,7 +4,7 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Section } from "settings.slint";
-import { Avatar, Button, ConfirmDialog, TextArea, TextField, Toggle } from "widgets.slint";
+import { Avatar, Button, ConfirmDialog, Select, TextArea, TextField, Toggle } from "widgets.slint";
 
 // A server channel's settings, as the official ChannelSettings: a sidebar
 // with Overview and (with Manage Channel) Delete Channel, and the Overview's
@@ -24,6 +24,14 @@ export component ChannelSettings inherits Rectangle {
     in property <image> icon;
     in property <bool> has-icon;
     in property <string> icon-label;
+    // What this network's channels have: a picture, slowmode (its choices
+    // and the one now); a category has only a name.
+    in property <bool> has-icons;
+    in property <bool> is-category;
+    in property <bool> has-slowmode;
+    in property <[string]> slowmode-choices;
+    in-out property <int> slowmode-index;
+    in property <string> description-hint;
 
     callback close(); callback save(); callback reset(); callback changed();
     callback pick-image(); callback remove-image();
@@ -44,7 +52,7 @@ export component ChannelSettings inherits Rectangle {
                     Text { text: root.title; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; overflow: elide; }
                     Section { label: "Overview"; selected: true; }
                     if root.allowed: Rectangle { height: 12px; }
-                    if root.allowed: Section { label: "Delete Channel"; danger: true; clicked => { root.confirm-delete = true; } }
+                    if root.allowed: Section { label: root.is-category ? "Delete Category" : "Delete Channel"; danger: true; clicked => { root.confirm-delete = true; } }
                 }
             }
             VerticalLayout {
@@ -63,20 +71,27 @@ export component ChannelSettings inherits Rectangle {
                         if root.loaded && !root.allowed: Text { text: "You need Manage Channel permission to change these settings."; wrap: word-wrap; color: Theme.on-surface-variant; }
                         if root.loaded: VerticalLayout {
                             spacing: Theme.space-4;
-                            Text { text: "Channel icon"; color: Theme.on-surface; }
-                            Avatar { size: 72px; source: root.icon; has-image: root.has-icon; initials: ""; }
-                            if root.icon-label != "": Text { text: root.icon-label; wrap: word-wrap; color: Theme.on-surface-variant; }
-                            HorizontalLayout {
+                            if root.has-icons: Text { text: "Channel icon"; color: Theme.on-surface; }
+                            if root.has-icons: Avatar { size: 72px; source: root.icon; has-image: root.has-icon; initials: ""; }
+                            if root.has-icons && root.icon-label != "": Text { text: root.icon-label; wrap: word-wrap; color: Theme.on-surface-variant; }
+                            if root.has-icons: HorizontalLayout {
                                 alignment: start; spacing: Theme.space-3;
                                 Button { text: "Change icon"; enabled: root.allowed && !root.busy; clicked => { root.pick-image(); } }
                                 Button { text: "Remove"; kind: "text"; enabled: root.allowed && !root.busy; clicked => { root.remove-image(); } }
                             }
-                            Text { text: "Channel name"; color: Theme.on-surface; }
+                            Text { text: root.is-category ? "Category name" : "Channel name"; color: Theme.on-surface; }
                             TextField { text <=> root.name; enabled: root.allowed && !root.busy; edited => { root.changed(); } accepted => { root.save(); } }
-                            Text { text: "Channel description"; color: Theme.on-surface; }
-                            TextArea { height: 120px; text <=> root.description; enabled: root.allowed && !root.busy; edited => { root.changed(); } }
-                            Text { text: "Mark as mature"; font-weight: 600; color: Theme.on-surface; }
-                            HorizontalLayout {
+                            if !root.is-category: Text { text: "Channel description"; color: Theme.on-surface; }
+                            if !root.is-category && root.description-hint != "": Text { text: root.description-hint; wrap: word-wrap; color: Theme.on-surface-variant; }
+                            if !root.is-category: TextArea { height: 120px; text <=> root.description; enabled: root.allowed && !root.busy; edited => { root.changed(); } }
+                            if root.has-slowmode: Text { text: "Slowmode"; font-weight: 600; color: Theme.on-surface; }
+                            if root.has-slowmode: Text { text: "Members wait this long between messages, unless they can manage the channel."; wrap: word-wrap; color: Theme.on-surface-variant; }
+                            if root.has-slowmode: Select {
+                                model: root.slowmode-choices; current-index <=> root.slowmode-index; enabled: root.allowed && !root.busy;
+                                selected(i) => { root.changed(); }
+                            }
+                            if !root.is-category: Text { text: "Mark as mature"; font-weight: 600; color: Theme.on-surface; }
+                            if !root.is-category: HorizontalLayout {
                                 spacing: Theme.space-4;
                                 Text { text: "Users will be asked to confirm their age before opening this channel."; wrap: word-wrap; color: Theme.on-surface-variant; horizontal-stretch: 1; vertical-alignment: center; }
                                 Toggle { checked <=> root.mature; toggled => { root.changed(); } }

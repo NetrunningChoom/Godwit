@@ -112,6 +112,12 @@ export component AppWindow inherits Window {
     in property <image> channel-edit-icon;
     in property <bool> channel-edit-has-icon;
     in property <string> channel-edit-icon-label;
+    in property <bool> channel-edit-has-icons;
+    in property <bool> channel-edit-is-category;
+    in property <bool> channel-edit-has-slowmode;
+    in property <[string]> channel-edit-slowmode-choices;
+    in-out property <int> channel-edit-slowmode-index;
+    in property <string> channel-edit-description-hint;
     callback close-channel-settings(); callback save-channel-overview(); callback reset-channel-overview(); callback channel-overview-edited();
     callback pick-channel-image(); callback remove-channel-image(); callback delete-channel();
     in property <bool> server-edit-loaded;
@@ -301,6 +307,8 @@ export component AppWindow inherits Window {
     in property <int> server-notify;
     callback server-menu-notify(int);
     in property <bool> server-can-create-channel;
+    in property <bool> server-can-create-category;
+    in property <bool> server-can-reorder;
     in property <bool> server-can-leave;
     in property <bool> server-can-report;
     callback report-server();
@@ -321,7 +329,10 @@ export component AppWindow inherits Window {
     in property <string> invite-link;
     in-out property <bool> creating-channel;
     in-out property <string> new-channel-name;
-    property <bool> new-channel-voice;
+    in-out property <int> new-channel-kind;
+    // A category's "Create channel here" (set from Rust with the dialog).
+    in-out property <string> new-channel-category;
+    in-out property <string> new-channel-category-name;
     in-out property <bool> confirm-leave;
     // Signing out asks first: it ends the sign-in at the network (Discord and
     // Steam need a new QR code after). -2 none, -1 the current account, else
@@ -329,7 +340,9 @@ export component AppWindow inherits Window {
     in-out property <int> confirm-log-out: -2;
     callback server-menu-invite();
     callback server-menu-mark-read();
-    callback server-menu-create-channel(string, bool);
+    callback server-menu-create-channel(string, int, string);
+    // A category heading's "Create channel" (its row).
+    callback create-channel-in(int);
     callback server-menu-leave();
     callback copy-invite-link();
     callback close-invite-link();
@@ -938,7 +951,8 @@ export component AppWindow inherits Window {
                             report-server => { root.report-server(); }
                             invite-people => { root.server-menu-invite(); }
                             mark-server-read => { root.server-menu-mark-read(); }
-                            create-channel => { root.new-channel-name = ""; root.new-channel-voice = false; root.creating-channel = true; }
+                            create-channel => { root.new-channel-name = ""; root.new-channel-kind = 0; root.new-channel-category = ""; root.new-channel-category-name = ""; root.creating-channel = true; }
+                            create-channel-in(i) => { root.new-channel-name = ""; root.new-channel-kind = 0; root.create-channel-in(i); }
                             leave-server => { root.confirm-leave = true; }
                             rooms: root.rooms;
                             directory: root.directory;
@@ -1394,6 +1408,9 @@ export component AppWindow inherits Window {
         dirty: root.channel-edit-dirty; failed: root.channel-edit-failed; status: root.channel-edit-status;
         name <=> root.channel-edit-name; description <=> root.channel-edit-description; mature <=> root.channel-edit-mature;
         icon: root.channel-edit-icon; has-icon: root.channel-edit-has-icon; icon-label: root.channel-edit-icon-label;
+        has-icons: root.channel-edit-has-icons; is-category: root.channel-edit-is-category;
+        has-slowmode: root.channel-edit-has-slowmode; slowmode-choices: root.channel-edit-slowmode-choices;
+        slowmode-index <=> root.channel-edit-slowmode-index; description-hint: root.channel-edit-description-hint;
         close => { root.close-channel-settings(); } save => { root.save-channel-overview(); }
         reset => { root.reset-channel-overview(); } changed => { root.channel-overview-edited(); }
         pick-image => { root.pick-channel-image(); } remove-image => { root.remove-channel-image(); }
@@ -1682,8 +1699,11 @@ export component AppWindow inherits Window {
         copy-invite-link => { root.copy-invite-link(); }
         creating-channel <=> root.creating-channel;
         new-channel-name <=> root.new-channel-name;
-        new-channel-voice <=> root.new-channel-voice;
-        server-menu-create-channel(name, voice) => { root.server-menu-create-channel(name, voice); }
+        new-channel-kind <=> root.new-channel-kind;
+        new-channel-category: root.new-channel-category;
+        new-channel-category-name: root.new-channel-category-name;
+        can-create-category: root.server-can-create-category;
+        server-menu-create-channel(name, kind, category) => { root.server-menu-create-channel(name, kind, category); }
         confirm-log-out <=> root.confirm-log-out;
         log-out => { root.log-out(); }
         log-out-account(i) => { root.log-out-account(i); }

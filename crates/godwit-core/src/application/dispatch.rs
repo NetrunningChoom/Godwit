@@ -59,6 +59,7 @@ impl Application {
                 }]
             }
             Action::OpenChannelSettings(room) => self.dispatch_open_channel_settings(room),
+            Action::OpenCategorySettings { server, category } => self.dispatch_open_category_settings(server, category),
             Action::CloseChannelSettings => {
                 self.state.channel_settings = None;
                 Vec::new()

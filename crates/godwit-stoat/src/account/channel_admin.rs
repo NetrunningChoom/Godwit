@@ -32,6 +32,11 @@ impl StoatAccount {
             icon_url: c.icon.as_ref().and_then(|f| self.file_url(f)).map(Into::into),
             mature: c.nsfw,
             can_manage: true,
+            is_category: false,
+            icons: true,
+            // Stoat has no slowmode.
+            slowmode: None,
+            description_max: 0,
         })
     }
 

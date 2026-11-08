@@ -122,6 +122,12 @@ export struct RoomItem {
     alerts: int,
     // A server channel the account may manage (its menu opens the settings).
     can-manage: bool,
+    // The server lets this account move channels and categories up and down.
+    can-reorder: bool,
+    // A real category's heading (its menu opens); with the right to make
+    // channels in it.
+    category-menu: bool,
+    can-create-here: bool,
     // A heading that opens or closes Home's hidden section.
     toggles-hidden: bool,
     // A thread (or forum post): indented under the channel it's in.

@@ -267,7 +267,14 @@ fn header(title: &str) -> RoomItem {
 
 /// The sidebar's title, its rows, the room each row opens, and each
 /// heading's category key.
-pub type SidebarRows = (String, Vec<RoomItem>, Vec<Option<RoomId>>, Vec<Option<String>>);
+/// plus each heading's category id (None for rows the network can't manage).
+pub type SidebarRows = (
+    String,
+    Vec<RoomItem>,
+    Vec<Option<RoomId>>,
+    Vec<Option<String>>,
+    Vec<Option<Arc<str>>>,
+);
 
 /// A category as kept in settings when folded: its server's key and title.
 pub fn category_key(server: &ServerId, title: &str) -> String {
@@ -305,15 +312,22 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
     match state.selected_server.as_ref().and_then(|s| state.server(s)) {
         Some(server) => {
             let mut keys = Vec::new();
+            let mut category_ids: Vec<Option<Arc<str>>> = Vec::new();
             for cat in &server.categories {
                 let key = category_key(&server.id, &cat.title);
                 let folded = !cat.title.is_empty() && collapsed.contains(&key);
                 if !cat.title.is_empty() {
                     let mut heading = category_header(&cat.title, images);
                     heading.category_collapsed = folded;
+                    // The heading's menu: a real category, with what the server allows.
+                    heading.category_menu = cat.id.is_some();
+                    heading.can_manage = cat.can_manage;
+                    heading.can_reorder = cat.id.is_some() && server.rights.reorder_channels;
+                    heading.can_create_here = cat.id.is_some() && server.rights.create_channels;
                     rows.push(heading);
                     ids.push(None);
                     keys.push(Some(key));
+                    category_ids.push(cat.id.clone());
                 }
                 for id in &cat.rooms {
                     if let Some(r) = state.room(id) {
@@ -327,6 +341,7 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
                             || occupants.is_some_and(|m| !m.is_empty());
                         if keep {
                             let mut row = room_row(r, selected == Some(id), occupants, images);
+                            row.can_reorder = r.parent.is_none() && server.rights.reorder_channels;
                             // Its menu offers pinning to Home, or unpinning.
                             row.pinned = state.pinned_rooms.contains(id);
                             // How long its call has been going (Discord's
@@ -341,11 +356,12 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
                             rows.push(row);
                             ids.push(Some(id.clone()));
                             keys.push(None);
+                            category_ids.push(None);
                         }
                     }
                 }
             }
-            (server.name.to_string(), rows, ids, keys)
+            (server.name.to_string(), rows, ids, keys, category_ids)
         }
         None => {
             // Home merges every account's chats: with several, each row
@@ -550,7 +566,8 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
             }
             {
                 let keys = vec![None; rows.len()];
-                ("Direct messages".into(), rows, ids, keys)
+                let categories = vec![None; rows.len()];
+                ("Direct messages".into(), rows, ids, keys, categories)
             }
         }
     }
@@ -628,10 +645,10 @@ mod multi_tests {
         app.dispatch(Action::SelectRoom(general.clone()));
         assert!(app.state().selected_server.is_some(), "its server opened");
         let mut images = Images::offline();
-        let (_, open, _, keys) = rooms(app.state(), &mut images, "", "", &[]);
+        let (_, open, _, keys, _) = rooms(app.state(), &mut images, "", "", &[]);
         let heading = keys.iter().position(Option::is_some).expect("a titled category");
         let key = keys[heading].clone().unwrap_or_default();
-        let (_, folded, ids, _) = rooms(app.state(), &mut images, "", "", &[key]);
+        let (_, folded, ids, _, _) = rooms(app.state(), &mut images, "", "", &[key]);
         assert!(folded[heading].category_collapsed);
         assert!(folded.len() <= open.len());
         // What stays under the heading is unread (the demo's "dev" has mentions).
@@ -649,7 +666,7 @@ mod multi_tests {
         let chat = crate::demo::multi(&mut app);
         app.dispatch(Action::SelectServer(None));
         let mut images = Images::offline();
-        let (_, rows, ids, _) = rooms(app.state(), &mut images, "", "", &[]);
+        let (_, rows, ids, _, _) = rooms(app.state(), &mut images, "", "", &[]);
         // Person 4: one Home row, opening the Steam chat (their chosen network).
         let at = ids
             .iter()
@@ -793,7 +810,7 @@ mod rail_tests {
         );
         assert_eq!(presence_choices(Network::Stoat).len(), 5);
 
-        let (_, home, _, _) = rooms(app.state(), &mut images, "", "", &[]);
+        let (_, home, _, _, _) = rooms(app.state(), &mut images, "", "", &[]);
         assert!(!home.is_empty());
         assert!(
             home.iter().filter(|r| !r.header).all(|r| r.account_badged),
@@ -805,7 +822,7 @@ mod rail_tests {
             .find(|r| !r.header)
             .map(|r| r.name.to_string())
             .unwrap_or_default();
-        let (_, found, ids, _) = rooms(app.state(), &mut images, &name.to_uppercase(), "", &[]);
+        let (_, found, ids, _, _) = rooms(app.state(), &mut images, &name.to_uppercase(), "", &[]);
         assert!(
             found
                 .iter()
@@ -813,11 +830,11 @@ mod rail_tests {
                 .all(|r| r.name.to_lowercase().contains(&name.to_lowercase()))
         );
         assert!(ids.iter().flatten().count() >= 1);
-        let (_, none, _, _) = rooms(app.state(), &mut images, "zzqqxx-nobody", "", &[]);
+        let (_, none, _, _, _) = rooms(app.state(), &mut images, "zzqqxx-nobody", "", &[]);
         assert!(none.iter().all(|r| r.header), "nothing matches");
         // The network filter keeps only that network's chats.
         let network = app.state().direct_rooms().next().map(|r| r.network()).unwrap();
-        let (_, one, ids, _) = rooms(app.state(), &mut images, "", network.name(), &[]);
+        let (_, one, ids, _, _) = rooms(app.state(), &mut images, "", network.name(), &[]);
         assert!(one.iter().any(|r| !r.header), "that network's chats stay");
         assert!(
             ids.iter()

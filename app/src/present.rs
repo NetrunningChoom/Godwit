@@ -110,6 +110,8 @@ pub struct Presenter {
     /// row's category key (headings only).
     pub collapsed_categories: Vec<String>,
     pub category_rows: Vec<Option<String>>,
+    /// Each row's category id, for a heading whose category can be managed.
+    pub category_ids: Vec<Option<Arc<str>>>,
     /// Home's search ("" for none).
     pub home_query: String,
     /// Home's network filter (a network's name; "" for all).
@@ -422,7 +424,7 @@ impl Presenter {
         let (directory, directory_rows) = view::directory(state);
         view::sync(&self.directory, directory);
         self.directory_rows = directory_rows;
-        let (title, rooms, room_rows, category_rows) = view::rooms(
+        let (title, rooms, room_rows, category_rows, category_ids) = view::rooms(
             state,
             images,
             &self.home_query,
@@ -444,6 +446,7 @@ impl Presenter {
         ui.set_home_network(self.home_network.as_str().into());
         ui.set_home_networks(ModelRc::new(VecModel::from(home_networks)));
         self.category_rows = category_rows;
+        self.category_ids = category_ids;
         ui.set_sidebar_title(title.into());
         // The selected server's banner, decoded at twice the panel's size.
         let banner = state

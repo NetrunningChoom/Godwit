@@ -406,10 +406,15 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             banner_url: None,
             categories: vec![
                 Category {
+                    id: None,
+                    can_manage: false,
                     title: "".into(),
                     rooms: vec![r("general"), r("random")],
                 },
                 Category {
+                    // A category we run: rename, delete, move, create in it.
+                    id: Some("C1".into()),
+                    can_manage: true,
                     title: format!("📢 {}", capitalise(&bogus.word())).into(),
                     rooms: vec![r("dev"), r("voice")],
                 },
@@ -419,6 +424,8 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             rights: godwit_core::server::ServerRights {
                 invite: true,
                 create_channels: true,
+                manage_categories: true,
+                reorder_channels: true,
                 settings: true,
                 owner: true,
                 report: true,
@@ -1208,6 +1215,10 @@ pub struct DemoAccount {
     /// The channels we may manage, with their editable overview, so a save
     /// or delete comes back as the room's update or removal.
     channels: Vec<(Room, godwit_core::channel_settings::ChannelOverview)>,
+    /// The categories we may manage, by id, with their (name-only) overview.
+    categories: std::collections::HashMap<String, godwit_core::channel_settings::ChannelOverview>,
+    /// Made-up ids for new channels and categories.
+    created: u32,
     /// Each server's invites, bans and roles, changed as the pages ask.
     admin: std::collections::HashMap<String, DemoAdmin>,
     /// Friends and pending requests (theirs, ours), changed as the user
@@ -1384,8 +1395,26 @@ impl DemoAccount {
                     icon_url: r.icon_url.clone(),
                     mature: false,
                     can_manage: true,
+                    is_category: false,
+                    icons: true,
+                    slowmode: Some(0),
+                    description_max: 0,
                 };
                 ((**r).clone(), overview)
+            })
+            .collect();
+        let categories = servers
+            .iter()
+            .flat_map(|s| s.categories.iter())
+            .filter_map(|c| {
+                let id = c.id.as_ref()?;
+                let overview = godwit_core::channel_settings::ChannelOverview {
+                    name: c.title.clone(),
+                    can_manage: c.can_manage,
+                    is_category: true,
+                    ..Default::default()
+                };
+                Some((id.to_string(), overview))
             })
             .collect();
         let admin = overviews
@@ -1410,6 +1439,8 @@ impl DemoAccount {
             servers,
             overviews,
             channels,
+            categories,
+            created: 0,
             admin,
             friends,
             incoming,
@@ -1670,7 +1701,8 @@ impl DemoAccount {
             A::CreateInvite => R::InviteCreated(format!("https://stt.gg/{}", Bogus::new(77).word()).into()),
             A::MarkRead => R::Done("Marked as read.".into()),
             A::SetNotify(_) => R::Done("Notifications changed.".into()),
-            A::CreateChannel { .. } => R::Done("Channel created.".into()),
+            // Made and moved in `structure_change`, which needs the rooms too.
+            A::CreateChannel { .. } | A::MoveChannel { .. } => R::Done("Done.".into()),
             // Leaving would leave the demo without its server, as deleting would.
             A::Leave => return Err("The demo server can't be left.".into()),
             // Deleting would leave the demo without its server.
@@ -1697,6 +1729,9 @@ impl DemoAccount {
                 result,
             }]
         };
+        if self.categories.contains_key(room.raw.as_ref()) {
+            return self.category_command(command, &room, request);
+        }
         let Some(at) = self.channels.iter().position(|(r, _)| r.id == room) else {
             return answer(Err("This channel is no longer available.".into()));
         };
@@ -1720,6 +1755,9 @@ impl DemoAccount {
                 }
                 if let Some(mature) = edit.mature {
                     o.mature = mature;
+                }
+                if let Some(seconds) = edit.slowmode {
+                    o.slowmode = Some(seconds);
                 }
                 r.name = o.name.clone();
                 r.icon_url = o.icon_url.clone();
@@ -1746,6 +1784,170 @@ impl DemoAccount {
             }
             _ => answer(Ok(Some(self.channels[at].1.clone()))),
         }
+    }
+
+    /// A category's page: its name, and deleting it (its channels move out).
+    fn category_command(
+        &mut self,
+        command: godwit_core::application::Command,
+        room: &RoomId,
+        request: u64,
+    ) -> Vec<Event> {
+        use godwit_core::application::Command;
+        let id = room.raw.to_string();
+        let answer = |result| {
+            vec![Event::ChannelOverview {
+                room: room.clone(),
+                request,
+                result,
+            }]
+        };
+        let Some(o) = self.categories.get_mut(&id) else {
+            return answer(Err("This category is no longer available.".into()));
+        };
+        match command {
+            Command::SaveChannelOverview { edit, .. } => {
+                if let Some(name) = edit.name {
+                    if name.trim().is_empty() || name.trim().chars().count() > 32 {
+                        return answer(Err("Category names must contain 1–32 characters.".into()));
+                    }
+                    o.name = name.trim().into();
+                }
+                let name = o.name.clone();
+                let overview = o.clone();
+                for c in self.servers.iter_mut().flat_map(|s| s.categories.iter_mut()) {
+                    if c.id.as_deref() == Some(id.as_str()) {
+                        c.title = name.clone();
+                    }
+                }
+                let mut out = vec![Event::ServersChanged {
+                    account: self.id.clone(),
+                    servers: self.servers.clone(),
+                }];
+                out.extend(answer(Ok(Some(overview))));
+                out
+            }
+            Command::DeleteChannel { .. } => {
+                self.categories.remove(&id);
+                for s in &mut self.servers {
+                    let Some(at) = s.categories.iter().position(|c| c.id.as_deref() == Some(id.as_str())) else {
+                        continue;
+                    };
+                    let gone = s.categories.remove(at);
+                    if let Some(first) = s.categories.first_mut() {
+                        first.rooms.extend(gone.rooms);
+                    }
+                }
+                let mut out = vec![Event::ServersChanged {
+                    account: self.id.clone(),
+                    servers: self.servers.clone(),
+                }];
+                out.extend(answer(Ok(None)));
+                out
+            }
+            _ => answer(Ok(Some(o.clone()))),
+        }
+    }
+
+    /// Creating a channel or category, and moving one up or down (a channel
+    /// at the edge of its category crosses into the next).
+    fn structure_change(&mut self, server: &ServerId, op: godwit_core::server_settings::ServerAdmin) -> Vec<Event> {
+        use godwit_core::server_settings::{NewChannelKind, ServerAdmin as A, ServerAdminResult as R};
+        let done = |server: &ServerId, result| Event::ServerAdmin {
+            server: server.clone(),
+            result,
+        };
+        let Some(at) = self.servers.iter().position(|s| s.id == *server) else {
+            return vec![done(server, Err("This server is no longer available.".into()))];
+        };
+        let mut out = Vec::new();
+        match op {
+            A::CreateChannel { name, kind, category } => {
+                let name = name.trim();
+                if name.is_empty() || name.chars().count() > 32 {
+                    return vec![done(server, Err("A name is 1 to 32 characters.".into()))];
+                }
+                self.created += 1;
+                let raw = format!("N{}", self.created);
+                let categories = &mut self.servers[at].categories;
+                if kind == NewChannelKind::Category {
+                    categories.push(Category {
+                        id: Some(raw.as_str().into()),
+                        can_manage: true,
+                        title: name.into(),
+                        rooms: Vec::new(),
+                    });
+                    self.categories.insert(
+                        raw,
+                        godwit_core::channel_settings::ChannelOverview {
+                            name: name.into(),
+                            can_manage: true,
+                            is_category: true,
+                            ..Default::default()
+                        },
+                    );
+                } else {
+                    let mut r = room(&raw, name, RoomKind::Channel { server: server.clone() }, false, 0);
+                    r.capabilities.voice = kind == NewChannelKind::Voice;
+                    r.capabilities.manage_channel = true;
+                    let id = r.id.clone();
+                    let target = categories
+                        .iter()
+                        .position(|c| category.is_some() && c.id == category)
+                        .unwrap_or(0);
+                    categories[target].rooms.push(id);
+                    let overview = godwit_core::channel_settings::ChannelOverview {
+                        name: r.name.clone(),
+                        can_manage: true,
+                        icons: true,
+                        slowmode: Some(0),
+                        ..Default::default()
+                    };
+                    out.push(Event::RoomUpdated(r.clone()));
+                    self.channels.push((r, overview));
+                }
+            }
+            A::MoveChannel { id, category, up } => {
+                let cats = &mut self.servers[at].categories;
+                if category {
+                    // The headingless group stays first.
+                    let from = cats.iter().position(|c| c.id.as_ref() == Some(&id));
+                    if let Some(i) = from {
+                        let j = if up {
+                            i.checked_sub(1).filter(|j| *j >= 1)
+                        } else {
+                            Some(i + 1).filter(|j| *j < cats.len())
+                        };
+                        if let Some(j) = j {
+                            cats.swap(i, j);
+                        }
+                    }
+                } else if let Some((ci, ri)) = cats
+                    .iter()
+                    .enumerate()
+                    .find_map(|(ci, c)| c.rooms.iter().position(|r| r.raw == id).map(|ri| (ci, ri)))
+                {
+                    if up && ri > 0 {
+                        cats[ci].rooms.swap(ri, ri - 1);
+                    } else if !up && ri + 1 < cats[ci].rooms.len() {
+                        cats[ci].rooms.swap(ri, ri + 1);
+                    } else if up && ci > 0 {
+                        let r = cats[ci].rooms.remove(ri);
+                        cats[ci - 1].rooms.push(r);
+                    } else if !up && ci + 1 < cats.len() {
+                        let r = cats[ci].rooms.remove(ri);
+                        cats[ci + 1].rooms.insert(0, r);
+                    }
+                }
+            }
+            _ => {}
+        }
+        out.push(Event::ServersChanged {
+            account: self.id.clone(),
+            servers: self.servers.clone(),
+        });
+        out.push(done(server, Ok(R::Done("Done.".into()))));
+        out
     }
 
     /// Applies an overview edit the way the server would: refused without
@@ -1817,6 +2019,15 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
         use godwit_core::application::Command;
         match command {
             Command::ServerAdmin { server, op } if op.member_target().is_some() => self.member_change(&server, op),
+            Command::ServerAdmin { server, op }
+                if matches!(
+                    op,
+                    godwit_core::server_settings::ServerAdmin::CreateChannel { .. }
+                        | godwit_core::server_settings::ServerAdmin::MoveChannel { .. }
+                ) =>
+            {
+                self.structure_change(&server, op)
+            }
             Command::ServerAdmin { server, op } => {
                 use godwit_core::server_settings::ServerAdminResult as R;
                 let change = !op.is_load();
@@ -2402,6 +2613,123 @@ mod tests {
         assert_eq!(embed.title.as_deref(), Some("A landscape from the demo"));
         assert!(embed.image_thumbnail);
         assert_eq!(embed.image_url.as_deref(), Some("preview://photo"));
+    }
+
+    #[test]
+    fn demo_categories_create_rename_move_and_delete() {
+        use godwit_core::channel_settings::ChannelOverviewEdit;
+        use godwit_core::server_settings::{NewChannelKind, ServerAdmin};
+        let (mut app, _, _) = world(Contacts::default());
+        let mut demo = DemoAccount::new(&app);
+        let server = ServerId::new(account(), "S");
+        let titles = |app: &Application| -> Vec<(Option<String>, usize)> {
+            app.state()
+                .server(&server)
+                .unwrap()
+                .categories
+                .iter()
+                .map(|c| (c.id.as_ref().map(|i| i.to_string()), c.rooms.len()))
+                .collect()
+        };
+        let admin = |app: &mut Application, demo: &mut DemoAccount, op| {
+            run(
+                app,
+                demo,
+                Action::ServerAdmin {
+                    server: server.clone(),
+                    op,
+                },
+            );
+        };
+        // A category, and a channel inside it.
+        admin(
+            &mut app,
+            &mut demo,
+            ServerAdmin::CreateChannel {
+                name: "Archive".into(),
+                kind: NewChannelKind::Category,
+                category: None,
+            },
+        );
+        assert_eq!(titles(&app).last(), Some(&(Some("N1".to_owned()), 0)));
+        admin(
+            &mut app,
+            &mut demo,
+            ServerAdmin::CreateChannel {
+                name: "old-news".into(),
+                kind: NewChannelKind::Text,
+                category: Some("N1".into()),
+            },
+        );
+        assert_eq!(titles(&app).last(), Some(&(Some("N1".to_owned()), 1)));
+        assert!(app.state().room(&RoomId::new(account(), "N2")).is_some());
+        // Moving: the new category above C1, then a channel across the edge.
+        admin(
+            &mut app,
+            &mut demo,
+            ServerAdmin::MoveChannel {
+                id: "N1".into(),
+                category: true,
+                up: true,
+            },
+        );
+        assert_eq!(
+            titles(&app).iter().map(|(i, _)| i.clone()).collect::<Vec<_>>(),
+            [None, Some("N1".to_owned()), Some("C1".to_owned())]
+        );
+        admin(
+            &mut app,
+            &mut demo,
+            ServerAdmin::MoveChannel {
+                id: "N2".into(),
+                category: false,
+                up: true,
+            },
+        );
+        assert_eq!(titles(&app)[0].1, 3, "it left the category for the loose group");
+        // Renaming a category from its page, then deleting it.
+        run(
+            &mut app,
+            &mut demo,
+            Action::OpenCategorySettings {
+                server: server.clone(),
+                category: "C1".into(),
+            },
+        );
+        assert!(
+            app.state()
+                .channel_settings
+                .as_ref()
+                .unwrap()
+                .overview
+                .as_ref()
+                .unwrap()
+                .is_category
+        );
+        run(
+            &mut app,
+            &mut demo,
+            Action::SaveChannelOverview(ChannelOverviewEdit {
+                name: Some("Renamed".into()),
+                ..Default::default()
+            }),
+        );
+        let c1 = app
+            .state()
+            .server(&server)
+            .unwrap()
+            .categories
+            .iter()
+            .find(|c| c.id.as_deref() == Some("C1"))
+            .unwrap()
+            .title
+            .clone();
+        assert_eq!(&*c1, "Renamed");
+        run(&mut app, &mut demo, Action::DeleteChannel);
+        assert!(app.state().channel_settings.is_none());
+        let after = titles(&app);
+        assert!(after.iter().all(|(i, _)| i.as_deref() != Some("C1")));
+        assert_eq!(after[0].1, 5, "its channels went to the loose group");
     }
 
     #[test]

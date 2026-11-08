@@ -136,8 +136,12 @@ export component ManagementDialogs inherits Rectangle {
     callback copy-invite-link();
     in-out property <bool> creating-channel;
     in-out property <string> new-channel-name;
-    in-out property <bool> new-channel-voice;
-    callback server-menu-create-channel(string, bool);
+    // 0 text, 1 voice, 2 category; the category it goes in ("" for none).
+    in-out property <int> new-channel-kind;
+    in property <string> new-channel-category;
+    in property <string> new-channel-category-name;
+    in property <bool> can-create-category;
+    callback server-menu-create-channel(string, int, string);
     in-out property <int> confirm-log-out: -2;
     callback log-out();
     callback log-out-account(int);
@@ -202,23 +206,24 @@ export component ManagementDialogs inherits Rectangle {
     }
     // The official CreateChannel modal: a name, text or voice.
     if root.creating-channel: Dialog {
-        title: "Create channel";
+        title: root.new-channel-category-name != "" ? "Create channel in " + root.new-channel-category-name : "Create channel";
         dismissed => { root.creating-channel = false; }
         TextField {
-            placeholder: "Channel name";
+            placeholder: root.new-channel-kind == 2 ? "Category name" : "Channel name";
             text <=> root.new-channel-name;
             autofocus: true;
             accepted => {
                 if root.new-channel-name != "" {
-                    root.server-menu-create-channel(root.new-channel-name, root.new-channel-voice);
+                    root.server-menu-create-channel(root.new-channel-name, root.new-channel-kind, root.new-channel-category);
                     root.creating-channel = false;
                 }
             }
         }
         HorizontalLayout {
             spacing: Theme.gap-sm;
-            Button { text: "Text"; kind: root.new-channel-voice ? "tonal" : "filled"; clicked => { root.new-channel-voice = false; } }
-            Button { text: "Voice"; kind: root.new-channel-voice ? "filled" : "tonal"; clicked => { root.new-channel-voice = true; } }
+            Button { text: "Text"; kind: root.new-channel-kind == 0 ? "filled" : "tonal"; clicked => { root.new-channel-kind = 0; } }
+            Button { text: "Voice"; kind: root.new-channel-kind == 1 ? "filled" : "tonal"; clicked => { root.new-channel-kind = 1; } }
+            if root.can-create-category && root.new-channel-category == "": Button { text: "Category"; kind: root.new-channel-kind == 2 ? "filled" : "tonal"; clicked => { root.new-channel-kind = 2; } }
         }
         HorizontalLayout {
             alignment: end;
@@ -229,7 +234,7 @@ export component ManagementDialogs inherits Rectangle {
                 kind: "filled";
                 enabled: root.new-channel-name != "";
                 clicked => {
-                    root.server-menu-create-channel(root.new-channel-name, root.new-channel-voice);
+                    root.server-menu-create-channel(root.new-channel-name, root.new-channel-kind, root.new-channel-category);
                     root.creating-channel = false;
                 }
             }

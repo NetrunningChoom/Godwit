@@ -390,15 +390,22 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_server_menu_mark_read() => |sh, ui| sh.server_menu(ui, ServerAdmin::MarkRead));
-    callback!(ui.on_server_menu_create_channel(name, voice) => |sh, ui| {
+    callback!(ui.on_server_menu_create_channel(name, kind, category) => |sh, ui| {
+        use godwit_core::server_settings::NewChannelKind;
         sh.server_menu(
             ui,
             ServerAdmin::CreateChannel {
                 name: name.as_str().into(),
-                voice,
+                kind: match kind {
+                    1 => NewChannelKind::Voice,
+                    2 => NewChannelKind::Category,
+                    _ => NewChannelKind::Text,
+                },
+                category: (!category.is_empty()).then(|| category.as_str().into()),
             },
         )
     });
+    callback!(ui.on_create_channel_in(row) => |sh, ui| sh.create_channel_in(ui, row));
     callback!(ui.on_server_menu_leave() => |sh, ui| sh.server_menu(ui, ServerAdmin::Leave));
     callback!(ui.on_copy_invite_link() => |sh, _| sh.copy_invite_link());
     callback!(ui.on_close_invite_link() => |sh, ui| sh.act(ui, Action::CloseInviteLink));

@@ -119,6 +119,9 @@ impl DiscordAccount {
                 && can(p::CREATE_PUBLIC_THREADS)
                 && can(p::SEND_MESSAGES_IN_THREADS),
             forum: c.forum(),
+            // The channel's settings and delete: Manage Channels on that
+            // channel (threads have their own permissions).
+            manage_channel: c.guild.is_some() && !c.thread() && can(p::MANAGE_CHANNELS),
             // The picker sends the GIF's link, which needs embedding.
             gifs: can(p::SEND_MESSAGES) && (c.guild.is_none() || can(p::EMBED_LINKS)),
             max_upload: upload_limit(
@@ -240,6 +243,8 @@ impl DiscordAccount {
                     ids
                 };
                 let mut out = vec![Category {
+                    id: None,
+                    can_manage: false,
                     title: "".into(),
                     rooms: with_threads(&loose),
                 }];
@@ -251,12 +256,24 @@ impl DiscordAccount {
                         .filter(visible)
                         .collect();
                     inside.sort_by(order);
+                    // Manage Channels on the category itself (its overwrites
+                    // count), as the official client's category menu.
+                    let can_manage = self.store.can(&cat.id, p::MANAGE_CHANNELS);
+                    let seen = can_manage && self.store.can(&cat.id, p::VIEW_CHANNEL);
+                    let rooms = with_threads(&inside);
+                    // An empty category stays for the people who run it, so
+                    // channels can be made in it and it can be deleted.
+                    if rooms.is_empty() && !seen {
+                        continue;
+                    }
                     out.push(Category {
+                        id: Some(cat.id.as_str().into()),
+                        can_manage,
                         title: cat.name.as_str().into(),
-                        rooms: with_threads(&inside),
+                        rooms,
                     });
                 }
-                out.retain(|c| !c.rooms.is_empty());
+                out.retain(|c| c.id.is_some() || !c.rooms.is_empty());
                 let perms = self.store.guild_permissions(&g.id);
                 let has = |bit| perms & bit == bit;
                 CoreServer {
@@ -269,6 +286,10 @@ impl DiscordAccount {
                     rights: ServerRights {
                         invite: has(p::CREATE_INSTANT_INVITE),
                         create_channels: has(p::MANAGE_CHANNELS),
+                        // Create Guild Channel (type 4) and Modify Guild
+                        // Channel Positions both need Manage Channels.
+                        manage_categories: has(p::MANAGE_CHANNELS),
+                        reorder_channels: has(p::MANAGE_CHANNELS),
                         settings: has(p::MANAGE_GUILD) || has(p::MANAGE_ROLES) || has(p::BAN_MEMBERS),
                         owner: g.owner == self.me(),
                         notify_levels: true,

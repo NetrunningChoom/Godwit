@@ -41,9 +41,10 @@ impl StoatAccount {
             ServerAdmin::CreateInvite => Some((p::INVITE_OTHERS, "Invite Others")),
             ServerAdmin::CreateChannel { .. } => Some((p::MANAGE_CHANNEL, "Manage Channels")),
             // The card never offers these here (no capability is set).
-            ServerAdmin::SetMemberRole { .. } | ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => {
-                None
-            }
+            ServerAdmin::SetMemberRole { .. }
+            | ServerAdmin::Timeout { .. }
+            | ServerAdmin::SetServerNickname { .. }
+            | ServerAdmin::MoveChannel { .. } => None,
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -56,7 +57,10 @@ impl StoatAccount {
             return fail(server, &format!("You need the {name} permission for this."));
         }
         let cmd = match op {
-            ServerAdmin::SetMemberRole { .. } | ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => {
+            ServerAdmin::SetMemberRole { .. }
+            | ServerAdmin::Timeout { .. }
+            | ServerAdmin::SetServerNickname { .. }
+            | ServerAdmin::MoveChannel { .. } => {
                 return fail(server, "This isn't available here yet.");
             }
             ServerAdmin::LoadInvites => Cmd::Server(ServerCmd::FetchServerInvites { server: raw }),
@@ -299,7 +303,15 @@ impl StoatAccount {
                     silent: false,
                 })
             }
-            ServerAdmin::CreateChannel { name, voice } => {
+            ServerAdmin::CreateChannel { name, kind, .. } => {
+                // No categories or moving here yet (their capabilities are off).
+                let voice = match kind {
+                    godwit_core::server_settings::NewChannelKind::Text => false,
+                    godwit_core::server_settings::NewChannelKind::Voice => true,
+                    godwit_core::server_settings::NewChannelKind::Category => {
+                        return fail(server, "Categories can't be created here yet.");
+                    }
+                };
                 // DataCreateServerChannel: a name of 1 to 32 characters.
                 let name = name.trim();
                 if name.is_empty() || name.chars().count() > 32 {

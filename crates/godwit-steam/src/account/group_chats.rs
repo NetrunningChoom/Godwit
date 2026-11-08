@@ -106,6 +106,8 @@ impl SteamAccount {
                 icon_url: g.avatar_url.clone().map(Into::into),
                 banner_url: None,
                 categories: vec![Category {
+                    id: None,
+                    can_manage: false,
                     title: "".into(),
                     rooms: g
                         .rooms

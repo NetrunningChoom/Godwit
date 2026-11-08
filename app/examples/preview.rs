@@ -343,15 +343,30 @@ fn server_admin_scene(name: &'static str, page: i32) -> Scene<'static> {
     )
 }
 
-/// A server channel's settings, filled the way the app does it: the demo
-/// account answers the core, and the real editor shows the result.
+/// A server channel's (or category's) settings, filled the way the app does
+/// it: the demo account answers the core, and the real editor shows the result.
 fn channel_settings_scene() -> Scene<'static> {
+    settings_scene("channel-settings", |_| {
+        Action::OpenChannelSettings(RoomId::new(account(), "voice"))
+    })
+}
+
+/// A category's settings: just its name, and Delete Category.
+fn category_settings_scene() -> Scene<'static> {
+    settings_scene("category-settings", |app| Action::OpenCategorySettings {
+        server: app.state().servers[0].id.clone(),
+        category: "C1".into(),
+    })
+}
+
+fn settings_scene(name: &'static str, open: fn(&Application) -> Action) -> Scene<'static> {
     Scene::new(
-        "channel-settings",
-        Box::new(|app, ui, _, _| {
+        name,
+        Box::new(move |app, ui, _, _| {
             use godwit_core::account::NetworkAccount;
             let mut demo = godwit::demo::DemoAccount::new(app);
-            for effect in app.dispatch(Action::OpenChannelSettings(RoomId::new(account(), "voice"))) {
+            let action = open(app);
+            for effect in app.dispatch(action) {
                 if let godwit_core::application::Effect::Backend { command, .. } = effect {
                     for event in demo.run(command) {
                         app.apply(event);
@@ -365,6 +380,35 @@ fn channel_settings_scene() -> Scene<'static> {
             ui.set_channel_edit_mature(true);
             editor.edited();
             editor.show(ui, app.state(), &mut images);
+            Screen::Main
+        }),
+    )
+}
+
+/// The Create channel dialog with Category chosen (the server allows it).
+fn create_category_scene() -> Scene<'static> {
+    Scene::new(
+        "create-category",
+        Box::new(|_, ui, _, _| {
+            ui.set_server_can_create_category(true);
+            ui.set_new_channel_kind(2);
+            ui.set_new_channel_name(filler(5, 2).into());
+            ui.set_creating_channel(true);
+            Screen::Main
+        }),
+    )
+}
+
+/// The same dialog from a category's "Create channel" entry.
+fn create_in_category_scene() -> Scene<'static> {
+    Scene::new(
+        "create-in-category",
+        Box::new(|_, ui, _, _| {
+            ui.set_server_can_create_category(true);
+            ui.set_new_channel_category("C1".into());
+            ui.set_new_channel_category_name("Announcements".into());
+            ui.set_new_channel_name(filler(6, 2).into());
+            ui.set_creating_channel(true);
             Screen::Main
         }),
     )
@@ -1069,6 +1113,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         },
         channel_settings_scene(),
+        category_settings_scene(),
+        create_category_scene(),
+        create_in_category_scene(),
         Scene::new(
             "replying",
             Box::new(|app, _, _, _| {
@@ -1333,6 +1380,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         icon_url: None,
                         banner_url: None,
                         categories: vec![Category {
+                            id: None,
+                            can_manage: false,
                             title: "A category whose title is much too long for the sidebar".into(),
                             rooms: vec![general.clone(), RoomId::new(account(), "dev")],
                         }],

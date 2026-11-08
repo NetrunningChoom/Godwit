@@ -119,7 +119,9 @@ impl DiscordAccount {
             | ServerAdmin::DeleteRole(_)
             | ServerAdmin::SetDefaultPermissions(_) => Some((p::MANAGE_ROLES, "Manage Roles")),
             ServerAdmin::CreateInvite => Some((p::CREATE_INSTANT_INVITE, "Create Invite")),
-            ServerAdmin::CreateChannel { .. } => Some((p::MANAGE_CHANNELS, "Manage Channels")),
+            ServerAdmin::CreateChannel { .. } | ServerAdmin::MoveChannel { .. } => {
+                Some((p::MANAGE_CHANNELS, "Manage Channels"))
+            }
             ServerAdmin::LoadEmoji
             | ServerAdmin::CreateEmoji { .. }
             | ServerAdmin::RenameEmoji { .. }
@@ -148,166 +150,207 @@ impl DiscordAccount {
                 return out;
             }
         };
-        let admin = match op {
-            ServerAdmin::LoadInvites => Admin::Invites,
-            ServerAdmin::DeleteInvite(code) => Admin::RevokeInvite(code.to_string()),
-            // Refused above until Discord's emoji endpoints are wired.
-            ServerAdmin::LoadEmoji
-            | ServerAdmin::CreateEmoji { .. }
-            | ServerAdmin::RenameEmoji { .. }
-            | ServerAdmin::DeleteEmoji(_) => return Vec::new(),
-            ServerAdmin::LoadBans => Admin::Bans,
-            ServerAdmin::Unban(user) => Admin::Unban(user.raw.to_string()),
-            ServerAdmin::Kick(user) => Admin::Kick {
-                user: user.raw.to_string(),
-                reason: String::new(),
-            },
-            ServerAdmin::Ban {
-                user,
-                reason,
-                delete_seconds,
-            } => Admin::Ban {
-                user: user.raw.to_string(),
-                reason: reason.to_string(),
-                delete_seconds,
-            },
-            ServerAdmin::SetMemberRole { role, on, .. } => Admin::MemberRole {
-                user: target.unwrap_or_default(),
-                role: role.to_string(),
-                on,
-            },
-            ServerAdmin::Timeout { duration, .. } => Admin::ModifyMember {
-                user: target.unwrap_or_default(),
-                // Null lifts it; otherwise an ISO8601 time (docs.discord.food, Modify Guild Member).
-                body: json!({"communication_disabled_until": duration.map(|d| {
-                    (chrono::Utc::now() + d).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-                })}),
-            },
-            ServerAdmin::SetServerNickname { user, nick } => Admin::ModifyMember {
-                // Our own nickname has its own route.
-                user: if &*user.raw == self.me() {
-                    "@me".into()
-                } else {
-                    user.raw.to_string()
+        let admin =
+            match op {
+                ServerAdmin::LoadInvites => Admin::Invites,
+                ServerAdmin::DeleteInvite(code) => Admin::RevokeInvite(code.to_string()),
+                // Refused above until Discord's emoji endpoints are wired.
+                ServerAdmin::LoadEmoji
+                | ServerAdmin::CreateEmoji { .. }
+                | ServerAdmin::RenameEmoji { .. }
+                | ServerAdmin::DeleteEmoji(_) => return Vec::new(),
+                ServerAdmin::LoadBans => Admin::Bans,
+                ServerAdmin::Unban(user) => Admin::Unban(user.raw.to_string()),
+                ServerAdmin::Kick(user) => Admin::Kick {
+                    user: user.raw.to_string(),
+                    reason: String::new(),
                 },
-                body: json!({"nick": nick.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty())}),
-            },
-            ServerAdmin::LoadRoles => {
-                let roles = self.roles(&guild);
-                self.roles_watch = Some((guild, roles.clone()));
-                return vec![Event::ServerAdmin {
-                    server,
-                    result: Ok(ServerAdminResult::Roles(roles)),
-                }];
-            }
-            ServerAdmin::CreateRole(name) => {
-                let name = name.trim();
-                if name.is_empty() || name.chars().count() > 100 {
-                    return fail(server, "A role name is 1 to 100 characters.");
-                }
-                Admin::CreateRole(name.to_owned())
-            }
-            ServerAdmin::EditRole(edit) => {
-                let mut body = serde_json::Map::new();
-                if let Some(name) = &edit.name {
-                    body.insert("name".into(), json!(name.trim()));
-                }
-                if let Some(colour) = &edit.colour {
-                    let value = colour
-                        .as_deref()
-                        .and_then(|c| u32::from_str_radix(c.trim_start_matches('#'), 16).ok())
-                        .unwrap_or(0);
-                    body.insert("color".into(), json!(value));
-                }
-                if let Some(hoist) = edit.hoist {
-                    body.insert("hoist".into(), json!(hoist));
-                }
-                if let Some((allow, _)) = edit.permissions {
-                    body.insert("permissions".into(), json!(allow.to_string()));
-                }
-                Admin::ModifyRole {
-                    role: edit.id.to_string(),
-                    body: Value::Object(body),
-                }
-            }
-            ServerAdmin::DeleteRole(role) => Admin::DeleteRole(role.to_string()),
-            ServerAdmin::SetDefaultPermissions(allow) => Admin::ModifyRole {
-                role: guild.clone(),
-                body: json!({"permissions": allow.to_string()}),
-            },
-            ServerAdmin::DeleteServer => {
-                if !owner {
-                    return fail(server, "Only the owner can delete this server.");
-                }
-                Admin::Delete
-            }
-            ServerAdmin::Leave => {
-                if owner {
-                    return fail(
+                ServerAdmin::Ban {
+                    user,
+                    reason,
+                    delete_seconds,
+                } => Admin::Ban {
+                    user: user.raw.to_string(),
+                    reason: reason.to_string(),
+                    delete_seconds,
+                },
+                ServerAdmin::SetMemberRole { role, on, .. } => Admin::MemberRole {
+                    user: target.unwrap_or_default(),
+                    role: role.to_string(),
+                    on,
+                },
+                ServerAdmin::Timeout { duration, .. } => Admin::ModifyMember {
+                    user: target.unwrap_or_default(),
+                    // Null lifts it; otherwise an ISO8601 time (docs.discord.food, Modify Guild Member).
+                    body: json!({"communication_disabled_until": duration.map(|d| {
+                        (chrono::Utc::now() + d).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                    })}),
+                },
+                ServerAdmin::SetServerNickname { user, nick } => Admin::ModifyMember {
+                    // Our own nickname has its own route.
+                    user: if &*user.raw == self.me() {
+                        "@me".into()
+                    } else {
+                        user.raw.to_string()
+                    },
+                    body: json!({"nick": nick.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty())}),
+                },
+                ServerAdmin::LoadRoles => {
+                    let roles = self.roles(&guild);
+                    self.roles_watch = Some((guild, roles.clone()));
+                    return vec![Event::ServerAdmin {
                         server,
-                        "The owner can't leave; delete the server or give it away first.",
-                    );
+                        result: Ok(ServerAdminResult::Roles(roles)),
+                    }];
                 }
-                Admin::Leave
-            }
-            ServerAdmin::CreateInvite => {
-                let channels = g.channels.clone();
-                let invitable = |c: &String| {
-                    self.store
+                ServerAdmin::CreateRole(name) => {
+                    let name = name.trim();
+                    if name.is_empty() || name.chars().count() > 100 {
+                        return fail(server, "A role name is 1 to 100 characters.");
+                    }
+                    Admin::CreateRole(name.to_owned())
+                }
+                ServerAdmin::EditRole(edit) => {
+                    let mut body = serde_json::Map::new();
+                    if let Some(name) = &edit.name {
+                        body.insert("name".into(), json!(name.trim()));
+                    }
+                    if let Some(colour) = &edit.colour {
+                        let value = colour
+                            .as_deref()
+                            .and_then(|c| u32::from_str_radix(c.trim_start_matches('#'), 16).ok())
+                            .unwrap_or(0);
+                        body.insert("color".into(), json!(value));
+                    }
+                    if let Some(hoist) = edit.hoist {
+                        body.insert("hoist".into(), json!(hoist));
+                    }
+                    if let Some((allow, _)) = edit.permissions {
+                        body.insert("permissions".into(), json!(allow.to_string()));
+                    }
+                    Admin::ModifyRole {
+                        role: edit.id.to_string(),
+                        body: Value::Object(body),
+                    }
+                }
+                ServerAdmin::DeleteRole(role) => Admin::DeleteRole(role.to_string()),
+                ServerAdmin::SetDefaultPermissions(allow) => Admin::ModifyRole {
+                    role: guild.clone(),
+                    body: json!({"permissions": allow.to_string()}),
+                },
+                ServerAdmin::DeleteServer => {
+                    if !owner {
+                        return fail(server, "Only the owner can delete this server.");
+                    }
+                    Admin::Delete
+                }
+                ServerAdmin::Leave => {
+                    if owner {
+                        return fail(
+                            server,
+                            "The owner can't leave; delete the server or give it away first.",
+                        );
+                    }
+                    Admin::Leave
+                }
+                ServerAdmin::CreateInvite => {
+                    let channels = g.channels.clone();
+                    let invitable = |c: &String| {
+                        self.store
+                            .channels
+                            .get(c)
+                            .is_some_and(|ch| ch.kind == store::GUILD_TEXT)
+                            && self.store.can(c, p::CREATE_INSTANT_INVITE | p::VIEW_CHANNEL)
+                    };
+                    let channel = self
+                        .viewing
+                        .clone()
+                        .filter(|v| channels.contains(v) && invitable(v))
+                        .or_else(|| channels.iter().find(|c| invitable(c)).cloned());
+                    let Some(channel) = channel else {
+                        return fail(server, "There's no channel here you may invite people to.");
+                    };
+                    Admin::CreateInvite { channel }
+                }
+                ServerAdmin::SetNotify(level) => {
+                    let level = level.min(2);
+                    self.store.guild_notify.insert(g.id.clone(), level);
+                    self.net.send(Cmd::Request(Request::GuildNotify {
+                        guild: g.id.clone(),
+                        level,
+                    }));
+                    let mut out = Vec::new();
+                    self.sync_servers(&mut out);
+                    return out;
+                }
+                ServerAdmin::MarkRead => {
+                    let reads: Vec<(String, String)> = g
                         .channels
-                        .get(c)
-                        .is_some_and(|ch| ch.kind == store::GUILD_TEXT)
-                        && self.store.can(c, p::CREATE_INSTANT_INVITE | p::VIEW_CHANNEL)
-                };
-                let channel = self
-                    .viewing
-                    .clone()
-                    .filter(|v| channels.contains(v) && invitable(v))
-                    .or_else(|| channels.iter().find(|c| invitable(c)).cloned());
-                let Some(channel) = channel else {
-                    return fail(server, "There's no channel here you may invite people to.");
-                };
-                Admin::CreateInvite { channel }
-            }
-            ServerAdmin::SetNotify(level) => {
-                let level = level.min(2);
-                self.store.guild_notify.insert(g.id.clone(), level);
-                self.net.send(Cmd::Request(Request::GuildNotify {
-                    guild: g.id.clone(),
-                    level,
-                }));
-                let mut out = Vec::new();
-                self.sync_servers(&mut out);
-                return out;
-            }
-            ServerAdmin::MarkRead => {
-                let reads: Vec<(String, String)> = g
-                    .channels
-                    .iter()
-                    .filter(|c| self.store.unread(c))
-                    .filter_map(|c| Some((c.clone(), self.store.channels.get(c)?.last_message_id.clone()?)))
-                    .collect();
-                for (c, m) in &reads {
-                    self.store.mark_read(c, m);
+                        .iter()
+                        .filter(|c| self.store.unread(c))
+                        .filter_map(|c| Some((c.clone(), self.store.channels.get(c)?.last_message_id.clone()?)))
+                        .collect();
+                    for (c, m) in &reads {
+                        self.store.mark_read(c, m);
+                    }
+                    if !reads.is_empty() {
+                        self.net.send(Cmd::Request(Request::AckBulk(reads)));
+                    }
+                    let mut out = Vec::new();
+                    self.sync_rooms(&mut out);
+                    return out;
                 }
-                if !reads.is_empty() {
-                    self.net.send(Cmd::Request(Request::AckBulk(reads)));
+                ServerAdmin::CreateChannel { name, kind, category } => {
+                    let name = name.trim();
+                    if name.is_empty() || name.chars().count() > 100 {
+                        return fail(server, "A channel name is 1 to 100 characters.");
+                    }
+                    // Create Guild Channel types: 0 text, 2 voice, 4 category.
+                    let kind = match kind {
+                        NewChannelKind::Text => store::GUILD_TEXT,
+                        NewChannelKind::Voice => store::GUILD_VOICE,
+                        NewChannelKind::Category => store::GUILD_CATEGORY,
+                    };
+                    let parent = category.map(|c| c.to_string());
+                    if let Some(parent) = &parent
+                        && self.store.channels.get(parent).is_none_or(|c| {
+                            c.kind != store::GUILD_CATEGORY || c.guild.as_deref() != Some(guild.as_str())
+                        })
+                    {
+                        return fail(server, "That category is no longer available.");
+                    }
+                    if self.demo.is_some() {
+                        let mut out = Vec::new();
+                        self.demo_create(&guild, name, kind, parent.as_deref(), &mut out);
+                        out.push(Event::ServerAdmin {
+                            server,
+                            result: Ok(ServerAdminResult::Done("Done.".into())),
+                        });
+                        return out;
+                    }
+                    Admin::CreateChannel {
+                        name: name.to_owned(),
+                        kind,
+                        parent,
+                    }
                 }
-                let mut out = Vec::new();
-                self.sync_rooms(&mut out);
-                return out;
-            }
-            ServerAdmin::CreateChannel { name, voice } => {
-                let name = name.trim();
-                if name.is_empty() || name.chars().count() > 100 {
-                    return fail(server, "A channel name is 1 to 100 characters.");
+                ServerAdmin::MoveChannel { id, category, up } => {
+                    let moves = self.move_plan(&guild, &id, category, up);
+                    // Already at the end of the list: nothing to send.
+                    if moves.is_empty() || self.demo.is_some() {
+                        let mut out = Vec::new();
+                        if self.demo.is_some() {
+                            self.demo_move(&Value::Array(moves), &mut out);
+                        }
+                        out.push(Event::ServerAdmin {
+                            server,
+                            result: Ok(ServerAdminResult::Done("Done.".into())),
+                        });
+                        return out;
+                    }
+                    Admin::MoveChannels(Value::Array(moves))
                 }
-                Admin::CreateChannel {
-                    name: name.to_owned(),
-                    voice,
-                }
-            }
-        };
+            };
         self.net.send(Cmd::Request(Request::Admin { guild, op: admin }));
         Vec::new()
     }

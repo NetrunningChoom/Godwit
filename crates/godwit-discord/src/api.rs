@@ -824,6 +824,36 @@ impl Api {
         .await
     }
 
+    /// Changes a channel's or category's fields that `body` names (Modify
+    /// Channel, docs.discord.food/resources/channel); the channel object
+    /// back. Discord sends CHANNEL_UPDATE. Shape ported from Yapfast's `edit_channel`.
+    pub async fn modify_channel(&self, channel: &str, body: &Value) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::PATCH, &format!("/channels/{channel}")),
+            body,
+        ))
+        .await
+    }
+
+    /// Deletes a server's channel or category (Delete Channel); Discord
+    /// sends CHANNEL_DELETE and moves a category's channels out of it.
+    pub async fn delete_channel(&self, channel: &str) -> Result<()> {
+        self.json(self.request(Method::DELETE, &format!("/channels/{channel}")))
+            .await
+            .map(drop)
+    }
+
+    /// Moves channels and categories, `[{"id", "position", "parent_id",
+    /// "lock_permissions"}, ...]` (Modify Guild Channel Positions, 204);
+    /// Discord sends CHANNEL_UPDATE for each that changed.
+    pub async fn move_channels(&self, guild: &str, moves: &Value) -> Result<()> {
+        self.empty(with_json(
+            self.request(Method::PATCH, &format!("/guilds/{guild}/channels")),
+            moves,
+        ))
+        .await
+    }
+
     pub async fn modify_guild(&self, guild: &str, body: &Value) -> Result<Value> {
         self.json(with_json(
             self.request(Method::PATCH, &format!("/guilds/{guild}")),

@@ -70,11 +70,13 @@ component RoomRow inherits Rectangle {
             + (Math.mod(secs, 60) < 10 ? "0" : "") + Math.mod(secs, 60)
     }
     callback clicked;
-    // Its menu's choice: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide, 6 channel settings.
+    // Its menu's choice: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide, 6 channel settings, 8 move up, 9 move down.
     callback menu(int);
     callback toggle-hidden();
     // A category heading clicked: fold or unfold it.
     callback toggle-category();
+    // A category's "Create channel here".
+    callback create-here();
     property <length> menu-x;
     property <length> menu-y;
     property <length> entry: room.kind == 2 ? 36px : 44px;
@@ -92,6 +94,13 @@ component RoomRow inherits Rectangle {
     if room.header && !room.toggles-hidden: TouchArea {
         mouse-cursor: pointer;
         clicked => { root.toggle-category(); }
+        pointer-event(e) => {
+            if room.category-menu && e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                root.menu-x = self.mouse-x;
+                root.menu-y = self.mouse-y;
+                room-menu.show();
+            }
+        }
     }
     if room.header: EmojiText {
         x: 20px;
@@ -109,7 +118,15 @@ component RoomRow inherits Rectangle {
     room-menu := PopupWindow {
         x: root.menu-x;
         y: root.menu-y;
-        MenuPanel {
+        // A category's menu: create in it, move it, and (Manage Channels
+        // on it) rename or delete it in its settings.
+        if room.header: MenuPanel {
+            if room.can-create-here: MenuRow { glyph: Icons.tag; label: "Create channel"; clicked => { root.create-here(); } }
+            if room.can-reorder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.menu(8); } }
+            if room.can-reorder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.menu(9); } }
+            if room.can-manage: MenuRow { glyph: Icons.settings; label: "Category settings"; clicked => { root.menu(6); } }
+        }
+        if !room.header: MenuPanel {
             // A server channel pins to Home, beside the DMs (a "general" to keep at hand).
             MenuRow {
                 glyph: Icons.notes;
@@ -127,6 +144,9 @@ component RoomRow inherits Rectangle {
             if room.kind != 2: MenuRow { glyph: Icons.close; label: room.hidden ? "Unhide" : "Hide"; clicked => { root.menu(3); } }
             // The official channel menu's "Open channel settings".
             if room.can-manage: MenuDivider { }
+            if room.can-reorder: MenuDivider { }
+            if room.can-reorder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.menu(8); } }
+            if room.can-reorder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.menu(9); } }
             if room.can-manage: MenuRow { glyph: Icons.settings; label: "Channel settings"; clicked => { root.menu(6); } }
         }
     }
@@ -377,6 +397,7 @@ export component Sidebar inherits Rectangle {
     callback filter-home(string);
     callback toggle-hidden-rooms();
     callback toggle-category(int);
+    callback create-channel-in(int);
     callback log-out();
     callback open-settings();
     in property <bool> server-settings-available;
@@ -560,6 +581,7 @@ export component Sidebar inherits Rectangle {
                     menu(a) => { root.room-menu(i, a); }
                     toggle-hidden => { root.toggle-hidden-rooms(); }
                     toggle-category => { root.toggle-category(i); }
+                    create-here => { root.create-channel-in(i); }
                 }
                 if !root.home && root.directory.length > 0: Text {
                     x: 20px;

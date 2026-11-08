@@ -213,6 +213,8 @@ impl SlackAccount {
                         let mut relevant: Vec<_> = ws.threads.iter().filter(|(_, t)| t.subscribed).collect();
                         relevant.sort_by(|a, b| ts_ms(&b.1.latest).cmp(&ts_ms(&a.1.latest)).then_with(|| a.0.cmp(b.0)));
                         let recent = Category {
+                            id: None,
+                            can_manage: false,
                             title: "Threads".into(),
                             rooms: relevant
                                 .into_iter()
@@ -222,6 +224,8 @@ impl SlackAccount {
                                 .collect(),
                         };
                         let channels = Category {
+                            id: None,
+                            can_manage: false,
                             title: "".into(),
                             rooms: channels
                                 .into_iter()

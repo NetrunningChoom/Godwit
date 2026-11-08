@@ -309,6 +309,29 @@ impl Shell {
     /// 4 muzzle mode on/off for this chat, 5 its notifications (cycles),
     /// 6 its channel settings, 7 "Games in common…".
     pub fn room_menu(&mut self, ui: &AppWindow, row: i32, choice: i32) {
+        // A category heading's menu: 6 its settings, 8 move up, 9 move down.
+        if let Some(category) = usize::try_from(row)
+            .ok()
+            .and_then(|r| self.presenter.category_ids.get(r).cloned().flatten())
+            && let Some(server) = self.app.state().selected_server.clone()
+        {
+            match choice {
+                6 => self.act(ui, Action::OpenCategorySettings { server, category }),
+                8 | 9 => self.act(
+                    ui,
+                    Action::ServerAdmin {
+                        server,
+                        op: godwit_core::server_settings::ServerAdmin::MoveChannel {
+                            id: category,
+                            category: true,
+                            up: choice == 8,
+                        },
+                    },
+                ),
+                _ => {}
+            }
+            return;
+        }
         let Some(room) = usize::try_from(row).ok().and_then(|r| self.room_at(r)) else {
             return;
         };
@@ -345,6 +368,25 @@ impl Shell {
             self.act(ui, Action::OpenChannelSettings(room));
             return;
         }
+        // Move up / down in its server's list.
+        if choice == 8 || choice == 9 {
+            if let Some(godwit_core::room::RoomKind::Channel { server }) =
+                self.app.state().room(&room).map(|r| r.kind.clone())
+            {
+                self.act(
+                    ui,
+                    Action::ServerAdmin {
+                        server,
+                        op: godwit_core::server_settings::ServerAdmin::MoveChannel {
+                            id: room.raw.clone(),
+                            category: false,
+                            up: choice == 8,
+                        },
+                    },
+                );
+            }
+            return;
+        }
         let state = self.app.state();
         let action = match choice {
             0 => Action::PinRoom {
@@ -360,6 +402,28 @@ impl Shell {
         };
         self.act(ui, action);
         self.save_room_prefs();
+    }
+
+    /// A category heading's "Create channel": the dialog opens, aimed at it.
+    pub fn create_channel_in(&mut self, ui: &AppWindow, row: i32) {
+        let Some(category) = usize::try_from(row)
+            .ok()
+            .and_then(|r| self.presenter.category_ids.get(r).cloned().flatten())
+        else {
+            return;
+        };
+        let title = self
+            .app
+            .state()
+            .selected_server
+            .as_ref()
+            .and_then(|s| self.app.state().server(s))
+            .and_then(|s| s.categories.iter().find(|c| c.id.as_ref() == Some(&category)))
+            .map(|c| c.title.to_string())
+            .unwrap_or_default();
+        ui.set_new_channel_category(category.as_ref().into());
+        ui.set_new_channel_category_name(title.into());
+        ui.set_creating_channel(true);
     }
 
     /// A server moved on the rail: up (-1), down (1) or to the top (0) of

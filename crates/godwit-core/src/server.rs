@@ -14,6 +14,14 @@ pub struct Category {
     /// Empty for rooms outside any category (listed first).
     pub title: Arc<str>,
     pub rooms: Vec<RoomId>,
+    /// The network's id for a real category (None for the headingless
+    /// group and for networks that can't manage categories). It lets the
+    /// UI aim a rename, delete, move or "create channel here" at it.
+    #[serde(default)]
+    pub id: Option<Arc<str>>,
+    /// This account may rename and delete the category.
+    #[serde(default)]
+    pub can_manage: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +46,12 @@ pub struct Server {
 pub struct ServerRights {
     pub invite: bool,
     pub create_channels: bool,
+    /// Categories can be created here too (and, per category, `can_manage`).
+    #[serde(default)]
+    pub manage_categories: bool,
+    /// Channels and categories can be moved up and down.
+    #[serde(default)]
+    pub reorder_channels: bool,
     /// Any settings page is open to us.
     pub settings: bool,
     /// The owner can't leave, only delete it.

@@ -7,7 +7,7 @@ use crate::{
     ui::AppWindow,
 };
 use godwit_core::application::{Action, AppState};
-use godwit_core::channel_settings::{ChannelOverview, ChannelOverviewEdit};
+use godwit_core::channel_settings::{ChannelOverview, ChannelOverviewEdit, SLOWMODE_CHOICES};
 use godwit_core::ids::RoomId;
 use godwit_core::own_profile::ProfileImage;
 
@@ -33,6 +33,14 @@ impl ChannelEditor {
         ui.set_channel_edit_name(overview.name.as_ref().into());
         ui.set_channel_edit_description(overview.description.as_ref().into());
         ui.set_channel_edit_mature(overview.mature);
+        ui.set_channel_edit_slowmode_index(slowmode_index(overview.slowmode));
+        // Set with each load (not each refresh), so an open menu isn't rebuilt under the pointer.
+        ui.set_channel_edit_slowmode_choices(slint::ModelRc::new(slint::VecModel::from(
+            SLOWMODE_CHOICES
+                .iter()
+                .map(|(label, _)| slint::SharedString::from(*label))
+                .collect::<Vec<_>>(),
+        )));
         self.original = Some(overview.clone());
         self.icon = ProfileImage::Keep;
         self.dirty = false;
@@ -71,11 +79,17 @@ impl ChannelEditor {
         let name = ui.get_channel_edit_name();
         let description = ui.get_channel_edit_description();
         let mature = ui.get_channel_edit_mature();
+        // A value off the list (another client set it) stays unless a choice is made.
+        let slowmode = usize::try_from(ui.get_channel_edit_slowmode_index())
+            .ok()
+            .and_then(|i| SLOWMODE_CHOICES.get(i))
+            .map(|(_, seconds)| *seconds);
         let edit = ChannelOverviewEdit {
             name: (name.trim() != o.name.trim()).then(|| name.trim().into()),
             description: (description.trim() != o.description.trim()).then(|| description.trim().into()),
             icon: self.icon.clone(),
             mature: (mature != o.mature).then_some(mature),
+            slowmode: slowmode.filter(|s| o.slowmode.is_some_and(|old| old != *s)),
         };
         self.saving = true;
         self.error = None;
@@ -138,6 +152,17 @@ impl ChannelEditor {
                 })
                 .into(),
         );
+        let overview = s.overview.as_ref();
+        ui.set_channel_edit_has_icons(overview.is_some_and(|o| o.icons));
+        ui.set_channel_edit_is_category(overview.is_some_and(|o| o.is_category));
+        ui.set_channel_edit_has_slowmode(overview.is_some_and(|o| o.slowmode.is_some()));
+        ui.set_channel_edit_description_hint(
+            overview
+                .filter(|o| o.description_max > 0)
+                .map(|o| format!("Up to {} characters.", o.description_max))
+                .unwrap_or_default()
+                .into(),
+        );
         ui.set_channel_edit_icon_label(
             match self.icon {
                 ProfileImage::Keep => "",
@@ -163,4 +188,12 @@ impl ChannelEditor {
             ui.set_channel_edit_icon(image);
         }
     }
+}
+
+/// The slowmode choice for `seconds` (-1 when it isn't one of the listed ones).
+fn slowmode_index(seconds: Option<u32>) -> i32 {
+    seconds
+        .and_then(|s| SLOWMODE_CHOICES.iter().position(|(_, v)| *v == s))
+        .and_then(|i| i32::try_from(i).ok())
+        .unwrap_or(-1)
 }

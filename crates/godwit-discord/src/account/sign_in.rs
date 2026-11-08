@@ -185,6 +185,19 @@ impl DiscordAccount {
                     result: Ok(ServerAdminResult::Done("Done.".into())),
                 });
             }
+            // Channel settings, creating and moving: answered as Discord's gateway would.
+            Command::LoadChannelOverview { .. }
+            | Command::SaveChannelOverview { .. }
+            | Command::DeleteChannel { .. } => return Some(self.channel_command(command.clone())),
+            Command::ServerAdmin { server, op }
+                if matches!(
+                    op,
+                    godwit_core::server_settings::ServerAdmin::CreateChannel { .. }
+                        | godwit_core::server_settings::ServerAdmin::MoveChannel { .. }
+                ) =>
+            {
+                return Some(self.server_admin(server.clone(), op.clone()));
+            }
             Command::LoadInvite { code } => {
                 // Every demo invite leads to the demo's server.
                 let account = self.account.clone()?;
