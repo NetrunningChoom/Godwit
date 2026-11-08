@@ -38,6 +38,81 @@ pub struct Server {
     /// What the server's menu may offer us here.
     #[serde(default)]
     pub rights: ServerRights,
+    /// The folder the network's own list puts it in (Discord's server
+    /// folders); None for a plain server.
+    #[serde(default)]
+    pub folder: Option<Arc<ServerFolder>>,
+}
+
+/// A folder of servers on the rail. Servers name it by sharing its `id`;
+/// opening and closing it is local to the app.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerFolder {
+    /// Stable within the account.
+    pub id: Arc<str>,
+    /// Its own name, if the user gave one (else the app joins the servers').
+    pub name: Option<Arc<str>>,
+    /// Its colour as 0xRRGGBB.
+    pub colour: Option<u32>,
+}
+
+/// A rail entry: a server by itself, or a folder with its servers.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RailGroup<T> {
+    Single(T),
+    Folder { folder: Arc<ServerFolder>, members: Vec<T> },
+}
+
+/// Groups servers (in the order given) into rail entries. A folder sits where
+/// its first server is and gathers its other servers there; a folder with a
+/// single server is just that server (as the official client's lone guild).
+pub fn group_by_folder<T>(items: Vec<T>, folder_of: impl Fn(&T) -> Option<Arc<ServerFolder>>) -> Vec<RailGroup<T>> {
+    // (its folder, its servers); a plain server is a group of one with none.
+    let mut groups: Vec<(Option<Arc<ServerFolder>>, Vec<T>)> = Vec::new();
+    for item in items {
+        let folder = folder_of(&item);
+        let existing = folder.as_ref().and_then(|f| {
+            groups
+                .iter()
+                .position(|(g, _)| g.as_ref().is_some_and(|g| g.id == f.id))
+        });
+        match existing {
+            Some(i) => groups[i].1.push(item),
+            None => groups.push((folder, vec![item])),
+        }
+    }
+    groups
+        .into_iter()
+        .flat_map(|(folder, mut members)| match folder {
+            Some(folder) if members.len() > 1 => vec![RailGroup::Folder { folder, members }],
+            _ => members.drain(..).map(RailGroup::Single).collect(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::*;
+
+    fn f(id: &str) -> Option<Arc<ServerFolder>> {
+        Some(Arc::new(ServerFolder {
+            id: id.into(),
+            name: None,
+            colour: Some(0xff0000),
+        }))
+    }
+
+    #[test]
+    fn folders_gather_at_their_first_server_and_lone_ones_unwrap() {
+        let items = vec![("a", f("x")), ("b", None), ("c", f("x")), ("d", f("y"))];
+        let groups = group_by_folder(items, |i| i.1.clone());
+        assert_eq!(groups.len(), 3);
+        assert!(
+            matches!(&groups[0], RailGroup::Folder { members, .. } if members.iter().map(|m| m.0).collect::<Vec<_>>() == ["a", "c"])
+        );
+        assert!(matches!(&groups[1], RailGroup::Single(("b", _))));
+        assert!(matches!(&groups[2], RailGroup::Single(("d", _))));
+    }
 }
 
 /// Our standing in a server, for its menu (the official ServerContextMenu

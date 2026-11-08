@@ -157,6 +157,7 @@ impl StoatAccount {
                     .filter(|cat| !cat.rooms.is_empty())
                     .collect(),
                 muted: self.store.notification_prefs.mute(true, &s.id, now_ms).is_some(),
+                folder: None,
                 rights: {
                     use crate::permissions as p;
                     let can = |bit| self.store.can_in_server(&s.id, bit);

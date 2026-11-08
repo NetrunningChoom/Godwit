@@ -11,6 +11,13 @@ export struct NetPresence {
     colour: color,
 }
 
+// One of the (up to four) small server pictures on a closed folder's tile.
+export struct FolderIcon {
+    icon: image,
+    has-icon: bool,
+    initials: string,
+}
+
 // A row of the rail: an account (its avatar heads its section, as the
 // multi-account layout has it) or one of its servers.
 export struct ServerItem {
@@ -35,6 +42,14 @@ export struct ServerItem {
     pending: bool,
     // Its network signed it out: a click signs in again.
     sign-in: bool,
+    // A folder's own tile (a click opens or closes it).
+    folder: bool,
+    folder-open: bool,
+    // A server inside an open folder: drawn on the folder's colour.
+    in-folder: bool,
+    folder-colour: color,
+    // What a closed folder's tile shows: its first servers' pictures.
+    folder-icons: [FolderIcon],
 }
 
 export struct CallVideoItem {

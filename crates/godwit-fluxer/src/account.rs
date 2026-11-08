@@ -290,6 +290,7 @@ impl FluxerAccount {
                     banner_url: None,
                     categories,
                     muted: false,
+                    folder: None,
                     rights: ServerRights::default(),
                 }
             })

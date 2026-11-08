@@ -117,6 +117,7 @@ impl SteamAccount {
                         .collect(),
                 }],
                 muted: false,
+                folder: None,
                 rights: Default::default(),
             })
             .collect()

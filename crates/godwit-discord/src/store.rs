@@ -9,6 +9,7 @@
 //! themselves live in the core's timelines.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -267,6 +268,9 @@ pub struct Store {
     pub users: HashMap<String, User>,
     /// In READY's order (the folder order from settings comes later).
     pub guild_order: Vec<String>,
+    /// Server → its folder, for the folders of two or more servers (a
+    /// folder entry without an id, or of one server, is a plain server).
+    pub folder_of: HashMap<String, Arc<godwit_core::server::ServerFolder>>,
     pub guilds: HashMap<String, Guild>,
     pub channels: HashMap<String, Channel>,
     /// Members as seen: (guild, user).
@@ -455,6 +459,20 @@ impl Store {
         self.status = d["sessions"][0]["status"].as_str().unwrap_or("online").to_owned();
         // Presences usually come in READY_SUPPLEMENTAL; take any READY has.
         self.supplemental(d);
+        // The legacy JSON form (older READYs, the demo's); the proto wins.
+        if d["user_settings"]["guild_folders"].is_array() {
+            let folders = crate::settings::folders_from_json(&d["user_settings"]["guild_folders"]);
+            self.set_folders(&folders);
+            // Listed ones in the list's order; ones it doesn't place first (as
+            // `apply_settings` puts new servers).
+            let place: HashMap<&String, usize> = folders
+                .iter()
+                .flat_map(|f| &f.guilds)
+                .enumerate()
+                .map(|(i, g)| (g, i + 1))
+                .collect();
+            self.guild_order.sort_by_key(|g| place.get(g).copied().unwrap_or(0));
+        }
         if let Some(proto) = d["user_settings_proto"].as_str() {
             self.apply_settings(proto);
         }
@@ -474,6 +492,9 @@ impl Store {
         if let Some(custom) = read.custom {
             self.custom_status = custom;
         }
+        if let Some(folders) = &read.folders {
+            self.set_folders(folders);
+        }
         if let Some(order) = read.guild_order {
             let mut placed: Vec<String> = order.into_iter().filter(|g| self.guilds.contains_key(g)).collect();
             let loose: Vec<String> = self
@@ -484,6 +505,24 @@ impl Store {
                 .collect();
             placed.splice(0..0, loose);
             self.guild_order = placed;
+        }
+    }
+
+    /// Takes the folder list (settings' `guild_folders`).
+    pub fn set_folders(&mut self, folders: &[crate::settings::Folder]) {
+        self.folder_of.clear();
+        for f in folders {
+            let Some(id) = f.id.as_deref().filter(|_| f.guilds.len() > 1) else {
+                continue;
+            };
+            let folder = Arc::new(godwit_core::server::ServerFolder {
+                id: id.into(),
+                name: f.name.as_deref().map(Into::into),
+                colour: f.colour,
+            });
+            for g in &f.guilds {
+                self.folder_of.insert(g.clone(), folder.clone());
+            }
         }
     }
 

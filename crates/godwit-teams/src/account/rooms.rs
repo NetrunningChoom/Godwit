@@ -372,6 +372,7 @@ impl TeamsAccount {
                         .collect(),
                 }],
                 muted: false,
+                folder: None,
                 rights: ServerRights::default(),
             })
             .collect()

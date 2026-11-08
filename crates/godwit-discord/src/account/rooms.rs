@@ -289,6 +289,7 @@ impl DiscordAccount {
                     banner_url: g.banner.as_deref().map(|h| store::guild_banner_url(&g.id, h).into()),
                     categories: out,
                     muted: self.store.muted_guilds.contains(&g.id),
+                    folder: self.store.folder_of.get(&g.id).cloned(),
                     rights: ServerRights {
                         invite: has(p::CREATE_INSTANT_INVITE),
                         create_channels: has(p::MANAGE_CHANNELS),

@@ -387,6 +387,15 @@ impl Shell {
         self.refresh(ui);
     }
 
+    /// A rail folder's tile was clicked: it opens or closes (not saved).
+    pub fn toggle_folder(&mut self, ui: &AppWindow, row: usize) {
+        let Some(view::RailRow::Folder(account, id)) = self.presenter.server_rows.get(row).cloned() else {
+            return;
+        };
+        toggle(&mut self.presenter.open_folders, (account, id));
+        self.refresh(ui);
+    }
+
     /// One of our accounts is `account` and it's signed in.
     pub fn signed_in(&self, account: &AccountId) -> bool {
         self.app.state().accounts.iter().any(|a| a.id == *account)
@@ -420,5 +429,26 @@ mod tests {
         // A network without a form open keeps no signed-out account.
         let kept = keep_signed_out([(Network::Steam, true), (Network::Steam, false)].into_iter(), stoat);
         assert_eq!(kept, [false, true]);
+    }
+}
+
+/// Puts `item` in the set, or takes it out when it's there.
+fn toggle<T: std::hash::Hash + Eq>(set: &mut HashSet<T>, item: T) {
+    if !set.remove(&item) {
+        set.insert(item);
+    }
+}
+
+#[cfg(test)]
+mod folder_toggle_tests {
+    use super::*;
+
+    #[test]
+    fn a_folder_opens_and_closes() {
+        let mut open = HashSet::new();
+        toggle(&mut open, "f");
+        assert!(open.contains("f"));
+        toggle(&mut open, "f");
+        assert!(open.is_empty());
     }
 }

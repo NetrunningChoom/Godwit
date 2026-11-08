@@ -1654,6 +1654,68 @@ mod tests {
     }
 
     #[test]
+    fn a_ready_with_guild_folders_puts_two_servers_in_a_folder_and_leaves_a_lone_guild_plain() {
+        let mut ready = crate::store::test_ready();
+        for id in ["12x", "13x"] {
+            ready["guilds"].as_array_mut().unwrap().push(
+                serde_json::json!({"id": id, "properties": {"name": format!("S{id}"), "owner_id": "200"}, "roles": [], "channels": []}),
+            );
+        }
+        ready["user_settings"] = serde_json::json!({"guild_folders": [
+            {"id": null, "name": null, "color": null, "guild_ids": ["10"]},
+            {"id": 5, "name": "Pals", "color": 0x5865f2, "guild_ids": ["12x", "13x"]},
+        ]});
+        let (mut a, _cmds, _tx) = account();
+        let mut events = Vec::new();
+        a.handle(Ev::Ready(Box::new(ready)), &mut events);
+        let servers = events
+            .iter()
+            .find_map(|e| match e {
+                Event::AccountReady { servers, .. } => Some(servers),
+                _ => None,
+            })
+            .unwrap();
+        let folder = |raw: &str| servers.iter().find(|s| &*s.id.raw == raw).unwrap().folder.clone();
+        assert_eq!(folder("10"), None);
+        let f = folder("12x").unwrap();
+        assert_eq!(
+            (&*f.id, f.name.as_deref(), f.colour),
+            ("5", Some("Pals"), Some(0x5865f2))
+        );
+        assert_eq!(folder("13x"), Some(f));
+    }
+
+    #[test]
+    fn a_settings_update_changing_folders_sends_the_servers_again() {
+        let mut ready = crate::store::test_ready();
+        for id in ["21", "22"] {
+            ready["guilds"].as_array_mut().unwrap().push(
+                serde_json::json!({"id": id, "properties": {"name": id, "owner_id": "200"}, "roles": [], "channels": []}),
+            );
+        }
+        let (mut a, _cmds, _tx) = account();
+        let mut out = Vec::new();
+        a.handle(Ev::Ready(Box::new(ready)), &mut out);
+        let proto = crate::settings::test_folders_proto(&[(9, &[21, 22])]);
+        let mut out = Vec::new();
+        a.handle(
+            Ev::Dispatch(
+                "USER_SETTINGS_PROTO_UPDATE".into(),
+                serde_json::json!({"settings": {"type": 1, "proto": proto}}),
+            ),
+            &mut out,
+        );
+        let folders: Vec<_> = out
+            .iter()
+            .find_map(|e| match e {
+                Event::ServersChanged { servers, .. } => Some(servers.iter().map(|s| s.folder.is_some()).collect()),
+                _ => None,
+            })
+            .expect("the servers are sent again");
+        assert_eq!(folders.iter().filter(|f| **f).count(), 2);
+    }
+
+    #[test]
     fn demo_blocks_and_unblocks_with_the_events_discord_would_send() {
         let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
         let zarg = a.user_id("200").unwrap();

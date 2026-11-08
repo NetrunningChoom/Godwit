@@ -3,12 +3,15 @@
 //! Account rail, room lists, directory and quick-switcher rows.
 
 use super::*;
+use crate::ui::FolderIcon;
 
 /// What a rail row is.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RailRow {
     Account(AccountId),
     Server(ServerId),
+    /// A folder's own tile (account, folder id).
+    Folder(AccountId, Arc<str>),
     /// A kept sign-in still connecting (see `NetworkAccount::connecting`).
     Pending(godwit_core::network::Network),
     /// An account its network signed out: sign in again (its network).
@@ -27,13 +30,72 @@ pub fn ordered_accounts<'a>(state: &'a AppState, order: &[String]) -> Vec<&'a go
     accounts
 }
 
+/// An account's servers in the user's order first; the rest after, as their
+/// network keeps them. Every server is here, folders or not.
+pub fn ordered_servers<'a>(state: &'a AppState, account: &AccountId, order: &[String]) -> Vec<&'a Arc<Server>> {
+    let mut servers: Vec<&Arc<Server>> = state.servers.iter().filter(|s| s.id.account == *account).collect();
+    servers.sort_by_key(|s| {
+        order
+            .iter()
+            .position(|k| *k == crate::settings::server_key(&s.id))
+            .unwrap_or(usize::MAX)
+    });
+    servers
+}
+
+/// The saved order of `account`'s servers after dragging rail row `row` by
+/// `steps` rows (up negative), or to the very top when `top`. Every server
+/// keeps its key, including those hidden in a closed folder. The drop lands
+/// on the server (or, for a folder tile, on its near or far member) at the
+/// target row. Servers in a folder aren't moved: folder editing isn't built.
+pub fn reordered(all: &[&Arc<Server>], rows: &[RailRow], row: usize, steps: i64, top: bool) -> Option<Vec<String>> {
+    let RailRow::Server(id) = rows.get(row)? else {
+        return None;
+    };
+    let moved = all.iter().position(|s| s.id == *id)?;
+    if all[moved].folder.is_some() {
+        return None;
+    }
+    let to = if top {
+        0
+    } else {
+        let last = i64::try_from(rows.len()).ok()? - 1;
+        let target = usize::try_from((i64::try_from(row).ok()? + steps).clamp(0, last)).ok()?;
+        match rows.get(target)? {
+            RailRow::Server(s) if s.account == id.account => all.iter().position(|a| a.id == *s)?,
+            RailRow::Folder(a, f) if *a == id.account => {
+                let mut members = all
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.folder.as_ref().is_some_and(|x| x.id == *f))
+                    .map(|(i, _)| i);
+                if steps > 0 {
+                    members.next_back()?
+                } else {
+                    members.next()?
+                }
+            }
+            _ => return None,
+        }
+    };
+    if to == moved {
+        return None;
+    }
+    let mut keys: Vec<String> = all.iter().map(|s| crate::settings::server_key(&s.id)).collect();
+    let key = keys.remove(moved);
+    keys.insert(to, key);
+    Some(keys)
+}
+
 /// The rail: each account's avatar heading its servers (the multi-account
 /// layout "A"). An account's own unread badge only shows with several
 /// accounts; with one, Home already says it.
+#[allow(clippy::too_many_arguments)] // The rail's inputs, each kept by a different owner.
 pub fn servers(
     state: &AppState,
     images: &mut Images,
     collapsed: &HashSet<AccountId>,
+    open_folders: &HashSet<(AccountId, Arc<str>)>,
     order: &[String],
     account_order: &[String],
     pending: &[godwit_core::network::Network],
@@ -44,14 +106,7 @@ pub fn servers(
     let mut ids = Vec::new();
     for (n, account) in ordered_accounts(state, account_order).into_iter().enumerate() {
         // Its DMs and groups, and its unmuted servers' channels.
-        let mut servers: Vec<&Arc<Server>> = state.servers.iter().filter(|s| s.id.account == account.id).collect();
-        // The user's order first; the rest after, as their network keeps them.
-        servers.sort_by_key(|s| {
-            order
-                .iter()
-                .position(|k| *k == crate::settings::server_key(&s.id))
-                .unwrap_or(usize::MAX)
-        });
+        let servers = ordered_servers(state, &account.id, order);
         let in_server: HashSet<&RoomId> = servers.iter().flat_map(|s| s.rooms()).collect();
         let loud: HashSet<&RoomId> = servers.iter().filter(|s| !s.muted).flat_map(|s| s.rooms()).collect();
         let mine = |r: &&Arc<Room>| r.id.account == account.id && (loud.contains(&r.id) || !in_server.contains(&r.id));
@@ -90,21 +145,21 @@ pub fn servers(
             presence: account.presence.map(presence_colour).unwrap_or_default(),
             pending: false,
             sign_in: false,
+            ..ServerItem::default()
         });
         ids.push(RailRow::Account(account.id.clone()));
         if folded {
             continue;
         }
         let mut first = true;
-        for s in servers {
-            ids.push(RailRow::Server(s.id.clone()));
+        let server_row = |s: &Arc<Server>, in_folder: Option<slint::Color>, first: &mut bool, images: &mut Images| {
             let rooms: Vec<&Arc<Room>> = s.rooms().filter_map(|id| state.room(id)).collect();
             let mentions: u32 = rooms.iter().map(|r| r.mentions).sum();
             let (icon, has_icon) = picture(images, s.icon_url.as_deref());
-            rows.push(ServerItem {
+            ServerItem {
                 account: false,
                 network: SharedString::new(),
-                divider_before: std::mem::take(&mut first),
+                divider_before: std::mem::take(first),
                 name: s.name.as_ref().into(),
                 initials: initials(&s.name).into(),
                 icon,
@@ -116,7 +171,50 @@ pub fn servers(
                 collapsed: false,
                 pending: false,
                 sign_in: false,
-            });
+                folder: false,
+                folder_open: false,
+                in_folder: in_folder.is_some(),
+                folder_colour: in_folder.unwrap_or_default(),
+                folder_icons: ModelRc::default(),
+            }
+        };
+        for group in godwit_core::server::group_by_folder(servers, |s| s.folder.clone()) {
+            match group {
+                godwit_core::server::RailGroup::Single(s) => {
+                    ids.push(RailRow::Server(s.id.clone()));
+                    rows.push(server_row(s, None, &mut first, images));
+                }
+                godwit_core::server::RailGroup::Folder { folder, members } => {
+                    let open = open_folders.contains(&(account.id.clone(), folder.id.clone()));
+                    let colour = folder_colour(folder.colour);
+                    let mut tile = folder_row(&folder, &members, open, colour, &mut first, images);
+                    if !open {
+                        // Closed, it says what its servers would: unread, and
+                        // their mentions summed (as the official folder does).
+                        for m in &members {
+                            let rooms = m.rooms().filter_map(|id| state.room(id));
+                            let (mut unread, mut mentions) = (false, 0u32);
+                            for r in rooms {
+                                unread |= r.unread;
+                                mentions = mentions.saturating_add(r.mentions);
+                            }
+                            tile.unread |= !m.muted && unread;
+                            tile.mentions = tile
+                                .mentions
+                                .saturating_add(i32::try_from(mentions).unwrap_or(i32::MAX));
+                            tile.selected |= state.selected_server.as_ref() == Some(&m.id);
+                        }
+                    }
+                    rows.push(tile);
+                    ids.push(RailRow::Folder(account.id.clone(), folder.id.clone()));
+                    if open {
+                        for m in &members {
+                            ids.push(RailRow::Server(m.id.clone()));
+                            rows.push(server_row(m, Some(colour), &mut false, images));
+                        }
+                    }
+                }
+            }
         }
     }
     // Accounts that haven't connected yet: there, greyed out, instead of
@@ -166,6 +264,57 @@ pub fn servers(
         ids.push(RailRow::SignIn(network));
     }
     (rows, ids)
+}
+
+/// A folder's colour (0xRRGGBB), or the rail's neutral grey when it has none
+/// (Discord's folders default to its blurple; the rail keeps to the theme).
+fn folder_colour(colour: Option<u32>) -> slint::Color {
+    match colour {
+        Some(c) if c != 0 => slint::Color::from_rgb_u8((c >> 16) as u8, (c >> 8) as u8, c as u8),
+        _ => slint::Color::from_rgb_u8(0x80, 0x84, 0x8e),
+    }
+}
+
+/// A folder's tile: its name (else its servers' names joined) as the
+/// tooltip, and up to four of its servers' pictures for a closed one.
+fn folder_row(
+    folder: &godwit_core::server::ServerFolder,
+    members: &[&Arc<Server>],
+    open: bool,
+    colour: slint::Color,
+    first: &mut bool,
+    images: &mut Images,
+) -> ServerItem {
+    let name = folder
+        .name
+        .as_deref()
+        .map(str::to_owned)
+        .unwrap_or_else(|| members.iter().map(|m| m.name.as_ref()).collect::<Vec<_>>().join(", "));
+    let icons: Vec<FolderIcon> = if open {
+        Vec::new()
+    } else {
+        members
+            .iter()
+            .take(4)
+            .map(|m| {
+                let (icon, has_icon) = picture(images, m.icon_url.as_deref());
+                FolderIcon {
+                    icon,
+                    has_icon,
+                    initials: initials(&m.name).into(),
+                }
+            })
+            .collect()
+    };
+    ServerItem {
+        divider_before: std::mem::take(first),
+        name: name.into(),
+        folder: true,
+        folder_open: open,
+        folder_colour: colour,
+        folder_icons: ModelRc::from(Rc::new(VecModel::from(icons))),
+        ..ServerItem::default()
+    }
 }
 
 pub(super) fn room_row(r: &Room, selected: bool, occupants: Option<&Vec<CallMember>>, images: &mut Images) -> RoomItem {
@@ -728,7 +877,16 @@ mod rail_tests {
             name: "Xamika".into(),
             reason: "Your session ended".into(),
         };
-        let (rows, ids) = servers(app.state(), &mut images, &HashSet::new(), &[], &[], &[], &[needed]);
+        let (rows, ids) = servers(
+            app.state(),
+            &mut images,
+            &HashSet::new(),
+            &HashSet::new(),
+            &[],
+            &[],
+            &[],
+            &[needed],
+        );
         let last = rows.last().unwrap();
         assert!(last.account && last.sign_in && !last.pending);
         assert!(last.name.contains("sign-in needed") && last.name.contains("Your session ended"));
@@ -742,6 +900,7 @@ mod rail_tests {
         let (rows, ids) = servers(
             app.state(),
             &mut images,
+            &HashSet::new(),
             &HashSet::new(),
             &[],
             &[],
@@ -759,7 +918,7 @@ mod rail_tests {
         let (mut app, _, _) = crate::demo::world(Contacts::default());
         let mut images = Images::offline();
         let none = HashSet::new();
-        let (rows, ids) = servers(app.state(), &mut images, &none, &[], &[], &[], &[]);
+        let (rows, ids) = servers(app.state(), &mut images, &none, &HashSet::new(), &[], &[], &[], &[]);
         assert!(rows[0].account && ids[0] == RailRow::Account(crate::demo::account()));
         assert!(
             rows[1].divider_before && !rows[1].account,
@@ -788,7 +947,7 @@ mod rail_tests {
             rooms: vec![dm],
             servers: Vec::new(),
         });
-        let (rows, ids) = servers(app.state(), &mut images, &none, &[], &[], &[], &[]);
+        let (rows, ids) = servers(app.state(), &mut images, &none, &HashSet::new(), &[], &[], &[], &[]);
         let at = ids.iter().position(|r| r == &RailRow::Account(second.clone())).unwrap();
         assert!(rows[at].divider_before, "sections are divided");
         assert!(rows[at].unread && rows[at].mentions == 2, "its own badge");
@@ -796,7 +955,7 @@ mod rail_tests {
         app.dispatch(godwit_core::application::Action::SelectServer(None));
         // Collapsed: its servers hide, its own badge shows.
         let folded: HashSet<AccountId> = [crate::demo::account()].into();
-        let (rows, ids) = servers(app.state(), &mut images, &folded, &[], &[], &[], &[]);
+        let (rows, ids) = servers(app.state(), &mut images, &folded, &HashSet::new(), &[], &[], &[], &[]);
         assert!(rows[0].collapsed);
         assert!(
             !ids.iter()
@@ -844,5 +1003,151 @@ mod rail_tests {
                 .flatten()
                 .all(|id| app.state().room(id).is_some_and(|r| r.network() == network))
         );
+    }
+
+    /// Three servers: A and B in folder "f", C plain; B has an unread room
+    /// with 3 mentions.
+    fn folder_world() -> godwit_core::application::Application {
+        use godwit_core::server::{Category, ServerFolder};
+        let (mut app, _, _) = crate::demo::world(Contacts::default());
+        let account = crate::demo::account();
+        let f = Some(Arc::new(ServerFolder {
+            id: "f".into(),
+            name: None,
+            colour: Some(0xff0000),
+        }));
+        let make = |id: &str, folder: Option<Arc<ServerFolder>>, room: Option<&str>| Server {
+            id: ServerId::new(account.clone(), id),
+            name: id.into(),
+            icon_url: None,
+            banner_url: None,
+            categories: room
+                .map(|r| {
+                    vec![Category {
+                        id: None,
+                        can_manage: false,
+                        title: "".into(),
+                        rooms: vec![RoomId::new(account.clone(), r)],
+                    }]
+                })
+                .unwrap_or_default(),
+            muted: false,
+            folder,
+            rights: Default::default(),
+        };
+        app.apply(Event::RoomUpdated(crate::demo::room(
+            "fb-room",
+            "fb",
+            godwit_core::room::RoomKind::Channel {
+                server: ServerId::new(account.clone(), "B"),
+            },
+            true,
+            3,
+        )));
+        app.apply(Event::ServersChanged {
+            account: account.clone(),
+            servers: vec![
+                make("A", f.clone(), None),
+                make("B", f, Some("fb-room")),
+                make("C", None, None),
+            ],
+        });
+        app
+    }
+
+    #[test]
+    fn a_closed_folder_is_one_row_summing_its_servers_and_an_open_one_lists_them() {
+        let mut app = folder_world();
+        let mut images = Images::offline();
+        let account = crate::demo::account();
+        let (rows, ids) = servers(
+            app.state(),
+            &mut images,
+            &HashSet::new(),
+            &HashSet::new(),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(rows.len(), ids.len());
+        let at = ids.iter().position(|r| matches!(r, RailRow::Folder(..))).unwrap();
+        assert!(rows[at].folder && !rows[at].folder_open && rows[at].unread && rows[at].mentions == 3);
+        assert!(
+            !ids.iter()
+                .any(|r| matches!(r, RailRow::Server(s) if &*s.raw == "A" || &*s.raw == "B"))
+        );
+        assert!(ids.iter().any(|r| matches!(r, RailRow::Server(s) if &*s.raw == "C")));
+        // A selected member lights the closed tile.
+        app.dispatch(godwit_core::application::Action::SelectServer(Some(ServerId::new(
+            account.clone(),
+            "A",
+        ))));
+        let (rows, _) = servers(
+            app.state(),
+            &mut images,
+            &HashSet::new(),
+            &HashSet::new(),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(rows[at].selected);
+        // Open: the tile, then its servers on its colour.
+        let open: HashSet<_> = [(account, Arc::<str>::from("f"))].into();
+        let (rows, ids) = servers(app.state(), &mut images, &HashSet::new(), &open, &[], &[], &[], &[]);
+        assert_eq!(rows.len(), ids.len());
+        assert!(rows[at].folder && rows[at].folder_open);
+        assert!(rows[at + 1].in_folder && rows[at + 2].in_folder && !rows[at + 3].in_folder);
+        assert!(matches!(&ids[at + 1], RailRow::Server(s) if &*s.raw == "A"));
+    }
+
+    #[test]
+    fn moving_a_server_keeps_every_key_and_leaves_a_closed_folder_in_place() {
+        let app = folder_world();
+        let mut images = Images::offline();
+        let account = crate::demo::account();
+        let (_, ids) = servers(
+            app.state(),
+            &mut images,
+            &HashSet::new(),
+            &HashSet::new(),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let all = ordered_servers(app.state(), &account, &[]);
+        let c = ids
+            .iter()
+            .position(|r| matches!(r, RailRow::Server(s) if &*s.raw == "C"))
+            .unwrap();
+        // C dragged up one row lands on the folder tile: before its first member.
+        let keys = reordered(&all, &ids, c, -1, false).unwrap();
+        let raw: Vec<&str> = keys.iter().filter_map(|k| k.rsplit('|').next()).collect();
+        assert_eq!(
+            raw,
+            ["C", "A", "B"],
+            "every server keeps its key; the folder stays together"
+        );
+        // A folder's own server isn't moved.
+        let a = all.iter().position(|s| &*s.id.raw == "A").unwrap();
+        assert_eq!(a, 0);
+        let (_, open_ids) = servers(
+            app.state(),
+            &mut images,
+            &HashSet::new(),
+            &[(account, Arc::<str>::from("f"))].into(),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let in_folder = open_ids
+            .iter()
+            .position(|r| matches!(r, RailRow::Server(s) if &*s.raw == "A"))
+            .unwrap();
+        assert!(reordered(&all, &open_ids, in_folder, 1, false).is_none());
     }
 }

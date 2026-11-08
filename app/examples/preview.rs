@@ -178,6 +178,9 @@ struct Scene<'a> {
     size: Option<(u32, u32)>,
     /// Escape pressed after the first draw.
     escape: bool,
+    /// A rail folder of the demo account shown open (the preview has no
+    /// shell to answer a click on its tile).
+    open_folder: Option<&'a str>,
 }
 
 impl<'a> Scene<'a> {
@@ -192,6 +195,7 @@ impl<'a> Scene<'a> {
             click: None,
             size: None,
             escape: false,
+            open_folder: None,
         }
     }
 }
@@ -1369,6 +1373,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         banner_url: None,
                         categories: Vec::new(),
                         muted: false,
+                        folder: None,
                         rights: Default::default(),
                     })
                     .collect();
@@ -1386,6 +1391,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             rooms: vec![general.clone(), RoomId::new(account(), "dev")],
                         }],
                         muted: false,
+                        folder: None,
                         rights: Default::default(),
                     },
                 );
@@ -1403,6 +1409,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Screen::Main
             }),
         ),
+        // Server folders: the first is open (a header tile, its servers on
+        // its colour), the second closed (a grid of its servers' pictures).
+        Scene {
+            open_folder: Some("fa"),
+            ..Scene::new(
+                "rail-folders",
+                Box::new(|app, _, _, _| {
+                    use godwit_core::server::ServerFolder;
+                    let folder = |id: &str, name: Option<&str>, colour: u32| {
+                        Some(std::sync::Arc::new(ServerFolder {
+                            id: id.into(),
+                            name: name.map(Into::into),
+                            colour: Some(colour),
+                        }))
+                    };
+                    let one =
+                        |id: &str, folder: Option<std::sync::Arc<ServerFolder>>, unread_room: Option<&str>| Server {
+                            id: ServerId::new(account(), id),
+                            name: filler(9, 7).into(),
+                            icon_url: None,
+                            banner_url: None,
+                            categories: unread_room
+                                .map(|r| {
+                                    vec![Category {
+                                        id: None,
+                                        can_manage: false,
+                                        title: "".into(),
+                                        rooms: vec![RoomId::new(account(), r)],
+                                    }]
+                                })
+                                .unwrap_or_default(),
+                            muted: false,
+                            folder,
+                            rights: Default::default(),
+                        };
+                    let (a, b) = (folder("fa", Some("Friends"), 0x5865f2), folder("fb", None, 0x3ba55d));
+                    app.apply(Event::ServersChanged {
+                        account: account(),
+                        servers: vec![
+                            one("F1", a.clone(), None),
+                            one("F2", a, None),
+                            one("F3", b.clone(), None),
+                            one("F4", b.clone(), None),
+                            one("F5", b, None),
+                            one("F6", None, None),
+                        ],
+                    });
+                    Screen::Main
+                }),
+            )
+        },
         Scene::new(
             "nudge",
             Box::new(|app, _, _, dm| {
@@ -1769,6 +1826,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.draw_if_needed(|renderer| {
                 renderer.render(&mut buffer, w as usize);
             });
+        }
+        if let Some(id) = scene.open_folder {
+            presenter.open_folders.insert((account(), id.into()));
         }
         presenter.show(&ui, app.state(), screen == Screen::Main, &mut images);
         // The picker, with its scroll wired as the shell does: rows coming

@@ -249,6 +249,7 @@ impl SlackAccount {
                         }
                     },
                     muted: false,
+                    folder: None,
                     rights: ServerRights::default(),
                 })
             })

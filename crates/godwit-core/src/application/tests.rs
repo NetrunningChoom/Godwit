@@ -790,6 +790,7 @@ fn selecting_a_channel_selects_its_server() {
             rooms: vec![cid.clone()],
         }],
         muted: false,
+        folder: None,
         rights: Default::default(),
     };
     app.apply(Event::AccountReady {
@@ -1328,6 +1329,7 @@ fn picking_a_server_opens_its_last_or_first_text_channel_and_home_its_last_dm() 
                     .to_vec(),
             }],
             muted: false,
+            folder: None,
             rights: Default::default(),
         }],
     });
@@ -1444,6 +1446,7 @@ fn a_servers_directory_loads_once_and_rooms_can_be_joined() {
         banner_url: None,
         categories: Vec::new(),
         muted: false,
+        folder: None,
         rights: Default::default(),
     };
     app.apply(Event::ServersChanged {
@@ -2708,6 +2711,7 @@ fn server_settings_open(app: &mut Application) -> (ServerId, u64) {
             banner_url: None,
             categories: Vec::new(),
             muted: false,
+            folder: None,
             rights: Default::default(),
         }],
     });
@@ -3670,6 +3674,7 @@ fn structured_server(app: &mut Application, rights: crate::server::ServerRights)
                 },
             ],
             muted: false,
+            folder: None,
             rights,
         }],
     });

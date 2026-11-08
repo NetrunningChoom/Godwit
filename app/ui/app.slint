@@ -681,6 +681,8 @@ export component AppWindow inherits Window {
     callback open-account(int);
     // A rail account row was clicked: collapse or expand its section.
     callback toggle-account(int);
+    // A rail folder row was clicked: open or close it.
+    callback toggle-folder(int);
     // The rail row of the account the profile popup shows.
     in-out property <int> focus-account: -1;
     callback select-room(int);
@@ -896,6 +898,7 @@ export component AppWindow inherits Window {
                 // The account's profile, for that account (the popup and
                 // presence act on it): opened, or closed when open on it.
                 toggle-account(i) => { root.toggle-account(i); }
+                toggle-folder(i) => { root.toggle-folder(i); }
                 move-server(i, d) => { root.move-server(i, d); }
                 move-server-by(i, d) => { root.move-server-by(i, d); }
                 move-account-by(i, d) => { root.move-account-by(i, d); }

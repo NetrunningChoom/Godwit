@@ -84,6 +84,11 @@ const GUILD_FOLDERS: u64 = 14;
 const FOLDERS: u64 = 1;
 const GUILD_POSITIONS: u64 = 2;
 const FOLDER_GUILDS: u64 = 1;
+/// `GuildFolder.id` (Int64Value), `.name` (StringValue), `.color` (UInt64Value)
+/// (docs.discord.food, User Settings, guild folder structure).
+const FOLDER_ID: u64 = 2;
+const FOLDER_NAME: u64 = 3;
+const FOLDER_COLOUR: u64 = 4;
 
 enum Field<'a> {
     Varint(u64),
@@ -151,6 +156,14 @@ fn wrapped_text(wrapper: &[u8]) -> Option<String> {
     })
 }
 
+/// A wrapper's (`Int64Value`, `UInt64Value`) number.
+fn wrapped_varint(wrapper: &[u8]) -> Option<u64> {
+    fields(wrapper).find_map(|(n, v)| match v {
+        Field::Varint(i) if n == 1 => Some(i),
+        _ => None,
+    })
+}
+
 /// A repeated `fixed64` field's values: packed, or one by one.
 fn fixed64s(value: Field<'_>) -> Vec<u64> {
     match value {
@@ -165,6 +178,44 @@ fn fixed64s(value: Field<'_>) -> Vec<u64> {
     }
 }
 
+/// One entry of `guild_folders`: a folder, or (without an `id`) a server on
+/// its own, which Discord keeps in the same list.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Folder {
+    pub id: Option<String>,
+    pub name: Option<String>,
+    /// 0xRRGGBB.
+    pub colour: Option<u32>,
+    pub guilds: Vec<String>,
+}
+
+/// The legacy JSON form of the list (READY's `user_settings.guild_folders`:
+/// `id` null for a lone guild, `color` an integer, `guild_ids` strings).
+pub fn folders_from_json(list: &Value) -> Vec<Folder> {
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .map(|f| Folder {
+            id: f["id"].as_u64().map(|i| i.to_string()),
+            name: f["name"].as_str().filter(|n| !n.is_empty()).map(str::to_owned),
+            colour: f["color"]
+                .as_u64()
+                .and_then(|c| u32::try_from(c & 0xff_ffff).ok())
+                .filter(|c| *c != 0),
+            guilds: f["guild_ids"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|g| {
+                    g.as_str()
+                        .map(str::to_owned)
+                        .or_else(|| g.as_u64().map(|n| n.to_string()))
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 /// What the settings say; None where they don't (a partial update keeps
 /// the rest as it was).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -175,6 +226,8 @@ pub struct Read {
     pub custom: Option<Option<String>>,
     /// The server list's order, folders flattened.
     pub guild_order: Option<Vec<String>>,
+    /// The server list's folders, in order (a lone server is one without an id).
+    pub folders: Option<Vec<Folder>>,
     /// Whether the presence shares activities (games); None when unsaid.
     pub show_game: Option<bool>,
 }
@@ -210,14 +263,29 @@ pub fn read(encoded: &str) -> Read {
     if let Some(folders) = message(&data, GUILD_FOLDERS) {
         let mut order = Vec::new();
         let mut positions = Vec::new();
+        let mut listed = Vec::new();
         for (number, value) in fields(folders) {
             match (number, value) {
                 (FOLDERS, Field::Bytes(entry)) => {
+                    let mut folder = Folder::default();
                     for (n, v) in fields(entry) {
-                        if n == FOLDER_GUILDS {
-                            order.extend(fixed64s(v).into_iter().map(|id| id.to_string()));
+                        match (n, v) {
+                            (FOLDER_GUILDS, v) => {
+                                let ids: Vec<String> = fixed64s(v).into_iter().map(|id| id.to_string()).collect();
+                                order.extend(ids.iter().cloned());
+                                folder.guilds.extend(ids);
+                            }
+                            (FOLDER_ID, Field::Bytes(w)) => folder.id = wrapped_varint(w).map(|i| i.to_string()),
+                            (FOLDER_NAME, Field::Bytes(w)) => folder.name = wrapped_text(w).filter(|t| !t.is_empty()),
+                            (FOLDER_COLOUR, Field::Bytes(w)) => {
+                                folder.colour = wrapped_varint(w)
+                                    .and_then(|c| u32::try_from(c & 0xff_ffff).ok())
+                                    .filter(|c| *c != 0);
+                            }
+                            _ => {}
                         }
                     }
+                    listed.push(folder);
                 }
                 (GUILD_POSITIONS, value) => positions.extend(fixed64s(value)),
                 _ => {}
@@ -227,6 +295,7 @@ pub fn read(encoded: &str) -> Read {
             order = positions.into_iter().map(|id| id.to_string()).collect();
         }
         out.guild_order = Some(order);
+        out.folders = Some(listed);
     }
     out
 }
@@ -240,6 +309,25 @@ pub fn presence(status: &str, custom: Option<&str>) -> Value {
         .into_iter()
         .collect();
     json!({"status": status, "since": 0, "activities": activities, "afk": false})
+}
+
+/// Test helper: base64 settings holding folders of (id, servers).
+#[cfg(test)]
+pub(crate) fn test_folders_proto(folders: &[(u64, &[u64])]) -> String {
+    let mut list = Vec::new();
+    for (id, guilds) in folders {
+        let mut entry = Vec::new();
+        let packed: Vec<u8> = guilds.iter().flat_map(|g| g.to_le_bytes()).collect();
+        put_bytes(&mut entry, FOLDER_GUILDS, &packed);
+        let mut wrapper = Vec::new();
+        put_varint(&mut wrapper, 1 << 3);
+        put_varint(&mut wrapper, *id);
+        put_bytes(&mut entry, FOLDER_ID, &wrapper);
+        put_bytes(&mut list, FOLDERS, &entry);
+    }
+    let mut settings = Vec::new();
+    put_bytes(&mut settings, GUILD_FOLDERS, &list);
+    base64::engine::general_purpose::STANDARD.encode(settings)
 }
 
 #[cfg(test)]
@@ -287,6 +375,76 @@ mod tests {
             Some(vec!["7".into(), "5".into(), "9".into()])
         );
         assert_eq!(read("not base64!"), Read::default());
+        // Folder details: id, name and colour wrappers; the lone guild has none.
+        let mut named = Vec::new();
+        let mut ids = Vec::new();
+        ids.extend_from_slice(&7u64.to_le_bytes());
+        ids.extend_from_slice(&5u64.to_le_bytes());
+        put_bytes(&mut named, 1, &ids);
+        put_bytes(&mut named, FOLDER_ID, &[0x08, 42]);
+        put_bytes(&mut named, FOLDER_NAME, &[0x0a, 2, b'h', b'i']);
+        put_bytes(&mut named, FOLDER_COLOUR, &[0x08, 0xff, 0xff, 0xff, 0x07]);
+        let mut lone = Vec::new();
+        put_bytes(&mut lone, 1, &9u64.to_le_bytes());
+        let mut list = Vec::new();
+        put_bytes(&mut list, 1, &named);
+        put_bytes(&mut list, 1, &lone);
+        let mut settings = Vec::new();
+        put_bytes(&mut settings, 14, &list);
+        let read = read(&base64::engine::general_purpose::STANDARD.encode(settings));
+        assert_eq!(
+            read.folders,
+            Some(vec![
+                Folder {
+                    id: Some("42".into()),
+                    name: Some("hi".into()),
+                    colour: Some(0xff_ffff),
+                    guilds: vec!["7".into(), "5".into()]
+                },
+                Folder {
+                    guilds: vec!["9".into()],
+                    ..Folder::default()
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn a_folder_with_an_id_but_one_guild_is_read_as_listed() {
+        let mut one = Vec::new();
+        put_bytes(&mut one, 1, &9u64.to_le_bytes());
+        put_bytes(&mut one, FOLDER_ID, &[0x08, 7]);
+        put_bytes(&mut one, FOLDER_COLOUR, &[0x08, 0]);
+        let mut list = Vec::new();
+        put_bytes(&mut list, 1, &one);
+        let mut settings = Vec::new();
+        put_bytes(&mut settings, 14, &list);
+        let folders = read(&base64::engine::general_purpose::STANDARD.encode(settings))
+            .folders
+            .unwrap();
+        assert_eq!(folders[0].id.as_deref(), Some("7"));
+        assert_eq!(folders[0].colour, None, "0 is no colour");
+        // The store keeps it plain: a folder needs two servers.
+        let mut store = crate::store::Store::default();
+        store.set_folders(&folders);
+        assert!(store.folder_of.is_empty());
+    }
+
+    #[test]
+    fn reads_the_json_folder_list() {
+        let folders = folders_from_json(&json!([
+            {"id": 3, "name": "", "color": 255, "guild_ids": ["1", "2"]},
+            {"id": null, "name": null, "color": null, "guild_ids": ["9"]}
+        ]));
+        assert_eq!(folders[0].id.as_deref(), Some("3"));
+        assert_eq!(folders[0].name, None);
+        assert_eq!(folders[0].colour, Some(255));
+        assert_eq!(folders[1].id, None);
+        assert_eq!(folders[1].guilds, vec!["9".to_owned()]);
+    }
+
+    #[test]
+    fn presence_has_activities() {
         let p = presence("idle", Some("brb"));
         assert_eq!(p["activities"][0]["state"], "brb");
         assert_eq!(presence("online", None)["activities"].as_array().map(Vec::len), Some(0));

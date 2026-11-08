@@ -631,6 +631,11 @@ fn connect_callbacks(ui: &AppWindow) {
             sh.toggle_account(ui, row);
         }
     });
+    callback!(ui.on_toggle_folder(row) => |sh, ui| {
+        if let Ok(row) = usize::try_from(row) {
+            sh.toggle_folder(ui, row);
+        }
+    });
     callback!(ui.on_open_account(row) => |sh, ui| {
         if let Ok(row) = usize::try_from(row) {
             sh.open_account(ui, row);

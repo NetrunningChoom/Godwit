@@ -423,6 +423,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             ],
             muted: false,
             // Ours to run: every entry in its menu.
+            folder: None,
             rights: godwit_core::server::ServerRights {
                 invite: true,
                 create_channels: true,
@@ -441,6 +442,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             banner_url: None,
             categories: Vec::new(),
             muted: false,
+            folder: None,
             rights: godwit_core::server::ServerRights {
                 invite: true,
                 report: true,
@@ -454,6 +456,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             banner_url: None,
             categories: Vec::new(),
             muted: false,
+            folder: None,
             rights: godwit_core::server::ServerRights {
                 invite: true,
                 report: true,
@@ -1072,6 +1075,20 @@ pub fn discord_world() -> (
         "user_guild_settings": {"entries": []},
         "sessions": [{"status": "online"}]
     });
+    // Two more servers, so the demo has a folder of two (as Discord's
+    // `user_settings.guild_folders`: a lone server has a null id).
+    let mut ready = ready;
+    let (second, third) = (flake(120), flake(121));
+    for (id, name) in [(&second, bogus.name()), (&third, bogus.name())] {
+        if let Some(list) = ready["guilds"].as_array_mut() {
+            list.push(json!({"id": id, "properties": {"name": name, "owner_id": people[0].0, "icon": null},
+                             "roles": [{"id": id, "name": "@everyone", "permissions": view_send, "position": 0}], "channels": []}));
+        }
+    }
+    ready["user_settings"] = json!({"guild_folders": [
+        {"id": null, "name": null, "color": null, "guild_ids": [guild]},
+        {"id": 4242, "name": null, "color": 0x0058_65f2, "guild_ids": [second, third]},
+    ]});
     let msg = |minute: u64, channel: &str, author: serde_json::Value, content: String| {
         json!({"id": flake(minute), "channel_id": channel, "guild_id": if channel == general || channel == memes { Some(guild.clone()) } else { None },
                "author": author, "content": content, "type": 0,
@@ -2562,6 +2579,23 @@ mod tests {
     use super::*;
     use godwit_core::account::NetworkAccount;
     use godwit_core::application::{Action, Command, Effect};
+
+    #[test]
+    fn the_discord_demo_has_a_folder_of_two_servers() {
+        let (ready, _) = discord_world();
+        let folders = ready["user_settings"]["guild_folders"].as_array().unwrap();
+        let folder = folders.iter().find(|f| !f["id"].is_null()).unwrap();
+        let ids: Vec<&str> = folder["guild_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|g| g.as_str())
+            .collect();
+        assert_eq!(ids.len(), 2);
+        for id in ids {
+            assert!(ready["guilds"].as_array().unwrap().iter().any(|g| g["id"] == id));
+        }
+    }
 
     #[test]
     fn demo_notifications_open_listed_chats_newest_last() {

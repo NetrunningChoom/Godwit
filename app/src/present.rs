@@ -97,6 +97,8 @@ pub struct Presenter {
     pub talk_on_rows: Vec<UserId>,
     /// Accounts whose rail section is collapsed.
     pub collapsed: std::collections::HashSet<AccountId>,
+    /// Rail folders shown open (account, folder id); local, not saved.
+    pub open_folders: std::collections::HashSet<(AccountId, std::sync::Arc<str>)>,
     /// The rail's servers as the user ordered them (settings' keys).
     pub server_order: Vec<String>,
     pub account_order: Vec<String>,
@@ -400,10 +402,18 @@ impl Presenter {
             return;
         }
 
+        // A folder that's gone (left, or emptied) is forgotten.
+        self.open_folders.retain(|(a, f)| {
+            state
+                .servers
+                .iter()
+                .any(|s| s.id.account == *a && s.folder.as_ref().is_some_and(|x| x.id == *f))
+        });
         let (servers, server_rows) = view::servers(
             state,
             images,
             &self.collapsed,
+            &self.open_folders,
             &self.server_order,
             &self.account_order,
             &self.pending,

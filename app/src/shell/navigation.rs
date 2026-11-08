@@ -287,7 +287,10 @@ impl Shell {
     pub fn server_at(&self, row: usize) -> Option<ServerId> {
         match self.presenter.server_rows.get(row)? {
             view::RailRow::Server(id) => Some(id.clone()),
-            view::RailRow::Account(_) | view::RailRow::Pending(_) | view::RailRow::SignIn(_) => None,
+            view::RailRow::Account(_)
+            | view::RailRow::Folder(..)
+            | view::RailRow::Pending(_)
+            | view::RailRow::SignIn(_) => None,
         }
     }
 
@@ -433,63 +436,31 @@ impl Shell {
     /// A server moved on the rail: up (-1), down (1) or to the top (0) of
     /// its account's servers. The whole account's order is kept from then on.
     pub fn move_server(&mut self, ui: &AppWindow, row: i32, delta: i32) {
-        let Some(view::RailRow::Server(id)) = usize::try_from(row)
-            .ok()
-            .and_then(|r| self.presenter.server_rows.get(r))
-            .cloned()
-        else {
-            return;
-        };
-        // The account's servers as shown now.
-        let shown: Vec<String> = self
-            .presenter
-            .server_rows
-            .iter()
-            .filter_map(|r| match r {
-                view::RailRow::Server(s) if s.account == id.account => Some(settings::server_key(s)),
-                _ => None,
-            })
-            .collect();
-        let key = settings::server_key(&id);
-        let Some(at) = shown.iter().position(|k| *k == key) else {
-            return;
-        };
-        let to = match delta {
-            0 => 0,
-            d if d < 0 => at.saturating_sub(1),
-            _ => (at + 1).min(shown.len() - 1),
-        };
-        self.place_server(ui, &id, shown, at, to);
+        self.reorder_server(ui, row, i64::from(delta), delta == 0);
     }
 
     /// A server dragged on the rail by `steps` rows (up negative), within
     /// its account's servers.
     pub fn move_server_by(&mut self, ui: &AppWindow, row: i32, steps: i32) {
-        let Some(view::RailRow::Server(id)) = usize::try_from(row)
-            .ok()
-            .and_then(|r| self.presenter.server_rows.get(r))
-            .cloned()
-        else {
+        self.reorder_server(ui, row, i64::from(steps), false);
+    }
+
+    fn reorder_server(&mut self, ui: &AppWindow, row: i32, steps: i64, top: bool) {
+        let rows = &self.presenter.server_rows;
+        let Some(r) = usize::try_from(row).ok() else { return };
+        let Some(view::RailRow::Server(id)) = rows.get(r) else {
             return;
         };
-        let shown: Vec<String> = self
-            .presenter
-            .server_rows
-            .iter()
-            .filter_map(|r| match r {
-                view::RailRow::Server(s) if s.account == id.account => Some(settings::server_key(s)),
-                _ => None,
-            })
-            .collect();
-        let key = settings::server_key(&id);
-        let Some(at) = shown.iter().position(|k| *k == key) else {
+        let all = view::ordered_servers(self.app.state(), &id.account, &self.presenter.server_order);
+        let prefix = format!("{}|", settings::account_key(&id.account));
+        let Some(keys) = view::reordered(&all, rows, r, steps, top) else {
             return;
         };
-        let last = i64::try_from(shown.len()).unwrap_or(1) - 1;
-        let to = usize::try_from((i64::try_from(at).unwrap_or(0) + i64::from(steps)).clamp(0, last)).unwrap_or(at);
-        if to != at {
-            self.place_server(ui, &id, shown, at, to);
-        }
+        self.settings.server_order.retain(|k| !k.starts_with(&prefix));
+        self.settings.server_order.extend(keys);
+        self.presenter.server_order = self.settings.server_order.clone();
+        self.save_settings();
+        self.refresh(ui);
     }
 
     /// An account dragged on the rail by `steps` rows (up negative): it goes
@@ -504,7 +475,10 @@ impl Shell {
         // The section the drop landed in: the nearest account row at or above it.
         let Some(onto) = rows[..=target].iter().rev().find_map(|r| match r {
             view::RailRow::Account(a) => Some(a.clone()),
-            view::RailRow::Server(_) | view::RailRow::Pending(_) | view::RailRow::SignIn(_) => None,
+            view::RailRow::Server(_)
+            | view::RailRow::Folder(..)
+            | view::RailRow::Pending(_)
+            | view::RailRow::SignIn(_) => None,
         }) else {
             return;
         };
@@ -525,18 +499,6 @@ impl Shell {
         order.insert(to, moved);
         self.settings.account_order = order;
         self.presenter.account_order = self.settings.account_order.clone();
-        self.save_settings();
-        self.refresh(ui);
-    }
-
-    /// Moves a server from `at` to `to` in its account's `shown` order, and keeps it.
-    pub(super) fn place_server(&mut self, ui: &AppWindow, id: &ServerId, mut shown: Vec<String>, at: usize, to: usize) {
-        let moved = shown.remove(at);
-        shown.insert(to, moved);
-        let prefix = format!("{}|", settings::account_key(&id.account));
-        self.settings.server_order.retain(|k| !k.starts_with(&prefix));
-        self.settings.server_order.extend(shown);
-        self.presenter.server_order = self.settings.server_order.clone();
         self.save_settings();
         self.refresh(ui);
     }

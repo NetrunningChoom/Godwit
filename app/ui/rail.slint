@@ -4,7 +4,7 @@
 
 import { Theme, Icons, Icon } from "theme.slint";
 import { NetworkIcon } from "network-icon.slint";
-import { ServerItem } from "types.slint";
+import { ServerItem, FolderIcon } from "types.slint";
 import { Avatar, Badge, MenuPanel, MenuRow, MenuDivider } from "widgets.slint";
 
 // One 56 px entry: a 42 px round icon, the pill on the left edge (32 px
@@ -123,6 +123,8 @@ export component Rail inherits Rectangle {
     callback open-account(int);
     callback select-home();
     callback select-server(int);
+    // A folder's row: open or close it.
+    callback toggle-folder(int);
     callback join-server();
     // A server's right-click menu: move it (-1 up, 1 down, 0 to the top of
     // its account's servers).
@@ -195,7 +197,7 @@ export component Rail inherits Rectangle {
                     entry := RailEntry {
                         // Still connecting: there, but greyed out.
                         opacity: item.pending ? 0.45 : 1;
-                        draggable: !item.pending && !item.sign-in;
+                        draggable: !item.folder && !item.in-folder && !item.pending && !item.sign-in;
                         dropped(dy) => {
                             if item.account {
                                 root.move-account-by(i, round(dy / self.height));
@@ -210,6 +212,8 @@ export component Rail inherits Rectangle {
                         clicked => {
                             if item.account {
                                 root.toggle-account(i);
+                            } else if item.folder {
+                                root.toggle-folder(i);
                             } else {
                                 root.select-server(i);
                             }
@@ -226,11 +230,42 @@ export component Rail inherits Rectangle {
                                 server-menu.show();
                             }
                         }
-                        Avatar {
+                        // As the official rail: a folder's servers sit on its colour.
+                        if item.in-folder: Rectangle {
+                            x: 4px;
+                            width: parent.width - 8px;
+                            border-radius: Theme.radius-lg;
+                            background: item.folder-colour.with-alpha(0.3);
+                        }
+                        if !item.folder: Avatar {
                             size: Theme.server-icon;
                             source: item.icon;
                             has-image: item.has-icon;
                             initials: item.initials;
+                        }
+                        // A folder: closed, a grid of its first servers on its colour;
+                        // open, its colour and an arrow (a click closes it).
+                        if item.folder: Rectangle {
+                            width: Theme.server-icon;
+                            height: Theme.server-icon;
+                            border-radius: Theme.radius-lg;
+                            background: item.folder-colour.with-alpha(0.4);
+                            if item.folder-open: Icon {
+                                text: Icons.expand-less;
+                                font-size: Theme.text-headline;
+                                color: Theme.on-surface;
+                            }
+                            if !item.folder-open: Rectangle {
+                                for f[n] in item.folder-icons: Avatar {
+                                    size: 16px;
+                                    radius: 4px;
+                                    x: 4px + mod(n, 2) * 18px;
+                                    y: 4px + floor(n / 2) * 18px;
+                                    source: f.icon;
+                                    has-image: f.has-icon;
+                                    initials: f.initials;
+                                }
+                            }
                         }
                         // Hovering an account: it folds. An arrow on its avatar says
                         // which way a click goes (down: its servers show again).
@@ -291,9 +326,10 @@ export component Rail inherits Rectangle {
             MenuRow { glyph: Icons.unread; label: "Mark as read"; clicked => { root.server-mark-read(); } }
             if root.menu-settings: MenuRow { glyph: Icons.settings; label: "Server settings"; clicked => { root.server-settings(); } }
             MenuDivider { }
-            MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.move-server(root.menu-row, -1); } }
-            MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.move-server(root.menu-row, 1); } }
-            MenuRow { glyph: Icons.arrow-forward; label: "Move to top"; clicked => { root.move-server(root.menu-row, 0); } }
+            // Folder editing isn't built: a folder's servers stay put.
+            if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.move-server(root.menu-row, -1); } }
+            if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.move-server(root.menu-row, 1); } }
+            if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.arrow-forward; label: "Move to top"; clicked => { root.move-server(root.menu-row, 0); } }
             if root.menu-can-report: MenuDivider { }
             if root.menu-can-report: MenuRow { glyph: Icons.error; label: "Report server"; danger: true; clicked => { root.server-report(); } }
             if root.menu-can-leave && !root.menu-can-report: MenuDivider { }
