@@ -55,7 +55,12 @@ a heavy app per network.
   contact, with each network a tab away.
 - **Efficient:** drawn natively, with a small memory footprint and nothing
   running while idle.
+- **Profiles:** group accounts (say, Work and Private) and switch between
+  them from the rail; only the open profile's accounts are connected, and an
+  account can be in several profiles.
 - **Plain about privacy:** each chat shows whether it's end-to-end encrypted.
+  Pictures and links from messages are never fetched from your own machine
+  or local network, so a message can't reach devices behind your router.
 
 ## Download
 
@@ -122,6 +127,7 @@ features, are not listed as gaps. Official-client references: [Discord forwardin
 - **Media and navigation:** Image previews/viewer, inline video/provider embeds, animated GIF/WebP/PNG, GIF search/picker and local favourites, server join dialog, People/metacontacts.
 - **Calls:** Audio calls, mute/deafen, participant tiles and speaking state; camera and screen-share paths, with shared audio.
 - **Administration and settings:** Permission-aware server menu, mark read, invite people; profile settings; notification alerts, app appearance/voice controls and problem log.
+- **Auto-delete (Godwit's own):** Rules that delete your own messages by where (DMs, groups, whole servers or picked channels), what (text, links, media) and when (older than N days or before a date); moderators can also purge a channel's messages, keeping pinned ones. Each rule reads back only as far as its lookback (3 months to all history) and shows a rough estimate before the first read.
 
 **In progress or still missing:**
 
