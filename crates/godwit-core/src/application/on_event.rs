@@ -194,6 +194,18 @@ impl Application {
     }
 
     pub(super) fn receive_account_lost(&mut self, account: AccountId, reason: Arc<str>) -> Vec<Effect> {
+        self.purge_account(&account);
+        // An empty reason: the user logged out themselves, so it's no error.
+        if !reason.is_empty() {
+            self.state.errors.push(reason);
+        }
+        Vec::new()
+    }
+
+    /// Everything the network shared about `account`, gone from the state
+    /// (shared by a sign-out and by unloading it for another profile).
+    pub(super) fn purge_account(&mut self, account: &AccountId) {
+        let account = account.clone();
         if self
             .state
             .friend_request_pending
@@ -280,11 +292,45 @@ impl Application {
             self.state.selected = None;
             self.state.nudge = None;
         }
-        // An empty reason: the user logged out themselves, so it's no error.
-        if !reason.is_empty() {
-            self.state.errors.push(reason);
-        }
-        Vec::new()
+    }
+
+    /// Takes `account` out of the state as if it had never signed in, for
+    /// switching to a profile without it: the sign-out purge plus what only
+    /// the user's own activity left behind (drafts, picked files, open
+    /// panels). Other accounts' state stays as it is.
+    pub fn unload_account(&mut self, account: &AccountId) {
+        self.purge_account(account);
+        let st = &mut self.state;
+        st.drafts.retain(|r, _| r.account != *account);
+        st.compose.retain(|r, _| r.account != *account);
+        st.files.retain(|r, _| r.account != *account);
+        st.activities.retain(|u, _| u.account != *account);
+        st.voice_since.retain(|r, _| r.account != *account);
+        st.privacy.remove(account);
+        st.sessions.remove(account);
+        st.autodelete.remove(account);
+        st.marked_unread.retain(|r| r.account != *account);
+        st.pinned_rooms.retain(|r| r.account != *account);
+        st.hidden_rooms.retain(|r| r.account != *account);
+        st.member_found = st.member_found.take().filter(|(r, _, _)| r.account != *account);
+        st.pins = st.pins.take().filter(|p| p.room.account != *account);
+        st.forum = st.forum.take().filter(|f| f.room.account != *account);
+        st.search = st.search.take().filter(|s| s.room.account != *account);
+        // The games dialog holds the account's libraries.
+        st.games = st.games.take().filter(|g| g.account != *account);
+        self.recent.retain(|r| r.account != *account);
+        self.last_room
+            .retain(|server, room| room.account != *account && server.as_ref().is_none_or(|s| s.account != *account));
+        self.typing_at.retain(|r, _| r.account != *account);
+        self.local_reads.retain(|r, _| r.account != *account);
+        self.directory_asked.retain(|s| s.account != *account);
+    }
+
+    /// Swaps in another profile's contacts (People merges).
+    pub fn set_contacts(&mut self, contacts: Contacts) {
+        self.state.contacts = contacts;
+        self.state.nudge = None;
+        self.state.link_request = None;
     }
 
     pub(super) fn receive_room_removed(&mut self, id: RoomId) -> Vec<Effect> {

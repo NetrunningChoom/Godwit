@@ -98,6 +98,15 @@ pub struct Settings {
     pub gif_favourites: Vec<FavouriteGif>,
     /// Network-scoped people starred in the local People view.
     pub person_favourites: Vec<String>,
+    /// Profiles: named sets of accounts with their own view (see `profiles`).
+    /// The current profile's view lives in the top-level fields above.
+    pub profiles: Vec<crate::profiles::Profile>,
+    pub default_profile: u32,
+    /// Accounts seen signed in, to start a profile's accounts later.
+    pub known_accounts: Vec<crate::profiles::KnownAccount>,
+    /// The profile in use; not saved (each start opens the default one).
+    #[serde(skip)]
+    pub current_profile: u32,
 }
 
 /// A starred GIF: what sending it posts, and the looping picture to show.
@@ -151,6 +160,10 @@ impl Default for Settings {
             self_deafened: false,
             gif_favourites: Vec::new(),
             person_favourites: Vec::new(),
+            profiles: Vec::new(),
+            default_profile: 0,
+            known_accounts: Vec::new(),
+            current_profile: 0,
         }
     }
 }
@@ -384,11 +397,15 @@ pub fn path() -> Option<PathBuf> {
 
 /// The saved settings; defaults if there's no file yet.
 pub fn load(path: &Path) -> io::Result<Settings> {
-    match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Settings::default()),
-        Err(e) => Err(e),
-    }
+    let mut settings = match std::fs::read(path) {
+        Ok(bytes) => {
+            serde_json::from_slice(&bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Settings::default(),
+        Err(e) => return Err(e),
+    };
+    settings.migrate_profiles();
+    Ok(settings)
 }
 
 /// Written to a temporary file and renamed over the old one.
@@ -396,8 +413,11 @@ pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    // The live view goes into its profile first; saving is rare, so a copy is fine.
+    let mut stored = settings.clone();
+    stored.sync_view();
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(settings).map_err(io::Error::other)?)?;
+    std::fs::write(&tmp, serde_json::to_vec_pretty(&stored).map_err(io::Error::other)?)?;
     std::fs::rename(&tmp, path)
 }
 
@@ -460,11 +480,15 @@ mod tests {
     fn round_trips_and_fills_in_missing_fields() {
         let dir = std::env::temp_dir().join(format!("godwit-settings-test-{}", std::process::id()));
         let path = dir.join("settings.json");
-        assert_eq!(load(&path).unwrap(), Settings::default());
-        let s = Settings {
+        // Loading always leaves one profile (see `migrate_profiles`).
+        let mut fresh = Settings::default();
+        fresh.migrate_profiles();
+        assert_eq!(load(&path).unwrap(), fresh);
+        let mut s = Settings {
             dark: false,
             ..Settings::default()
         };
+        s.migrate_profiles();
         save(&path, &s).unwrap();
         assert_eq!(load(&path).unwrap(), s);
         std::fs::write(&path, br#"{"notifications": false}"#).unwrap();

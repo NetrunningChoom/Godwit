@@ -4519,3 +4519,79 @@ fn last_interactions_take_each_persons_newest_dm_and_calls_as_now() {
     assert_eq!(at("cat"), None);
     assert_eq!(at("dan"), Some(i64::MAX));
 }
+
+#[test]
+fn unloading_an_account_removes_all_of_it_and_only_it() {
+    let mut app = Application::new(Contacts::default());
+    let (s, t) = (Network::Steam, Network::Stoat);
+    let rs = dm(s, "dm", "friend");
+    let rt = dm(t, "dm", "friend");
+    ready(&mut app, s, vec![rs.clone()]);
+    ready(&mut app, t, vec![rt.clone()]);
+    for r in [&rs, &rt] {
+        app.state.drafts.insert(r.id.clone(), "hi".into());
+        app.state
+            .compose
+            .insert(r.id.clone(), Compose::Reply(MessageId("m".into())));
+        app.state.files.insert(r.id.clone(), Vec::new());
+        app.state.voice.insert(r.id.clone(), Vec::new());
+        app.state.marked_unread.push(r.id.clone());
+        app.state.pinned_rooms.push(r.id.clone());
+        app.state.hidden_rooms.push(r.id.clone());
+        app.state.timelines.insert(r.id.clone(), Timeline::default());
+        app.state
+            .activities
+            .insert(UserId::new(r.id.account.clone(), "friend"), "game".into());
+    }
+    app.state.games = Some(GamesInCommon {
+        account: account(s),
+        people: Vec::new(),
+        libraries: HashMap::new(),
+    });
+    app.state.pins = Some(Pins {
+        room: rs.id.clone(),
+        messages: None,
+        failed: false,
+    });
+    app.unload_account(&account(s));
+    let st = app.state();
+    assert_eq!(st.accounts.len(), 1);
+    assert!(st.accounts.iter().all(|a| a.id == account(t)));
+    assert!(st.rooms.iter().all(|r| r.id.account == account(t)));
+    assert!(st.games.is_none() && st.pins.is_none());
+    assert_eq!(st.drafts.len(), 1);
+    assert_eq!(st.compose.len(), 1);
+    assert_eq!(st.files.len(), 1);
+    assert_eq!(st.voice.len(), 1);
+    assert_eq!(st.marked_unread, vec![rt.id.clone()]);
+    assert_eq!(st.pinned_rooms, vec![rt.id.clone()]);
+    assert_eq!(st.hidden_rooms, vec![rt.id.clone()]);
+    assert_eq!(st.timelines.len(), 1);
+    assert_eq!(st.activities.len(), 1);
+    assert!(st.errors.is_empty(), "unloading is no sign-out error");
+}
+
+#[test]
+fn unloading_resets_a_selection_on_that_account_only() {
+    let mut app = Application::new(Contacts::default());
+    let rs = dm(Network::Steam, "dm", "friend");
+    let rt = dm(Network::Stoat, "dm", "friend");
+    ready(&mut app, Network::Steam, vec![rs.clone()]);
+    ready(&mut app, Network::Stoat, vec![rt.clone()]);
+    app.dispatch(Action::SelectRoom(rt.id.clone()));
+    app.unload_account(&account(Network::Steam));
+    assert_eq!(app.state().selected, Some(rt.id.clone()));
+    app.dispatch(Action::SelectRoom(rs.id.clone()));
+    app.state.selected = Some(rs.id);
+    app.unload_account(&account(Network::Steam));
+    assert_eq!(app.state().selected, None);
+}
+
+#[test]
+fn set_contacts_swaps_the_merges() {
+    let mut app = Application::new(Contacts::default());
+    let mut other = Contacts::default();
+    other.ensure(UserId::new(account(Network::Stoat), "01A"), "Ann");
+    app.set_contacts(other.clone());
+    assert_eq!(app.state().contacts, other);
+}

@@ -417,7 +417,18 @@ pub mod store {
     use super::Contacts;
 
     pub fn path() -> Option<PathBuf> {
-        Some(crate::config_dir::get()?.join("contacts.json"))
+        path_for(0)
+    }
+
+    /// A profile's contacts file: profile 0 keeps the original
+    /// `contacts.json`, so a single-profile user's file never moves.
+    pub fn path_for(profile: u32) -> Option<PathBuf> {
+        let name = if profile == 0 {
+            "contacts.json".to_owned()
+        } else {
+            format!("contacts-{profile}.json")
+        };
+        Some(crate::config_dir::get()?.join(name))
     }
 
     /// The saved contacts; empty if there's no file yet.
@@ -448,6 +459,14 @@ pub mod store {
         use super::*;
         use crate::ids::{AccountId, UserId};
         use crate::network::Network;
+
+        #[test]
+        fn the_first_profile_keeps_the_original_file_name() {
+            if let (Some(a), Some(b)) = (path_for(0), path_for(3)) {
+                assert_eq!(a.file_name().and_then(|n| n.to_str()), Some("contacts.json"));
+                assert_eq!(b.file_name().and_then(|n| n.to_str()), Some("contacts-3.json"));
+            }
+        }
 
         #[test]
         fn round_trips_and_missing_file_is_empty() {
