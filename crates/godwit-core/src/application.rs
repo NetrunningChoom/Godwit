@@ -61,6 +61,8 @@ enum Page {
     People,
     Active,
     Notifications,
+    /// Games in common (its data is `games`, dropped on leaving).
+    Games,
     /// Threads sets its own flag (it keeps a server selected).
     Threads,
 }
@@ -498,6 +500,11 @@ impl Application {
         self.state.showing_people = page == Page::People;
         self.state.showing_active = page == Page::Active;
         self.state.showing_notifications = page == Page::Notifications;
+        self.state.showing_games = page == Page::Games;
+        if page != Page::Games {
+            // A list can be thousands of games: it goes with the page.
+            self.state.games = None;
+        }
         self.state.showing_friends = false;
         self.state.selected_server = None;
         self.state
@@ -524,6 +531,7 @@ impl Application {
             && !self.state.showing_people
             && !self.state.showing_active
             && !self.state.showing_notifications
+            && !self.state.showing_games
             && !self.state.showing_threads
         {
             return Vec::new();
@@ -579,6 +587,8 @@ impl Application {
         self.state.showing_people = false;
         self.state.showing_active = false;
         self.state.showing_notifications = false;
+        self.state.showing_games = false;
+        self.state.games = None;
         self.state.showing_threads = false;
         // A channel shows its server; anything else lives in Home.
         self.state.selected_server = match &r.kind {

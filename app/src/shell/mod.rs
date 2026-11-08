@@ -187,6 +187,8 @@ enum NavigationTarget {
     People,
     Active,
     Notifications,
+    /// Games in common, on that account (who was picked isn't kept).
+    Games(AccountId),
     Threads,
 }
 
@@ -555,6 +557,7 @@ impl Shell {
                     | Action::ShowActive
                     | Action::ShowNotifications
                     | Action::ShowThreads
+                    | Action::OpenGamesInCommon { .. }
             )
         {
             let state = self.app.state();
@@ -564,6 +567,8 @@ impl Shell {
                 Some(NavigationTarget::Active)
             } else if state.showing_notifications {
                 Some(NavigationTarget::Notifications)
+            } else if let Some(g) = state.games.as_ref().filter(|_| state.showing_games) {
+                Some(NavigationTarget::Games(g.account.clone()))
             } else if state.showing_people {
                 Some(NavigationTarget::People)
             } else if state.showing_friends {
@@ -690,6 +695,10 @@ impl Shell {
             NavigationTarget::People => Action::ShowPeople,
             NavigationTarget::Active => Action::ShowActive,
             NavigationTarget::Notifications => Action::ShowNotifications,
+            NavigationTarget::Games(account) => Action::OpenGamesInCommon {
+                account,
+                with: Vec::new(),
+            },
             NavigationTarget::Threads => Action::ShowThreads,
             NavigationTarget::Room(_) => return,
         };

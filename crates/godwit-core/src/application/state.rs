@@ -204,6 +204,8 @@ pub struct AppState {
     /// Notifications is open (in place of a room). The list itself is the
     /// app's (it follows the app's alert settings), only the page is here.
     pub showing_notifications: bool,
+    /// Games in common is open (in place of a room), comparing `games`.
+    pub showing_games: bool,
     pub showing_threads: bool,
     /// What people are doing ("Playing …"), from [`Event::Activities`].
     pub activities: HashMap<UserId, Arc<str>>,

@@ -246,10 +246,6 @@ impl Application {
             Action::Report { target, reason, detail } => self.dispatch_report(target, reason, detail),
             Action::OpenGamesInCommon { account, with } => self.dispatch_open_games(account, with),
             Action::PickForGames { user, picked } => self.dispatch_pick_for_games(user, picked),
-            Action::CloseGamesInCommon => {
-                self.state.games = None;
-                Vec::new()
-            }
             Action::SetPinned { message, pinned } => self.dispatch_set_pinned(message, pinned),
             Action::JumpToPresent => self.dispatch_jump_to_present(),
             Action::CancelCompose => {

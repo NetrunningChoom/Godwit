@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
-//! The "Games in common" dialog's contents, from the core's comparison
+//! The "Games in common" page's contents, from the core's comparison
 //! (`godwit_core::games`): who can be picked, notes on libraries that
 //! can't be compared, the Venn diagram's counts and the list of games.
 
@@ -19,8 +19,8 @@ use crate::ui::{GameRowItem, GamesFriendItem};
 pub const CAPSULE: Fit = Fit::Within(184, 69);
 /// Rows decoded beyond the ones on screen, each way.
 const MARGIN: usize = 6;
-/// Rows the list shows at once (420 px of 48 px rows, rounded up).
-const ON_SCREEN: usize = 10;
+/// Rows the page's list shows at once on a tall window (48 px rows).
+const ON_SCREEN: usize = 24;
 
 /// A list row before its picture: a heading, or a game.
 #[derive(Clone, Debug, PartialEq)]
@@ -85,6 +85,24 @@ pub fn candidates(state: &AppState, g: &GamesInCommon) -> Vec<(UserId, String, b
     friends.sort_by_cached_key(|(_, name, _)| name.to_lowercase());
     list.extend(friends);
     list
+}
+
+/// The picker's rows for the search `query` (case-insensitive, anywhere in
+/// the name): whoever is picked stays, on top, so they can be taken out
+/// whatever is typed; the rest keep their order. No query: everyone, as is.
+pub fn filter_picks(picks: Vec<(UserId, String, bool)>, query: &str) -> Vec<(UserId, String, bool)> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return picks;
+    }
+    let (picked, rest): (Vec<_>, Vec<_>) = picks.into_iter().partition(|(_, _, picked)| *picked);
+    picked
+        .into_iter()
+        .chain(
+            rest.into_iter()
+                .filter(|(_, name, _)| name.to_lowercase().contains(&query)),
+        )
+        .collect()
 }
 
 /// Joins names as a sentence does: "You", "You and Ann", "You, Ann and Bob".
@@ -208,6 +226,8 @@ pub struct GamesDialog {
     pub first_row: usize,
     /// Who each picker row is.
     pub friends: Vec<UserId>,
+    /// The picker's search.
+    pub query: String,
     friend_model: Rc<VecModel<GamesFriendItem>>,
     rows: Rc<VecModel<GameRowItem>>,
     /// The last contents and what they were made from (people, libraries
@@ -221,6 +241,7 @@ impl Default for GamesDialog {
             region: 0,
             first_row: 0,
             friends: Vec::new(),
+            query: String::new(),
             friend_model: Rc::new(VecModel::default()),
             rows: Rc::new(VecModel::default()),
             kept: None,
@@ -242,6 +263,7 @@ impl GamesDialog {
         self.region = 0;
         self.first_row = 0;
         self.friends = Vec::new();
+        self.query = String::new();
         self.kept = None;
         if self.rows.row_count() > 0 {
             self.rows.set_vec(Vec::new());
@@ -253,7 +275,7 @@ impl GamesDialog {
 
     /// Brings the models up to date with `g`; returns the rest to show.
     pub fn show(&mut self, state: &AppState, g: &GamesInCommon, images: &mut Images) -> &Contents {
-        let picks = candidates(state, g);
+        let picks = filter_picks(candidates(state, g), &self.query);
         let friends: Vec<GamesFriendItem> = picks
             .iter()
             .map(|(_, name, picked)| GamesFriendItem {
@@ -404,5 +426,25 @@ mod tests {
                 ("Bob".to_owned(), false)
             ]
         );
+    }
+
+    #[test]
+    fn the_search_keeps_the_picked_on_top_and_filters_the_rest() {
+        let (state, g) = setup(3, &[]);
+        let mut picks = candidates(&state, &g);
+        picks.push((UserId::new(g.account.clone(), "f9"), "Annabel".to_owned(), false));
+        let names =
+            |q: &str| -> Vec<String> { filter_picks(picks.clone(), q).into_iter().map(|(_, n, _)| n).collect() };
+        assert_eq!(names(""), ["Ann", "Bob", "Annabel"]);
+        // Bob is picked: he stays, first, though his name doesn't match.
+        let mut bob_picked = picks.clone();
+        bob_picked[1].2 = true;
+        bob_picked[0].2 = false;
+        let found: Vec<String> = filter_picks(bob_picked, " ANN")
+            .into_iter()
+            .map(|(_, n, _)| n)
+            .collect();
+        assert_eq!(found, ["Bob", "Ann", "Annabel"]);
+        assert_eq!(names("zz").len(), picks.iter().filter(|p| p.2).count());
     }
 }

@@ -407,7 +407,9 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_pin(row, pinned) => |sh, ui| sh.pin_row(ui, row, pinned));
     callback!(ui.on_remove_reactions(row, reaction) => |sh, ui| sh.remove_reactions_row(ui, row, reaction));
     callback!(ui.on_remove_all_reactions(row) => |sh, ui| sh.remove_all_reactions_row(ui, row));
-    callback!(ui.on_close_games() => |sh, ui| sh.close_games(ui));
+    callback!(ui.on_show_games() => |sh, ui| sh.open_games(ui));
+    callback!(ui.on_games_pick_account(i) => |sh, ui| sh.games_pick_account(ui, i));
+    callback!(ui.on_games_search(q) => |sh, ui| sh.games_search(ui, &q));
     callback!(ui.on_games_pick_friend(i, picked) => |sh, ui| sh.games_pick_friend(ui, i, picked));
     callback!(ui.on_games_pick_region(region) => |sh, ui| sh.games_pick_region(ui, region));
     callback!(ui.on_games_scrolled(first) => |sh, ui| sh.games_scrolled(ui, first));

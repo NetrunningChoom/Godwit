@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
-//! "Games in common": opening it from a chat, and showing the core's
-//! comparison (`crate::games`).
+//! The Games in common page: opening it from Home or a chat, and showing
+//! the core's comparison (`crate::games`).
 
 use super::*;
 
@@ -70,18 +70,73 @@ impl Shell {
         }
     }
 
-    pub fn close_games(&mut self, ui: &AppWindow) {
-        self.act(ui, Action::CloseGamesInCommon);
+    /// The accounts whose network has game libraries, in sign-in order.
+    fn game_accounts(&self) -> Vec<AccountId> {
+        self.app
+            .state()
+            .accounts
+            .iter()
+            .filter(|a| a.id.network.has_game_libraries())
+            .map(|a| a.id.clone())
+            .collect()
+    }
+
+    /// Home's "Games in common": the first account with game libraries.
+    pub fn open_games(&mut self, ui: &AppWindow) {
+        let Some(account) = self.game_accounts().into_iter().next() else {
+            return;
+        };
+        self.games.clear();
+        self.act(
+            ui,
+            Action::OpenGamesInCommon {
+                account,
+                with: Vec::new(),
+            },
+        );
+    }
+
+    /// The page's account selector (shown with more than one such account).
+    pub fn games_pick_account(&mut self, ui: &AppWindow, index: i32) {
+        let Some(account) = usize::try_from(index)
+            .ok()
+            .and_then(|i| self.game_accounts().into_iter().nth(i))
+        else {
+            return;
+        };
+        if self.app.state().games.as_ref().is_some_and(|g| g.account == account) {
+            return;
+        }
+        self.games.clear();
+        ui.set_games_query(SharedString::new());
+        self.act(
+            ui,
+            Action::OpenGamesInCommon {
+                account,
+                with: Vec::new(),
+            },
+        );
+    }
+
+    /// The picker's search, as typed.
+    pub fn games_search(&mut self, ui: &AppWindow, query: &str) {
+        self.games.query = query.to_owned();
+        self.show_games(ui);
     }
 
     pub(super) fn show_games(&mut self, ui: &AppWindow) {
-        let Some(g) = self.app.state().games.as_ref() else {
+        let state = self.app.state();
+        let Some(g) = state.games.as_ref().filter(|_| state.showing_games) else {
             if ui.get_games_open() {
                 ui.set_games_open(false);
+                ui.set_games_query(SharedString::new());
+                ui.set_games_accounts(ModelRc::default());
                 self.games.clear();
             }
             return;
         };
+        let accounts: Vec<AccountId> = self.game_accounts();
+        let chosen = accounts.iter().position(|a| *a == g.account);
         let c = self.games.show(self.app.state(), g, &mut self.images);
         let notes: Vec<SharedString> = c.notes.iter().map(|n| n.as_str().into()).collect();
         let regions: Vec<i32> = c
@@ -99,7 +154,14 @@ impl Shell {
         ui.set_games_venn(venn);
         ui.set_games_legend(legend);
         ui.set_games_region(region);
+        ui.set_games_account(chosen.and_then(|i| i32::try_from(i).ok()).unwrap_or(0));
         if !ui.get_games_open() {
+            let labels: Vec<SharedString> = accounts
+                .iter()
+                .filter_map(|id| self.app.state().accounts.iter().find(|a| a.id == *id))
+                .map(|a| a.display_name.as_ref().into())
+                .collect();
+            ui.set_games_accounts(ModelRc::new(VecModel::from(labels)));
             ui.set_games_friends(self.games.friend_model());
             ui.set_games_rows(self.games.rows());
             ui.set_games_open(true);

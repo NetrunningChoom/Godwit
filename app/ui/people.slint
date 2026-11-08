@@ -25,7 +25,8 @@ export component People inherits Rectangle {
     callback choose(int, int);
     callback message(int);
     callback favourite(int);
-    in-out property <bool> favourites-only: false;
+    // Only favourites are listed (set by the app).
+    in property <bool> favourites-only: false;
     // Back to their own name (drops our nickname for them).
     callback reset-nickname(int);
     // Search by name and a network filter ("" for all), applied by the app.
@@ -191,6 +192,13 @@ export component People inherits Rectangle {
                                     runs: person.name-runs;
                                     font-weight: 600;
                                     color: Theme.on-surface;
+                                }
+                                // Starred: the same ★ as the Favourites filter.
+                                if r == 0 && person.favourite: Text {
+                                    text: "★";
+                                    vertical-alignment: center;
+                                    font-size: Theme.text-body;
+                                    color: Theme.primary;
                                 }
                                 for id[k] in line.items: Chip {
                                     label: id.network;

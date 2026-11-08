@@ -3470,8 +3470,10 @@ fn games_in_common_loads_each_library_once_and_keeps_us_in() {
         app.state().games.as_ref().map(|g| g.people.clone()),
         Some(vec![me, b, a])
     );
-    app.dispatch(Action::CloseGamesInCommon);
-    assert!(app.state().games.is_none());
+    assert!(app.state().showing_games);
+    // Leaving the page frees the comparison.
+    app.dispatch(Action::ShowFriends);
+    assert!(app.state().games.is_none() && !app.state().showing_games);
 }
 
 #[test]
@@ -3489,4 +3491,27 @@ fn notifications_page_replaces_the_room_until_one_is_opened() {
     app.dispatch(Action::ShowNotifications);
     app.dispatch(Action::ShowFriends);
     assert!(!app.state().showing_notifications && app.state().showing_friends);
+}
+
+#[test]
+fn games_page_replaces_the_room_and_goes_with_its_data() {
+    let (mut app, room) = open_dm(&["m1"]);
+    ready(&mut app, Network::Steam, Vec::new());
+    let steam = account(Network::Steam);
+    app.dispatch(Action::OpenGamesInCommon {
+        account: steam.clone(),
+        with: Vec::new(),
+    });
+    let s = app.state();
+    assert!(s.showing_games && s.games.is_some());
+    assert!(!s.showing_notifications && !s.showing_active && !s.showing_people && !s.showing_friends);
+    app.dispatch(Action::ShowNotifications);
+    assert!(!app.state().showing_games && app.state().games.is_none());
+    app.dispatch(Action::OpenGamesInCommon {
+        account: steam,
+        with: Vec::new(),
+    });
+    app.dispatch(Action::SelectRoom(room.clone()));
+    assert!(!app.state().showing_games && app.state().games.is_none());
+    assert_eq!(app.state().selected.as_ref(), Some(&room));
 }

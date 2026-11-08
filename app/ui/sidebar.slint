@@ -334,7 +334,9 @@ export component Sidebar inherits Rectangle {
     in property <bool> notifications-selected;
     // Alerts not yet seen on Notifications (its badge).
     in property <int> notifications-unseen;
-    property <bool> home-navigation: root.home || root.people-selected || root.friends-selected || root.active-selected || root.notifications-selected;
+    in property <bool> can-show-games;
+    in property <bool> games-selected;
+    property <bool> home-navigation: root.home || root.people-selected || root.friends-selected || root.active-selected || root.notifications-selected || root.games-selected;
     in property <bool> can-show-threads;
     in property <bool> threads-selected;
     callback show-threads();
@@ -364,6 +366,7 @@ export component Sidebar inherits Rectangle {
     callback show-people();
     callback show-active();
     callback show-notifications();
+    callback show-games();
     callback select-room(int);
     callback room-menu(int, int);
     in-out property <string> home-query;
@@ -511,6 +514,13 @@ export component Sidebar inherits Rectangle {
                     badge: root.notifications-unseen;
                     selected: root.notifications-selected;
                     clicked => { root.show-notifications(); }
+                }
+                // Which games friends share, on the networks with game libraries.
+                if root.home-navigation && root.can-show-games: MenuButton {
+                    glyph: Icons.group;
+                    label: "Games in common";
+                    selected: root.games-selected;
+                    clicked => { root.show-games(); }
                 }
                 if root.home-navigation: Text {
                     x: Theme.space-4;

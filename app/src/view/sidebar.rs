@@ -296,6 +296,7 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
         && !state.showing_people
         && !state.showing_active
         && !state.showing_notifications
+        && !state.showing_games
         && !state.showing_threads)
         .then_some(state.selected.as_ref())
         .flatten();

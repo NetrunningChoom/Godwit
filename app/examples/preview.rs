@@ -799,7 +799,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     row(false, "Harbour Lights"),
                     row(false, "Star Forge"),
                 ])));
+                ui.set_games_accounts(ModelRc::new(VecModel::from(vec![
+                    slint::SharedString::from("Ana"),
+                    slint::SharedString::from("Ana (work)"),
+                ])));
+                ui.set_games_query("".into());
                 ui.set_games_open(true);
+                ui.set_showing_games(true);
+                ui.set_can_show_games(true);
                 Screen::Main
             }),
         ),

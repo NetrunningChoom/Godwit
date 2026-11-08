@@ -415,6 +415,7 @@ impl Presenter {
                 && !state.showing_people
                 && !state.showing_active
                 && !state.showing_notifications
+                && !state.showing_games
                 && !state.showing_threads,
         );
 
@@ -732,6 +733,8 @@ impl Presenter {
         ui.set_showing_friends(state.showing_friends);
         ui.set_showing_active(state.showing_active);
         ui.set_showing_notifications(state.showing_notifications);
+        ui.set_showing_games(state.showing_games);
+        ui.set_can_show_games(state.accounts.iter().any(|a| a.id.network.has_game_libraries()));
         ui.set_showing_threads(state.showing_threads);
         ui.set_can_show_threads(
             state
@@ -815,6 +818,7 @@ impl Presenter {
         }
         ui.set_showing_people(state.showing_people);
         if state.showing_people || state.showing_friends {
+            ui.set_people_favourites_only(self.people_favourites_filter);
             let (rows, who, merges) = view::people(state, images, &self.muzzle.person_favourites);
             // The networks people are on, for the filter's chips.
             let mut networks: Vec<slint::SharedString> = Vec::new();

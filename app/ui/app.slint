@@ -43,7 +43,7 @@ import { ImageViewer } from "image-viewer.slint";
 import { FullscreenVideo } from "fullscreen-video.slint";
 import { CallPip } from "call-pip.slint";
 import { PinsDialog } from "pins-dialog.slint";
-import { GamesDialog } from "games-dialog.slint";
+import { GamesPage } from "games.slint";
 import { SearchDialog } from "search-dialog.slint";
 import { ThreadDialog } from "thread-dialog.slint";
 import { ProfilePopup } from "profile-popup.slint";
@@ -375,7 +375,7 @@ export component AppWindow inherits Window {
     in property <[ContactItem]> people;
     in property <[MergeItem]> merges;
     // Friends, People or Active now is open in place of a room.
-    property <bool> page: root.showing-friends || root.showing-people || root.showing-active || root.showing-notifications || root.showing-threads;
+    property <bool> page: root.showing-friends || root.showing-people || root.showing-active || root.showing-notifications || root.showing-games || root.showing-threads;
     in property <[PersonItem]> friends;
     in property <[GroupPersonItem]> group-people;
     in property <int> group-selected-count;
@@ -477,8 +477,18 @@ export component AppWindow inherits Window {
     callback close-pins();
     callback pin-jump(int);
     callback pin-unpin(int);
-    // "Games in common" (see games-dialog.slint).
+    // The Games in common page (see games.slint).
+    // Rust's: the page's models are bound (see `shell::games`).
     in property <bool> games-open;
+    in property <bool> showing-games;
+    // Some signed-in account has game libraries: Home offers the page.
+    in property <bool> can-show-games;
+    callback show-games();
+    in property <[string]> games-accounts;
+    in property <int> games-account;
+    callback games-pick-account(int);
+    in-out property <string> games-query;
+    callback games-search(string);
     in property <[GamesFriendItem]> games-friends;
     in property <[string]> games-notes;
     in property <int> games-venn;
@@ -486,7 +496,6 @@ export component AppWindow inherits Window {
     in property <[int]> games-regions;
     in property <int> games-region;
     in property <[GameRowItem]> games-rows;
-    callback close-games();
     callback games-pick-friend(int, bool);
     callback games-pick-region(int);
     callback games-scrolled(int);
@@ -714,6 +723,8 @@ export component AppWindow inherits Window {
     in-out property <int> tone-index;
     in property <[string]> people-networks;
     in-out property <string> people-query;
+    // Only favourites listed (the filter button's state; Rust's).
+    in property <bool> people-favourites-only;
     callback people-search(string);
     callback people-filter(string);
     callback remove-file(int);
@@ -932,6 +943,9 @@ export component AppWindow inherits Window {
                             notifications-selected: root.showing-notifications;
                             notifications-unseen: root.notifications-unseen;
                             show-notifications => { root.show-notifications(); }
+                            can-show-games: root.can-show-games;
+                            games-selected: root.showing-games;
+                            show-games => { root.show-games(); }
                             in-call: root.in-call;
                             call-status: root.call-status;
                             call-quality: root.call-quality;
@@ -992,6 +1006,24 @@ export component AppWindow inherits Window {
                                         open(i) => { root.notification-open(i); }
                                         clear => { root.notifications-clear(); }
                                     }
+                                    if root.showing-games: GamesPage {
+                                        horizontal-stretch: 1;
+                                        accounts: root.games-accounts;
+                                        account: root.games-account;
+                                        pick-account(i) => { root.games-pick-account(i); }
+                                        query <=> root.games-query;
+                                        search(t) => { root.games-search(t); }
+                                        friends: root.games-friends;
+                                        notes: root.games-notes;
+                                        venn: root.games-venn;
+                                        legend: root.games-legend;
+                                        regions: root.games-regions;
+                                        region: root.games-region;
+                                        rows: root.games-rows;
+                                        pick-friend(i, on) => { root.games-pick-friend(i, on); }
+                                        pick-region(m) => { root.games-pick-region(m); }
+                                        games-scrolled(first) => { root.games-scrolled(first); }
+                                    }
                                     if root.showing-threads: Threads {
                                         horizontal-stretch: 1;
                                         items: root.thread-items;
@@ -1012,6 +1044,7 @@ export component AppWindow inherits Window {
                                         message(i) => { root.message-person(i); }
                                         reset-nickname(i) => { root.reset-nickname(i); }
                                         favourite(i) => { root.favourite-person(i); }
+                                        favourites-only: root.people-favourites-only;
                                         networks: root.people-networks;
                                         query <=> root.people-query;
                                         search(t) => { root.people-search(t); }
@@ -1587,19 +1620,6 @@ export component AppWindow inherits Window {
             root.pin(root.confirm-pin, root.confirm-pin-value);
             root.confirm-pin = -1;
         }
-    }
-    if root.games-open && screen == Screen.main: GamesDialog {
-        friends: root.games-friends;
-        notes: root.games-notes;
-        venn: root.games-venn;
-        legend: root.games-legend;
-        regions: root.games-regions;
-        region: root.games-region;
-        rows: root.games-rows;
-        close-games() => { root.close-games(); }
-        pick-friend(i, on) => { root.games-pick-friend(i, on); }
-        pick-region(m) => { root.games-pick-region(m); }
-        games-scrolled(first) => { root.games-scrolled(first); }
     }
     if root.crop-open && screen == Screen.main: Cropper {
         crop-cancel() => { root.crop-cancel(); }

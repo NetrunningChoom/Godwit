@@ -129,8 +129,8 @@ pub enum Action {
         message: Option<MessageId>,
         text: String,
     },
-    /// "Games in common…" on `account`, comparing us with `with` (loading
-    /// the libraries not yet known).
+    /// The Games in common page on `account`, comparing us with `with`
+    /// (loading the libraries not yet known). Leaving the page drops it.
     OpenGamesInCommon {
         account: AccountId,
         with: Vec<UserId>,
@@ -140,7 +140,6 @@ pub enum Action {
         user: UserId,
         picked: bool,
     },
-    CloseGamesInCommon,
     /// Show the selected room's pinned messages (loading them).
     OpenPins,
     ClosePins,

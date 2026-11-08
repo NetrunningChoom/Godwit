@@ -601,6 +601,8 @@ impl Application {
         self.state.showing_people = false;
         self.state.showing_active = false;
         self.state.showing_notifications = false;
+        self.state.showing_games = false;
+        self.state.games = None;
         self.state.showing_threads = false;
         self.state.selected_server = None;
         self.state
@@ -909,15 +911,17 @@ impl Application {
                 people.push(user);
             }
         }
+        let mut effects = self.show_page(super::Page::Games);
         self.state.games = Some(GamesInCommon {
             account: account.clone(),
             people: people.clone(),
             libraries: HashMap::new(),
         });
-        vec![Effect::Backend {
+        effects.push(Effect::Backend {
             account,
             command: Command::LoadGameLibraries { users: people },
-        }]
+        });
+        effects
     }
 
     /// A checkbox in "Games in common": someone joins the comparison (their
