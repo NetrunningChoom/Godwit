@@ -3,10 +3,33 @@
 //! Backend and websocket events.
 
 use super::*;
+use godwit_core::channel_settings::ChannelOverview;
 
 impl StoatAccount {
     pub(super) fn handle(&mut self, ev: Ev, out: &mut Vec<Event>) {
         match ev {
+            Ev::ServerCategoriesSaved { server, result } => {
+                self.sync_servers(out);
+                if let Some((room, request, name)) = self.category_pending.take() {
+                    let result = result.map_err(Into::into).map(|()| {
+                        name.map(|name| ChannelOverview {
+                            name,
+                            can_manage: true,
+                            is_category: true,
+                            ..Default::default()
+                        })
+                    });
+                    out.push(Event::ChannelOverview { room, request, result });
+                } else {
+                    self.admin_answer(
+                        &server,
+                        result
+                            .map(|()| ServerAdminResult::Done("Saved.".into()))
+                            .map_err(Into::into),
+                        out,
+                    );
+                }
+            }
             Ev::ServerOverviewSaved {
                 server,
                 request,

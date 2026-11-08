@@ -49,6 +49,26 @@ impl StoatAccount {
         Ok(c)
     }
 
+    fn managed_category(&self, room: &RoomId) -> Result<(String, crate::api::Category), &'static str> {
+        if self.account.as_ref() != Some(&room.account) {
+            return Err("This category belongs to another account.");
+        }
+        let Some((server, category)) = self.store.servers.iter().find_map(|(sid, server)| {
+            server
+                .categories
+                .as_ref()?
+                .iter()
+                .find(|c| c.id == room.raw.as_ref())
+                .map(|c| (sid.clone(), c.clone()))
+        }) else {
+            return Err("This category is no longer available.");
+        };
+        if !self.store.can_in_server(&server, crate::permissions::MANAGE_CHANNEL) {
+            return Err("You need the Manage Channels permission for this.");
+        }
+        Ok((server, category))
+    }
+
     /// Values for the official ChannelPermissionsEditor, with @everyone
     /// first and (for server channels) role rows in server role priority order.
     fn channel_overrides(&self, channel: &Channel) -> Option<ChannelOverrides> {
@@ -134,6 +154,14 @@ impl StoatAccount {
 
     /// A channel as the Overview tab shows it; `None` once it is gone.
     pub(super) fn channel_overview(&self, room: &RoomId) -> Result<ChannelOverview, &'static str> {
+        if let Ok((_server, category)) = self.managed_category(room) {
+            return Ok(ChannelOverview {
+                name: category.title.as_str().into(),
+                can_manage: true,
+                is_category: true,
+                ..Default::default()
+            });
+        }
         let c = self.channel_settings_channel(room)?;
         let overrides = self.channel_overrides(c);
         Ok(ChannelOverview {
@@ -166,6 +194,37 @@ impl StoatAccount {
                         result: Err(e.into()),
                     }]
                 };
+                if let Ok((server, category)) = self.managed_category(&room) {
+                    if edit.description.is_some()
+                        || edit.mature.is_some()
+                        || edit.slowmode.is_some()
+                        || edit.icon != godwit_core::own_profile::ProfileImage::Keep
+                    {
+                        return failed(room, "Categories only have a name setting.");
+                    }
+                    let title = edit
+                        .name
+                        .as_deref()
+                        .unwrap_or(category.title.as_str())
+                        .trim()
+                        .to_owned();
+                    if title.is_empty() || title.chars().count() > 32 {
+                        return failed(room, "A category name is 1 to 32 characters.");
+                    }
+                    let Some(body) = self.store.edit_categories(&server, |cats| {
+                        if let Some(c) = cats.iter_mut().find(|c| c.id == room.raw.as_ref()) {
+                            c.title = title.clone();
+                        }
+                    }) else {
+                        return failed(room, "This category is no longer available.");
+                    };
+                    self.net.send(Cmd::Server(ServerCmd::EditCategories {
+                        server,
+                        body: serde_json::json!({"categories": body}),
+                    }));
+                    self.category_pending = Some((room.clone(), request, Some(title.into())));
+                    return Vec::new();
+                }
                 if let Err(e) = self.managed_channel(&room) {
                     return failed(room, e);
                 }
@@ -190,6 +249,24 @@ impl StoatAccount {
                 }
             }
             Command::DeleteChannel { room, request } => {
+                if let Ok((server, _category)) = self.managed_category(&room) {
+                    let Some(body) = self
+                        .store
+                        .edit_categories(&server, |cats| cats.retain(|c| c.id != room.raw.as_ref()))
+                    else {
+                        return vec![Event::ChannelOverview {
+                            room,
+                            request,
+                            result: Err("This category is no longer available.".into()),
+                        }];
+                    };
+                    self.net.send(Cmd::Server(ServerCmd::EditCategories {
+                        server,
+                        body: serde_json::json!({"categories": body}),
+                    }));
+                    self.category_pending = Some((room.clone(), request, None));
+                    return Vec::new();
+                }
                 if let Err(e) = self.managed_channel(&room) {
                     return vec![Event::ChannelOverview {
                         room,

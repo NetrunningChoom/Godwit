@@ -129,6 +129,8 @@ pub struct StoatAccount {
     invite_for: Option<String>,
     session_revoke_pending: bool,
     channel_for: Option<String>,
+    /// A category edit or delete waiting for the server PATCH result.
+    category_pending: Option<(RoomId, u64, Option<Arc<str>>)>,
     /// The open profile card: the user and the server it's seen from.
     profile_for: Option<(String, Option<String>, Option<String>)>,
     group_member_pending: Option<GroupMemberAction>,
@@ -529,6 +531,7 @@ impl StoatAccount {
             invite_for: None,
             session_revoke_pending: false,
             channel_for: None,
+            category_pending: None,
             profile_for: None,
             group_member_pending: None,
             emoji_sent: None,
@@ -582,6 +585,7 @@ impl StoatAccount {
             invite_for: None,
             session_revoke_pending: false,
             channel_for: None,
+            category_pending: None,
             profile_for: None,
             group_member_pending: None,
             emoji_sent: None,
@@ -739,6 +743,7 @@ mod tests {
             invite_for: None,
             session_revoke_pending: false,
             channel_for: None,
+            category_pending: None,
             profile_for: None,
             group_member_pending: None,
             emoji_sent: None,
@@ -1916,5 +1921,238 @@ mod tests {
         let events = a.poll();
         assert!(matches!(&events[..], [Event::AccountLost { .. }]));
         assert_eq!(a.id(), None);
+    }
+
+    fn cat(id: &str, channels: &[&str]) -> crate::api::Category {
+        crate::api::Category {
+            id: id.into(),
+            title: id.into(),
+            channels: channels.iter().map(|c| (*c).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn moving_swaps_within_a_category_and_crosses_at_the_edges() {
+        use super::server_admin::move_category_item as mv;
+        let start = vec![cat("default", &["A", "B"]), cat("K1", &["C"]), cat("K2", &[])];
+        let mut c = start.clone();
+        mv(&mut c, "B", false, true);
+        assert_eq!(c[0].channels, ["B", "A"]);
+        // The last channel moving down goes first into the next category.
+        let mut c = start.clone();
+        mv(&mut c, "B", false, false);
+        assert_eq!(
+            (c[0].channels.clone(), c[1].channels.clone()),
+            (vec!["A".to_owned()], vec!["B".to_owned(), "C".to_owned()])
+        );
+        // The first channel moving up goes last into the one before.
+        let mut c = start.clone();
+        mv(&mut c, "C", false, true);
+        assert_eq!(c[0].channels, ["A", "B", "C"]);
+        assert!(c[1].channels.is_empty());
+        // Edges of the whole list don't move.
+        let mut c = start.clone();
+        mv(&mut c, "A", false, true);
+        mv(&mut c, "K2", true, false);
+        mv(&mut c, "default", true, true);
+        assert_eq!(c, start);
+        mv(&mut c, "K2", true, true);
+        assert_eq!(
+            c.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+            ["default", "K2", "K1"]
+        );
+    }
+
+    #[test]
+    fn category_ids_look_like_ulids_and_differ() {
+        let (a, b) = (
+            super::server_admin::new_category_id(),
+            super::server_admin::new_category_id(),
+        );
+        assert_eq!(a.len(), 26);
+        assert_ne!(a, b);
+        assert!(a.chars().all(|c| c.is_ascii_digit() || c.is_ascii_uppercase()));
+    }
+
+    fn categories_ready(perms: u64) -> serde_json::Value {
+        json!({
+            "users": [{"_id":"ME","username":"me","relationship":"User"}],
+            "servers": [{"_id":"S","name":"Server","owner":"OWNER","channels":["A","B","C"],
+                "categories": [{"id":"K1","title":"Talk","channels":["C"]}],
+                "default_permissions": perms}],
+            "channels": [
+                {"_id":"A","channel_type":"TextChannel","server":"S","name":"a"},
+                {"_id":"B","channel_type":"TextChannel","server":"S","name":"b"},
+                {"_id":"C","channel_type":"TextChannel","server":"S","name":"c"}
+            ],
+            "members": [{"_id":{"server":"S","user":"ME"},"roles":[]}]
+        })
+    }
+
+    fn categories_body(cmds: &mut tmpsc::UnboundedReceiver<Cmd>) -> Option<serde_json::Value> {
+        while let Ok(cmd) = cmds.try_recv() {
+            if let Cmd::Server(ServerCmd::EditCategories { server, body }) = cmd {
+                assert_eq!(server, "S");
+                return Some(body);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn channel_moves_and_new_categories_patch_the_whole_list() {
+        use godwit_core::server_settings::NewChannelKind;
+        let (mut a, tx, mut cmds, _) = connected();
+        tx.send(Ev::Ready(
+            serde_json::from_value(categories_ready(crate::permissions::MANAGE_CHANNEL)).unwrap(),
+        ))
+        .unwrap();
+        a.poll();
+        while cmds.try_recv().is_ok() {}
+        let server = ServerId::new(a.account.clone().unwrap(), "S");
+        let op = |op| Command::ServerAdmin {
+            server: server.clone(),
+            op,
+        };
+        let evs = a.run(op(ServerAdmin::MoveChannel {
+            id: "B".into(),
+            category: false,
+            up: false,
+        }));
+        assert!(evs.is_empty(), "{evs:?}");
+        // The default bucket is saved too, as the official sidebar does.
+        assert_eq!(
+            categories_body(&mut cmds),
+            Some(json!({"categories":[
+                {"id":"default","title":"Default","channels":["A"]},
+                {"id":"K1","title":"Talk","channels":["B","C"]}]}))
+        );
+        let unchanged = a.run(op(ServerAdmin::MoveChannel {
+            id: "A".into(),
+            category: false,
+            up: true,
+        }));
+        assert!(matches!(
+            unchanged.as_slice(),
+            [Event::ServerAdmin { result: Ok(_), .. }]
+        ));
+        assert!(categories_body(&mut cmds).is_none());
+        assert!(
+            a.run(op(ServerAdmin::CreateChannel {
+                name: " Games ".into(),
+                kind: NewChannelKind::Category,
+                category: None
+            }))
+            .is_empty()
+        );
+        let body = categories_body(&mut cmds).unwrap();
+        let cats = body["categories"].as_array().unwrap();
+        assert_eq!(cats.len(), 2);
+        assert_eq!(cats[0], json!({"id":"K1","title":"Talk","channels":["C"]}));
+        assert_eq!(
+            (cats[1]["title"].as_str(), cats[1]["channels"].as_array().map(Vec::len)),
+            (Some("Games"), Some(0))
+        );
+        let long = "x".repeat(33);
+        let out = a.run(op(ServerAdmin::CreateChannel {
+            name: long.as_str().into(),
+            kind: NewChannelKind::Category,
+            category: None,
+        }));
+        assert!(matches!(out.as_slice(), [Event::ServerAdmin { result: Err(_), .. }]));
+        tx.send(Ev::ServerCategoriesSaved {
+            server: "S".into(),
+            result: Ok(()),
+        })
+        .unwrap();
+        assert!(
+            a.poll()
+                .iter()
+                .any(|e| matches!(e, Event::ServerAdmin { result: Ok(_), .. }))
+        );
+    }
+
+    #[test]
+    fn categories_rename_and_delete_through_the_channel_settings() {
+        use godwit_core::channel_settings::ChannelOverviewEdit;
+        let (mut a, tx, mut cmds, _) = connected();
+        tx.send(Ev::Ready(
+            serde_json::from_value(categories_ready(crate::permissions::MANAGE_CHANNEL)).unwrap(),
+        ))
+        .unwrap();
+        a.poll();
+        while cmds.try_recv().is_ok() {}
+        let edit = ChannelOverviewEdit {
+            name: Some(" Chat ".into()),
+            ..Default::default()
+        };
+        assert!(
+            a.run(Command::SaveChannelOverview {
+                room: room("K1"),
+                request: 7,
+                edit: Box::new(edit)
+            })
+            .is_empty()
+        );
+        assert_eq!(
+            categories_body(&mut cmds),
+            Some(json!({"categories":[{"id":"K1","title":"Chat","channels":["C"]}]}))
+        );
+        tx.send(Ev::ServerCategoriesSaved {
+            server: "S".into(),
+            result: Ok(()),
+        })
+        .unwrap();
+        let saved = a.poll();
+        assert!(saved.iter().any(|e| matches!(e, Event::ChannelOverview { request: 7, result: Ok(Some(o)), .. } if o.is_category && o.name.as_ref() == "Chat")));
+        assert!(
+            a.run(Command::DeleteChannel {
+                room: room("K1"),
+                request: 8
+            })
+            .is_empty()
+        );
+        assert_eq!(categories_body(&mut cmds), Some(json!({"categories":[]})));
+    }
+
+    #[test]
+    fn category_editing_needs_manage_channels() {
+        use godwit_core::server_settings::NewChannelKind;
+        let (mut a, tx, mut cmds, _) = connected();
+        tx.send(Ev::Ready(serde_json::from_value(categories_ready(0)).unwrap()))
+            .unwrap();
+        a.poll();
+        while cmds.try_recv().is_ok() {}
+        let server = ServerId::new(a.account.clone().unwrap(), "S");
+        for op in [
+            ServerAdmin::MoveChannel {
+                id: "B".into(),
+                category: false,
+                up: false,
+            },
+            ServerAdmin::CreateChannel {
+                name: "Games".into(),
+                kind: NewChannelKind::Category,
+                category: None,
+            },
+        ] {
+            let out = a.run(Command::ServerAdmin {
+                server: server.clone(),
+                op,
+            });
+            assert!(
+                matches!(out.as_slice(), [Event::ServerAdmin { result: Err(_), .. }]),
+                "{out:?}"
+            );
+        }
+        let out = a.run(Command::DeleteChannel {
+            room: room("K1"),
+            request: 1,
+        });
+        assert!(
+            matches!(out.as_slice(), [Event::ChannelOverview { result: Err(_), .. }]),
+            "{out:?}"
+        );
+        assert!(categories_body(&mut cmds).is_none());
     }
 }

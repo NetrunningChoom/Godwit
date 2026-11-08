@@ -365,6 +365,10 @@ pub enum ServerCmd {
         icon: Option<Upload>,
         banner: Option<Upload>,
     },
+    EditCategories {
+        server: String,
+        body: Value,
+    },
     CreateInvite {
         channel: String,
     },
@@ -652,6 +656,10 @@ pub enum Ev {
     },
     /// Result of server Overview's Save.
     ServerSaved(Result<(), String>),
+    ServerCategoriesSaved {
+        server: String,
+        result: Result<(), String>,
+    },
     ServerOverviewSaved {
         server: String,
         request: u64,
@@ -2064,6 +2072,21 @@ impl Backend {
                     }
                     .await;
                     out.emit(Ev::ServerSaved(result.map_err(|e| crate::errors::describe(&e))));
+                });
+            }
+            ServerCmd::EditCategories { server, body } => {
+                let rest = rest.clone();
+                let out = out.clone();
+                tokio::spawn(async move {
+                    let result = rest
+                        .send::<Value>(
+                            rest.req(reqwest::Method::PATCH, &format!("/servers/{server}"))
+                                .json(&body),
+                        )
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| crate::errors::describe(&e));
+                    out.emit(Ev::ServerCategoriesSaved { server, result });
                 });
             }
             ServerCmd::CreateInvite { channel } => {

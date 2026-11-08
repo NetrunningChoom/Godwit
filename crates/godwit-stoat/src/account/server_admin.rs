@@ -4,6 +4,74 @@
 
 use super::*;
 
+/// Apply the sidebar's one-step move to Stoat's ordered category payload.
+/// The default bucket is first; an edge channel crosses into the adjacent
+/// category, matching the core MoveChannel contract.
+pub(super) fn move_category_item(cats: &mut [crate::api::Category], id: &str, is_category: bool, up: bool) {
+    if is_category {
+        let Some(from) = cats.iter().position(|c| c.id == id) else {
+            return;
+        };
+        let to = if up {
+            from.checked_sub(1)
+        } else {
+            (from + 1 < cats.len()).then_some(from + 1)
+        };
+        if let Some(to) = to {
+            cats.swap(from, to);
+        }
+        return;
+    }
+    let Some(from) = cats.iter().position(|c| c.channels.iter().any(|ch| ch == id)) else {
+        return;
+    };
+    let Some(index) = cats[from].channels.iter().position(|ch| ch == id) else {
+        return;
+    };
+    if up && index > 0 {
+        cats[from].channels.swap(index, index - 1);
+    } else if !up && index + 1 < cats[from].channels.len() {
+        cats[from].channels.swap(index, index + 1);
+    } else if up {
+        let Some(to) = from.checked_sub(1) else { return };
+        cats[from].channels.remove(index);
+        cats[to].channels.push(id.to_owned());
+    } else {
+        let to = from + 1;
+        if to >= cats.len() {
+            return;
+        }
+        cats[from].channels.remove(index);
+        cats[to].channels.insert(0, id.to_owned());
+    }
+}
+
+/// A fresh category id in ULID form, as for-web's `ulid()` makes them (the
+/// API takes 1 to 32 characters). Time-ordered; the low bits mix the clock's
+/// nanoseconds with a counter so two ids in one millisecond differ.
+pub(super) fn new_category_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let ms = now.as_millis() & ((1 << 48) - 1);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let low = (u128::from(now.subsec_nanos()) << 48 | u128::from(n & 0xffff_ffff_ffff)) & ((1 << 80) - 1);
+    encode_ulid(ms << 80 | low)
+}
+
+/// Crockford base32, 26 characters, as ULIDs are written.
+fn encode_ulid(mut v: u128) -> String {
+    const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    let mut out = [b'0'; 26];
+    for slot in out.iter_mut().rev() {
+        *slot = ALPHABET[(v & 31) as usize];
+        v >>= 5;
+    }
+    out.iter().map(|&b| char::from(b)).collect()
+}
+
 impl StoatAccount {
     /// Server settings' pages and member moderation. Permissions are checked
     /// here first, so a stale button can't send a request the server would
@@ -40,13 +108,13 @@ impl StoatAccount {
             | ServerAdmin::RenameEmoji { .. }
             | ServerAdmin::DeleteEmoji(_) => Some((p::MANAGE_CUSTOMISATION, "Manage Customisation")),
             ServerAdmin::CreateInvite => Some((p::INVITE_OTHERS, "Invite Others")),
-            ServerAdmin::CreateChannel { .. } => Some((p::MANAGE_CHANNEL, "Manage Channels")),
+            ServerAdmin::CreateChannel { .. } | ServerAdmin::MoveChannel { .. } => {
+                Some((p::MANAGE_CHANNEL, "Manage Channels"))
+            }
             // Checked below with the owner and rank rules.
             ServerAdmin::SetMemberRole { .. } => None,
             // The card never offers these here (no capability is set).
-            ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } | ServerAdmin::MoveChannel { .. } => {
-                None
-            }
+            ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => None,
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -94,8 +162,30 @@ impl StoatAccount {
                     roles,
                 })
             }
-            ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } | ServerAdmin::MoveChannel { .. } => {
+            ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => {
                 return fail(server, "This isn't available here yet.");
+            }
+            ServerAdmin::MoveChannel { id, category, up } => {
+                let Some(s) = self.store.servers.get(&raw) else {
+                    return fail(server, "This server's channel order is unavailable.");
+                };
+                // The ordered list includes the "default" bucket of
+                // uncategorised channels: the official sidebar saves the
+                // whole list, default included.
+                let mut cats = self.store.ordered_categories(s);
+                let before = cats.clone();
+                move_category_item(&mut cats, &id, category, up);
+                if cats == before {
+                    return vec![Event::ServerAdmin {
+                        server,
+                        result: Ok(ServerAdminResult::Done("Channel order unchanged.".into())),
+                    }];
+                }
+                self.net.send(Cmd::Server(ServerCmd::EditCategories {
+                    server: raw,
+                    body: serde_json::json!({ "categories": crate::store::Store::categories_value(&cats) }),
+                }));
+                return Vec::new();
             }
             ServerAdmin::LoadInvites => Cmd::Server(ServerCmd::FetchServerInvites { server: raw }),
             ServerAdmin::DeleteInvite(code) => Cmd::Server(ServerCmd::DeleteInvite {
@@ -344,13 +434,32 @@ impl StoatAccount {
                     silent: false,
                 })
             }
-            ServerAdmin::CreateChannel { name, kind, .. } => {
-                // No categories or moving here yet (their capabilities are off).
+            ServerAdmin::CreateChannel { name, kind, category } => {
                 let voice = match kind {
                     godwit_core::server_settings::NewChannelKind::Text => false,
                     godwit_core::server_settings::NewChannelKind::Voice => true,
                     godwit_core::server_settings::NewChannelKind::Category => {
-                        return fail(server, "Categories can't be created here yet.");
+                        let name = name.trim();
+                        if name.is_empty() || name.chars().count() > 32 {
+                            return fail(server, "A category name is 1 to 32 characters.");
+                        }
+                        // for-web's CreateCategory: PATCH the server with the
+                        // existing categories plus a new empty one.
+                        let title = name.to_owned();
+                        let Some(body) = self.store.edit_categories(&raw, |cats| {
+                            cats.push(crate::api::Category {
+                                id: new_category_id(),
+                                title,
+                                channels: Vec::new(),
+                            });
+                        }) else {
+                            return fail(server, "This server is no longer available.");
+                        };
+                        self.net.send(Cmd::Server(ServerCmd::EditCategories {
+                            server: raw,
+                            body: serde_json::json!({ "categories": body }),
+                        }));
+                        return Vec::new();
                     }
                 };
                 // DataCreateServerChannel: a name of 1 to 32 characters.
@@ -363,7 +472,7 @@ impl StoatAccount {
                     server: raw,
                     name: name.to_owned(),
                     voice,
-                    category: None,
+                    category: category.map(|id| id.to_string()),
                 })
             }
         };
