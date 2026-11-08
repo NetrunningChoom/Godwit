@@ -119,7 +119,7 @@ impl SteamAccount {
             .collect()
     }
 
-    pub(super) fn group_message(&self, room: &RoomId, line: &Line) -> Option<Message> {
+    pub(super) fn group_message(&mut self, room: &RoomId, line: &Line) -> Option<Message> {
         let account = self.account.clone()?;
         let me = self.me?;
         let from = backend::steam_id(line.from);
@@ -132,9 +132,10 @@ impl SteamAccount {
                 .map(avatar_url)
         };
         let converted = crate::bbcode::convert(&line.text);
-        let _ = room;
+        let id = message_id(line.time, line.ordinal);
+        let embeds = self.game_embeds(Some(room.clone()), &id, from, converted.games);
         Some(Message {
-            id: message_id(line.time, line.ordinal),
+            id,
             author: UserId::new(account, from.to_string()),
             author_name: self.name_of(from).into(),
             author_avatar: Some(avatar.unwrap_or_else(|| avatar_url(&[])).into()),
@@ -152,7 +153,7 @@ impl SteamAccount {
                 .map(|(url, name)| (url.into(), name.into()))
                 .collect(),
             attachments: images(converted.images),
-            embeds: Vec::new(),
+            embeds,
             invites: converted.invites.into_iter().map(Into::into).collect(),
             reactions: Vec::new(),
             pending: false,

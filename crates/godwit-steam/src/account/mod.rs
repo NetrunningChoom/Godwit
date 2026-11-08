@@ -8,6 +8,7 @@
 mod calls;
 mod chats;
 mod events;
+mod games;
 mod group_chats;
 mod login;
 mod people;
@@ -130,6 +131,8 @@ pub struct SteamAccount {
     /// only non-Steam games), and the ones asked for.
     app_names: HashMap<u32, String>,
     asked_apps: HashSet<u32>,
+    /// Messages whose game invite cards wait for a game's name.
+    name_waits: Vec<games::NameWait>,
     chats: HashMap<u64, Chat>,
     /// The room on screen, if one of ours: its messages are read as they come.
     viewing: Option<u64>,
@@ -210,6 +213,7 @@ impl SteamAccount {
             friends: HashMap::new(),
             app_names: HashMap::new(),
             asked_apps: HashSet::new(),
+            name_waits: Vec::new(),
             chats: HashMap::new(),
             viewing: None,
             profile_for: None,
@@ -323,6 +327,14 @@ impl NetworkAccount for SteamAccount {
                 request: None,
                 name: user.raw.to_string(),
             }),
+            Command::SetFavourite { user, favourite } => {
+                if let Ok(friend) = user.raw.parse::<u64>() {
+                    self.net.send(Cmd::SetFavourite {
+                        friend: crate::backend::account_id(friend),
+                        favourite,
+                    });
+                }
+            }
             Command::RemoveFriend { user } => {
                 if let Ok(friend) = user.raw.parse::<u64>() {
                     self.net.send(Cmd::RemoveFriend(friend));
@@ -933,6 +945,48 @@ mod tests {
             events.iter().any(|e| matches!(e, Event::Alert { .. })),
             "a mention alerts, even in a server"
         );
+    }
+
+    #[test]
+    fn a_game_invite_shows_a_card_named_once_the_game_is_known() {
+        use godwit_core::message::EmbedStyle;
+        let (mut a, tx, mut commands) = ready_with_commands();
+        let friend = backend::steam_id(2);
+        tx.send(Ev::Incoming {
+            friend,
+            mine: false,
+            line: Line {
+                from: 2,
+                time: 10,
+                ordinal: 0,
+                text: r#"[lobbyinvite appid="440" lobbyid="9"][/lobbyinvite]"#.into(),
+            },
+        })
+        .unwrap();
+        let events = a.poll();
+        let card = events.iter().find_map(|e| match e {
+            Event::MessageAdded { message, .. } => message.embeds.first().cloned(),
+            _ => None,
+        });
+        let card = card.expect("a card");
+        assert_eq!(card.style, EmbedStyle::Activity);
+        assert_eq!(card.title.as_deref(), Some("A Steam game"));
+        assert_eq!(
+            card.url.as_deref(),
+            Some(format!("steam://joinlobby/440/9/{friend}").as_str())
+        );
+        let mut asked = false;
+        while let Ok(c) = commands.try_recv() {
+            asked |= matches!(c, Cmd::AppNames(ref apps) if apps.contains(&440));
+        }
+        assert!(asked, "the game's name is looked up");
+        tx.send(Ev::AppNames(vec![(440, "A Game".into())])).unwrap();
+        let events = a.poll();
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::EmbedsUpdated { embeds, .. } if embeds[0].title.as_deref() == Some("A Game")
+        )));
+        assert!(a.name_waits.is_empty());
     }
 
     #[test]

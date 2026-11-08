@@ -10,6 +10,7 @@ pub mod account;
 pub mod auth;
 pub mod backend;
 pub mod bbcode;
+pub mod favourites;
 pub mod groups;
 pub mod media;
 pub mod session;

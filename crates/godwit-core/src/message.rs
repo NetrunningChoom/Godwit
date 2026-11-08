@@ -69,6 +69,12 @@ pub enum EmbedStyle {
     Media,
     /// A GIF provider's (Tenor, Giphy, …): the picture alone, looping.
     Gif,
+    /// An invitation to something outside the chat (a game, as Steam's
+    /// game invites): `site_name` says what kind ("Invited you to play"),
+    /// `title` names it once known, `image_url` is its art, and `url` is the
+    /// network's own link that joins it (handed to the system, which opens
+    /// the network's app). No `url`: nothing to join from here.
+    Activity,
 }
 
 /// A network-neutral rich preview. Network-specific extras can be added

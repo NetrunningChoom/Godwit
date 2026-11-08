@@ -305,7 +305,14 @@ pub fn people(
             c
         })
         .collect();
-    contacts.sort_by_cached_key(|c| c.name.to_lowercase());
+    // Starred here, or in the network's own favourites.
+    let starred = |c: &Metacontact| {
+        c.identities
+            .iter()
+            .any(|u| state.favourites.contains(u) || favourites.contains(&u.to_string()))
+    };
+    // Favourites first (as the official clients put them on top), each part by name.
+    contacts.sort_by_cached_key(|c| (!starred(c), c.name.to_lowercase()));
     let mut rows = Vec::with_capacity(contacts.len());
     let mut who = Vec::with_capacity(contacts.len());
     for c in &contacts {
@@ -365,7 +372,8 @@ pub fn people(
                 .unwrap_or_default()
                 .into(),
             no_nudges: c.no_nudges,
-            favourite: c.identities.iter().any(|u| favourites.contains(&u.to_string())),
+            favourite: starred(c),
+            section: Default::default(),
             nickname: c.nickname.clone().unwrap_or_default().into(),
         });
         who.push((c.id, c.identities.clone()));
@@ -404,6 +412,26 @@ pub fn people(
         })
         .collect();
     (rows, who, merges)
+}
+
+/// The headings over People's rows (as shown, after filtering): where
+/// the favourites start and where everyone else does. None when nobody is
+/// starred, or when only favourites are shown.
+pub fn sections(favourite: &[bool], favourites_only: bool) -> Vec<&'static str> {
+    let mut out = vec![""; favourite.len()];
+    if favourites_only || !favourite.contains(&true) {
+        return out;
+    }
+    let first_starred = favourite.iter().position(|f| *f);
+    let first_other = favourite.iter().position(|f| !*f);
+    for (i, s) in out.iter_mut().enumerate() {
+        if Some(i) == first_starred {
+            *s = "Favourites";
+        } else if Some(i) == first_other {
+            *s = "Everyone else";
+        }
+    }
+    out
 }
 
 /// The profile card's "Also on …" line: the person's other networks.
@@ -604,4 +632,25 @@ pub fn presence_colour(p: Presence) -> slint::Color {
         Presence::Unknown => return slint::Color::from_argb_u8(0, 0, 0, 0),
     };
     slint::Color::from_rgb_u8(r, g, b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sections;
+
+    #[test]
+    fn favourites_and_everyone_else_are_headed() {
+        assert_eq!(
+            sections(&[true, true, false, false], false),
+            vec!["Favourites", "", "Everyone else", ""]
+        );
+        assert_eq!(sections(&[true], false), vec!["Favourites"]);
+    }
+
+    #[test]
+    fn no_headings_without_favourites_or_when_only_they_show() {
+        assert_eq!(sections(&[false, false], false), vec!["", ""]);
+        assert_eq!(sections(&[true, false], true), vec!["", ""]);
+        assert!(sections(&[], false).is_empty());
+    }
 }

@@ -61,6 +61,8 @@ pub const EDIT_BANNER: Fit = Fit::Within(1360, 480);
 pub const THUMBNAIL: Fit = Fit::RoundedWithin(80, 80, 8);
 /// A link preview's site icon (16 px on screen).
 pub const EMBED_ICON: Fit = Fit::Square(32);
+/// An activity invite's art: Steam's 184 × 69 game capsule, as its card.
+pub const CAPSULE: Fit = Fit::RoundedWithin(184, 69, 4);
 /// Attachment previews, at most this big on screen, with Godwit's 12 px corners.
 pub const PREVIEW: Fit = Fit::RoundedWithin(400, 300, 12);
 

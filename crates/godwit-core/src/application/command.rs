@@ -97,6 +97,12 @@ pub enum Command {
     AddFriend {
         user: UserId,
     },
+    /// Star or unstar a person in the network's own favourites; the
+    /// network's [`Event::Favourites`](super::Event::Favourites) follows.
+    SetFavourite {
+        user: UserId,
+        favourite: bool,
+    },
     /// Unfriend, cancel our request, or decline theirs.
     RemoveFriend {
         user: UserId,

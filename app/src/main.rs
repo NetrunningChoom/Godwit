@@ -701,6 +701,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_link_clicked(row, url) => |sh, ui| sh.link(ui, row, &url));
     callback!(ui.on_play_inline(url, kind) => |sh, ui| sh.play_inline(ui, &url, &kind));
     callback!(ui.on_join_invite(code) => |sh, ui| sh.join_invite(ui, &code));
+    callback!(ui.on_join_activity(url) => |sh, _ui| sh.join_activity(&url));
     callback!(ui.on_open_join_server() => |sh, ui| sh.open_join_server(ui));
     callback!(ui.on_close_join_server() => |sh, ui| sh.close_join_server(ui));
     callback!(ui.on_reset_join_server() => |sh, ui| sh.reset_join_server(ui));

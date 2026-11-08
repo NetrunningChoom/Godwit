@@ -648,6 +648,7 @@ export component AppWindow inherits Window {
     callback play-inline(string, string);
     callback player-fullscreen(string);
     callback join-invite(string);
+    callback join-activity(string);
     in property <bool> join-server-open;
     in property <[string]> join-server-accounts;
     in property <string> join-server-status;
@@ -1142,6 +1143,7 @@ export component AppWindow inherits Window {
                                         play-inline(url, kind) => { root.play-inline(url, kind); }
                                         player-fullscreen(url) => { root.player-fullscreen(url); }
                                         join-invite(code) => { root.join-invite(code); }
+                                        join-activity(url) => { root.join-activity(url); }
                                         player-pointer(url, x, y, down) => { root.player-pointer(url, x, y, down); }
                                         player-move(url, x, y) => { root.player-move(url, x, y); }
                                         cancel-compose => { root.cancel-compose(); }

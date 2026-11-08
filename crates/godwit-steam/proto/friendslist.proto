@@ -1,0 +1,34 @@
+// Steam's friends-list favourites, as the official client's friends list
+// reads and writes them (the FriendsList service). Copied from
+// SteamDatabase/Protobufs webui/service_friendslist.proto
+// (https://github.com/SteamDatabase/Protobufs, The Unlicense; dumped from
+// the Steam client with SteamKit's dumper). Only the favourites subset,
+// field numbers unchanged.
+//
+// build.rs generates Rust in OUT_DIR like voice.proto; see src/favourites.rs.
+
+syntax = "proto2";
+
+message CFriendsListFavoriteEntry {
+	optional uint32 accountid = 1;
+	optional uint32 clanid = 2;
+	optional uint64 chat_group_id = 3;
+}
+
+message CFriendsList_GetFavorites_Request {
+}
+
+message CFriendsList_GetFavorites_Response {
+	repeated .CFriendsListFavoriteEntry favorites = 1;
+}
+
+message CFriendsList_SetFavorites_Request {
+	repeated .CFriendsListFavoriteEntry favorites = 1;
+}
+
+message CFriendsList_SetFavorites_Response {
+}
+
+message CFriendsList_FavoritesChanged_Notification {
+	repeated .CFriendsListFavoriteEntry favorites = 1;
+}

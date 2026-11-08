@@ -38,7 +38,7 @@ impl SteamAccount {
         })
     }
 
-    pub(super) fn message(&self, friend: u64, line: &Line) -> Option<Message> {
+    pub(super) fn message(&mut self, friend: u64, line: &Line) -> Option<Message> {
         let account = self.account.clone()?;
         let me = self.me?;
         let from = if line.from == backend::account_id(me) {
@@ -56,8 +56,10 @@ impl SteamAccount {
         };
         // Steam's markup (emoticons, stickers, links) as Godwit's.
         let converted = crate::bbcode::convert(&line.text);
+        let id = message_id(line.time, line.ordinal);
+        let embeds = self.game_embeds(self.room_id(friend), &id, from, converted.games);
         Some(Message {
-            id: message_id(line.time, line.ordinal),
+            id,
             author: UserId::new(account, from.to_string()),
             author_name: self.name_of(from).into(),
             author_avatar: Some(avatar.unwrap_or_else(|| avatar_url(&[])).into()),
@@ -75,7 +77,7 @@ impl SteamAccount {
                 .map(|(url, name)| (url.into(), name.into()))
                 .collect(),
             attachments: images(converted.images),
-            embeds: Vec::new(),
+            embeds,
             invites: converted.invites.into_iter().map(Into::into).collect(),
             reactions: Vec::new(),
             pending: false,

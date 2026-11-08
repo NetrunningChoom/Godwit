@@ -714,6 +714,29 @@ impl Application {
         }]
     }
 
+    /// Stars or unstars `users` on the networks that keep favourites, for
+    /// the accounts signed in; shown at once (the network's own list
+    /// follows and replaces it).
+    pub(super) fn dispatch_set_favourite(&mut self, users: Vec<UserId>, favourite: bool) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        for user in users {
+            let signed_in = self.state.accounts.iter().any(|a| a.id == user.account);
+            if !signed_in || !user.network().keeps_favourites() || self.state.favourites.contains(&user) == favourite {
+                continue;
+            }
+            if favourite {
+                self.state.favourites.insert(user.clone());
+            } else {
+                self.state.favourites.remove(&user);
+            }
+            effects.push(Effect::Backend {
+                account: user.account.clone(),
+                command: Command::SetFavourite { user, favourite },
+            });
+        }
+        effects
+    }
+
     pub(super) fn dispatch_open_direct(&mut self, user: UserId) -> Vec<Effect> {
         // An existing chat opens straight away.
         let existing = self

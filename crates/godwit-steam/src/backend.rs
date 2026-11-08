@@ -54,6 +54,11 @@ const RECONNECT: [u64; 6] = [3, 10, 30, 60, 300, 900];
 /// From the account to the network thread.
 pub enum Cmd {
     RemoveFriend(u64),
+    /// Star or unstar a friend (account id) in the friends list's favourites.
+    SetFavourite {
+        friend: u32,
+        favourite: bool,
+    },
     AddFriend {
         request: Option<u64>,
         name: String,
@@ -211,6 +216,8 @@ pub enum Ev {
         incremental: bool,
     },
     Personas(Vec<Persona>),
+    /// The people in the friends list's favourites (account ids), all of them.
+    Favourites(Vec<u32>),
     /// Steam games' names, by app id, as asked with [`Cmd::AppNames`].
     AppNames(Vec<(u32, String)>),
     /// A message with `friend` (`mine`: ours, from another of our devices).
@@ -534,6 +541,27 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                     .is_err()
                 {
                     out.send(Ev::Notice("Couldn't send the Steam friend removal request.".into()));
+                }
+            });
+        }
+        Cmd::SetFavourite { friend, favourite } => {
+            let Some(conn) = st.conn.clone() else {
+                return out.send(Ev::Notice(
+                    "Steam is disconnected. Try again after reconnecting.".into(),
+                ));
+            };
+            let out = out.clone();
+            tokio::spawn(async move {
+                match crate::favourites::set(&conn, friend, favourite).await {
+                    Ok(list) => out.send(Ev::Favourites(crate::favourites::people(&list))),
+                    Err(e) => {
+                        diag(&format!("Steam favourites not saved: {e}"));
+                        out.send(Ev::Notice("Couldn't save the Steam favourites.".into()));
+                        // Show the list as Steam has it again.
+                        if let Ok(list) = crate::favourites::get(&conn).await {
+                            out.send(Ev::Favourites(crate::favourites::people(&list)));
+                        }
+                    }
                 }
             });
         }
@@ -1113,6 +1141,7 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
     let mut group_rooms = conn.on_notification::<CChatRoom_ChatRoomGroupRoomsChange_Notification>();
     let mut group_states = conn.on_notification::<ChatRoomClient_NotifyChatGroupUserStateChanged_Notification>();
     let mut member_states = conn.on_notification::<CChatRoom_MemberStateChange_Notification>();
+    let mut favourites_changed = conn.on_notification::<crate::favourites::Changed>();
 
     // Messages that came before we listened (the friends list arrives with
     // the sign-in): read them first.
@@ -1268,6 +1297,18 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
         })
         .abort_handle(),
     );
+    // The favourites changed in another client.
+    let o = out.clone();
+    tasks.push(
+        tokio::spawn(async move {
+            while let Some(item) = favourites_changed.next().await {
+                if let Ok(n) = item {
+                    o.send(Ev::Favourites(crate::favourites::people(&n.favorites)));
+                }
+            }
+        })
+        .abort_handle(),
+    );
     // Incoming messages and typing; the stream ends when the connection does.
     let (o, i) = (out.clone(), inner.clone());
     tasks.push(
@@ -1345,6 +1386,10 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
             // Answered with CMsgClientEmoticonList (vaporchat's `getEmoticons`).
             let _ = c.send(CMsgClientGetEmoticonList::default()).await;
             fetch_groups(c.clone(), o.clone()).await;
+            match crate::favourites::get(&c).await {
+                Ok(list) => o.send(Ev::Favourites(crate::favourites::people(&list))),
+                Err(e) => diag(&format!("Steam favourites not read: {e}")),
+            }
             let req = CFriendsMessages_GetActiveMessageSessions_Request {
                 only_sessions_with_messages: Some(true),
                 ..Default::default()

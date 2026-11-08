@@ -128,82 +128,97 @@ export component People inherits Rectangle {
         }
         people-list := ListView {
             vertical-stretch: 1;
-            for person[i] in root.people: Rectangle {
-                // A line of chips more for every three accounts past the first three.
-                height: 76px + max(0, person.identity-rows.length - 1) * 34px;
-                property <bool> pickable: root.linking >= 0 && root.linking != i;
-                // Not secondary-container: the chosen chip is drawn in it.
-                background: root.linking == i ? Theme.surface-highest
-                    : touch.has-hover && self.pickable ? Theme.surface-high
-                    : touch.has-hover ? Theme.surface-low : transparent;
-                // While linking, a click anywhere on someone picks them.
-                touch := TouchArea {
-                    mouse-cursor: parent.pickable ? pointer : default;
-                    pointer-event(e) => {
-                        if e.button == PointerEventButton.right && e.kind == PointerEventKind.down && root.linking < 0 {
-                            root.menu-person = i;
-                            root.menu-x = self.absolute-position.x + self.mouse-x - root.absolute-position.x;
-                            root.menu-y = self.absolute-position.y + self.mouse-y - root.absolute-position.y;
-                            person-menu.show();
-                        }
-                    }
-                    clicked => {
-                        if parent.pickable {
-                            root.link(root.linking, i);
-                            root.linking = -1;
-                        }
+            for person[i] in root.people: VerticalLayout {
+                // Where the favourites start, and where everyone else does
+                // (headed like the friends page's "Pending").
+                if person.section != "": Rectangle {
+                    height: 28px;
+                    Text {
+                        x: Theme.gap-lg;
+                        text: person.section;
+                        vertical-alignment: center;
+                        font-size: Theme.text-small;
+                        font-weight: 600;
+                        color: Theme.outline;
                     }
                 }
-                HorizontalLayout {
-                    padding-left: Theme.gap-lg;
-                    padding-right: Theme.gap-lg;
-                    spacing: Theme.gap-lg;
-                    Avatar {
-                        y: (parent.height - self.height) / 2;
-                        source: person.avatar;
-                        has-image: person.has-avatar;
-                        initials: person.initials;
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: Theme.space-compact;
-                        // The name, then their accounts three to a line, so
-                        // neither is ever squeezed out.
-                        for line[r] in person.identity-rows: HorizontalLayout {
-                            spacing: Theme.gap-md;
-                            if r == 0: EmojiText {
-                                text: person.name;
-                                runs: person.name-runs;
-                                font-weight: 600;
-                                color: Theme.on-surface;
+                Rectangle {
+                    // A line of chips more for every three accounts past the first three.
+                    height: 76px + max(0, person.identity-rows.length - 1) * 34px;
+                    property <bool> pickable: root.linking >= 0 && root.linking != i;
+                    // Not secondary-container: the chosen chip is drawn in it.
+                    background: root.linking == i ? Theme.surface-highest
+                        : touch.has-hover && self.pickable ? Theme.surface-high
+                        : touch.has-hover ? Theme.surface-low : transparent;
+                    // While linking, a click anywhere on someone picks them.
+                    touch := TouchArea {
+                        mouse-cursor: parent.pickable ? pointer : default;
+                        pointer-event(e) => {
+                            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down && root.linking < 0 {
+                                root.menu-person = i;
+                                root.menu-x = self.absolute-position.x + self.mouse-x - root.absolute-position.x;
+                                root.menu-y = self.absolute-position.y + self.mouse-y - root.absolute-position.y;
+                                person-menu.show();
                             }
-                            for id[k] in line.items: Chip {
-                                label: id.network;
-                                chosen: id.chosen;
-                                removable: person.identities.length > 1 && root.linking < 0;
-                                choose => { root.choose(i, line.first + k); }
-                                remove => { root.unlink(i, line.first + k); }
-                            }
-                            Rectangle { horizontal-stretch: 1; }
                         }
-                        HorizontalLayout {
-                            spacing: Theme.gap-md;
-                            Text {
-                                text: person.talk-on;
-                                vertical-alignment: center;
-                                font-size: Theme.text-small;
-                                overflow: elide;
-                                color: Theme.on-surface-variant;
+                        clicked => {
+                            if parent.pickable {
+                                root.link(root.linking, i);
+                                root.linking = -1;
                             }
-                            Rectangle { horizontal-stretch: 1; }
                         }
                     }
-                    if root.linking < 0: Button {
-                        y: (parent.height - self.height) / 2;
-                        text: "Message";
-                        kind: "tonal";
-                        clicked => { root.message(i); }
+                    HorizontalLayout {
+                        padding-left: Theme.gap-lg;
+                        padding-right: Theme.gap-lg;
+                        spacing: Theme.gap-lg;
+                        Avatar {
+                            y: (parent.height - self.height) / 2;
+                            source: person.avatar;
+                            has-image: person.has-avatar;
+                            initials: person.initials;
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: Theme.space-compact;
+                            // The name, then their accounts three to a line, so
+                            // neither is ever squeezed out.
+                            for line[r] in person.identity-rows: HorizontalLayout {
+                                spacing: Theme.gap-md;
+                                if r == 0: EmojiText {
+                                    text: person.name;
+                                    runs: person.name-runs;
+                                    font-weight: 600;
+                                    color: Theme.on-surface;
+                                }
+                                for id[k] in line.items: Chip {
+                                    label: id.network;
+                                    chosen: id.chosen;
+                                    removable: person.identities.length > 1 && root.linking < 0;
+                                    choose => { root.choose(i, line.first + k); }
+                                    remove => { root.unlink(i, line.first + k); }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.gap-md;
+                                Text {
+                                    text: person.talk-on;
+                                    vertical-alignment: center;
+                                    font-size: Theme.text-small;
+                                    overflow: elide;
+                                    color: Theme.on-surface-variant;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                        if root.linking < 0: Button {
+                            y: (parent.height - self.height) / 2;
+                            text: "Message";
+                            kind: "tonal";
+                            clicked => { root.message(i); }
+                        }
                     }
                 }
             }

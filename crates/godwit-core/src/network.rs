@@ -44,6 +44,12 @@ impl Network {
         matches!(self, Self::Stoat)
     }
 
+    /// The network keeps favourite people itself (synced across its own
+    /// clients), so Godwit reads them and writes stars back.
+    pub fn keeps_favourites(self) -> bool {
+        matches!(self, Self::Steam)
+    }
+
     /// Rooms' member lists come from the network; on the others they're
     /// who has written lately.
     pub fn has_member_lists(self) -> bool {

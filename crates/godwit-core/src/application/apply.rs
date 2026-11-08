@@ -293,6 +293,11 @@ impl Application {
                 self.state.blocked.extend(users);
                 Vec::new()
             }
+            Event::Favourites { account, users } => {
+                self.state.favourites.retain(|u| u.account != account);
+                self.state.favourites.extend(users);
+                Vec::new()
+            }
             Event::Presences { account, presence } => self.receive_presences(&account, presence),
             Event::VoiceSince { room, since_ms } => {
                 match since_ms {

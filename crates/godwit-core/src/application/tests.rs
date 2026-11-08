@@ -3368,3 +3368,40 @@ fn channel_settings_close_when_the_channel_goes() {
     app.apply(Event::RoomRemoved(room));
     assert!(app.state().channel_settings.is_none());
 }
+
+#[test]
+fn favourites_reach_only_networks_that_keep_them_and_follow_their_list() {
+    let mut app = Application::default();
+    ready(&mut app, Network::Stoat, vec![]);
+    ready(&mut app, Network::Steam, vec![]);
+    let on_steam = UserId::new(account(Network::Steam), "76561197960265729");
+    let on_stoat = UserId::new(account(Network::Stoat), "ann");
+    let signed_out = UserId::new(AccountId::new(Network::Steam, "gone"), "1");
+    let star = |favourite| Action::SetFavourite {
+        users: vec![on_steam.clone(), on_stoat.clone(), signed_out.clone()],
+        favourite,
+    };
+    // Only the signed-in account whose network keeps favourites is told.
+    assert_eq!(
+        app.dispatch(star(true)),
+        vec![Effect::Backend {
+            account: account(Network::Steam),
+            command: Command::SetFavourite {
+                user: on_steam.clone(),
+                favourite: true,
+            },
+        }]
+    );
+    assert!(app.state.favourites.contains(&on_steam));
+    // Already starred: nothing to send.
+    assert!(app.dispatch(star(true)).is_empty());
+    // The network's own list replaces the account's stars.
+    let other = UserId::new(account(Network::Steam), "76561197960265730");
+    app.apply(Event::Favourites {
+        account: account(Network::Steam),
+        users: vec![other.clone()],
+    });
+    assert!(!app.state.favourites.contains(&on_steam));
+    assert!(app.state.favourites.contains(&other));
+    assert!(app.dispatch(star(false)).is_empty());
+}

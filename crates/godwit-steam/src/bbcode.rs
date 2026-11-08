@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Godwit contributors
 //! Steam chat's BBCode as Godwit rich text: emoticons as inline pictures,
 //! stickers shown large, links, spoilers, bold/italic/strike, code and
-//! quotes. Tags Godwit doesn't know (game invites, random rolls, …) keep
+//! quotes; game invites become cards. Tags Godwit doesn't know (random rolls, …) keep
 //! their text and lose the tag, so nothing shows as raw markup.
 
 use godwit_core::rich;
@@ -36,9 +36,29 @@ pub struct Converted {
     /// Group chat invites (`[invite chatgroupid=… chatid=…]`) as Godwit
     /// invite codes, `g<group>-<chat>` (the room ids of group rooms).
     pub invites: Vec<String>,
+    /// Game invites (`[gameinvite appid=… connect=…]`,
+    /// `[lobbyinvite appid=… lobbyid=…]`), shown as cards with Join.
+    pub games: Vec<GameInvite>,
     /// Tags Godwit doesn't know: name and attribute names, never values
     /// (for the log, to learn new markup).
     pub unknown: Vec<String>,
+}
+
+/// An invitation to play a Steam game.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameInvite {
+    pub app: u32,
+    pub join: GameJoin,
+}
+
+/// How a game invite is joined.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GameJoin {
+    /// Start the game with these arguments (a server, a party: the game's
+    /// own `connect` string, possibly empty).
+    Connect(String),
+    /// Join this Steam lobby.
+    Lobby(u64),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -60,11 +80,15 @@ pub fn convert(source: &str) -> Converted {
     for n in &nodes {
         out.rich.push_str(&render(n, &mut out.jumbo, &mut out.images));
         out.plain.push_str(&plain(n));
-        collect_tags(n, &mut out.invites, &mut out.unknown);
+        collect_tags(n, &mut out.invites, &mut out.games, &mut out.unknown);
     }
     out.plain = out.plain.trim().to_owned();
     if !out.invites.is_empty() && out.plain.is_empty() {
         out.plain = "Invited you to a group chat".to_owned();
+        out.rich = format!("*{}*", out.plain);
+    }
+    if !out.games.is_empty() && out.plain.is_empty() {
+        out.plain = "Invited you to play".to_owned();
         out.rich = format!("*{}*", out.plain);
     }
     // Markup Godwit doesn't know that leaves nothing to show: say so rather
@@ -211,10 +235,12 @@ const KNOWN: &[&str] = &[
     "pre",
     "quote",
     "invite",
+    "gameinvite",
+    "lobbyinvite",
 ];
 
 /// Invites, and the tags Godwit doesn't know (for the log).
-fn collect_tags(node: &Node, invites: &mut Vec<String>, unknown: &mut Vec<String>) {
+fn collect_tags(node: &Node, invites: &mut Vec<String>, games: &mut Vec<GameInvite>, unknown: &mut Vec<String>) {
     let Node::Tag {
         name, attrs, children, ..
     } = node
@@ -228,12 +254,25 @@ fn collect_tags(node: &Node, invites: &mut Vec<String>, unknown: &mut Vec<String
             invites.push(format!("g{group}-{chat}"));
         }
     }
+    if name == "gameinvite" || name == "lobbyinvite" {
+        // Only the digits: pasted invites sometimes carry typographic quotes.
+        let number =
+            |key: &str| attr(attrs, key).and_then(|v| v.trim_matches(|c: char| !c.is_ascii_digit()).parse().ok());
+        let join = if name == "lobbyinvite" {
+            number("lobbyid").map(GameJoin::Lobby)
+        } else {
+            Some(GameJoin::Connect(attr(attrs, "connect").unwrap_or_default()))
+        };
+        if let (Some(app), Some(join)) = (number("appid").and_then(|a: u64| u32::try_from(a).ok()), join) {
+            games.push(GameInvite { app, join });
+        }
+    }
     if !KNOWN.contains(&name.as_str()) {
         let keys: Vec<&str> = attrs.iter().map(|(k, _)| k.as_str()).collect();
         unknown.push(format!("[{name}] {keys:?}"));
     }
     for c in children {
-        collect_tags(c, invites, unknown);
+        collect_tags(c, invites, games, unknown);
     }
 }
 
@@ -468,6 +507,26 @@ mod tests {
             convert("[url=javascript:alert(1)]x[/url]").rich == "x",
             "only web links"
         );
+    }
+
+    #[test]
+    fn game_and_lobby_invites_become_cards() {
+        let c = convert(r#"[gameinvite appid="253250" connect=" --multiplayer.steam.id=5"][/gameinvite]"#);
+        assert_eq!(
+            c.games,
+            vec![GameInvite {
+                app: 253250,
+                join: GameJoin::Connect(" --multiplayer.steam.id=5".into()),
+            }]
+        );
+        assert_eq!(c.plain, "Invited you to play");
+        assert!(c.unknown.is_empty());
+        let c = convert(r#"[lobbyinvite appid="594650" lobbyid="109775241"][/lobbyinvite]"#);
+        assert_eq!(c.games[0].join, GameJoin::Lobby(109_775_241));
+        // A forum-pasted invite's typographic quotes still read.
+        assert_eq!(convert("[gameinvite appid=“730”][/gameinvite]").games[0].app, 730);
+        // No app: nothing to show a card for.
+        assert!(convert(r#"[gameinvite connect="x"][/gameinvite]"#).games.is_empty());
     }
 
     #[test]

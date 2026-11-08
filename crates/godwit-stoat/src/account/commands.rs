@@ -21,6 +21,8 @@ impl StoatAccount {
             Command::AutoDelete(command) => self.autodelete_command(command),
             // Stoat's privacy switches aren't offered here (yet).
             Command::LoadPrivacy | Command::SetPrivacy { .. } => Vec::new(),
+            // Stoat keeps no favourites (`Network::keeps_favourites`).
+            Command::SetFavourite { .. } => Vec::new(),
             Command::LoadSessions => {
                 let Some(account) = self.account.clone() else { return Vec::new() };
                 self.net.send(Cmd::Settings(SettingsCmd::FetchSessions));

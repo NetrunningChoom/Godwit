@@ -5,7 +5,7 @@ import { Theme, Icons, Icon } from "theme.slint";
 import { Anim, Players, Select, MessageItem, ReactionItem } from "types.slint";
 import { Avatar, IconButton, Button, MenuPanel, MenuRow, MenuDivider, EmojiText } from "widgets.slint";
 import { TextBlock } from "textblock.slint";
-import { AttachmentView, EmbedMedia, EmbedCard, InviteCard } from "message-media.slint";
+import { AttachmentView, EmbedMedia, EmbedCard, InviteCard, ActivityCard } from "message-media.slint";
 
 component ReactionChip inherits Rectangle {
     in property <ReactionItem> item;
@@ -71,6 +71,7 @@ export component MessageRow inherits Rectangle {
     callback player-fullscreen(string);
     callback typed(string);
     callback join-invite(string);
+    callback join-activity(string);
     callback player-pointer(string, int, int, bool);
     callback player-move(string, int, int);
     callback open-profile();
@@ -300,6 +301,10 @@ export component MessageRow inherits Rectangle {
                     }
                     for embed in message.embeds: HorizontalLayout {
                         alignment: start;
+                        if embed.style == 3: ActivityCard {
+                            embed: embed;
+                            join => { root.join-activity(embed.url); }
+                        }
                         if embed.style == 0: EmbedCard {
                             embed: embed;
                             link-clicked(u) => { root.link-clicked(u); }

@@ -232,6 +232,62 @@ export component EmbedCard inherits Rectangle {
 // An invite link's card, as the official messaging/elements/Invite: 320 ×
 // 64 px on secondary-container, the server's 42 px icon, its name and
 // member count, and Join (Joined, greyed, once in).
+// An invitation to something outside the chat, as Steam's game invite card:
+// what kind on top, then the art, its name and Join.
+export component ActivityCard inherits Rectangle {
+    in property <EmbedItem> embed;
+    callback join();
+    width: Theme.activity-card-width;
+    border-radius: Theme.radius-md;
+    background: Theme.secondary-container;
+    VerticalLayout {
+        padding: Theme.space-invite;
+        spacing: Theme.space-3;
+        Text {
+            text: embed.site-name;
+            font-size: Theme.text-caption;
+            font-weight: 600;
+            overflow: elide;
+            color: Theme.on-secondary-container;
+        }
+        HorizontalLayout {
+            spacing: Theme.space-4;
+            Rectangle {
+                width: Theme.capsule-width;
+                height: Theme.capsule-height;
+                border-radius: Theme.radius-xs;
+                background: Theme.surface-highest;
+                if embed.has-image: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: embed.image;
+                    image-fit: contain;
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: Theme.space-3;
+                Text {
+                    text: embed.title;
+                    font-size: Theme.text-label;
+                    font-weight: 600;
+                    wrap: word-wrap;
+                    color: Theme.on-secondary-container;
+                }
+                if embed.url != "": HorizontalLayout {
+                    alignment: start;
+                    Button {
+                        text: "Join";
+                        kind: "filled";
+                        clicked => { root.join(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component InviteCard inherits Rectangle {
     in property <InviteItem> item;
     callback join();

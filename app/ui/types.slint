@@ -566,6 +566,9 @@ export struct ContactItem {
     // The user turned off "switch to a better network" suggestions for them.
     no-nudges: bool,
     favourite: bool,
+    // A heading above this row ("" for none): where the favourites start,
+    // and where everyone else does.
+    section: string,
     // Our own name for them ("" for none): it can be reset here.
     nickname: string,
     // `identities` in lines of a few, so any number of accounts fits.

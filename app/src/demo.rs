@@ -165,6 +165,8 @@ pub fn pictures(images: &mut Images) {
     images.put("preview://photo", PREVIEW, 400, 225, &photo);
     // The same photo as a link preview's thumbnail (drawn at 80 px).
     images.put("preview://photo", crate::images::THUMBNAIL, 400, 225, &photo);
+    // And as a game invite's capsule art.
+    images.put("preview://photo", crate::images::CAPSULE, 400, 225, &photo);
     // A server icon: a teal square with a light band (cut round by the loader).
     let icon = paint(84, 84, &|_, y| {
         if (30..54).contains(&y) {
@@ -593,6 +595,17 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
         ..Embed::default()
     });
     history.push(photo);
+    // An invitation to play a game, as Steam's: its art, name and Join.
+    let mut game = msg("09g", "u2", &p2, 15, "*Invited you to play*");
+    game.embeds.push(Embed {
+        site_name: Some("Game invite".into()),
+        title: Some("Godwit Racing".into()),
+        image_url: Some("preview://photo".into()),
+        url: Some("steam://run/0".into()),
+        style: godwit_core::message::EmbedStyle::Activity,
+        ..Embed::default()
+    });
+    history.push(game);
     // Invite links: one to a server we're in, one to try Join with.
     let mut invite = msg(
         "09d",

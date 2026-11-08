@@ -247,6 +247,13 @@ pub enum Action {
         contact: ContactId,
         nickname: Option<String>,
     },
+    /// Star or unstar a person (all of `users`, their accounts) on the
+    /// networks that keep favourites themselves. Godwit's local stars are
+    /// kept by the app; this only reaches the networks.
+    SetFavourite {
+        users: Vec<UserId>,
+        favourite: bool,
+    },
     /// Send `user` a friend request, or accept theirs.
     AddFriend(UserId),
     /// Unfriend `user`, cancel our request, or turn theirs down.

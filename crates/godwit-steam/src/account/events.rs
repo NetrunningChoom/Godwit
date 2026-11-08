@@ -155,6 +155,15 @@ impl SteamAccount {
                 }
                 self.send_friends(out);
             }
+            Ev::Favourites(people) => {
+                if let Some(account) = self.account.clone() {
+                    let users = people
+                        .into_iter()
+                        .map(|a| UserId::new(account.clone(), crate::backend::steam_id(a).to_string()))
+                        .collect();
+                    out.push(Event::Favourites { account, users });
+                }
+            }
             Ev::AppNames(names) => {
                 let mut changed_rooms = Vec::new();
                 self.app_names.extend(names);
@@ -170,6 +179,7 @@ impl SteamAccount {
                     }
                 }
                 self.personas_changed(true, changed_rooms, out);
+                self.games_named(out);
             }
             Ev::Personas(list) => {
                 let mut changed_rooms = Vec::new();

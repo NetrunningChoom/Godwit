@@ -853,6 +853,14 @@ impl Presenter {
                                     .any(|i| network_of(&i.network) == self.people_network)))
                 })
                 .unzip();
+            let starred: Vec<bool> = rows.iter().map(|r| r.favourite).collect();
+            let mut rows = rows;
+            for (row, section) in rows
+                .iter_mut()
+                .zip(view::sections(&starred, self.people_favourites_filter))
+            {
+                row.section = section.into();
+            }
             view::sync(&self.people, rows);
             view::sync(&self.merges, merges);
             self.people_rows = who;

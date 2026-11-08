@@ -226,6 +226,11 @@ pub enum Event {
         account: AccountId,
         users: Vec<UserId>,
     },
+    /// The people the account's network keeps as favourites, all of them.
+    Favourites {
+        account: AccountId,
+        users: Vec<UserId>,
+    },
     /// The account's pending friend requests, both ways.
     FriendRequests {
         account: AccountId,

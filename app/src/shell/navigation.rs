@@ -49,13 +49,25 @@ impl Shell {
         self.refresh(ui);
     }
 
-    /// Stars or unstars a person in the local People view.
+    /// Stars or unstars a person: kept here, and on the networks that keep
+    /// favourites themselves.
     pub fn toggle_person_favourite(&mut self, ui: &AppWindow, row: i32) {
         let Some((_, identities)) = self.person_at(row).cloned() else {
             return;
         };
         let keys: Vec<String> = identities.iter().map(ToString::to_string).collect();
-        let unstar = keys.iter().any(|key| self.settings.person_favourites.contains(key));
+        // Starred here, or in a network's own favourites: unstar everywhere.
+        let favourites = &self.app.state().favourites;
+        let unstar = keys.iter().any(|key| self.settings.person_favourites.contains(key))
+            || identities.iter().any(|u| favourites.contains(u));
+        // The networks that keep favourites themselves get the star too.
+        self.act(
+            ui,
+            Action::SetFavourite {
+                users: identities.clone(),
+                favourite: !unstar,
+            },
+        );
         if unstar {
             self.settings.person_favourites.retain(|key| !keys.contains(key));
         } else {
@@ -89,6 +101,21 @@ impl Shell {
     }
 
     /// An invite card's Join, for the account whose message showed it.
+    /// "Join" on an activity invite: its link goes to the system, which
+    /// opens the network's own app (Steam for a game invite). Only a link a
+    /// shown message carries, so the UI can't open anything else.
+    pub fn join_activity(&mut self, url: &str) {
+        let known = self
+            .presenter
+            .rows
+            .iter()
+            .any(|row| row.activity_links().any(|u| u == url));
+        // Never local files or programs, whatever a network crate builds.
+        if known && !url.is_empty() && !url.starts_with("file:") {
+            open_external(url);
+        }
+    }
+
     pub fn join_invite(&mut self, ui: &AppWindow, code: &str) {
         let account = self
             .presenter

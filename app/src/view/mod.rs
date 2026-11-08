@@ -38,7 +38,7 @@ use godwit_core::server::{DirectoryRoom, Server};
 use slint::{Image, Model, ModelRc, SharedString, StyledText, VecModel};
 
 use crate::code;
-use crate::images::{AVATAR, BANNER, EMBED_ICON, EMOJI, Fit, Images, JUMBO, PREVIEW, REPLY_AVATAR, THUMBNAIL};
+use crate::images::{AVATAR, BANNER, CAPSULE, EMBED_ICON, EMOJI, Fit, Images, JUMBO, PREVIEW, REPLY_AVATAR, THUMBNAIL};
 use crate::inline_player::{InlinePlayers, Kind as PlayerKind, Spec as PlayerSpec};
 use crate::ui::{
     AccountItem, AppWindow, AttachmentItem, BlockItem, CallMemberItem, ContactItem, DirectoryItem, EmbedItem,

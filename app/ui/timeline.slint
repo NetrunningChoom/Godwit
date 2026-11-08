@@ -160,6 +160,7 @@ export component Timeline inherits Rectangle {
     callback play-inline(string, string);
     callback player-fullscreen(string);
     callback join-invite(string);
+    callback join-activity(string);
     callback player-pointer(string, int, int, bool);
     callback player-move(string, int, int);
     callback cancel-compose();
@@ -375,13 +376,31 @@ export component Timeline inherits Rectangle {
         // One connected call panel: video, live streams, participant cards,
         // and call controls stay together above the chat.
         if root.call-here: call-panel := Rectangle {
-            min-height: root.call-panel-dragged ? root.call-panel-h : root.call-panel-min;
+            // A dragged height is what it prefers, never its minimum: on a
+            // smaller screen (the window moved, or made shorter) the panel
+            // gives way down to its usual minimum rather than pushing the
+            // window's own minimum past the screen and the chat out of view.
+            min-height: root.call-panel-min;
+            preferred-height: root.call-panel-dragged ? root.call-panel-h : root.call-panel-min;
             max-height: root.call-panel-dragged ? root.call-panel-h : 100000px;
             vertical-stretch: 0.6;
             background: Theme.surface-low;
             border-radius: Theme.radius-md;
             clip: true;
-            init => { root.call-panel-shown-h = self.height; }
+            // A dragged size is for watching: with no stream or video on
+            // screen (all stopped, or a new call) the panel sizes itself again.
+            property <bool> showing-video: root.call-videos.length > 0;
+            changed showing-video => {
+                if !self.showing-video {
+                    root.call-panel-dragged = false;
+                }
+            }
+            init => {
+                root.call-panel-shown-h = self.height;
+                if !self.showing-video {
+                    root.call-panel-dragged = false;
+                }
+            }
             changed height => { root.call-panel-shown-h = self.height; }
             VerticalLayout {
                 spacing: 0px;
@@ -947,6 +966,7 @@ export component Timeline inherits Rectangle {
                     play-inline(url, kind) => { root.play-inline(url, kind); }
                     player-fullscreen(url) => { root.player-fullscreen(url); }
                     join-invite(code) => { root.join-invite(code); }
+                    join-activity(url) => { root.join-activity(url); }
                     // Typing on selected text goes on in the composer.
                     typed(t) => {
                         input.focus();

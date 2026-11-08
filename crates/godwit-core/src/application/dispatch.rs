@@ -443,6 +443,7 @@ impl Application {
                 account: user.account.clone(),
                 command: Command::AddFriend { user },
             }],
+            Action::SetFavourite { users, favourite } => self.dispatch_set_favourite(users, favourite),
             Action::RemoveFriend(user) => vec![Effect::Backend {
                 account: user.account.clone(),
                 command: Command::RemoveFriend { user },

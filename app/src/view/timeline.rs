@@ -106,6 +106,15 @@ impl RowKey {
             .map(|code| (&self.message.author.account, code))
     }
 
+    /// The join links of the row's activity invites (a game invite's).
+    pub fn activity_links(&self) -> impl Iterator<Item = &str> {
+        self.message
+            .embeds
+            .iter()
+            .filter(|e| e.style == EmbedStyle::Activity)
+            .filter_map(|e| e.url.as_deref())
+    }
+
     pub fn player_urls(&self) -> impl Iterator<Item = &str> {
         self.players().map(|(url, _, _)| url)
     }
@@ -497,7 +506,12 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
         .chain(videos.iter().flatten())
         .map(|embed| {
             let thumbnail = embed.style == EmbedStyle::Card && embed.image_thumbnail;
-            let (image, has_image, anim) = pic(embed.image_url.as_deref(), if thumbnail { THUMBNAIL } else { PREVIEW });
+            let fit = match embed.style {
+                EmbedStyle::Activity => CAPSULE,
+                _ if thumbnail => THUMBNAIL,
+                _ => PREVIEW,
+            };
+            let (image, has_image, anim) = pic(embed.image_url.as_deref(), fit);
             let (icon, has_icon, _) = pic(embed.icon_url.as_deref(), EMBED_ICON);
             let play_url = embed.player_url.as_deref().or(embed.video_url.as_deref());
             let playing = players.zip(play_url).is_some_and(|(players, url)| players.active(url));
@@ -518,6 +532,7 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
                     EmbedStyle::Card => 0,
                     EmbedStyle::Media => 1,
                     EmbedStyle::Gif => 2,
+                    EmbedStyle::Activity => 3,
                 },
                 title: embed.title.as_deref().unwrap_or_default().into(),
                 description: embed_description(description, embed.description_markup),
@@ -555,7 +570,8 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
                 image_thumbnail: thumbnail,
                 // Players and videos always show their area, as the official
                 // SpecialEmbed and `<video>`: dark until playing.
-                has_media: play_url.is_some() || (embed.image_url.is_some() && !thumbnail),
+                has_media: embed.style != EmbedStyle::Activity
+                    && (play_url.is_some() || (embed.image_url.is_some() && !thumbnail)),
                 width: width as f32,
                 height: height as f32,
                 accent,
