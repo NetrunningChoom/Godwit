@@ -19,7 +19,10 @@ fn anonymous_host(url: &str) -> bool {
     let host = url
         .split("://")
         .nth(1)
-        .and_then(|rest| rest.split(['/', '?', '#', ':']).next())
+        .and_then(|rest| rest.split(['/', '?', '#']).next())
+        // Userinfo (`host@elsewhere`) would name another server: never ours.
+        .filter(|authority| !authority.contains('@'))
+        .and_then(|authority| authority.split(':').next())
         .unwrap_or_default()
         .to_ascii_lowercase();
     [
@@ -41,6 +44,7 @@ mod tests {
         assert!(anonymous_host("https://avatars.steamstatic.com/abc_medium.jpg"));
         assert!(anonymous_host("https://steamcommunity.com/x"));
         assert!(!anonymous_host("https://cdn.stoatusercontent.com/x"));
+        assert!(!anonymous_host("https://steamcommunity.com@127.0.0.1/x"));
         assert!(
             !anonymous_host("https://evilsteamstatic.com/x"),
             "only Steam's own domains"

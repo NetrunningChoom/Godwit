@@ -607,7 +607,10 @@ pub fn discord_host(url: &str) -> bool {
     let host = url
         .split("://")
         .nth(1)
-        .and_then(|rest| rest.split(['/', '?', '#', ':']).next())
+        .and_then(|rest| rest.split(['/', '?', '#']).next())
+        // Userinfo (`host@elsewhere`) would name another server: never ours.
+        .filter(|authority| !authority.contains('@'))
+        .and_then(|authority| authority.split(':').next())
         .unwrap_or_default()
         .to_ascii_lowercase();
     ["discordapp.com", "discordapp.net", "discord.com"]
@@ -624,6 +627,7 @@ mod hook_tests {
         assert!(discord_host("https://cdn.discordapp.com/avatars/1/a.png"));
         assert!(discord_host("https://media.discordapp.net/x"));
         assert!(!discord_host("https://evildiscordapp.com/x"));
+        assert!(!discord_host("https://cdn.discordapp.com:80@10.0.0.5/x"));
         assert!((hooks().image_headers)("https://cdn.discordapp.com/a.png").is_some());
         assert!((hooks().image_headers)("https://example.com/a.png").is_none());
     }

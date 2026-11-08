@@ -142,12 +142,14 @@ impl Media {
         {
             return None;
         }
-        let agent: ureq::Agent = ureq::Agent::config_builder()
+        let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(60)))
+            // A configured HTTP(S)_PROXY is kept (ureq's default): direct
+            // connections are filtered in `PublicResolver`, see there.
             .max_redirects(0)
             .http_status_as_error(false)
-            .build()
-            .into();
+            .build();
+        let agent = crate::public_address::PublicResolver::agent(config, |_| false);
         for _ in 0..10 {
             let mut request = agent.get(url.as_str());
             for (name, value) in self.headers(&scope, &url) {

@@ -30,6 +30,7 @@ emojis = "0.9.1"
 futures-executor = "0.3.34"
 futures-util = "0.3.34"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+http = "1"
 indexmap = { version = "2.14.2", features = ["serde"] }
 livekit = { version = "0.10", default-features = false, features = ["tokio", "rustls-tls-webpki-roots"] }
 nnnoiseless = { version = "0.5.2", default-features = false }

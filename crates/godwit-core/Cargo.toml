@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 httpdate = "1"
 ureq.workspace = true
+http.workspace = true
 url = "2"
 godwit-secrets = { path = "../godwit-secrets" }
 tokio.workspace = true

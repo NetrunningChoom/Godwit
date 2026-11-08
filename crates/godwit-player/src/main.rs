@@ -79,7 +79,8 @@ fn write_header(out: &mut impl std::io::Write, tag: u8, a: u32, b: u32) -> std::
 fn run_helper(args: &[String]) -> ! {
     use gtk::prelude::*;
     use webkit2gtk::{
-        NavigationPolicyDecisionExt, PolicyDecisionExt, SettingsExt, URIRequestExt, UserContentManagerExt, WebViewExt,
+        NavigationPolicyDecisionExt, PolicyDecisionExt, SettingsExt, URIRequestExt, UserContentManagerExt,
+        WebContextExt, WebViewExt,
     };
 
     let kind = args.first().map(String::as_str).and_then(Kind::parse);
@@ -168,8 +169,9 @@ fn run_helper(args: &[String]) -> ! {
         &[],
         &[],
     ));
+    let (context, sandboxed) = player_context();
     let web = webkit2gtk::WebView::builder()
-        .web_context(&player_context())
+        .web_context(&context)
         .user_content_manager(&content)
         .build();
     let (outgoing, to_app) = mpsc::channel::<(u8, String)>();
@@ -196,6 +198,17 @@ fn run_helper(args: &[String]) -> ! {
         let _ = outgoing.send((b'X', String::new()));
         true
     });
+    if sandboxed {
+        let failed = fallback_page(url);
+        let fallback_context = context.clone();
+        web.connect_web_process_terminated(move |view, _| {
+            // WebKit can fail to start its sandboxed subprocess even when the
+            // required executables are present. Replace remote content with a
+            // local page without the sandbox; it contains no remote content.
+            fallback_context.set_sandbox_enabled(false);
+            view.load_html(&failed, Some("https://stoat.chat/"));
+        });
+    }
     if let Some(settings) = WebViewExt::settings(&web) {
         settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::Never);
         settings.set_media_playback_requires_user_gesture(false);
@@ -204,10 +217,14 @@ fn run_helper(args: &[String]) -> ! {
     web.set_size_request(width, height);
     window.add(&web);
     window.show_all();
-    let page = match kind {
-        Kind::Embed => iframe_page(url),
-        Kind::Video => video_page(url, false),
-        Kind::Gif => gif_page(url),
+    let page = if should_load_remote(sandboxed) {
+        match kind {
+            Kind::Embed => iframe_page(url),
+            Kind::Video => video_page(url, false),
+            Kind::Gif => gif_page(url),
+        }
+    } else {
+        fallback_page(url)
     };
     web.load_html(&page, Some("https://stoat.chat/"));
     web.grab_focus();
@@ -343,7 +360,9 @@ fn run_helper(_: &[String]) -> ! {
 #[cfg(target_os = "linux")]
 fn run_window(args: &[String]) -> ! {
     use gtk::prelude::*;
-    use webkit2gtk::{PolicyDecisionExt, SettingsExt, WebViewExt};
+    use webkit2gtk::{
+        NavigationPolicyDecisionExt, PolicyDecisionExt, SettingsExt, URIRequestExt, WebContextExt, WebViewExt,
+    };
 
     let kind = args.first().map(String::as_str).and_then(Kind::parse);
     let url = args.get(1).map(String::as_str).unwrap_or_default();
@@ -358,15 +377,36 @@ fn run_window(args: &[String]) -> ! {
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
     window.set_title("Godwit player");
     window.set_default_size(1280, 720);
-    let web = webkit2gtk::WebView::with_context(&player_context());
+    let (context, sandboxed) = player_context();
+    let web = webkit2gtk::WebView::with_context(&context);
     web.connect_decide_policy(|_, decision, kind| {
-        if kind == webkit2gtk::PolicyDecisionType::NewWindowAction {
-            decision.ignore();
-            true
-        } else {
-            false
+        if kind != webkit2gtk::PolicyDecisionType::NewWindowAction {
+            return false;
         }
+        let uri = decision
+            .downcast_ref::<webkit2gtk::NavigationPolicyDecision>()
+            .and_then(|d| d.navigation_action())
+            .and_then(|a| a.request())
+            .and_then(|r| r.uri());
+        // Only web links reach the browser, as the inline player's links
+        // (app/src/inline_player.rs): a page must not open file: or custom schemes.
+        if let Some(uri) = uri.filter(|u| u.starts_with("https://") || u.starts_with("http://"))
+            && let Err(error) = open::that_detached(uri)
+        {
+            eprintln!("error: opening player link: {error}");
+        }
+        decision.ignore();
+        true
     });
+    if sandboxed {
+        let failed = fallback_page(url);
+        let fallback_context = context.clone();
+        web.connect_web_process_terminated(move |view, _| {
+            // Do not retry remote content after a sandbox startup failure.
+            fallback_context.set_sandbox_enabled(false);
+            view.load_html(&failed, Some("https://stoat.chat/"));
+        });
+    }
     if let Some(settings) = WebViewExt::settings(&web) {
         settings.set_media_playback_requires_user_gesture(false);
     }
@@ -403,9 +443,13 @@ fn run_window(args: &[String]) -> ! {
         }
     });
     window.connect_destroy(|_| gtk::main_quit());
-    let page = match kind {
-        Kind::Embed => iframe_page(&autoplay(url)),
-        Kind::Video | Kind::Gif => video_page(url, true),
+    let page = if should_load_remote(sandboxed) {
+        match kind {
+            Kind::Embed => iframe_page(&autoplay(url)),
+            Kind::Video | Kind::Gif => video_page(url, true),
+        }
+    } else {
+        fallback_page(url)
     };
     web.load_html(&page, Some("https://stoat.chat/"));
     window.show_all();
@@ -512,21 +556,48 @@ fn iframe_page(url: &str) -> String {
 /// then reaches only the sandbox, not the user's files. WebKit aborts when
 /// the sandbox is on without bubblewrap, so it's only switched on with it.
 #[cfg(target_os = "linux")]
-fn player_context() -> webkit2gtk::WebContext {
+fn player_context() -> (webkit2gtk::WebContext, bool) {
     use webkit2gtk::WebContextExt;
     let context = webkit2gtk::WebContext::new_ephemeral();
-    if on_path("bwrap") && on_path("xdg-dbus-proxy") {
+    let sandboxed = player_sandbox_available();
+    if sandboxed {
         context.set_sandbox_enabled(true);
     } else {
-        eprintln!("note: bubblewrap or xdg-dbus-proxy isn't installed: the player runs without WebKit's sandbox");
+        eprintln!("note: bubblewrap or xdg-dbus-proxy isn't installed: remote player content is disabled");
     }
-    context
+    (context, sandboxed)
+}
+
+#[cfg(target_os = "linux")]
+fn player_sandbox_available() -> bool {
+    on_path("bwrap") && on_path("xdg-dbus-proxy")
+}
+
+fn should_load_remote(sandboxed: bool) -> bool {
+    sandboxed
 }
 
 /// An executable called `name` is on PATH.
 #[cfg(target_os = "linux")]
 fn on_path(name: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
+    use std::os::unix::fs::PermissionsExt;
+
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|dir| {
+            let executable = dir.join(name);
+            executable.is_file()
+                && executable
+                    .metadata()
+                    .is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+        })
+    })
+}
+
+fn fallback_page(url: &str) -> String {
+    format!(
+        "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px sans-serif;background:#202124;color:#eee;padding:2em'><p>Playback needs WebKit's sandbox.</p><p><a style='color:#8ab4f8' href=\"{}\" target=_blank>Open in browser</a></p><p>Install bubblewrap and xdg-dbus-proxy to play videos here.</p>",
+        escape_attr(url)
+    )
 }
 
 /// The official `<video controls preload="metadata">`: its first frame shows
@@ -605,6 +676,16 @@ mod tests {
         assert!(!valid_player_url("javascript:alert(1)"));
         assert!(video_page("https://media.example/v?a=1&b=2", false).contains("a=1&amp;b=2"));
         assert!(iframe_page("https://player.example/\"x").contains("&quot;x"));
+    }
+
+    #[test]
+    fn player_fails_closed_without_sandbox() {
+        assert!(should_load_remote(true));
+        assert!(!should_load_remote(false));
+        let page = fallback_page("https://media.example/video.mp4");
+        assert!(page.contains("Open in browser"));
+        assert!(page.contains("bubblewrap and xdg-dbus-proxy"));
+        assert!(!page.contains("<iframe") && !page.contains("<video"));
     }
 
     #[test]

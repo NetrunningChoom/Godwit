@@ -101,6 +101,9 @@ pub fn run_at(spec: Spec, start: &str) -> ! {
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
     window.set_title(&format!("Sign in to {} — Godwit", spec.network));
     window.set_default_size(900, 760);
+    // These windows load the configured network sign-in flow and collect its
+    // session; unlike message-controlled player pages, they are required for
+    // authentication and never accept a URL supplied by a message.
     let context = webkit2gtk::WebContext::new_ephemeral();
     let web = webkit2gtk::WebView::with_context(&context);
     if let Some(settings) = WebViewExt::settings(&web) {

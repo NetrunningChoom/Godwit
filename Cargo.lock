@@ -3203,6 +3203,7 @@ version = "0.1.6"
 dependencies = [
  "directories",
  "godwit-secrets",
+ "http",
  "httpdate",
  "serde",
  "serde_json",
@@ -3301,6 +3302,7 @@ dependencies = [
  "image",
  "javascriptcore-rs",
  "libc",
+ "open",
  "serde_json",
  "soup3",
  "url",

@@ -80,6 +80,7 @@ const SETTLE_AFTER: usize = 1024 * 1024;
 const SETTLE_EVERY: Duration = Duration::from_secs(5);
 /// Larger downloads are refused.
 const MAX_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_REDIRECTS: usize = 3;
 /// A failed picture is tried again after this long.
 const RETRY_AFTER: Duration = Duration::from_secs(60);
 /// Download threads (most pictures are small avatars and emoji, waiting on
@@ -410,14 +411,19 @@ impl Images {
         let media = Arc::new(RwLock::new(media));
         let queue: Queue = Arc::default();
         let (done, results) = mpsc::channel();
-        let agent: ureq::Agent = ureq::Agent::config_builder()
+        let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(30)))
+            // A configured HTTP(S)_PROXY is kept (ureq's default): direct
+            // connections are filtered in `PublicResolver`, see there.
             // Set per request (see `fetch`): Steam's servers get none.
             .user_agent(ureq::config::AutoHeaderValue::None)
+            .max_redirects(0)
             // Statuses are read here: a 429's Retry-After decides the wait.
             .http_status_as_error(false)
-            .build()
-            .into();
+            .build();
+        let agent = godwit_core::public_address::PublicResolver::agent(config, |url| {
+            godwit_core::hooks::image_headers(url).is_some()
+        });
         let disk = disk.map(Arc::new);
         if let Some(disk) = disk.clone() {
             // Trimmed once per start, off the UI thread.
@@ -752,61 +758,85 @@ impl Images {
 /// A web file's bytes, fetched as pictures are (the same headers per host):
 /// for saving the image the viewer shows. Blocking; call it off the UI thread.
 pub(crate) fn download(url: &str) -> Option<Vec<u8>> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let config = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(60)))
         .user_agent(ureq::config::AutoHeaderValue::None)
+        .max_redirects(0)
         .http_status_as_error(false)
-        .build()
-        .into();
+        .build();
+    let agent = godwit_core::public_address::PublicResolver::agent(config, |url| {
+        godwit_core::hooks::image_headers(url).is_some()
+    });
     fetch(&agent, url).ok()
 }
 
 fn fetch(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, Failure> {
-    // Only the web is fetched here; anything else never will be.
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(Failure::Final);
-    }
-    let request = agent.get(url);
-    let request = if let Some(headers) = godwit_core::hooks::image_headers(url) {
-        // The network's own pictures, fetched as its official client does.
-        headers
-            .into_iter()
-            .fold(request, |request, (name, value)| request.header(name, value))
-    } else {
-        // Generic: no version, nothing about this machine.
-        request.header("User-Agent", "Godwit")
+    let mut url = match reqwest::Url::parse(url) {
+        Ok(url) if matches!(url.scheme(), "https" | "http") => url,
+        _ => return Err(Failure::Final),
     };
-    let mut response = match request.call() {
-        Ok(r) => r,
-        Err(e) => {
-            // Network trouble: worth another try.
-            godwit_core::verbose!("error: fetching image: {e}");
-            return Err(Failure::Again(None));
-        }
-    };
-    let status = response.status().as_u16();
-    if !(200..300).contains(&status) {
-        let hint = response
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_secs);
-        godwit_core::verbose!("error: fetching image: status {status}");
-        return Err(if status == 429 || status >= 500 {
-            Failure::Again(hint)
+    for hop in 0..=MAX_REDIRECTS {
+        let address = url.as_str();
+        let request = agent.get(address);
+        let request = if let Some(headers) = godwit_core::hooks::image_headers(address) {
+            // The network's own pictures, fetched as its official client does.
+            headers
+                .into_iter()
+                .fold(request, |request, (name, value)| request.header(name, value))
         } else {
-            Failure::Final
-        });
-    }
-    let mut bytes = Vec::new();
-    match response.body_mut().as_reader().take(MAX_BYTES).read_to_end(&mut bytes) {
-        Ok(_) => Ok(bytes),
-        Err(e) => {
-            godwit_core::verbose!("error: reading image: {e}");
-            Err(Failure::Again(None))
+            // Generic: no version, nothing about this machine.
+            request.header("User-Agent", "Godwit")
+        };
+        let mut response = match request.call() {
+            Ok(r) => r,
+            Err(e) => {
+                // Network trouble: worth another try.
+                godwit_core::verbose!("error: fetching image: {e}");
+                return Err(Failure::Again(None));
+            }
+        };
+        let status = response.status().as_u16();
+        if (300..400).contains(&status) {
+            if !redirect_allowed(hop) {
+                return Err(Failure::Final);
+            }
+            let Some(location) = response.headers().get("location").and_then(|v| v.to_str().ok()) else {
+                return Err(Failure::Final);
+            };
+            url = url.join(location).map_err(|_| Failure::Final)?;
+            if !matches!(url.scheme(), "https" | "http") {
+                return Err(Failure::Final);
+            }
+            continue;
         }
+        if !(200..300).contains(&status) {
+            let hint = response
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .map(Duration::from_secs);
+            godwit_core::verbose!("error: fetching image: status {status}");
+            return Err(if status == 429 || status >= 500 {
+                Failure::Again(hint)
+            } else {
+                Failure::Final
+            });
+        }
+        let mut bytes = Vec::new();
+        return match response.body_mut().as_reader().take(MAX_BYTES).read_to_end(&mut bytes) {
+            Ok(_) => Ok(bytes),
+            Err(e) => {
+                godwit_core::verbose!("error: reading image: {e}");
+                Err(Failure::Again(None))
+            }
+        };
     }
+    Err(Failure::Final)
+}
+
+fn redirect_allowed(redirects_followed: usize) -> bool {
+    redirects_followed < MAX_REDIRECTS
 }
 
 /// The target size for a picture of `w`×`h`.
@@ -1038,6 +1068,13 @@ pub(crate) fn test_gif(delay: u16) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redirects_stop_after_three_hops() {
+        assert!(redirect_allowed(0));
+        assert!(redirect_allowed(2));
+        assert!(!redirect_allowed(MAX_REDIRECTS));
+    }
 
     fn red_png() -> Vec<u8> {
         use image::ImageEncoder;

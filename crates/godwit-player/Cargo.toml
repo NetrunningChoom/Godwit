@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 url = "2"
+open.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk.workspace = true
