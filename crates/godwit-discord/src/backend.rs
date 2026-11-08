@@ -99,6 +99,16 @@ pub enum Request {
         user: String,
         guild: Option<String>,
     },
+    /// Our private note on `user`, asked when their profile opens.
+    Note {
+        user: String,
+    },
+    SetNote {
+        user: String,
+        note: String,
+        /// What it was, to put back when saving fails.
+        previous: String,
+    },
     /// Our profile saved: account fields (with an avatar file to read), then
     /// the profile's own; either may be absent.
     SaveProfile {
@@ -365,6 +375,15 @@ pub enum Answer {
         result: Result<Value, RequestError>,
     },
     ProfileSaved(Result<(), RequestError>),
+    Note {
+        user: String,
+        result: Result<String, RequestError>,
+    },
+    NoteSaved {
+        user: String,
+        previous: String,
+        result: Result<(), RequestError>,
+    },
     Consents(Result<Value, RequestError>),
     Sessions(Result<Value, RequestError>),
     FriendRequest {
@@ -896,6 +915,14 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::Profile { user, guild } => {
             let result = api.profile(&user, guild.as_deref()).await.map_err(RequestError::from);
             Answer::Profile { user, result }
+        }
+        Request::Note { user } => {
+            let result = api.note(&user).await.map_err(RequestError::from);
+            Answer::Note { user, result }
+        }
+        Request::SetNote { user, note, previous } => {
+            let result = api.set_note(&user, &note).await.map_err(RequestError::from);
+            Answer::NoteSaved { user, previous, result }
         }
         Request::SaveProfile { me, avatar, profile } => Answer::ProfileSaved(
             async {

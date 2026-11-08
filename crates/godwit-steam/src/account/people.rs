@@ -157,6 +157,11 @@ impl SteamAccount {
             group_moderation: None,
             can_block: false,
             can_report: false,
+            mutual_servers: Vec::new(),
+            mutual_friends: Vec::new(),
+            note: None,
+            can_note: false,
+            note_limit: 0,
         })
     }
 

@@ -11,7 +11,7 @@ import { Palette, Slider, ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
-    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
     ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
@@ -55,7 +55,7 @@ import { CallDialogs, ManagementDialogs } from "app-dialogs.slint";
 export {
     Palette,
     Theme, Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
-    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem, PinItem, ActiveItem, NotificationItem, ThreadItem
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem, PinItem, ActiveItem, NotificationItem, ThreadItem
 }
 
 export component AppWindow inherits Window {
@@ -223,6 +223,16 @@ export component AppWindow inherits Window {
     in property <bool> card-can-block;
     in property <bool> card-blocked;
     in property <bool> card-can-report;
+    in property <bool> card-can-note;
+    in-out property <string> card-note;
+    // The note as the network last gave it (the Rust side compares to it).
+    in-out property <string> card-note-source;
+    in property <[MutualItem]> card-mutual-servers;
+    in property <[MutualItem]> card-mutual-friends;
+    callback save-note(string);
+    callback note-edited(string);
+    callback open-mutual-server(int);
+    callback open-mutual-friend(int);
     // Kept on the window and exposed for generated off-screen scenes.
     in-out property <int> confirm-moderate: 0;
     in-out property <string> ban-reason;
@@ -1431,6 +1441,14 @@ export component AppWindow inherits Window {
         unblock-user => { root.unblock-user(); }
         can-report: root.card-can-report;
         report => { root.report-profile(); }
+        can-note: root.card-can-note;
+        note <=> root.card-note;
+        save-note(t) => { root.save-note(t); }
+        note-edited(t) => { root.note-edited(t); }
+        mutual-servers: root.card-mutual-servers;
+        mutual-friends: root.card-mutual-friends;
+        open-mutual-server(i) => { root.open-mutual-server(i); }
+        open-mutual-friend(i) => { root.open-mutual-friend(i); }
         kick => { root.confirm-moderate = 1; }
         ban => { root.confirm-moderate = 2; root.ban-reason = ""; root.ban-delete-index = 0; }
         remove-group-member => { root.confirm-remove-group-member = true; }

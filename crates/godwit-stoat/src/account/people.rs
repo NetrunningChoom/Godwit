@@ -103,6 +103,12 @@ impl StoatAccount {
             // Reports about other people, except the network's own staff
             // (official UserContextMenu: "Report user" needs !user.privileged).
             can_report: !u.is_some_and(|u| u.privileged) && self.store.me.as_deref() != Some(user),
+            // Stoat has no private notes; its mutuals need a request of their own (left off).
+            mutual_servers: Vec::new(),
+            mutual_friends: Vec::new(),
+            note: None,
+            can_note: false,
+            note_limit: 0,
         })
     }
 

@@ -548,6 +548,16 @@ export struct MemberItem {
     status: string,
 }
 
+// A row of a profile's Mutual servers or Mutual friends (an icon or avatar,
+// the name, and for a server the person's nickname there).
+export struct MutualItem {
+    name: string,
+    detail: string,
+    picture: image,
+    has-picture: bool,
+    initials: string,
+}
+
 export struct RoleItem {
     name: string,
     colour: color,

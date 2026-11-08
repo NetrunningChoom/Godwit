@@ -2,8 +2,8 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { Theme, Icons } from "theme.slint";
-import { RoleItem, BlockItem, Select } from "types.slint";
-import { Avatar, Button, IconButton } from "widgets.slint";
+import { RoleItem, BlockItem, Select, MutualItem } from "types.slint";
+import { Avatar, Button, IconButton, TextField } from "widgets.slint";
 import { TextBlock } from "textblock.slint";
 
 // Someone's profile card, as Godwit draws it: a 96 px banner (primary-
@@ -51,6 +51,18 @@ export component UserCard inherits Rectangle {
     // The network takes reports about them (never about us or its staff).
     in property <bool> can-report;
     callback report();
+    // Our private note on them (the official Note field): saved on Enter or
+    // when the field loses focus.
+    in property <bool> can-note;
+    in-out property <string> note;
+    callback save-note(string);
+    // Every edit, so the shell can hold the text to the network's limit.
+    callback note-edited(string);
+    // Servers and friends we share with them; a click opens it.
+    in property <[MutualItem]> mutual-servers;
+    in property <[MutualItem]> mutual-friends;
+    callback open-mutual-server(int);
+    callback open-mutual-friend(int);
     callback kick();
     callback ban();
     callback remove-group-member();
@@ -180,6 +192,54 @@ export component UserCard inherits Rectangle {
                     row-number: -2;
                     index: 3;
                     colour: Theme.on-surface;
+                }
+                if root.can-note: VerticalLayout {
+                    spacing: Theme.space-2;
+                    Text { text: "Note"; font-size: Theme.text-small; font-weight: 600; color: Theme.on-surface-variant; }
+                    TextField {
+                        text <=> root.note;
+                        placeholder: "Click to add a note (only you see it)";
+                        edited(t) => { root.note-edited(t); }
+                        accepted => { root.save-note(root.note); }
+                        blurred => { root.save-note(root.note); }
+                    }
+                }
+                if root.mutual-servers.length > 0: VerticalLayout {
+                    spacing: Theme.space-2;
+                    Text {
+                        text: root.mutual-servers.length == 1 ? "1 mutual server" : root.mutual-servers.length + " mutual servers";
+                        font-size: Theme.text-small; font-weight: 600; color: Theme.on-surface-variant;
+                    }
+                    for s[i] in root.mutual-servers: Rectangle {
+                        height: 36px;
+                        border-radius: Theme.radius-sm;
+                        background: ta-s.has-hover ? Theme.surface-highest : transparent;
+                        ta-s := TouchArea { clicked => { root.open-mutual-server(i); } }
+                        HorizontalLayout {
+                            padding-left: Theme.space-2; padding-right: Theme.space-2; spacing: Theme.space-3;
+                            Avatar { y: (parent.height - self.height) / 2; size: 28px; source: s.picture; has-image: s.has-picture; initials: s.initials; }
+                            Text { text: s.name; font-size: Theme.text-body; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                            if s.detail != "": Text { text: s.detail; font-size: Theme.text-small; color: Theme.on-surface-variant; vertical-alignment: center; overflow: elide; }
+                        }
+                    }
+                }
+                if root.mutual-friends.length > 0: VerticalLayout {
+                    spacing: Theme.space-2;
+                    Text {
+                        text: root.mutual-friends.length == 1 ? "1 mutual friend" : root.mutual-friends.length + " mutual friends";
+                        font-size: Theme.text-small; font-weight: 600; color: Theme.on-surface-variant;
+                    }
+                    for f[i] in root.mutual-friends: Rectangle {
+                        height: 36px;
+                        border-radius: Theme.radius-sm;
+                        background: ta-f.has-hover ? Theme.surface-highest : transparent;
+                        ta-f := TouchArea { clicked => { root.open-mutual-friend(i); } }
+                        HorizontalLayout {
+                            padding-left: Theme.space-2; padding-right: Theme.space-2; spacing: Theme.space-3;
+                            Avatar { y: (parent.height - self.height) / 2; size: 28px; source: f.picture; has-image: f.has-picture; initials: f.initials; }
+                            Text { text: f.name; font-size: Theme.text-body; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                        }
+                    }
                 }
                 if root.linked != "": Text { text: root.linked; font-size: Theme.text-small; color: Theme.on-surface-variant; }
                 if !root.me: HorizontalLayout {

@@ -130,6 +130,12 @@ pub enum Command {
     UnblockUser {
         user: UserId,
     },
+    /// Set our private note on `user` (empty removes it); the network's
+    /// own update follows as a new [`Event::Profile`].
+    SetNote {
+        user: UserId,
+        note: String,
+    },
     /// Remove a member from a group conversation.
     RemoveGroupMember {
         room: RoomId,

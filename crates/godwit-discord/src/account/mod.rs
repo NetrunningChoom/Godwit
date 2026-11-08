@@ -26,7 +26,9 @@ use std::time::Instant;
 use godwit_core::account::NetworkAccount;
 use godwit_core::application::{AlertKind, Command, Event, Person};
 use godwit_core::ids::{AccountId, MessageId, RoomId, ServerId, UserId};
-use godwit_core::members::{Member, MemberGroup, Moderation, ModerationRole, Presence, Profile, Relationship};
+use godwit_core::members::{
+    Member, MemberGroup, Moderation, ModerationRole, MutualFriend, MutualServer, Presence, Profile, Relationship,
+};
 use godwit_core::message::{Attachment, AttachmentKind, Embed, EmbedStyle, InvitePreview, Markup, Message, Reaction};
 use godwit_core::network::Network;
 use godwit_core::room::{Capabilities, Room, RoomEncryption, RoomKind};
@@ -112,6 +114,9 @@ pub struct DiscordAccount {
     /// The profile card on screen, and what Discord's profile said.
     profile_for: Option<(String, Option<String>)>,
     profiles: HashMap<String, Value>,
+    /// Our private notes on people, by user id (asked when a profile opens,
+    /// kept current by USER_NOTE_UPDATE); a person without one is absent.
+    notes: HashMap<String, String>,
     /// Our own profile asked for (Settings → Profile): loading, or reloading
     /// after a save (true).
     own_profile: Option<bool>,
@@ -193,6 +198,7 @@ impl DiscordAccount {
             pending: HashMap::new(),
             profile_for: None,
             profiles: HashMap::new(),
+            notes: HashMap::new(),
             own_profile: None,
             consents: None,
             roles_watch: None,
@@ -1051,6 +1057,15 @@ impl NetworkAccount for DiscordAccount {
                     user: user.raw.to_string(),
                 },
             ),
+            // Our note on someone else (the card offers it for no one else).
+            Command::SetNote { user, note } if user.raw.as_ref() != self.me() => {
+                let (user, note) = (user.raw.to_string(), note.clone());
+                let previous = self.notes.get(&user).cloned().unwrap_or_default();
+                if self.set_note(&user, &note) {
+                    self.sync_profile(&mut out);
+                }
+                req(&self.net, Request::SetNote { user, note, previous });
+            }
             Command::SendFriendRequest { request, name } => req(
                 &self.net,
                 Request::AddFriendByName {
@@ -1118,6 +1133,10 @@ impl NetworkAccount for DiscordAccount {
                 let raw = user.raw.to_string();
                 self.profile_for = Some((raw.clone(), guild.clone()));
                 self.sync_profile(&mut out);
+                // The note comes with the profile (the web client fetches it when the popout opens).
+                if !self.notes.contains_key(&raw) && raw != self.me() {
+                    req(&self.net, Request::Note { user: raw.clone() });
+                }
                 if !self.profiles.contains_key(&raw) {
                     req(&self.net, Request::Profile { user: raw, guild });
                 }
@@ -2049,6 +2068,150 @@ mod tests {
         assert!(
             out.iter()
                 .any(|e| matches!(e, Event::Blocked { users, .. } if users.is_empty()))
+        );
+    }
+
+    #[test]
+    fn a_profile_answer_brings_mutual_servers_and_friends_and_the_note_follows() {
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        let zarg = a.user_id("200").unwrap();
+        a.run(Command::LoadProfile {
+            user: zarg.clone(),
+            room: None,
+        });
+        let mut asked = Vec::new();
+        while let Ok(Cmd::Request(r)) = cmds.try_recv() {
+            asked.push(r);
+        }
+        assert!(
+            asked
+                .iter()
+                .any(|r| matches!(r, Request::Note { user } if user == "200"))
+        );
+        assert!(
+            asked
+                .iter()
+                .any(|r| matches!(r, Request::Profile { user, .. } if user == "200"))
+        );
+        let mut out = Vec::new();
+        a.answer(
+            Answer::Profile {
+                user: "200".into(),
+                result: Ok(json!({
+                    "user": {"id": "200", "username": "zarg"},
+                    "mutual_guilds": [{"id": "10", "nick": "Z"}, {"id": "999", "nick": null}],
+                    "mutual_friends": [{"id": "300", "username": "kim", "global_name": "Kim"}],
+                })),
+            },
+            &mut out,
+        );
+        assert!(
+            matches!(out.last(), Some(Event::Profile(p)) if !p.can_note),
+            "no field before the note arrives"
+        );
+        a.answer(
+            Answer::Note {
+                user: "200".into(),
+                result: Ok("met at a con".into()),
+            },
+            &mut out,
+        );
+        let Some(Event::Profile(p)) = out.iter().rev().find(|e| matches!(e, Event::Profile(_))) else {
+            panic!("{out:?}")
+        };
+        assert_eq!(p.mutual_servers.len(), 1, "servers we don't know are left out");
+        assert_eq!(p.mutual_servers[0].server.raw.as_ref(), "10");
+        assert_eq!(p.mutual_servers[0].nick.as_deref(), Some("Z"));
+        assert_eq!(p.mutual_friends.len(), 1);
+        assert_eq!(p.mutual_friends[0].name.as_ref(), "Kim");
+        assert!(!a.store.users.contains_key("300"), "mutuals aren't kept as users");
+        assert_eq!(p.note_limit, 256);
+        assert_eq!(p.note.as_deref(), Some("met at a con"));
+        assert!(p.can_note);
+        // The gateway's update replaces it, and an empty one clears it.
+        let mut out = Vec::new();
+        a.dispatch("USER_NOTE_UPDATE", &json!({"id": "200", "note": "new"}), &mut out);
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Profile(p) if p.note.as_deref() == Some("new")))
+        );
+        let mut out = Vec::new();
+        a.dispatch("USER_NOTE_UPDATE", &json!({"id": "200", "note": ""}), &mut out);
+        assert!(out.iter().any(|e| matches!(e, Event::Profile(p) if p.note.is_none())));
+        // A note already known isn't asked for again.
+        while cmds.try_recv().is_ok() {}
+        a.run(Command::LoadProfile {
+            user: zarg.clone(),
+            room: None,
+        });
+        assert!(!std::iter::from_fn(|| cmds.try_recv().ok()).any(|c| matches!(c, Cmd::Request(Request::Note { .. }))));
+        // Saving sends the PUT and shows the note at once; never on ourselves.
+        let out = a.run(Command::SetNote {
+            user: zarg.clone(),
+            note: "x".into(),
+        });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Profile(p) if p.note.as_deref() == Some("x")))
+        );
+        assert!(matches!(
+            std::iter::from_fn(|| cmds.try_recv().ok()).find(|c| matches!(c, Cmd::Request(Request::SetNote { .. }))),
+            Some(Cmd::Request(Request::SetNote { user, note, .. })) if user == "200" && note == "x"
+        ));
+        // A failed save puts the old note back and says so; a late fetch changes nothing.
+        let mut out = Vec::new();
+        a.answer(
+            Answer::NoteSaved {
+                user: "200".into(),
+                previous: "old".into(),
+                result: Err(crate::backend::RequestError::from(anyhow::anyhow!("no"))),
+            },
+            &mut out,
+        );
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Profile(p) if p.note.as_deref() == Some("old")))
+        );
+        assert!(out.iter().any(|e| matches!(e, Event::Error(_))));
+        let mut out = Vec::new();
+        a.answer(
+            Answer::Note {
+                user: "200".into(),
+                result: Ok("stale".into()),
+            },
+            &mut out,
+        );
+        assert!(out.is_empty());
+        let me = a.user_id(a.me()).unwrap();
+        a.run(Command::SetNote {
+            user: me,
+            note: "x".into(),
+        });
+        assert!(cmds.try_recv().is_err());
+    }
+
+    #[test]
+    fn demo_profiles_have_mutuals_and_a_note_that_saves_through_the_gateway_event() {
+        let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
+        let zarg = a.user_id("200").unwrap();
+        let out = a.run(Command::LoadProfile {
+            user: zarg.clone(),
+            room: None,
+        });
+        let Some(Event::Profile(p)) = out.iter().find(|e| matches!(e, Event::Profile(_))) else {
+            panic!("{out:?}")
+        };
+        assert!(!p.mutual_servers.is_empty());
+        assert!(p.note.is_some());
+        let out = a.run(Command::SetNote {
+            user: zarg,
+            note: "changed".into(),
+        });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Profile(p) if p.note.as_deref() == Some("changed")))
         );
     }
 

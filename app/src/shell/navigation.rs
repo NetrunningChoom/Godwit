@@ -658,6 +658,44 @@ impl Shell {
         }
     }
 
+    /// The card's note field committed (Enter or leaving it): one request
+    /// per edit, none when it's what the network already has.
+    pub fn save_note(&mut self, ui: &AppWindow, note: String) {
+        if let Some((user, Some(p))) = self.app.state().profile.clone()
+            && p.can_note
+            && p.note.as_deref().unwrap_or_default() != note
+        {
+            self.act(ui, Action::SetNote { user, note });
+        }
+    }
+
+    /// The note field changed: it stops at the network's limit (the text
+    /// is cut rather than silently trimmed when saved).
+    pub fn note_edited(&mut self, ui: &AppWindow, text: &str) {
+        if let Some((_, Some(p))) = &self.app.state().profile
+            && p.note_limit > 0
+            && text.chars().count() > p.note_limit
+        {
+            ui.set_card_note(text.chars().take(p.note_limit).collect::<String>().into());
+        }
+    }
+
+    /// A row of the card's mutual servers (open it) or friends (their card).
+    pub fn open_mutual(&mut self, ui: &AppWindow, row: i32, server: bool) {
+        let Some((_, Some(p))) = self.app.state().profile.clone() else {
+            return;
+        };
+        let Ok(row) = usize::try_from(row) else { return };
+        if server {
+            if let Some(m) = p.mutual_servers.get(row) {
+                self.act(ui, Action::CloseProfile);
+                self.act(ui, Action::SelectServer(Some(m.server.clone())));
+            }
+        } else if let Some(f) = p.mutual_friends.get(row) {
+            self.act(ui, Action::OpenProfile(f.user.clone()));
+        }
+    }
+
     pub fn message_profile(&mut self, ui: &AppWindow) {
         if let Some((user, _)) = self.app.state().profile.clone() {
             self.act(ui, Action::CloseProfile);

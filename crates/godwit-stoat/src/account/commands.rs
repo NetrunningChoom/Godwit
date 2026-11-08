@@ -400,6 +400,8 @@ impl StoatAccount {
             }
             Command::BlockUser { user } => self.relationship_command(&user, RelationshipAction::Block),
             Command::UnblockUser { user } => self.relationship_command(&user, RelationshipAction::Unblock),
+            // Stoat has no private notes (can_note is never set).
+            Command::SetNote { .. } => Vec::new(),
             Command::OpenDirect { user } => {
                 self.net.send(Cmd::People(PeopleCmd::OpenDm {
                     user: user.raw.to_string(),

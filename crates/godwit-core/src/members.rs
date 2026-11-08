@@ -99,6 +99,38 @@ pub struct Profile {
     /// about the network's own staff).
     #[serde(default)]
     pub can_report: bool,
+    /// Servers we both are in (the official profile's Mutual Servers tab).
+    #[serde(default)]
+    pub mutual_servers: Vec<MutualServer>,
+    /// Friends we have in common (Mutual Friends tab).
+    #[serde(default)]
+    pub mutual_friends: Vec<MutualFriend>,
+    /// Our private note on them; None while it loads or if there is none.
+    #[serde(default)]
+    pub note: Option<Arc<str>>,
+    /// The card has a note field for them (the network keeps private notes,
+    /// never ours on ourselves).
+    #[serde(default)]
+    pub can_note: bool,
+    /// The most characters a note may hold (the card's field stops there).
+    #[serde(default)]
+    pub note_limit: usize,
+}
+
+/// A server both we and a profile's owner are in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MutualServer {
+    pub server: ServerId,
+    /// Their nickname there, if they set one.
+    pub nick: Option<Arc<str>>,
+}
+
+/// A friend we share with a profile's owner.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MutualFriend {
+    pub user: UserId,
+    pub name: Arc<str>,
+    pub avatar_url: Option<Arc<str>>,
 }
 
 /// What a profile card may do to a group member, and where.

@@ -379,6 +379,10 @@ fn connect_callbacks(ui: &AppWindow) {
     }
     callback!(ui.on_remove_group_member() => |sh, ui| sh.remove_group_member(ui));
     callback!(ui.on_block_user() => |sh, ui| sh.block_profile(ui, true));
+    callback!(ui.on_save_note(text) => |sh, ui| sh.save_note(ui, text.to_string()));
+    callback!(ui.on_note_edited(text) => |sh, ui| sh.note_edited(ui, &text));
+    callback!(ui.on_open_mutual_server(i) => |sh, ui| sh.open_mutual(ui, i, true));
+    callback!(ui.on_open_mutual_friend(i) => |sh, ui| sh.open_mutual(ui, i, false));
     callback!(ui.on_unblock_user() => |sh, ui| sh.block_profile(ui, false));
     callback!(ui.on_transfer_group_ownership() => |sh, ui| sh.transfer_group_ownership(ui));
     callback!(ui.on_server_menu_invite() => |sh, ui| sh.server_menu(ui, ServerAdmin::CreateInvite));

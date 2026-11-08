@@ -121,6 +121,27 @@ fn open_profile(app: &mut Application, blocked: bool) -> Screen {
         }),
         // Block user (or Unblock, for `blocked`).
         can_block: true,
+        // The Note field, and the Mutual servers and friends lists.
+        can_note: true,
+        note_limit: 256,
+        note: Some(filler(36, 3).into()),
+        mutual_servers: vec![
+            godwit_core::members::MutualServer {
+                server: ServerId::new(account(), "S"),
+                nick: Some("Nickname".into()),
+            },
+            godwit_core::members::MutualServer {
+                server: ServerId::new(account(), "S2"),
+                nick: None,
+            },
+        ],
+        mutual_friends: (1..3)
+            .map(|i| godwit_core::members::MutualFriend {
+                user: user(&format!("u{i}")),
+                name: person(i).into(),
+                avatar_url: Some(format!("preview://avatar/u{i}").into()),
+            })
+            .collect(),
         relationship: if blocked {
             godwit_core::members::Relationship::Blocked
         } else {

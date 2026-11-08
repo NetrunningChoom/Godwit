@@ -2587,6 +2587,11 @@ fn profiles_open_load_and_ignore_stale_answers() {
         group_moderation: None,
         can_block: false,
         can_report: false,
+        mutual_servers: Vec::new(),
+        mutual_friends: Vec::new(),
+        note: None,
+        can_note: false,
+        note_limit: 0,
     };
     app.apply(Event::Profile(profile(&UserId::new(account(Network::Stoat), "bo"))));
     assert_eq!(
@@ -2632,6 +2637,22 @@ fn profiles_open_load_and_ignore_stale_answers() {
     assert_eq!(
         commands(&app.dispatch(Action::UnblockUser(ann.clone()))),
         [&Command::UnblockUser { user: ann.clone() }]
+    );
+    // A note needs the shown profile's capability too.
+    let note = |text: &str| Action::SetNote {
+        user: ann.clone(),
+        note: text.into(),
+    };
+    assert!(app.dispatch(note("hi")).is_empty());
+    let mut noting = profile(&ann);
+    noting.can_note = true;
+    app.apply(Event::Profile(noting));
+    assert_eq!(
+        commands(&app.dispatch(note("hi"))),
+        [&Command::SetNote {
+            user: ann.clone(),
+            note: "hi".into()
+        }]
     );
     let bo = UserId::new(account(Network::Stoat), "bo");
     assert!(app.dispatch(Action::BlockUser(bo)).is_empty(), "only the shown profile");
@@ -3709,6 +3730,11 @@ fn member_changes_need_the_open_card_and_its_powers() {
         group_moderation: None,
         can_block: false,
         can_report: false,
+        mutual_servers: Vec::new(),
+        mutual_friends: Vec::new(),
+        note: None,
+        can_note: false,
+        note_limit: 0,
     };
     let mut powers = Moderation::new(server.clone());
     app.apply(Event::Profile(card(powers.clone())));

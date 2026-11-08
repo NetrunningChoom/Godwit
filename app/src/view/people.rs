@@ -561,7 +561,7 @@ pub fn card_text(p: &Profile, images: &mut Images) -> (Vec<BlockItem>, Vec<crate
 }
 
 /// Fills the profile card.
-pub fn profile(ui: &AppWindow, p: &Profile, images: &mut Images) {
+pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Images) {
     let (avatar, has_avatar) = picture(images, p.avatar_url.as_deref());
     let banner = p.banner_url.as_deref().and_then(|u| images.get(u, BANNER));
     ui.set_card_name(p.name.as_ref().into());
@@ -622,6 +622,49 @@ pub fn profile(ui: &AppWindow, p: &Profile, images: &mut Images) {
     ui.set_card_blocked(p.relationship == Relationship::Blocked);
     ui.set_card_can_transfer_group_ownership(p.group_moderation.as_ref().is_some_and(|m| m.transfer_ownership));
     ui.set_card_can_report(p.can_report);
+    ui.set_card_can_note(p.can_note);
+    // The field keeps what's being typed unless the network's note changed
+    // (it would otherwise reset on every refresh).
+    let note = p.note.as_deref().unwrap_or_default();
+    // Keyed by person too, so another card never inherits typed text.
+    let key = format!("{}\0{note}", p.user.raw);
+    if ui.get_card_note_source() != key.as_str() {
+        ui.set_card_note_source(key.into());
+        ui.set_card_note(note.into());
+    }
+    let servers: Vec<MutualItem> = p
+        .mutual_servers
+        .iter()
+        .map(|m| {
+            // A server we don't know (yet) is named by its id rather than hidden.
+            let server = state.server(&m.server);
+            let name = server.map_or_else(|| m.server.raw.to_string(), |s| s.name.to_string());
+            let (picture, has_picture) = picture(images, server.and_then(|s| s.icon_url.as_deref()));
+            MutualItem {
+                initials: initials(&name).into(),
+                name: name.into(),
+                detail: m.nick.as_deref().unwrap_or_default().into(),
+                picture,
+                has_picture,
+            }
+        })
+        .collect();
+    ui.set_card_mutual_servers(ModelRc::new(VecModel::from(servers)));
+    let friends: Vec<MutualItem> = p
+        .mutual_friends
+        .iter()
+        .map(|f| {
+            let (picture, has_picture) = picture(images, f.avatar_url.as_deref());
+            MutualItem {
+                initials: initials(&f.name).into(),
+                name: f.name.as_ref().into(),
+                detail: Default::default(),
+                picture,
+                has_picture,
+            }
+        })
+        .collect();
+    ui.set_card_mutual_friends(ModelRc::new(VecModel::from(friends)));
     // The official ProfileActions: what we can do depends on where we stand.
     ui.set_card_relationship(match (p.has_friends, p.relationship) {
         (false, _) => 1,

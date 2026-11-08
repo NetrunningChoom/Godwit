@@ -717,7 +717,7 @@ impl Presenter {
         }
         ui.set_card_open(state.profile.is_some());
         if let Some((_, Some(p))) = &state.profile {
-            view::profile(ui, p, images);
+            view::profile(ui, p, state, images);
             // Its text as message text is laid out (emoji pictures, links,
             // selecting); a few short blocks, so each refresh.
             let (blocks, laid) = view::card_text(p, images);

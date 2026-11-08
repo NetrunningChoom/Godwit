@@ -120,6 +120,20 @@ pub(crate) fn chromium_order(headers: &mut header::HeaderMap) {
     }
 }
 
+/// The longest note Discord keeps (docs.discord.food, Modify User Note).
+pub const NOTE_LIMIT: usize = 256;
+
+/// The text of a Get User Note answer.
+pub fn parse_note(answer: &Value) -> String {
+    answer["note"].as_str().unwrap_or_default().to_owned()
+}
+
+/// The body of Modify User Note: the note cut to Discord's limit, which the
+/// web client's field enforces as well.
+pub fn note_body(note: &str) -> Value {
+    json!({"note": note.chars().take(NOTE_LIMIT).collect::<String>()})
+}
+
 /// The status Discord refused a request with, if it did.
 pub fn status(error: &anyhow::Error) -> Option<StatusCode> {
     error.downcast_ref::<DiscordError>().map(|e| e.status)
@@ -615,6 +629,25 @@ impl Api {
             path.push_str(&format!("&guild_id={guild}"));
         }
         self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Our private note on `user` (docs.discord.food, Get User Note; Yapfast's
+    /// `api::note`): empty when there is none, which Discord answers as a 404.
+    pub async fn note(&self, user: &str) -> Result<String> {
+        let path = format!("/users/@me/notes/{user}");
+        match self.json(self.request(Method::GET, &path)).await {
+            Ok(answer) => Ok(parse_note(&answer)),
+            Err(e) if status(&e) == Some(StatusCode::NOT_FOUND) => Ok(String::new()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Sets our note on `user` (Modify User Note: 204; the gateway then sends
+    /// USER_NOTE_UPDATE). Empty removes it.
+    pub async fn set_note(&self, user: &str, note: &str) -> Result<()> {
+        let path = format!("/users/@me/notes/{user}");
+        self.empty(with_json(self.request(Method::PUT, &path), &note_body(note)))
+            .await
     }
 
     /// Sends a friend request, or accepts theirs. `place` is where in the
@@ -1263,6 +1296,19 @@ pub fn encode(segment: &str) -> String {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn a_note_is_read_from_the_answer_and_sent_cut_to_the_limit() {
+        assert_eq!(parse_note(&json!({"note": "hi", "note_user_id": "1"})), "hi");
+        assert_eq!(parse_note(&json!({})), "", "no note reads as empty");
+        assert_eq!(note_body("hi"), json!({"note": "hi"}));
+        let long = "é".repeat(NOTE_LIMIT + 10);
+        assert_eq!(
+            note_body(&long)["note"].as_str().map(|n| n.chars().count()),
+            Some(NOTE_LIMIT)
+        );
+        assert_eq!(note_body("")["note"], "", "empty removes it");
+    }
 
     #[test]
     fn a_sticker_is_sent_as_sticker_ids_with_no_text() {

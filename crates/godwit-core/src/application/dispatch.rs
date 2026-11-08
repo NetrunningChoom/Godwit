@@ -510,6 +510,20 @@ impl Application {
                     command: Command::BlockUser { user },
                 }]
             }
+            Action::SetNote { user, note } => {
+                let allowed = self
+                    .state
+                    .profile
+                    .as_ref()
+                    .is_some_and(|(shown, p)| shown == &user && p.as_ref().is_some_and(|p| p.can_note && !p.me));
+                if !allowed {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: user.account.clone(),
+                    command: Command::SetNote { user, note },
+                }]
+            }
             Action::UnblockUser(user) => {
                 if !self.shown_profile_can_block(&user) {
                     return Vec::new();

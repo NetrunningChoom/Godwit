@@ -262,6 +262,16 @@ impl DiscordAccount {
             can_block: user != self.me(),
             // Discord's report menu is server-driven (/reporting/menu, breadcrumbs), which the neutral fixed reason lists can't express.
             can_report: false,
+            mutual_servers: self.mutual_servers(fetched),
+            mutual_friends: self.mutual_friends(fetched),
+            note: self
+                .notes
+                .get(user)
+                .filter(|n| !n.is_empty())
+                .map(|n| Arc::from(n.as_str())),
+            // Only once the note arrived, so typing never races the fetch.
+            can_note: user != self.me() && self.notes.contains_key(user),
+            note_limit: crate::api::NOTE_LIMIT,
         })
     }
 
@@ -310,6 +320,57 @@ impl DiscordAccount {
                 .collect();
         }
         m.any().then_some(m)
+    }
+
+    /// Keeps (or, when empty, forgets) our note on `user`; whether it changed.
+    pub(super) fn set_note(&mut self, user: &str, note: &str) -> bool {
+        let note: String = note.chars().take(crate::api::NOTE_LIMIT).collect();
+        if note.is_empty() {
+            // Remember "none" too, so the profile doesn't ask again.
+            return self
+                .notes
+                .insert(user.to_owned(), String::new())
+                .is_none_or(|old| !old.is_empty());
+        }
+        self.notes.insert(user.to_owned(), note.clone()) != Some(note)
+    }
+
+    /// The servers we share with `user`, from the profile's `mutual_guilds`
+    /// ([{id, nick}], docs.discord.food, Get User Profile); only ones we
+    /// have in the store, since the card names and opens them from there.
+    fn mutual_servers(&self, fetched: Option<&Value>) -> Vec<MutualServer> {
+        let Some(account) = self.account.clone() else {
+            return Vec::new();
+        };
+        fetched
+            .and_then(|f| f["mutual_guilds"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|g| {
+                let id = g["id"].as_str()?;
+                self.store.guilds.contains_key(id).then(|| MutualServer {
+                    server: ServerId::new(account.clone(), id),
+                    nick: g["nick"].as_str().filter(|n| !n.is_empty()).map(Arc::from),
+                })
+            })
+            .collect()
+    }
+
+    /// Friends we share with the profile's owner (`mutual_friends`, users).
+    fn mutual_friends(&self, fetched: Option<&Value>) -> Vec<MutualFriend> {
+        fetched
+            .and_then(|f| f["mutual_friends"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|u| {
+                let id = u["id"].as_str()?;
+                Some(MutualFriend {
+                    user: self.user_id(id)?,
+                    name: u["name"].as_str().unwrap_or(id).into(),
+                    avatar_url: u["avatar"].as_str().map(Arc::from),
+                })
+            })
+            .collect()
     }
 
     pub(super) fn sync_profile(&mut self, out: &mut Vec<Event>) {

@@ -21,6 +21,47 @@ impl DiscordAccount {
         (account, out)
     }
 
+    /// A made-up profile answer: the first servers we have and the first
+    /// friends as mutuals, and a note (as the profile request and the note
+    /// request would bring).
+    fn demo_profile(&mut self, user: &str) {
+        if user == self.me() || self.profiles.contains_key(user) {
+            return;
+        }
+        let guilds: Vec<Value> = self
+            .store
+            .guild_order
+            .iter()
+            .take(2)
+            .map(|g| json!({"id": g, "nick": null}))
+            .collect();
+        let mut friends: Vec<&String> = self
+            .store
+            .relationships
+            .iter()
+            .filter(|(u, k)| **k == store::FRIEND && u.as_str() != user)
+            .map(|(u, _)| u)
+            .collect();
+        friends.sort();
+        let friends: Vec<Value> = friends
+            .into_iter()
+            .take(2)
+            .filter_map(|u| {
+                self.store
+                    .users
+                    .get(u.as_str())
+                    .map(|x| json!({"id": u, "name": x.username}))
+            })
+            .collect();
+        self.profiles.insert(
+            user.to_owned(),
+            json!({"user": {"id": user}, "mutual_guilds": guilds, "mutual_friends": friends}),
+        );
+        self.notes
+            .entry(user.to_owned())
+            .or_insert_with(|| "Met in the demo.".to_owned());
+    }
+
     /// What demo mode answers for a command; None for anything Discord
     /// would be asked (which then goes nowhere).
     pub(super) fn demo_answer(&mut self, command: &Command) -> Option<Vec<Event>> {
@@ -346,7 +387,13 @@ impl DiscordAccount {
                     .and_then(|r| self.store.channels.get(r.raw.as_ref()))
                     .and_then(|c| c.guild.clone());
                 self.profile_for = Some((user.raw.to_string(), guild));
+                self.demo_profile(user.raw.as_ref());
                 self.sync_profile(&mut out);
+            }
+            // What the gateway would say after the PUT.
+            Command::SetNote { user, note } if user.raw.as_ref() != self.me() => {
+                let d = json!({"id": user.raw.as_ref(), "note": note});
+                self.dispatch("USER_NOTE_UPDATE", &d, &mut out);
             }
             // What the gateway would say after the request, as the real account sees it.
             Command::BlockUser { user } if user.raw.as_ref() != self.me() => {

@@ -326,6 +326,12 @@ pub enum Action {
     BlockUser(UserId),
     /// Lift our block on `user`.
     UnblockUser(UserId),
+    /// Save our private note on the shown profile's owner (when its card
+    /// offers one; empty removes it).
+    SetNote {
+        user: UserId,
+        note: String,
+    },
     /// Remove a member from a group conversation, when the shown profile allows it.
     RemoveGroupMember {
         room: RoomId,

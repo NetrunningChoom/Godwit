@@ -182,6 +182,23 @@ impl DiscordAccount {
                     }
                 }
             },
+            Answer::Note { user, result } => {
+                // A failed fetch leaves the field off (asked again on the next
+                // open); a late answer never overwrites a newer save or update.
+                if let Ok(note) = result
+                    && !self.notes.contains_key(&user)
+                {
+                    self.set_note(&user, &note);
+                    self.sync_profile(out);
+                }
+            }
+            Answer::NoteSaved { user, previous, result } => {
+                if let Err(e) = result {
+                    self.set_note(&user, &previous);
+                    self.sync_profile(out);
+                    out.push(Event::Error(format!("Discord, saving a note: {e}").into()));
+                }
+            }
             Answer::Profile { user, result } => {
                 let mine = self.store.me.as_ref().is_some_and(|m| m.id == user);
                 if mine
@@ -202,7 +219,15 @@ impl DiscordAccount {
                     if let Some(u) = v.get("user") {
                         self.store.put_user(u);
                     }
-                    self.profiles.insert(user, v);
+                    // Only what the card needs is kept (the raw answer holds much
+                    // more), and the caches stay small: the shown profile and a
+                    // few recent ones; the rest is asked for again when reopened.
+                    if self.profiles.len() >= PROFILE_CACHE {
+                        let shown = self.profile_for.as_ref().map(|p| p.0.clone());
+                        self.profiles.retain(|k, _| Some(k) == shown.as_ref());
+                        self.notes.retain(|k, _| Some(k) == shown.as_ref());
+                    }
+                    self.profiles.insert(user, slim_profile(&v));
                     self.sync_profile(out);
                 }
             }
@@ -407,4 +432,33 @@ impl DiscordAccount {
             Answer::Admin { guild, result } => self.admin_answer(&guild, result, out),
         }
     }
+}
+
+/// How many fetched profiles are kept (and notes with them).
+const PROFILE_CACHE: usize = 50;
+
+/// The parts of a Get User Profile answer the card shows: the bio, the
+/// banner, the mutual servers and the mutual friends (name and avatar
+/// resolved here, so no user records pile up in the store).
+fn slim_profile(v: &Value) -> Value {
+    let friends: Vec<Value> = v["mutual_friends"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|u| {
+            let u = store::User::from(u)?;
+            let name = u
+                .global_name
+                .clone()
+                .filter(|n| !n.is_empty())
+                .unwrap_or(u.username.clone());
+            Some(json!({"id": u.id, "name": name, "avatar": store::avatar_url(&u.id, u.avatar.as_deref())}))
+        })
+        .collect();
+    json!({
+        "user_profile": {"bio": v["user_profile"]["bio"]},
+        "user": {"bio": v["user"]["bio"], "banner": v["user"]["banner"]},
+        "mutual_guilds": v["mutual_guilds"],
+        "mutual_friends": friends,
+    })
 }

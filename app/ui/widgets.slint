@@ -385,6 +385,8 @@ export component TextField inherits Rectangle {
     in property <bool> autofocus;
     callback edited(string);
     callback accepted();
+    // The field lost the keyboard focus (a note saves on Enter or on leaving).
+    callback blurred();
     init => {
         if root.autofocus {
             input.focus();
@@ -406,6 +408,11 @@ export component TextField inherits Rectangle {
         single-line: true;
         edited => { root.edited(self.text); }
         accepted => { root.accepted(); }
+        changed has-focus => {
+            if !self.has-focus {
+                root.blurred();
+            }
+        }
     }
     if root.text == "": Text {
         x: 16px;

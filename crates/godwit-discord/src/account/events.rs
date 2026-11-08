@@ -413,6 +413,13 @@ impl DiscordAccount {
                 self.sync_friends(out);
                 self.sync_profile(out);
             }
+            // Our note on someone changed (here or on another device).
+            "USER_NOTE_UPDATE" => {
+                if let Some(id) = d["id"].as_str() {
+                    self.set_note(id, d["note"].as_str().unwrap_or_default());
+                    self.sync_profile(out);
+                }
+            }
             "RELATIONSHIP_REMOVE" => {
                 if let Some(id) = d["id"].as_str() {
                     self.store.relationships.remove(id);

@@ -107,6 +107,11 @@ pub fn profile(user: UserId, name: &str) -> godwit_core::members::Profile {
         moderation: None,
         group_moderation: None,
         can_block: false,
+        mutual_servers: Vec::new(),
+        mutual_friends: Vec::new(),
+        note: None,
+        can_note: false,
+        note_limit: 0,
     }
 }
 
