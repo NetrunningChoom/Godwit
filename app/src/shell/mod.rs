@@ -14,6 +14,7 @@ mod messages;
 mod navigation;
 mod notifications;
 mod poll;
+mod profiles;
 mod report;
 mod server_admin;
 mod settings_pages;
@@ -196,6 +197,8 @@ pub struct Shell {
     channel_editor: crate::channel_settings::ChannelEditor,
     /// The call's account, and whether its video was last said to be on screen.
     call_shown: Option<(AccountId, bool)>,
+    /// Drafts of the profiles not in use, kept for this session.
+    stashed_drafts: std::collections::HashMap<u32, std::collections::HashMap<RoomId, String>>,
 }
 
 #[derive(Clone)]
@@ -215,28 +218,6 @@ impl Shell {
     /// is read, nothing goes out, and settings and contacts aren't saved.
     pub fn new(ui: &AppWindow, wake: Waker, demo: bool) -> std::io::Result<Self> {
         registry::register_hooks();
-        let contacts_path = if demo { None } else { contacts_store::path() };
-        let contacts = match contacts_path.as_deref().map(contacts_store::load) {
-            Some(Ok(c)) => c,
-            Some(Err(e)) if e.kind() == std::io::ErrorKind::InvalidData => {
-                match contacts_path.as_deref().map(crate::local_recovery::preserve_corrupt) {
-                    Some(Ok(recovery)) => eprintln!(
-                        "warning: contacts were reset; the damaged file was preserved at {}",
-                        recovery.display()
-                    ),
-                    Some(Err(_)) => {
-                        eprintln!("error: contacts were invalid and could not be preserved; using empty contacts")
-                    }
-                    None => eprintln!("error: contacts were invalid; using empty contacts"),
-                }
-                Contacts::default()
-            }
-            Some(Err(_)) => {
-                eprintln!("error: could not read contacts; using empty contacts");
-                Contacts::default()
-            }
-            None => Contacts::default(),
-        };
         let settings_path = if demo { None } else { settings::path() };
         let settings = match settings_path.as_deref().map(settings::load) {
             Some(Ok(s)) => s,
@@ -259,19 +240,47 @@ impl Shell {
             }
             None => Settings::default(),
         };
-        // Every saved sign-in connects again; with none, the default
-        // network's account waits for the sign-in form.
+        let mut settings = settings;
+        settings.migrate_profiles();
+        if demo {
+            // Two made-up profiles, in memory only (settings aren't saved in demo).
+            settings.migrate_profiles();
+            settings.rename_profile(0, "Work");
+            settings.create_profile("Private");
+        }
+        let contacts_path = if demo {
+            None
+        } else {
+            contacts_store::path_for(settings.current_profile)
+        };
+        let contacts = profiles::load_contacts(contacts_path.as_deref());
+        // The default profile's saved sign-ins connect (and any whose account
+        // isn't known yet, which joins the profile once ready); with none,
+        // the default network's account waits for the sign-in form.
         let mut live: Vec<Box<dyn Account>> = Vec::new();
-        for entry in &registry::NETWORKS {
-            if demo {
+        if demo {
+            for entry in &registry::NETWORKS {
                 live.extend(entry.inert.map(|inert| inert()));
-                continue;
             }
-            let mut slots = (entry.saved)();
-            if entry.default && slots.is_empty() {
-                slots.push(0);
+        } else {
+            let saved: Vec<(String, Vec<u32>)> = registry::NETWORKS
+                .iter()
+                .map(|e| (e.network.key().to_owned(), (e.saved)()))
+                .collect();
+            let profile = settings.profile(settings.current_profile).cloned().unwrap_or_default();
+            for (network, slot) in crate::profiles::startup_slots(&saved, &profile, &settings.known_accounts) {
+                if let Some(entry) = registry::NETWORKS.iter().find(|e| e.network.key() == network) {
+                    live.push((entry.start)(wake.clone(), slot)?);
+                }
             }
-            for slot in slots {
+            if live.is_empty() {
+                let entry = registry::entry(registry::default_network());
+                let taken = saved
+                    .iter()
+                    .find(|(n, _)| *n == entry.network.key())
+                    .map(|(_, s)| s.as_slice())
+                    .unwrap_or(&[]);
+                let slot = (0..).find(|s| !taken.contains(s)).unwrap_or(0);
                 live.push((entry.start)(wake.clone(), slot)?);
             }
         }
@@ -281,13 +290,7 @@ impl Shell {
         }
         theme::apply(ui, settings.accent(), settings.style, settings.dark);
         crate::emoji::set_pack(&settings.emoji_pack);
-        // Panel widths as last dragged, within the handles' limits.
-        if settings.sidebar_width > 0.0 {
-            ui.set_sidebar_w(settings.sidebar_width.clamp(200.0, 420.0));
-        }
-        if settings.members_width > 0.0 {
-            ui.set_members_w(settings.members_width.clamp(200.0, 400.0));
-        }
+        profiles::apply_widths(ui, &settings);
         let media: Vec<(String, MediaFetch)> = live.iter().take(1).filter_map(|a| a.media()).collect();
         let (app, demo_account) = if demo {
             let (mut app, _, _) = crate::demo::world(contacts);
@@ -454,6 +457,7 @@ impl Shell {
             account_pages: Default::default(),
             call_videos_seen: None,
             pushed_voice: None,
+            stashed_drafts: Default::default(),
         };
         ui.set_emoji_rows(ModelRc::from(shell.picker.model.clone()));
         ui.set_notification_items(ModelRc::from(shell.notification_items.clone()));
@@ -473,10 +477,7 @@ impl Shell {
                 shell.notifications.push(n);
             }
         }
-        shell.presenter.server_order = shell.settings.server_order.clone();
-        shell.presenter.account_order = shell.settings.account_order.clone();
-        shell.presenter.muzzle = shell.settings.clone();
-        shell.presenter.collapsed_categories = shell.settings.collapsed_categories.clone();
+        shell.apply_view_settings();
         // Home's kept arrangement.
         let keys = |list: &[String]| {
             list.iter()
@@ -757,6 +758,7 @@ impl Shell {
             self.observe_alerts(&event);
             // Signed in again: no longer asking for it.
             if let Event::AccountReady { account, .. } = &event {
+                self.record_ready(account);
                 let key = settings::account_key(account);
                 let before = self.settings.sign_in_needed.len();
                 self.settings.sign_in_needed.retain(|n| n.account != key);

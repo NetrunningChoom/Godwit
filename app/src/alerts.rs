@@ -137,6 +137,15 @@ impl Alerts {
         false
     }
 
+    /// An account was stopped (a profile switch): its ringing and muzzle
+    /// notes go, so nothing of it keeps playing.
+    pub fn forget_account(&mut self, account: &godwit_core::ids::AccountId) {
+        if self.ringing.as_ref().is_some_and(|(r, _)| r.account == *account) {
+            self.ringing = None;
+        }
+        self.muzzled.retain(|(room, _), _| room.account != *account);
+    }
+
     /// `room`'s call stopped ringing (answered, declined or gone).
     pub fn done(&mut self, room: &RoomId) {
         if self.ringing.as_ref().is_some_and(|(r, _)| r == room) {
@@ -469,6 +478,21 @@ mod tests {
             settings.alert_mode(&room(Network::Steam, "s").account),
             AlertMode::OfficialApp
         );
+    }
+
+    #[test]
+    fn forgetting_an_account_stops_its_ringing_and_notes() {
+        let mut alerts = Alerts::default();
+        let room = RoomId::new(godwit_core::ids::AccountId::new(Network::Stoat, "me"), "r");
+        alerts.muzzled.insert(
+            (room.clone(), UserId::new(room.account.clone(), "u")),
+            (Instant::now(), Instant::now()),
+        );
+        alerts.ringing = Some((room.clone(), None));
+        alerts.forget_account(&godwit_core::ids::AccountId::new(Network::Steam, "x"));
+        assert!(alerts.ringing.is_some());
+        alerts.forget_account(&room.account);
+        assert!(alerts.ringing.is_none() && alerts.muzzled.is_empty());
     }
 
     #[test]

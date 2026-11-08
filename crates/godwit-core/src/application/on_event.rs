@@ -194,7 +194,7 @@ impl Application {
     }
 
     pub(super) fn receive_account_lost(&mut self, account: AccountId, reason: Arc<str>) -> Vec<Effect> {
-        self.purge_account(&account);
+        self.purge_account(&account, true);
         // An empty reason: the user logged out themselves, so it's no error.
         if !reason.is_empty() {
             self.state.errors.push(reason);
@@ -204,7 +204,7 @@ impl Application {
 
     /// Everything the network shared about `account`, gone from the state
     /// (shared by a sign-out and by unloading it for another profile).
-    pub(super) fn purge_account(&mut self, account: &AccountId) {
+    pub(super) fn purge_account(&mut self, account: &AccountId, signed_out: bool) {
         let account = account.clone();
         if self
             .state
@@ -213,7 +213,10 @@ impl Application {
             .is_some_and(|(ours, _)| *ours == account)
         {
             self.state.friend_request_pending = None;
-            self.state.friend_request_status = Some(Err("The selected account signed out.".into()));
+            // Only a real sign-out is an error; a profile switch just closes it.
+            if signed_out {
+                self.state.friend_request_status = Some(Err("The selected account signed out.".into()));
+            }
         }
         if self
             .state
@@ -299,7 +302,7 @@ impl Application {
     /// the user's own activity left behind (drafts, picked files, open
     /// panels). Other accounts' state stays as it is.
     pub fn unload_account(&mut self, account: &AccountId) {
-        self.purge_account(account);
+        self.purge_account(account, false);
         let st = &mut self.state;
         st.drafts.retain(|r, _| r.account != *account);
         st.compose.retain(|r, _| r.account != *account);
@@ -331,6 +334,39 @@ impl Application {
         self.state.contacts = contacts;
         self.state.nudge = None;
         self.state.link_request = None;
+    }
+
+    /// Takes every draft out (a profile's, stashed while another is open).
+    pub fn take_drafts(&mut self) -> HashMap<RoomId, String> {
+        std::mem::take(&mut self.state.drafts)
+    }
+
+    /// Puts stashed drafts back, for the rooms that are known again.
+    pub fn restore_drafts(&mut self, drafts: HashMap<RoomId, String>) {
+        self.state.drafts.extend(drafts);
+    }
+
+    /// Back to Home with nothing open: what a profile switch starts from.
+    pub fn reset_view(&mut self) {
+        let st = &mut self.state;
+        st.selected = None;
+        st.selected_server = None;
+        st.showing_friends = false;
+        st.showing_people = false;
+        st.showing_active = false;
+        st.showing_notifications = false;
+        st.showing_games = false;
+        st.showing_threads = false;
+        st.games = None;
+        st.search = None;
+        st.pins = None;
+        st.forum = None;
+        st.profile = None;
+        st.jump = None;
+        st.unread_from = None;
+        st.member_found = None;
+        st.friend_request_status = None;
+        st.report_outcome = None;
     }
 
     pub(super) fn receive_room_removed(&mut self, id: RoomId) -> Vec<Effect> {

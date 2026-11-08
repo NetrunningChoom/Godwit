@@ -127,6 +127,10 @@ impl Settings {
                 self.put_view(v);
             }
         }
+
+        // Ids already used (even by deleted profiles) are never handed out again.
+        let used = self.profiles.iter().map(|p| p.id + 1).max().unwrap_or(0);
+        self.next_profile_id = self.next_profile_id.max(used);
     }
 
     /// Copies the live view into the current profile (call before saving).
@@ -161,7 +165,10 @@ impl Settings {
 
     /// A new, empty profile; returns its id.
     pub fn create_profile(&mut self, name: &str) -> u32 {
-        let id = self.profiles.iter().map(|p| p.id + 1).max().unwrap_or(0);
+        let id = self
+            .next_profile_id
+            .max(self.profiles.iter().map(|p| p.id + 1).max().unwrap_or(0));
+        self.next_profile_id = id + 1;
         self.profiles.push(Profile {
             id,
             name: name.trim().to_owned(),
@@ -255,9 +262,164 @@ impl Settings {
     }
 }
 
+/// An account the app runs, as far as switching cares.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Running {
+    /// Its key once signed in.
+    pub key: Option<String>,
+    pub network: String,
+    pub slot: u32,
+}
+
+/// What a profile change does to the running accounts.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Plan {
+    /// Indexes into the running list to stop.
+    pub stop: Vec<usize>,
+    /// `(network key, slot)` to start.
+    pub start: Vec<(String, u32)>,
+}
+
+/// An account's key: its own once signed in, else the one remembered for
+/// its network and slot (an account still connecting, or a sign-in form,
+/// has none).
+fn key_of<'a>(r: &'a Running, known: &'a [KnownAccount]) -> Option<&'a str> {
+    r.key.as_deref().or_else(|| {
+        known
+            .iter()
+            .find(|k| k.network == r.network && k.slot == r.slot)
+            .map(|k| k.key.as_str())
+    })
+}
+
+/// What to stop and start so exactly `profile`'s accounts run. Forms and
+/// accounts of unknown identity stop too (a sign-in is cancelled by a
+/// switch); a profile's account never seen signed in can't be started
+/// (its slot is unknown).
+pub fn plan(running: &[Running], profile: &Profile, known: &[KnownAccount]) -> Plan {
+    let wanted = |key: &str| profile.accounts.iter().any(|k| k == key);
+    let mut out = Plan::default();
+    for (i, r) in running.iter().enumerate() {
+        if !key_of(r, known).is_some_and(wanted) {
+            out.stop.push(i);
+        }
+    }
+    for key in &profile.accounts {
+        let Some(k) = known.iter().find(|k| k.key == *key) else {
+            continue;
+        };
+        let up = running.iter().enumerate().any(|(i, r)| {
+            !out.stop.contains(&i) && (r.key.as_deref() == Some(key) || (r.network == k.network && r.slot == k.slot))
+        });
+        if !up && !out.start.contains(&(k.network.clone(), k.slot)) {
+            out.start.push((k.network.clone(), k.slot));
+        }
+    }
+    out
+}
+
+/// Which saved sign-ins to start with: those of the profile, and any whose
+/// account isn't known yet (the first start after an upgrade, or a sign-in
+/// that never became ready), which join a profile once ready.
+/// `saved` is `(network key, slots)` per network.
+pub fn startup_slots(saved: &[(String, Vec<u32>)], profile: &Profile, known: &[KnownAccount]) -> Vec<(String, u32)> {
+    let mut out = Vec::new();
+    for (network, slots) in saved {
+        for &slot in slots {
+            let wanted = known
+                .iter()
+                .find(|k| k.network == *network && k.slot == slot)
+                .is_none_or(|k| profile.accounts.contains(&k.key));
+            if wanted {
+                out.push((network.clone(), slot));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn kn(key: &str, network: &str, slot: u32) -> KnownAccount {
+        KnownAccount {
+            key: key.into(),
+            network: network.into(),
+            slot,
+        }
+    }
+
+    fn run(key: Option<&str>, network: &str, slot: u32) -> Running {
+        Running {
+            key: key.map(Into::into),
+            network: network.into(),
+            slot,
+        }
+    }
+
+    fn prof(keys: &[&str]) -> Profile {
+        Profile {
+            accounts: keys.iter().map(|k| (*k).to_owned()).collect(),
+            ..Profile::default()
+        }
+    }
+
+    #[test]
+    fn a_switch_stops_the_others_and_starts_the_missing() {
+        let known = [
+            kn("stoat:a", "stoat", 0),
+            kn("steam:b", "steam", 1),
+            kn("discord:c", "discord", 0),
+        ];
+        let running = [
+            run(Some("stoat:a"), "stoat", 0),
+            run(Some("steam:b"), "steam", 1),
+            run(None, "slack", 0),
+        ];
+        let p = plan(&running, &prof(&["stoat:a", "discord:c", "slack:z"]), &known);
+        assert_eq!(p.stop, vec![1, 2], "steam leaves and the form is cancelled");
+        assert_eq!(
+            p.start,
+            vec![("discord".to_owned(), 0)],
+            "slack:z was never seen, so no slot"
+        );
+    }
+
+    #[test]
+    fn an_account_still_connecting_is_matched_by_its_slot() {
+        let known = [kn("stoat:a", "stoat", 0)];
+        let p = plan(&[run(None, "stoat", 0)], &prof(&["stoat:a"]), &known);
+        assert_eq!(p, Plan::default(), "neither stopped nor started twice");
+        let p = plan(&[run(None, "stoat", 0)], &prof(&[]), &known);
+        assert_eq!(p.stop, vec![0]);
+    }
+
+    #[test]
+    fn startup_starts_the_profile_and_the_unknown() {
+        let known = [kn("stoat:a", "stoat", 0), kn("steam:b", "steam", 0)];
+        let saved = [("stoat".to_owned(), vec![0, 1]), ("steam".to_owned(), vec![0])];
+        let got = startup_slots(&saved, &prof(&["stoat:a"]), &known);
+        assert_eq!(got, vec![("stoat".to_owned(), 0), ("stoat".to_owned(), 1)]);
+    }
+
+    #[test]
+    fn deleted_profile_ids_are_not_reused() {
+        let mut s = Settings::default();
+        s.migrate_profiles();
+        let a = s.create_profile("A");
+        assert!(s.delete_profile(a));
+        let b = s.create_profile("B");
+        assert_ne!(a, b);
+        let json = serde_json::to_string(&s).unwrap();
+        let mut back: Settings = serde_json::from_str(&json).unwrap();
+        back.migrate_profiles();
+        assert!(back.create_profile("C") > b);
+        // An old file without the counter still never goes below max+1.
+        let mut old: Settings = serde_json::from_str(r#"{"profiles":[{"id":4,"name":"X"}]}"#).unwrap();
+        old.migrate_profiles();
+        assert_eq!(old.create_profile("Y"), 5);
+    }
 
     fn legacy() -> Settings {
         let mut s = Settings {

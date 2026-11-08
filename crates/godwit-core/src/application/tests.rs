@@ -4595,3 +4595,16 @@ fn set_contacts_swaps_the_merges() {
     app.set_contacts(other.clone());
     assert_eq!(app.state().contacts, other);
 }
+
+#[test]
+fn unloading_an_account_closes_its_friend_request_without_an_error() {
+    let mut app = Application::default();
+    ready(&mut app, Network::Steam, vec![]);
+    app.dispatch(Action::SendFriendRequest {
+        account: account(Network::Steam),
+        name: "first".into(),
+    });
+    app.unload_account(&account(Network::Steam));
+    assert!(app.state.friend_request_pending.is_none());
+    assert!(app.state.friend_request_status.is_none());
+}

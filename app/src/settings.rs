@@ -102,6 +102,9 @@ pub struct Settings {
     /// The current profile's view lives in the top-level fields above.
     pub profiles: Vec<crate::profiles::Profile>,
     pub default_profile: u32,
+    /// The next id to give a new profile, never reused: a recreated id
+    /// would inherit a deleted profile's contacts file.
+    pub next_profile_id: u32,
     /// Accounts seen signed in, to start a profile's accounts later.
     pub known_accounts: Vec<crate::profiles::KnownAccount>,
     /// The profile in use; not saved (each start opens the default one).
@@ -162,6 +165,7 @@ impl Default for Settings {
             person_favourites: Vec::new(),
             profiles: Vec::new(),
             default_profile: 0,
+            next_profile_id: 0,
             known_accounts: Vec::new(),
             current_profile: 0,
         }
