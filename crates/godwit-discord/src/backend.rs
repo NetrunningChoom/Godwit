@@ -230,6 +230,18 @@ pub enum Admin {
     Leave,
     Delete,
     ModifyGuild(Value),
+    /// The Emoji page's list.
+    Emojis,
+    /// Each change arrives as GUILD_EMOJIS_UPDATE.
+    CreateEmoji {
+        name: String,
+        path: std::path::PathBuf,
+    },
+    RenameEmoji {
+        id: String,
+        name: String,
+    },
+    DeleteEmoji(String),
 }
 
 #[derive(Debug)]
@@ -345,6 +357,9 @@ pub enum Answer {
 pub enum AdminAnswer {
     Invites(Value),
     Bans(Value),
+    Emojis(Value),
+    /// The new emoji, as Discord answered the create.
+    EmojiCreated(Value),
     InviteCreated(String),
     Done,
 }
@@ -1017,6 +1032,22 @@ async fn admin(api: &Api, guild: &str, op: Admin) -> anyhow::Result<AdminAnswer>
             api.modify_guild(guild, &body).await?;
             AdminAnswer::Done
         }
+        Admin::Emojis => AdminAnswer::Emojis(api.guild_emojis(guild).await?),
+        Admin::CreateEmoji { name, path } => {
+            if tokio::fs::metadata(&path).await?.len() > EMOJI_MAX_BYTES {
+                anyhow::bail!("An emoji image is at most 256 KB.");
+            }
+            let image = emoji_uri(&tokio::fs::read(&path).await?)?;
+            AdminAnswer::EmojiCreated(api.create_emoji(guild, &name, &image).await?)
+        }
+        Admin::RenameEmoji { id, name } => {
+            api.rename_emoji(guild, &id, &name).await?;
+            AdminAnswer::Done
+        }
+        Admin::DeleteEmoji(id) => {
+            api.delete_emoji(guild, &id).await?;
+            AdminAnswer::Done
+        }
     })
 }
 
@@ -1048,6 +1079,30 @@ async fn avatar_uri(path: &std::path::Path) -> anyhow::Result<String> {
         [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "image/webp",
         [b'G', b'I', b'F', ..] => anyhow::bail!("Animated avatars need Nitro on Discord; choose a PNG, JPEG or WebP."),
         _ => anyhow::bail!("Choose a PNG, JPEG or WebP picture."),
+    };
+    Ok(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+/// The most Discord takes for an emoji image (docs.discord.food, Create Guild Emoji).
+pub const EMOJI_MAX_BYTES: u64 = 256 << 10;
+
+/// An emoji image as the data URI Discord takes: PNG, JPEG, WebP or GIF (a
+/// GIF animates; uploading is limited by the server's slots, not Nitro), at
+/// most 256 KiB.
+pub fn emoji_uri(bytes: &[u8]) -> anyhow::Result<String> {
+    use base64::Engine;
+    if bytes.is_empty() || bytes.len() as u64 > EMOJI_MAX_BYTES {
+        anyhow::bail!("An emoji image is at most 256 KB.");
+    }
+    let mime = match bytes {
+        [0x89, b'P', b'N', b'G', ..] => "image/png",
+        [0xff, 0xd8, 0xff, ..] => "image/jpeg",
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "image/webp",
+        [b'G', b'I', b'F', ..] => "image/gif",
+        _ => anyhow::bail!("Choose a PNG, JPEG, GIF or WebP image."),
     };
     Ok(format!(
         "data:{mime};base64,{}",

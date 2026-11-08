@@ -111,6 +111,8 @@ pub struct DiscordAccount {
     consents: Option<Vec<(String, bool)>>,
     /// The server whose Roles page is open, and the roles last sent.
     roles_watch: Option<(String, ServerRoles)>,
+    /// The server whose Emoji page is open, and the list last sent.
+    emoji_page: Option<(String, godwit_core::server_settings::ServerEmojis)>,
     /// A DM being opened from a profile, to open once it exists.
     opening_dm: bool,
     /// New codes shown since the form opened: the login gateway closes a
@@ -185,6 +187,7 @@ impl DiscordAccount {
             own_profile: None,
             consents: None,
             roles_watch: None,
+            emoji_page: None,
             opening_dm: false,
             renewals: 0,
             member_lists: crate::member_list::MemberLists::default(),

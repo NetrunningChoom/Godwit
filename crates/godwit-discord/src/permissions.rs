@@ -38,6 +38,10 @@ pub const CHANGE_NICKNAME: u64 = 1 << 26;
 pub const MANAGE_NICKNAMES: u64 = 1 << 27;
 /// Timing members out (docs.discord.food/topics/permissions).
 pub const MODERATE_MEMBERS: u64 = 1 << 40;
+/// Manage Expressions: change anyone's emoji (docs.discord.food, Permissions).
+pub const MANAGE_GUILD_EXPRESSIONS: u64 = 1 << 30;
+/// Create Expressions: add emoji, and change or delete our own.
+pub const CREATE_GUILD_EXPRESSIONS: u64 = 1 << 43;
 pub const ALL: u64 = u64::MAX;
 
 /// A channel's change to one role's or member's permissions.

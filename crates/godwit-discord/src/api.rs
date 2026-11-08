@@ -798,6 +798,35 @@ impl Api {
         self.empty(with_json(self.request(Method::PATCH, &path), body)).await
     }
 
+    /// Lists a server's emoji, each with its uploader (`user`) when we may
+    /// manage expressions (docs.discord.food, List Guild Emojis).
+    pub async fn guild_emojis(&self, guild: &str) -> Result<Value> {
+        self.json(self.request(Method::GET, &format!("/guilds/{guild}/emojis")))
+            .await
+    }
+
+    /// Create Guild Emoji: `image` is a data URI.
+    pub async fn create_emoji(&self, guild: &str, name: &str, image: &str) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::POST, &format!("/guilds/{guild}/emojis")),
+            &emoji_create_body(name, image),
+        ))
+        .await
+    }
+
+    pub async fn rename_emoji(&self, guild: &str, emoji: &str, name: &str) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::PATCH, &format!("/guilds/{guild}/emojis/{emoji}")),
+            &json!({"name": name}),
+        ))
+        .await
+    }
+
+    pub async fn delete_emoji(&self, guild: &str, emoji: &str) -> Result<()> {
+        self.empty(self.request(Method::DELETE, &format!("/guilds/{guild}/emojis/{emoji}")))
+            .await
+    }
+
     pub async fn create_role(&self, guild: &str, body: &Value) -> Result<Value> {
         self.json(with_json(
             self.request(Method::POST, &format!("/guilds/{guild}/roles")),
@@ -1018,6 +1047,12 @@ fn refusal(status: StatusCode, body: &Value) -> anyhow::Error {
         code: body["code"].as_u64(),
         message: body["message"].as_str().unwrap_or_default().to_owned(),
     })
+}
+
+/// Create Guild Emoji's body: usable by everyone (`roles` empty), as the
+/// official client sends it (docs.discord.food, Create Guild Emoji).
+pub(crate) fn emoji_create_body(name: &str, image: &str) -> Value {
+    json!({"name": name, "image": image, "roles": []})
 }
 
 fn with_json(request: RequestBuilder, body: &Value) -> RequestBuilder {

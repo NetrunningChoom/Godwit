@@ -215,6 +215,8 @@ pub struct Guild {
 pub struct EmojiRule {
     pub available: bool,
     pub roles: Vec<String>,
+    /// Who uploaded it (`user.id`, sent when we may manage expressions).
+    pub creator: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -947,28 +949,43 @@ pub fn member_avatar_url(guild: &str, user: &str, hash: &str) -> String {
 /// A server's custom emoji list (READY, GUILD_CREATE, GUILD_EMOJIS_UPDATE),
 /// replacing what was known.
 pub fn put_emojis(guild: &mut Guild, list: &Value) {
+    // READY and gateway updates may lack `user`: keep who we knew.
+    let known: HashMap<String, Option<String>> = std::mem::take(&mut guild.emoji_rules)
+        .into_iter()
+        .map(|(id, r)| (id, r.creator))
+        .collect();
     guild.emojis.clear();
-    guild.emoji_rules.clear();
     for e in list.as_array().into_iter().flatten() {
-        if let (Some(eid), Some(name)) = (e["id"].as_str(), e["name"].as_str()) {
-            guild
-                .emojis
-                .insert(eid.to_owned(), (name.to_owned(), e["animated"] == true));
-            let roles = e["roles"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect();
-            guild.emoji_rules.insert(
-                eid.to_owned(),
-                EmojiRule {
-                    available: e["available"] != false,
-                    roles,
-                },
-            );
+        put_emoji(guild, e);
+        if let Some(rule) = e["id"].as_str().and_then(|id| guild.emoji_rules.get_mut(id))
+            && rule.creator.is_none()
+        {
+            rule.creator = e["id"].as_str().and_then(|id| known.get(id).cloned().flatten());
         }
+    }
+}
+
+/// One custom emoji object (also Create Guild Emoji's answer), added or replaced.
+pub fn put_emoji(guild: &mut Guild, e: &Value) {
+    if let (Some(eid), Some(name)) = (e["id"].as_str(), e["name"].as_str()) {
+        guild
+            .emojis
+            .insert(eid.to_owned(), (name.to_owned(), e["animated"] == true));
+        let roles = e["roles"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        guild.emoji_rules.insert(
+            eid.to_owned(),
+            EmojiRule {
+                available: e["available"] != false,
+                roles,
+                creator: e["user"]["id"].as_str().map(str::to_owned),
+            },
+        );
     }
 }
 

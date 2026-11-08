@@ -194,6 +194,10 @@ impl DiscordAccount {
                     op,
                     godwit_core::server_settings::ServerAdmin::CreateChannel { .. }
                         | godwit_core::server_settings::ServerAdmin::MoveChannel { .. }
+                        | godwit_core::server_settings::ServerAdmin::LoadEmoji
+                        | godwit_core::server_settings::ServerAdmin::CreateEmoji { .. }
+                        | godwit_core::server_settings::ServerAdmin::RenameEmoji { .. }
+                        | godwit_core::server_settings::ServerAdmin::DeleteEmoji(_)
                 ) =>
             {
                 return Some(self.server_admin(server.clone(), op.clone()));

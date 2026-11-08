@@ -333,6 +333,7 @@ impl DiscordAccount {
                     store::put_emojis(guild, &d["emojis"]);
                 }
                 self.sync_emoji(out);
+                self.sync_emoji_page(out);
             }
             "GUILD_UPDATE" => {
                 self.store.update_guild(d);
