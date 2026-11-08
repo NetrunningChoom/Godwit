@@ -710,7 +710,9 @@ export component ConfirmDialog inherits Dialog {
         height: 4px;
         border-radius: 2px;
         background: Theme.surface-low;
+        // Filled from the left: an unplaced child is centred in its parent.
         Rectangle {
+            x: 0;
             width: parent.width * clamp(root.progress, 0, 1);
             height: parent.height;
             border-radius: 2px;
