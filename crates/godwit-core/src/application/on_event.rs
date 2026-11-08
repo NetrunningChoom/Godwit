@@ -313,8 +313,9 @@ impl Application {
         st.sessions.remove(account);
         st.autodelete.remove(account);
         st.marked_unread.retain(|r| r.account != *account);
-        st.pinned_rooms.retain(|r| r.account != *account);
-        st.hidden_rooms.retain(|r| r.account != *account);
+        // Pinned and hidden chats stay: they are the profile's choices (saved
+        // with its view), and taking an account out of the open profile must
+        // not lose them; rows of an absent account are skipped, as at startup.
         st.member_found = st.member_found.take().filter(|(r, _, _)| r.account != *account);
         st.pins = st.pins.take().filter(|p| p.room.account != *account);
         st.forum = st.forum.take().filter(|f| f.room.account != *account);

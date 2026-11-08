@@ -4564,8 +4564,9 @@ fn unloading_an_account_removes_all_of_it_and_only_it() {
     assert_eq!(st.files.len(), 1);
     assert_eq!(st.voice.len(), 1);
     assert_eq!(st.marked_unread, vec![rt.id.clone()]);
-    assert_eq!(st.pinned_rooms, vec![rt.id.clone()]);
-    assert_eq!(st.hidden_rooms, vec![rt.id.clone()]);
+    // Kept for when the account returns (both accounts' rooms, in order).
+    assert_eq!(st.pinned_rooms, vec![rs.id.clone(), rt.id.clone()]);
+    assert_eq!(st.hidden_rooms, vec![rs.id.clone(), rt.id.clone()]);
     assert_eq!(st.timelines.len(), 1);
     assert_eq!(st.activities.len(), 1);
     assert!(st.errors.is_empty(), "unloading is no sign-out error");
