@@ -9,6 +9,9 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+const FAILURE_NOTE_AFTER: u32 = 3;
+const FAILURE_NOTE_WINDOW: Duration = Duration::from_secs(5 * 60);
+
 const BASE: &str = "https://chat.google.com/u/0/webchannel/";
 const LIMIT: usize = 16 * 1024 * 1024;
 const IO: Duration = Duration::from_secs(60);
@@ -73,6 +76,25 @@ pub enum News {
     Connected,
     Disconnected { signed_out: bool },
     Event(Box<proto::Event>),
+}
+
+#[derive(Default)]
+struct Downtime {
+    since: Option<tokio::time::Instant>,
+    failures: u32,
+}
+
+impl Downtime {
+    fn connected(&mut self) {
+        self.since = None;
+        self.failures = 0;
+    }
+
+    fn failed(&mut self, now: tokio::time::Instant) -> bool {
+        let since = *self.since.get_or_insert(now);
+        self.failures = self.failures.saturating_add(1);
+        self.failures >= FAILURE_NOTE_AFTER || now.duration_since(since) >= FAILURE_NOTE_WINDOW
+    }
 }
 
 struct Channel {
@@ -335,6 +357,7 @@ fn rand_id() -> u64 {
 /// task when switching sessions or signing out.
 pub async fn run(saved: Saved, news: mpsc::UnboundedSender<News>, active: tokio::sync::watch::Receiver<bool>) {
     let mut wait = Duration::from_secs(5);
+    let mut downtime = Downtime::default();
     loop {
         let start = tokio::time::Instant::now();
         let result = async {
@@ -360,10 +383,17 @@ pub async fn run(saved: Saved, news: mpsc::UnboundedSender<News>, active: tokio:
             if signed_out {
                 return;
             }
+            let should_note = downtime.failed(tokio::time::Instant::now());
             if let Some(rate) = e.downcast_ref::<RateLimited>() {
                 retry_after = rate.0;
             }
-            eprintln!("note: Google Chat stream ended: {e}");
+            if should_note {
+                eprintln!("note: Google Chat stream is having trouble reconnecting");
+            } else {
+                eprintln!("debug: Google Chat stream ended; reconnecting");
+            }
+        } else {
+            downtime.connected();
         }
         if start.elapsed() > Duration::from_secs(120) {
             wait = Duration::from_secs(5);
@@ -376,6 +406,29 @@ pub async fn run(saved: Saved, news: mpsc::UnboundedSender<News>, active: tokio:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn downtime_notes_only_after_repeated_failures_and_resets_on_connect() {
+        let start = tokio::time::Instant::now();
+        let mut downtime = Downtime::default();
+        assert!(!downtime.failed(start));
+        assert!(!downtime.failed(start + Duration::from_secs(5)));
+        assert!(downtime.failed(start + Duration::from_secs(15)));
+
+        downtime.connected();
+        assert!(!downtime.failed(start + Duration::from_secs(20)));
+        assert!(!downtime.failed(start + Duration::from_secs(25)));
+        assert!(downtime.failed(start + Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn downtime_notes_after_a_long_outage_even_before_three_failures() {
+        let start = tokio::time::Instant::now();
+        let mut downtime = Downtime::default();
+        assert!(!downtime.failed(start));
+        assert!(downtime.failed(start + FAILURE_NOTE_WINDOW));
+    }
+
     #[tokio::test]
     async fn mock_handshake_registers_cookie_acknowledges_sid_and_receives_a_message() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
