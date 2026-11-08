@@ -1007,17 +1007,17 @@ mod tests {
         assert_eq!(&*account.user, "ME");
         assert_eq!(&**display_name, "Me Myself");
         let names: Vec<&str> = rooms.iter().map(|r| &*r.name).collect();
-        assert_eq!(names, ["Saved Notes", "Group", "Ann", "general", "chat"]);
+        assert_eq!(names, ["Saved Notes", "Ann", "Group", "general", "chat"]);
         // Saved Notes grants every permission, yet has no calls (official client).
         assert!(matches!(rooms[0].kind, RoomKind::Notes));
         assert!(!rooms[0].capabilities.voice && !rooms[0].capabilities.video);
-        assert!(matches!(&rooms[2].kind, RoomKind::Direct { with } if &*with.raw == "ANN"));
+        assert!(matches!(&rooms[1].kind, RoomKind::Direct { with } if &*with.raw == "ANN"));
         assert_eq!(
-            rooms[2].icon_url.as_deref(),
+            rooms[1].icon_url.as_deref(),
             Some("https://stoat.chat/api/users/ANN/default_avatar")
         );
-        assert_eq!(rooms[3].encryption, RoomEncryption::Unencrypted);
-        assert!(rooms[3].capabilities.send, "the owner can send");
+        assert_eq!(rooms[2].encryption, RoomEncryption::Unencrypted);
+        assert!(rooms[2].capabilities.send, "the owner can send");
 
         let [server] = &servers[..] else { panic!("one server") };
         let cats: Vec<(&str, Vec<&str>)> = server
@@ -1830,6 +1830,119 @@ mod tests {
             .map(|r| r.id.to_string())
             .collect();
         assert_eq!(ids, ["TOP", "HI", "MID", "LO"]);
+    }
+
+    #[test]
+    fn timeouts_require_permission_and_lower_rank_and_use_member_edit_shapes() {
+        let (mut a, tx, mut cmds, _) = connected();
+        let ready = json!({
+            "users": [{"_id":"ME","username":"me","relationship":"User"},{"_id":"ANN","username":"ann"},{"_id":"BOSS","username":"boss"}],
+            "servers": [{"_id":"S","name":"Server","owner":"OWNER","channels":[],
+                "roles": {"HI":{"name":"Mods","rank":1,"permissions":{"a":crate::permissions::TIMEOUT_MEMBERS,"d":0}},
+                          "LO":{"name":"Low","rank":3}}}],
+            "channels": [],
+            "members": [{"_id":{"server":"S","user":"ME"},"roles":["HI"]},
+                        {"_id":{"server":"S","user":"ANN"},"roles":["LO"],"timeout":"2099-01-01T00:00:00Z"},
+                        {"_id":{"server":"S","user":"BOSS"},"roles":["HI"]}]
+        });
+        tx.send(Ev::Ready(serde_json::from_value(ready).unwrap())).unwrap();
+        a.poll();
+        while cmds.try_recv().is_ok() {}
+        let moderation = a.moderation("S", "ANN").unwrap();
+        assert!(moderation.timeout && moderation.timed_out);
+        let expired: crate::api::Member =
+            serde_json::from_value(json!({"_id":{"server":"S","user":"X"},"timeout":"2000-01-01T00:00:00Z"})).unwrap();
+        assert!(expired.timeout.is_some(), "the protocol field is parsed");
+        let acc = a.account.clone().unwrap();
+        let server = ServerId::new(acc.clone(), "S");
+        let change = |user: &str, duration| Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::Timeout {
+                user: UserId::new(acc.clone(), user),
+                duration,
+            },
+        };
+        assert!(
+            a.run(change("ANN", Some(std::time::Duration::from_secs(300))))
+                .is_empty()
+        );
+        let Ok(Cmd::Member(MemberCmd::EditMember {
+            server: sent_server,
+            user,
+            body,
+            avatar: None,
+        })) = cmds.try_recv()
+        else {
+            panic!("no timeout edit")
+        };
+        assert_eq!((sent_server.as_str(), user.as_str()), ("S", "ANN"));
+        assert!(body["timeout"].as_str().is_some_and(|s| s.ends_with('Z')));
+        assert!(a.run(change("ANN", None)).is_empty());
+        assert_eq!(
+            cmds.try_recv().ok().and_then(|c| match c {
+                Cmd::Member(MemberCmd::EditMember { body, .. }) => Some(body),
+                _ => None,
+            }),
+            Some(json!({"remove":["Timeout"]}))
+        );
+        for user in ["BOSS", "ME"] {
+            assert!(matches!(
+                a.run(change(user, None)).as_slice(),
+                [Event::ServerAdmin { result: Err(_), .. }]
+            ));
+        }
+        assert!(cmds.try_recv().is_err());
+    }
+
+    #[test]
+    fn server_nicknames_follow_change_and_manage_nicknames() {
+        use crate::permissions::{CHANGE_NICKNAME, MANAGE_NICKNAMES};
+        let (mut a, tx, mut cmds, _) = connected();
+        let ready = json!({
+            "users": [{"_id":"ME","username":"me","relationship":"User"},{"_id":"ANN","username":"ann"},{"_id":"BOSS","username":"boss"}],
+            "servers": [{"_id":"S","name":"Server","owner":"OWNER","channels":[],
+                "roles": {"HI":{"name":"Mods","rank":1,"permissions":{"a":CHANGE_NICKNAME | MANAGE_NICKNAMES,"d":0}},
+                          "LO":{"name":"Low","rank":3}}}],
+            "channels": [],
+            "members": [{"_id":{"server":"S","user":"ME"},"roles":["HI"],"nickname":"Me here"},
+                        {"_id":{"server":"S","user":"ANN"},"roles":["LO"]},
+                        {"_id":{"server":"S","user":"BOSS"},"roles":["HI"]}]
+        });
+        tx.send(Ev::Ready(serde_json::from_value(ready).unwrap())).unwrap();
+        a.poll();
+        while cmds.try_recv().is_ok() {}
+        let own = a.moderation("S", "ME").unwrap();
+        assert!(own.nickname && !own.kick && !own.ban);
+        assert_eq!(own.nick.as_deref(), Some("Me here"));
+        assert!(a.moderation("S", "ANN").is_some_and(|m| m.nickname));
+        assert!(a.moderation("S", "BOSS").is_none(), "same rank");
+        let acc = a.account.clone().unwrap();
+        let server = ServerId::new(acc.clone(), "S");
+        let nick = |user: &str, nick: Option<&str>| Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::SetServerNickname {
+                user: UserId::new(acc.clone(), user),
+                nick: nick.map(Arc::from),
+            },
+        };
+        let body = |cmds: &mut tmpsc::UnboundedReceiver<Cmd>| match cmds.try_recv() {
+            Ok(Cmd::Member(MemberCmd::EditMember { user, body, .. })) => Some((user, body)),
+            _ => None,
+        };
+        assert!(a.run(nick("ME", Some("  New  "))).is_empty());
+        assert_eq!(body(&mut cmds), Some(("ME".into(), json!({"nickname":"New"}))));
+        assert!(a.run(nick("ANN", None)).is_empty());
+        assert_eq!(body(&mut cmds), Some(("ANN".into(), json!({"remove":["Nickname"]}))));
+        assert!(matches!(
+            a.run(nick("BOSS", Some("x"))).as_slice(),
+            [Event::ServerAdmin { result: Err(_), .. }]
+        ));
+        let long = "x".repeat(33);
+        assert!(matches!(
+            a.run(nick("ME", Some(&long))).as_slice(),
+            [Event::ServerAdmin { result: Err(_), .. }]
+        ));
+        assert!(cmds.try_recv().is_err());
     }
 
     #[test]

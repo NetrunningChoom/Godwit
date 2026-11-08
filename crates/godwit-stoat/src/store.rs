@@ -1446,7 +1446,10 @@ impl Store {
             .collect();
         v.sort_by(|a, b| {
             let rank = |c: &Channel| (c.channel_type != "SavedMessages") as u8;
-            rank(a).cmp(&rank(b)).then(b.last_message_id.cmp(&a.last_message_id))
+            rank(a)
+                .cmp(&rank(b))
+                .then(b.last_message_id.cmp(&a.last_message_id))
+                .then(a.id.cmp(&b.id))
         });
         v
     }

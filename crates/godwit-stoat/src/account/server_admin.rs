@@ -113,8 +113,9 @@ impl StoatAccount {
             }
             // Checked below with the owner and rank rules.
             ServerAdmin::SetMemberRole { .. } => None,
-            // The card never offers these here (no capability is set).
-            ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => None,
+            ServerAdmin::Timeout { .. } => Some((p::TIMEOUT_MEMBERS, "Timeout Members")),
+            // Checked below: our own needs Change Nickname, others' Manage Nicknames.
+            ServerAdmin::SetServerNickname { .. } => None,
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -162,8 +163,67 @@ impl StoatAccount {
                     roles,
                 })
             }
-            ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => {
-                return fail(server, "This isn't available here yet.");
+            ServerAdmin::Timeout { user, duration } => {
+                if user.account != server.account {
+                    return fail(server, "That member belongs to another account.");
+                }
+                let target = user.raw.to_string();
+                let key = MemberId {
+                    server: raw.clone(),
+                    user: target.clone(),
+                };
+                if self.store.me.as_deref() == Some(target.as_str())
+                    || !self.store.outranks(&raw, &target)
+                    || !self.store.members.contains_key(&key)
+                {
+                    return fail(server, "You can't time out that member.");
+                }
+                // DataMemberEdit.timeout is an ISO 8601 timestamp; removal uses FieldsMember.
+                let body = match duration {
+                    Some(duration) => {
+                        let until = chrono::TimeDelta::from_std(duration)
+                            .ok()
+                            .and_then(|d| chrono::Utc::now().checked_add_signed(d));
+                        let Some(until) = until else {
+                            return fail(server, "That timeout is too long.");
+                        };
+                        serde_json::json!({"timeout": until.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)})
+                    }
+                    None => serde_json::json!({"remove": ["Timeout"]}),
+                };
+                Cmd::Member(MemberCmd::EditMember {
+                    server: raw,
+                    user: target,
+                    body,
+                    avatar: None,
+                })
+            }
+            ServerAdmin::SetServerNickname { user, nick } => {
+                if user.account != server.account {
+                    return fail(server, "That member belongs to another account.");
+                }
+                let target = user.raw.to_string();
+                let allowed = self.moderation(&raw, &target).is_some_and(|m| m.nickname);
+                if !allowed {
+                    return fail(server, "You can't change that nickname.");
+                }
+                // DataMemberEdit.nickname (1-32 characters); clearing it removes
+                // the field (FieldsMember "Nickname"), as for-web's ServerIdentity
+                // modal does.
+                let nick = nick.as_deref().map(str::trim).filter(|n| !n.is_empty());
+                if nick.is_some_and(|n| n.chars().count() > 32) {
+                    return fail(server, "Nicknames can be at most 32 characters.");
+                }
+                let body = match nick {
+                    Some(nick) => serde_json::json!({ "nickname": nick }),
+                    None => serde_json::json!({ "remove": ["Nickname"] }),
+                };
+                Cmd::Member(MemberCmd::EditMember {
+                    server: raw,
+                    user: target,
+                    body,
+                    avatar: None,
+                })
             }
             ServerAdmin::MoveChannel { id, category, up } => {
                 let Some(s) = self.store.servers.get(&raw) else {

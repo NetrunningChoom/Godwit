@@ -113,24 +113,41 @@ impl StoatAccount {
         })
     }
 
-    /// Kick and Ban on a member's card: with the permission, and only for
-    /// members ranked below us (the server refuses the rest; the official
-    /// UserContextMenu hides them the same way).
+    /// Kick, Ban, Timeout and the server nickname on a member's card: with the
+    /// permission, and only for members ranked below us (the server refuses the
+    /// rest; the official UserContextMenu hides them the same way). For
+    /// ourselves only the nickname, with Change Nickname (for-web's
+    /// ServerIdentity modal).
     pub(super) fn moderation(&self, server: &str, user: &str) -> Option<godwit_core::members::Moderation> {
-        use crate::permissions::{BAN_MEMBERS, KICK_MEMBERS};
+        use crate::permissions::{BAN_MEMBERS, CHANGE_NICKNAME, KICK_MEMBERS, MANAGE_NICKNAMES, TIMEOUT_MEMBERS};
         let account = self.account.as_ref()?;
-        if self.store.me.as_deref() == Some(user) || !self.store.outranks(server, user) {
+        let member = self.store.members.get(&MemberId {
+            server: server.to_owned(),
+            user: user.to_owned(),
+        });
+        let mut m = godwit_core::members::Moderation::new(ServerId::new(account.clone(), server));
+        m.nick = member
+            .and_then(|m| m.nickname.as_deref())
+            .filter(|n| !n.is_empty())
+            .map(Arc::from);
+        if self.store.me.as_deref() == Some(user) {
+            m.nickname = member.is_some() && self.store.can_in_server(server, CHANGE_NICKNAME);
+            return m.nickname.then_some(m);
+        }
+        if !self.store.outranks(server, user) {
             return None;
         }
-        let kick = self.store.can_in_server(server, KICK_MEMBERS);
-        let ban = self.store.can_in_server(server, BAN_MEMBERS);
-        let roles = self.assignable_roles(server, user);
-        (kick || ban || !roles.is_empty()).then(|| godwit_core::members::Moderation {
-            kick,
-            ban,
-            roles,
-            ..godwit_core::members::Moderation::new(ServerId::new(account.clone(), server))
-        })
+        m.kick = self.store.can_in_server(server, KICK_MEMBERS);
+        m.ban = self.store.can_in_server(server, BAN_MEMBERS);
+        m.timeout = self.store.can_in_server(server, TIMEOUT_MEMBERS);
+        m.nickname = member.is_some() && self.store.can_in_server(server, MANAGE_NICKNAMES);
+        m.roles = self.assignable_roles(server, user);
+        m.timed_out = m.timeout
+            && member
+                .and_then(|m| m.timeout.as_deref())
+                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                .is_some_and(|t| t > chrono::Utc::now());
+        (m.kick || m.ban || m.timeout || m.nickname || !m.roles.is_empty()).then_some(m)
     }
 
     /// The roles we may toggle on `user`, highest first, as for-web's
