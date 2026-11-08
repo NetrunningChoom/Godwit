@@ -303,7 +303,7 @@ export component ManagementDialogs inherits Rectangle {
                 for r[i] in root.card-member-roles: HorizontalLayout {
                     height: Theme.row-header;
                     spacing: Theme.gap-sm;
-                    Toggle { y: (parent.height - self.height) / 2; checked: r.assigned; toggled => { root.toggle-member-role(i, self.checked); } }
+                    Toggle { y: (parent.height - self.height) / 2; checked: r.assigned; toggled(on) => { root.toggle-member-role(i, on); } }
                     Text { text: r.name; color: r.has-colour ? r.colour : Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
                 }
             }

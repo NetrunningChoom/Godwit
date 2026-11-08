@@ -501,9 +501,12 @@ export component TextArea inherits Rectangle {
 }
 
 // Material 3's switch: a 52 × 32 track, the thumb grows when on.
+// Controlled: a click never sets `checked` (that would drop the owner's
+// binding, so a reused list row kept a stale state); the owner applies the
+// new value passed to `toggled`.
 export component Toggle inherits Rectangle {
-    in-out property <bool> checked;
-    callback toggled();
+    in property <bool> checked;
+    callback toggled(bool /* the new value */);
     width: 52px;
     height: 32px;
     border-radius: Theme.radius-lg;
@@ -521,8 +524,7 @@ export component Toggle inherits Rectangle {
     TouchArea {
         mouse-cursor: pointer;
         clicked => {
-            root.checked = !root.checked;
-            root.toggled();
+            root.toggled(!root.checked);
         }
     }
 }

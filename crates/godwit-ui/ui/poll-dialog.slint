@@ -76,7 +76,7 @@ export component PollDialog inherits Dialog {
     HorizontalLayout {
         spacing: Theme.space-3;
         Text { text: "Allow multiple answers"; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
-        Toggle { checked <=> root.multi; }
+        Toggle { checked: root.multi; toggled(on) => { root.multi = on; } }
     }
     Text { text: root.hint; color: Theme.outline; font-size: Theme.text-small; wrap: word-wrap; visible: root.hint != ""; }
     HorizontalLayout {

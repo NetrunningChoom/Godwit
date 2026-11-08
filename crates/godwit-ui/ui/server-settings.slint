@@ -214,7 +214,7 @@ export component ServerSettings inherits Rectangle {
                                 VerticalLayout {
                                     alignment: start; spacing: Theme.space-3;
                                     Text { text: "Show separately"; color: Theme.on-surface; }
-                                    Toggle { checked <=> root.role-hoist; toggled => { root.role-edited(); } }
+                                    Toggle { checked: root.role-hoist; toggled(on) => { root.role-hoist = on; root.role-edited(); } }
                                 }
                             }
                         }
@@ -234,7 +234,7 @@ export component ServerSettings inherits Rectangle {
                                             Text { text: p.title; color: Theme.on-surface; }
                                             Text { text: p.description; font-size: Theme.text-small; color: Theme.outline; wrap: word-wrap; }
                                         }
-                                        Toggle { y: (parent.height - self.height) / 2; checked: p.allowed; toggled => { root.toggle-permission(i); } }
+                                        Toggle { y: (parent.height - self.height) / 2; checked: p.allowed; toggled(on) => { root.toggle-permission(i); } }
                                     }
                                 }
                             }

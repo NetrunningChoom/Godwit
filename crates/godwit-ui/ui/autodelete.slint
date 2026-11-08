@@ -222,7 +222,7 @@ export component AutoDeletePage inherits VerticalLayout {
                 Text { text: r.enabled ? "Rule ON" : "Rule OFF"; color: r.enabled && AdState.on ? Theme.primary : Theme.on-surface-variant; vertical-alignment: center; }
                 Toggle {
                     checked: r.enabled;
-                    toggled => { AdState.toggle-rule(i, self.checked); }
+                    toggled(on) => { AdState.toggle-rule(i, on); }
                 }
             }
             Text {

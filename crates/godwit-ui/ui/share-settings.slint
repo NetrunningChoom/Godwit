@@ -21,7 +21,7 @@ export component ShareSettings inherits Dialog {
             Select { model: root.qualities; current-index <=> root.quality-index; }
             HorizontalLayout {
                 spacing: Theme.space-4;
-                Toggle { checked <=> root.remember; }
+                Toggle { checked: root.remember; toggled(on) => { root.remember = on; } }
                 Text { text: "Don't ask me again"; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
             }
             HorizontalLayout {

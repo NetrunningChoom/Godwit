@@ -112,7 +112,7 @@ export component ChannelSettings inherits Rectangle {
                             if !root.is-category: HorizontalLayout {
                                 spacing: Theme.space-4;
                                 Text { text: "Users will be asked to confirm their age before opening this channel."; wrap: word-wrap; color: Theme.on-surface-variant; horizontal-stretch: 1; vertical-alignment: center; }
-                                Toggle { checked <=> root.mature; toggled => { root.changed(); } }
+                                Toggle { checked: root.mature; toggled(on) => { root.mature = on; root.changed(); } }
                             }
                         }
                     }

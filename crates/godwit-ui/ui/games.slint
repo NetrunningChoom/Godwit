@@ -123,7 +123,7 @@ export component GamesPage inherits Rectangle {
                             alignment: center;
                             Toggle {
                                 checked: f.picked;
-                                toggled => { root.pick-friend(i, self.checked); }
+                                toggled(on) => { root.pick-friend(i, on); }
                             }
                         }
                     }

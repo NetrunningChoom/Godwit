@@ -365,7 +365,7 @@ export component Settings inherits Rectangle {
                                 Toggle {
                                     y: (parent.height - self.height) / 2;
                                     checked: !a.offline;
-                                    toggled => { root.set-offline(i, !self.checked); }
+                                    toggled(on) => { root.set-offline(i, !on); }
                                 }
                             }
                             // Calm, and only while it matters: what's wrong,
@@ -461,22 +461,22 @@ export component Settings inherits Rectangle {
                     Row {
                         label: "Do not disturb";
                         detail: "No notifications, sounds or ringing from any account. Messages and calls still arrive.";
-                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.dnd; toggled => { root.changed(); } }
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.dnd; toggled(on) => { root.dnd = on; root.changed(); } }
                     }
                     Row {
                         label: "Desktop notifications";
                         detail: "For new messages and calls, following each network's mute and notification settings.";
-                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.notifications; toggled => { root.changed(); } }
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.notifications; toggled(on) => { root.notifications = on; root.changed(); } }
                     }
                     Row {
                         label: "Sounds";
                         detail: "A sound for new messages, a ringtone for calls, and a tone when someone joins or leaves a call.";
-                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.sounds; toggled => { root.changed(); } }
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.sounds; toggled(on) => { root.sounds = on; root.changed(); } }
                     }
                     Row {
                         label: "Muzzle mode";
                         detail: "When someone sends many messages in a row, only the first makes noise. The rest still arrive quietly, until they pause (or once the longest quiet stretch has passed).";
-                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.muzzle; toggled => { root.changed(); } }
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.muzzle; toggled(on) => { root.muzzle = on; root.changed(); } }
                     }
                     if root.muzzle: Row {
                         label: "Noisy again after a pause of";
@@ -516,7 +516,7 @@ export component Settings inherits Rectangle {
                             Toggle {
                                 y: (parent.height - self.height) / 2;
                                 checked: !a.offline;
-                                toggled => { root.set-offline(i, !self.checked); }
+                                toggled(on) => { root.set-offline(i, !on); }
                             }
                         }
                     }
@@ -559,17 +559,17 @@ export component Settings inherits Rectangle {
                     Text { text: "The available qualities depend on the call's video limits."; color: Theme.outline; font-size: Theme.text-small; wrap: word-wrap; }
                     Row {
                         label: "Always ask for screen share quality";
-                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.screen-quality-ask; toggled => { root.changed(); } }
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.screen-quality-ask; toggled(on) => { root.screen-quality-ask = on; root.changed(); } }
                     }
                     Text { text: "Noise suppression (applies from the next call)"; color: Theme.on-surface; wrap: word-wrap; }
                     Select { model: ["None", "Basic (WebRTC)", "Enhanced (RNNoise)"]; current-index <=> root.noise-index; selected => { root.changed(); } }
                     Row {
                         label: "Echo cancellation";
-                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.echo-cancellation; toggled => { root.changed(); } }
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.echo-cancellation; toggled(on) => { root.echo-cancellation = on; root.changed(); } }
                     }
                     Row {
                         label: "Automatic gain control";
-                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.auto-gain; toggled => { root.changed(); } }
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.auto-gain; toggled(on) => { root.auto-gain = on; root.changed(); } }
                     }
                     Text { text: "Offer to rejoin a call when Godwit starts"; color: Theme.on-surface; wrap: word-wrap; }
                     Select { model: root.rejoin-offers; current-index <=> root.rejoin-offer-index; selected => { root.changed(); } }
@@ -580,7 +580,7 @@ export component Settings inherits Rectangle {
                     Heading { text: "Appearance"; }
                     Row {
                         label: "Dark theme";
-                        Toggle { y: (parent.height - self.height) / 2; checked <=> root.dark; toggled => { root.changed(); } }
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.dark; toggled(on) => { root.dark = on; root.changed(); } }
                     }
                     Row {
                         label: "Accent colour";

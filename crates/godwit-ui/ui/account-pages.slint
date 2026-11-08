@@ -64,7 +64,7 @@ export component PrivacyPage inherits VerticalLayout {
             Toggle {
                 y: (parent.height - self.height) / 2;
                 checked: item.on;
-                toggled => { AccountPages.toggle-privacy(i); }
+                toggled(on) => { AccountPages.toggle-privacy(i); }
             }
         }
     }
