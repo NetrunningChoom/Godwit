@@ -138,6 +138,8 @@ pub struct Shell {
     /// What the open picker picks for: a message's reactions, or the composer.
     picker_for: Option<Option<MessageId>>,
     picker_room: Option<RoomId>,
+    /// Settings › Appearance shows emoji pack samples still loading.
+    emoji_samples_loading: bool,
     /// The GIF picker's tiles (gifs.rs).
     gif_tiles: crate::gifs::GifTiles,
     /// The picker's Stickers tab (stickers.rs).
@@ -441,6 +443,7 @@ impl Shell {
             picker: Picker::default(),
             picker_for: None,
             picker_room: None,
+            emoji_samples_loading: false,
             gif_tiles,
             sticker_tiles,
             games: crate::games::GamesDialog::default(),
@@ -591,6 +594,9 @@ impl Shell {
         }
         if self.presenter.images_changed && self.picker_for.is_some() {
             self.picker.refresh(&mut self.images);
+        }
+        if self.presenter.images_changed && self.emoji_samples_loading {
+            self.show_emoji_packs(ui);
         }
         // Only a call's video frame (nothing else came): swap the pictures,
         // as Yapfast does, rather than rebuilding the whole window 30 times

@@ -130,6 +130,8 @@ fn offer_install(ui: &AppWindow) {
             // Runs from its new place from now on (and updates there).
             Ok(path) => match std::process::Command::new(&path)
                 .args(std::env::args_os().skip(1))
+                // It takes over once this one has quit (single_instance.rs).
+                .env(godwit::single_instance::REPLACING, "1")
                 .spawn()
             {
                 Ok(_) => {
@@ -774,6 +776,7 @@ fn connect_callbacks(ui: &AppWindow) {
     });
     callback!(ui.on_dismiss_nudge(never) => |sh, ui| sh.act(ui, Action::DismissNudge { never }));
     callback!(ui.on_problems_opened() => |sh, ui| sh.problems_opened(ui));
+    callback!(ui.on_appearance_opened() => |sh, ui| sh.appearance_opened(ui));
     callback!(ui.on_copy_problems() => |sh, _| sh.copy_problems());
     callback!(ui.on_open_problem_log() => |sh, _| sh.open_problem_log());
     callback!(ui.on_clear_problems() => |sh, ui| sh.clear_problems(ui));
@@ -1140,6 +1143,18 @@ fn connect_callbacks(ui: &AppWindow) {
     });
 }
 
+/// Godwit was opened again: brings this window up instead. Showing and
+/// un-minimizing work everywhere; taking the focus is up to the system
+/// (Wayland compositors and Windows may only flash or highlight it).
+fn raise(ui: &AppWindow) {
+    if let Err(e) = ui.show() {
+        eprintln!("error: showing the window: {e}");
+    }
+    ui.window().set_minimized(false);
+    use slint::winit_030::WinitWindowAccessor;
+    ui.window().with_winit_window(|w| w.focus_window());
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     godwit::win32::attach_console();
@@ -1147,6 +1162,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     godwit::memory::limit_pools();
     // reqwest and ureq use rustls; it needs its crypto provider chosen once.
     let _ = rustls::crypto::ring::default_provider().install_default();
+
+    // One Godwit per user and config: opening it again shows this one
+    // (single_instance.rs). Before accounts, sessions or the cache are
+    // touched, and before any other thread. Demo mode touches none of them
+    // and runs beside it.
+    let instance = if std::env::args().any(|a| a == "--demo") {
+        godwit::single_instance::Primary::unguarded()
+    } else {
+        match godwit::single_instance::start() {
+            godwit::single_instance::Start::Primary(p) => p,
+            godwit::single_instance::Start::Shown => return Ok(()),
+        }
+    };
 
     // Draw on the CPU unless the user picked a renderer: it's the lightest
     // (see docs/design.md, "Rendering").
@@ -1176,6 +1204,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shell = Shell::new(&ui, waker(ui.as_weak()), demo)?;
     SHELL.with(|s| *s.borrow_mut() = Some(Rc::new(RefCell::new(shell))));
     connect_callbacks(&ui);
+    let weak = ui.as_weak();
+    instance.serve(move || {
+        let _ = weak.upgrade_in_event_loop(|ui| raise(&ui));
+    });
     // Draw the first screen whatever `pump` finds: with no accounts nothing
     // has happened yet, and it skips refreshing when nothing did (the window
     // then stayed on its default "Connecting…" screen).

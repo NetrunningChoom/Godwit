@@ -13,7 +13,7 @@ import { Palette, Slider, ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
-    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
     ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
@@ -57,7 +57,7 @@ import { CallDialogs, ManagementDialogs } from "app-dialogs.slint";
 export {
     Palette,
     Theme, Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
-    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem, PinItem, ActiveItem, NotificationItem, ThreadItem
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem, PinItem, ActiveItem, NotificationItem, ThreadItem
 }
 
 export component AppWindow inherits Window {
@@ -727,7 +727,8 @@ export component AppWindow inherits Window {
     in-out property <bool> dark;
     in-out property <int> accent-index;
     in-out property <int> style-index;
-    in property <[string]> emoji-packs;
+    in property <[EmojiPackItem]> emoji-packs;
+    callback appearance-opened();
     in-out property <int> emoji-pack-index;
     in property <[string]> scales;
     // 2: 100%, until Settings opens and says otherwise.
@@ -1716,6 +1717,7 @@ export component AppWindow inherits Window {
         accent-index <=> root.accent-index;
         style-index <=> root.style-index;
         emoji-packs: root.emoji-packs;
+        appearance-opened => { root.appearance-opened(); }
         emoji-pack-index <=> root.emoji-pack-index;
         scales: root.scales;
         scale-index <=> root.scale-index;

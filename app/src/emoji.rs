@@ -59,6 +59,19 @@ pub fn url(g: &str) -> Option<String> {
     canonical(g).map(url_of)
 }
 
+/// The emoji Settings › Appearance draws each pack with (the official
+/// client's `EmojiPack` in its appearance settings shows these five).
+pub const SAMPLES: [&str; 5] = ["😃", "😂", "😶\u{200d}🌫\u{fe0f}", "🤨", "🤔"];
+
+/// `SAMPLES` as drawn in `pack`: each one's character and picture.
+pub fn samples(pack: &str) -> Vec<(&'static str, String)> {
+    SAMPLES
+        .iter()
+        .filter_map(|g| canonical(g))
+        .map(|e| (e.as_str(), godwit_core::emoji_packs::unicode_url(pack, e.as_str())))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,5 +81,22 @@ mod tests {
         assert!(url("👍").is_some());
         assert_eq!(url("❤"), url("❤️"));
         assert!(url("4").is_none() && url("a").is_none());
+    }
+
+    #[test]
+    fn every_sample_is_a_known_emoji_each_pack_draws() {
+        for (pack, _) in godwit_core::emoji_packs::PACKS {
+            let samples = samples(pack);
+            assert_eq!(samples.len(), SAMPLES.len());
+            assert!(
+                samples
+                    .iter()
+                    .all(|(g, url)| url.contains(pack) && canonical(g).is_some_and(drawn))
+            );
+        }
+        assert_eq!(
+            samples("noto").get(2).map(|(_, url)| url.as_str()),
+            Some("https://static.stoat.chat/emoji/noto/1f636-200d-1f32b-fe0f.svg?v=1")
+        );
     }
 }

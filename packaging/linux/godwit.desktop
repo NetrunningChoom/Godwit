@@ -8,3 +8,6 @@ Icon=godwit
 StartupWMClass=godwit
 Categories=Network;InstantMessaging;Chat;
 Terminal=false
+# One window (Desktop Entry spec 1.5): no "New Window" in the app's menu;
+# opening it again brings up the running one (app/src/single_instance.rs).
+SingleMainWindow=true

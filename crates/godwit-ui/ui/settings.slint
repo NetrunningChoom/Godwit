@@ -8,7 +8,7 @@ import { ProfileSettings } from "profile-settings.slint";
 import { BrandBanner } from "brand-banner.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
-import { AccountItem, ProblemItem } from "types.slint";
+import { AccountItem, ProblemItem, EmojiPackItem } from "types.slint";
 import { Avatar, IconButton, Button, Toggle, Select, TextField, ConfirmDialog, SectionHeading as Heading, SettingsRow as Row } from "widgets.slint";
 
 export component Section inherits Rectangle {
@@ -26,6 +26,52 @@ export component Section inherits Rectangle {
         text: label;
         font-size: Theme.text-navigation;
         color: selected ? Theme.on-primary-container : danger ? Theme.error : Theme.on-surface;
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// An emoji pack to pick, as the official client's EmojiPack menu item: five
+// emoji drawn in it, then its name; the one in use highlighted. A sample
+// shows as its character until its picture arrives.
+component EmojiPackTile inherits Rectangle {
+    in property <EmojiPackItem> pack;
+    in property <bool> selected;
+    callback clicked();
+    border-radius: Theme.radius-md;
+    background: root.selected ? Theme.primary-container : touch.has-hover ? Theme.surface-highest : Theme.surface-high;
+    border-width: root.selected ? 2px : 0px; // literal: the chosen tile's outline
+    border-color: Theme.primary;
+    height: tile.preferred-height;
+    tile := VerticalLayout {
+        padding: Theme.space-4;
+        spacing: Theme.space-3;
+        HorizontalLayout {
+            alignment: center;
+            spacing: Theme.space-2;
+            for cell in root.pack.samples: Rectangle {
+                width: Theme.icon-large;
+                height: Theme.icon-large;
+                // A sequence the font draws as two glyphs stays in its cell.
+                clip: true;
+                if cell.has-image: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: cell.image;
+                }
+                if !cell.has-image: Text {
+                    text: cell.glyph;
+                    font-size: Theme.text-large;
+                    color: Theme.on-surface;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        Text {
+            text: root.pack.name;
+            horizontal-alignment: center;
+            color: root.selected ? Theme.on-primary-container : Theme.on-surface;
+        }
     }
     touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
@@ -117,9 +163,17 @@ export component Settings inherits Rectangle {
     // Appearance: the accent swatch picked (theme::ACCENTS' order) and the colour style.
     in-out property <int> accent-index;
     in-out property <int> style-index;
-    // Settings › Appearance › Emoji: the packs (Stoat's) and the one used.
-    in property <[string]> emoji-packs;
+    // Settings › Appearance › Emoji: the packs (Stoat's), each with sample
+    // emoji drawn in it, and the one used.
+    in property <[EmojiPackItem]> emoji-packs;
     in-out property <int> emoji-pack-index;
+    // Appearance came into view: its emoji pack samples load.
+    callback appearance-opened();
+    changed section => {
+        if self.section == 3 {
+            root.appearance-opened();
+        }
+    }
     // The interface scale: rows of `scales`.
     in property <[string]> scales;
     in-out property <int> scale-index;
@@ -617,15 +671,28 @@ export component Settings inherits Rectangle {
                             selected => { root.changed(); }
                         }
                     }
-                    Row {
-                        label: "Emoji";
-                        detail: "How emoji look everywhere in Godwit (the packs Stoat offers).";
-                        Select {
-                            width: 160px;
-                            y: (parent.height - self.height) / 2;
-                            model: root.emoji-packs;
-                            current-index <=> root.emoji-pack-index;
-                            selected => { root.changed(); }
+                    VerticalLayout {
+                        spacing: Theme.space-3;
+                        Row {
+                            label: "Emoji";
+                            detail: "How emoji look everywhere in Godwit (the packs Stoat offers).";
+                        }
+                        // Three to a row; the official client lists the same
+                        // samples in its pack menu.
+                        for r in Math.ceil(root.emoji-packs.length / 3): HorizontalLayout {
+                            spacing: Theme.space-3;
+                            for c in 3: EmojiPackTile {
+                                horizontal-stretch: 1;
+                                visible: r * 3 + c < root.emoji-packs.length;
+                                pack: root.emoji-packs[r * 3 + c];
+                                selected: root.emoji-pack-index == r * 3 + c;
+                                clicked => {
+                                    if r * 3 + c < root.emoji-packs.length && root.emoji-pack-index != r * 3 + c {
+                                        root.emoji-pack-index = r * 3 + c;
+                                        root.changed();
+                                    }
+                                }
+                            }
                         }
                     }
                     Row {

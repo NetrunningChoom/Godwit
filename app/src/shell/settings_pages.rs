@@ -3,7 +3,11 @@
 //! Settings: the pages, problems, privacy and sessions, auto-delete, own profiles and the cache.
 
 use super::*;
+use crate::ui::{EmojiCellItem, EmojiPackItem};
 use slint::ComponentHandle;
+
+/// Settings › Appearance's page (its `section` in settings.slint).
+const APPEARANCE: i32 = 3;
 
 impl Shell {
     /// Moves the core's new errors into the log; the rail's dot and Settings
@@ -59,6 +63,43 @@ impl Shell {
     }
 
     /// Settings opened: show the saved values and ask for the devices.
+    /// Settings › Appearance came into view: the emoji packs, with samples.
+    pub fn appearance_opened(&mut self, ui: &AppWindow) {
+        self.show_emoji_packs(ui);
+    }
+
+    /// The emoji packs as tiles, each with `emoji::SAMPLES` drawn in it
+    /// through the shared picture cache; called again while pictures arrive.
+    pub(super) fn show_emoji_packs(&mut self, ui: &AppWindow) {
+        let mut loading = false;
+        let packs: Vec<EmojiPackItem> = godwit_core::emoji_packs::PACKS
+            .iter()
+            .map(|(id, name)| {
+                let samples: Vec<EmojiCellItem> = crate::emoji::samples(id)
+                    .into_iter()
+                    .map(|(glyph, url)| {
+                        let pic = self.images.get(&url, crate::images::PICKER_EMOJI);
+                        loading |= pic.is_none();
+                        EmojiCellItem {
+                            name: "".into(),
+                            glyph: glyph.into(),
+                            has_image: pic.is_some(),
+                            image: pic.unwrap_or_else(crate::view::no_image),
+                            anim: -1,
+                        }
+                    })
+                    .collect();
+                EmojiPackItem {
+                    name: (*name).into(),
+                    samples: std::rc::Rc::new(slint::VecModel::from(samples)).into(),
+                }
+            })
+            .collect();
+        // Only while the page is up: closed, nothing keeps refreshing it.
+        self.emoji_samples_loading = loading && ui.get_settings_open() && ui.get_settings_section() == APPEARANCE;
+        ui.set_emoji_packs(std::rc::Rc::new(slint::VecModel::from(packs)).into());
+    }
+
     pub fn settings_opened(&mut self, ui: &AppWindow) {
         self.pending_delete = None;
         self.show_profiles(ui);
@@ -112,15 +153,6 @@ impl Shell {
                 .map_or(0, |i| i32::try_from(i).unwrap_or(0)),
         );
         ui.set_style_index(i32::try_from(s.style).unwrap_or(0));
-        ui.set_emoji_packs(
-            std::rc::Rc::new(slint::VecModel::from(
-                godwit_core::emoji_packs::PACKS
-                    .iter()
-                    .map(|(_, name)| (*name).into())
-                    .collect::<Vec<slint::SharedString>>(),
-            ))
-            .into(),
-        );
         ui.set_emoji_pack_index(
             godwit_core::emoji_packs::PACKS
                 .iter()
@@ -162,6 +194,9 @@ impl Shell {
         );
         self.show_cache_size(ui);
         self.show_devices(ui);
+        if ui.get_settings_section() == APPEARANCE {
+            self.show_emoji_packs(ui);
+        }
     }
 
     /// The Discord account still to be asked the first-run privacy question

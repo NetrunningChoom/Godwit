@@ -175,6 +175,13 @@ export struct EmojiCellItem {
     anim: int,
 }
 
+// An emoji pack in Settings › Appearance: its name and a few emoji drawn in
+// it (the official client's EmojiPack shows the same five).
+export struct EmojiPackItem {
+    name: string,
+    samples: [EmojiCellItem],
+}
+
 // A piece of a message's text. kind: 0 text, 1 quote, 2 heading, 3 code.
 // A piece of laid-out message text (app/src/textlayout.rs): a run of one
 // style at its place, or an emoji picture inside the line.

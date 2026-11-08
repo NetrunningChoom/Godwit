@@ -118,6 +118,8 @@ pub fn install(progress: impl Fn(f32) + Send + Sync + 'static, done: impl FnOnce
 pub fn restart() -> std::io::Result<()> {
     std::process::Command::new(exe()?)
         .args(std::env::args_os().skip(1))
+        // It takes over once this one has quit (single_instance.rs).
+        .env(crate::single_instance::REPLACING, "1")
         .spawn()
         .map(drop)
 }

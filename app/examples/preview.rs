@@ -1406,6 +1406,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_settings_section(3);
                 ui.set_accent_index(2);
                 ui.set_style_index(1);
+                // The emoji packs: no network here, so the first two get
+                // stand-in pictures and the rest show the characters they
+                // draw until the pictures arrive.
+                let packs: Vec<godwit::ui::EmojiPackItem> = godwit_core::emoji_packs::PACKS
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (id, name))| godwit::ui::EmojiPackItem {
+                        name: (*name).into(),
+                        samples: slint::ModelRc::new(slint::VecModel::from(
+                            godwit::emoji::samples(id)
+                                .into_iter()
+                                .map(|(glyph, _)| godwit::ui::EmojiCellItem {
+                                    name: "".into(),
+                                    glyph: glyph.into(),
+                                    has_image: i < 2,
+                                    image: gradient(44, 44),
+                                    anim: -1,
+                                })
+                                .collect::<Vec<_>>(),
+                        )),
+                    })
+                    .collect();
+                ui.set_emoji_packs(slint::ModelRc::new(slint::VecModel::from(packs)));
+                ui.set_emoji_pack_index(i32::try_from(godwit::emoji::DEFAULT_PACK).unwrap_or(0));
+                // The interface scale's choices, as the shell fills them.
+                ui.set_scales(slint::ModelRc::new(slint::VecModel::from(
+                    godwit::scale::LABELS
+                        .iter()
+                        .map(|&l| slint::SharedString::from(l))
+                        .collect::<Vec<_>>(),
+                )));
+                ui.set_scale_index(i32::try_from(godwit::scale::index_of(1.0)).unwrap_or(2));
                 Screen::Main
             }),
         ),
