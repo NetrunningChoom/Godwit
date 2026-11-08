@@ -3,6 +3,7 @@
 # Copyright (C) 2026 Godwit contributors
 # Builds the release binaries, one file per platform, into dist/:
 #   godwit-linux-x86_64, godwit-windows-x86_64.exe (with cargo xwin),
+#   xz-compressed copies of both,
 #   a .sig beside each (Ed25519, hex) and SHA256SUMS.
 # The player helper is built first and embedded (app/build.rs).
 #
@@ -27,7 +28,7 @@ cd "$root"
 [ -f private/release.env ] && . private/release.env
 
 if [ "${1:-}" = --container ]; then
-    image=godwit-build:22.04-llvm21
+    image=godwit-build:22.04-llvm21-xz
     engine=$(command -v podman || command -v docker) || { echo "needs podman or docker" >&2; exit 1; }
     cache=${GODWIT_BUILD_CACHE:-$root/.build-cache}
     jobs=${GODWIT_JOBS:-6}
@@ -95,8 +96,16 @@ for t in $targets; do
 done
 
 cd "$dist"
+# Keep raw binaries for installed copies predating xz support. Signatures
+# continue to cover the raw executable so every updater verifies the same bytes.
+for f in godwit-linux-x86_64 godwit-windows-x86_64.exe; do
+    if [ -f "$f" ]; then
+        xz -T0 -9e -k "$f"
+    fi
+done
 for f in godwit-*; do
     case $f in *.sig) continue ;; esac
+    case $f in *.xz) continue ;; esac
     if [ -n "${GODWIT_SIGNING_KEY:-}" ]; then
         openssl pkeyutl -sign -rawin -inkey "$GODWIT_SIGNING_KEY" -in "$f" | od -An -v -tx1 | tr -d ' \n' >"$f.sig"
     fi

@@ -3164,6 +3164,7 @@ dependencies = [
  "godwit-ui",
  "godwit-voice",
  "image",
+ "lzma-rs",
  "material-colors",
  "notify-rust",
  "open",
@@ -5274,6 +5275,16 @@ checksum = "5c463f9c428b7fc5ec885dcd39ce4aa61e29111d0e33483f6f98c74e89d8621e"
 dependencies = [
  "lyon_geom",
  "num-traits",
+]
+
+[[package]]
+name = "lzma-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
+dependencies = [
+ "byteorder",
+ "crc",
 ]
 
 [[package]]

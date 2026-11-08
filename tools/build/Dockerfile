@@ -6,11 +6,11 @@
 # glibc 2.35: Ubuntu 22.04+, Debian 12+, Fedora 36+ and alike.
 # Windows binaries are cross-built here too, with cargo-xwin.
 #
-# release.sh builds it the first time (podman or docker build -t godwit-build:22.04-llvm21 tools/build).
+# release.sh builds it the first time (podman or docker build -t godwit-build:22.04-llvm21-xz tools/build).
 FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates curl git gnupg nasm openssl pkg-config \
+        build-essential ca-certificates curl git gnupg nasm openssl pkg-config xz-utils \
         libasound2-dev libglib2.0-dev libgtk-3-dev libva-dev libwebkit2gtk-4.1-dev libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
 # LiveKit's prebuilt libwebrtc ships a libc++ that needs clang 21 or later;

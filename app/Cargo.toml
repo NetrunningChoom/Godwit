@@ -37,6 +37,7 @@ open.workspace = true
 qrcode = { version = "0.14", default-features = false }
 reqwest.workspace = true
 ring = "0.17"
+lzma-rs = "0.3.0"
 tokio.workspace = true
 resvg.workspace = true
 rfd.workspace = true
