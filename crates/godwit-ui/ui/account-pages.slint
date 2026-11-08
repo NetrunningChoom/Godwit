@@ -273,6 +273,7 @@ export component DataPrivacyPage inherits VerticalLayout {
     callback open-policy(string);
     // The network's own overview (empty when it has none).
     in property <string> overview-title;
+    in property <string> overview-intro;
     in property <[PrivPara]> overview;
     in property <string> overview-caveat;
     callback open-source(int, int);
@@ -288,7 +289,8 @@ export component DataPrivacyPage inherits VerticalLayout {
         Button { text: root.policy-label; kind: "text"; clicked => { root.open-policy(root.policy-url); } }
     }
     if root.overview.length > 0: Card {
-        Text { text: "Privacy overview · " + root.overview-title; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
+        Text { text: "Disclaimer · " + root.overview-title; font-size: Theme.text-title; font-weight: 600; color: Theme.on-surface; }
+        if root.overview-intro != "": Text { text: root.overview-intro; wrap: word-wrap; color: Theme.on-surface; }
         for para[p] in root.overview: VerticalLayout {
             spacing: Theme.space-2;
             Text { text: para.text; wrap: word-wrap; color: Theme.on-surface-variant; }

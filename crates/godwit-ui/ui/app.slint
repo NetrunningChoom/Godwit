@@ -674,6 +674,7 @@ export component AppWindow inherits Window {
     in property <string> settings-data-policy-url;
     in property <string> settings-data-policy-label;
     in property <string> settings-overview-title;
+    in property <string> settings-overview-intro;
     in property <[PrivPara]> settings-overview;
     in property <string> settings-overview-caveat;
     callback settings-open-source(int, int);
@@ -1668,6 +1669,7 @@ export component AppWindow inherits Window {
         data-policy-label: root.settings-data-policy-label;
         open-policy(url) => { root.login-open-link(url); }
         overview-title: root.settings-overview-title;
+        overview-intro: root.settings-overview-intro;
         overview: root.settings-overview;
         overview-caveat: root.settings-overview-caveat;
         open-source(p, s) => { root.settings-open-source(p, s); }

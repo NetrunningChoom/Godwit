@@ -2202,6 +2202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_settings_data_policy_url("https://discord.com/privacy".into());
                 ui.set_settings_data_policy_label("Open Discord privacy information".into());
                 ui.set_settings_overview_title(section.title.as_str().into());
+                ui.set_settings_overview_intro(section.intro.as_str().into());
                 ui.set_settings_overview_caveat(section.footer().into());
                 let paras: Vec<godwit::ui::PrivPara> = section
                     .paragraphs

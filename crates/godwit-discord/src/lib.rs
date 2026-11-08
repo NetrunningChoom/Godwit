@@ -71,10 +71,11 @@ pub fn privacy_section() -> godwit_core::privacy_overview::PrivacySection {
     };
     PrivacySection {
         title: "Discord".to_owned(),
+        intro: "Discord's own privacy documentation and its page on appeals.".to_owned(),
         paragraphs: vec![
             para(
-                "Discord's Privacy Policy (last updated 29 August 2025) says that Discord stores the messages you send and scans attachments and other content for illegal or harmful activity. It says that voice and video communications are designed to be end-to-end encrypted; it makes no such statement for text messages. It says that it keeps personal information until it determines it is no longer needed, gives no fixed period for message content, and refers to a separate data retention policy. It says that it does not sell personal information, and that it may share limited information with advertising platforms, such as whether you installed the app or registered. It says that it may require additional information to verify your age.",
-                "Discord's own policy: what it collects, how long it keeps it, who it shares it with and what it says about encryption.",
+                "Discord's own privacy policy: what it collects and keeps, who it shares it with, and that it describes end-to-end encryption for voice and video calls but not for text messages.",
+                "Discord's own page, last updated 29 August 2025.",
                 vec![link("Discord Privacy Policy (29 Aug 2025)", "https://discord.com/privacy")],
             ),
             para(
@@ -83,7 +84,7 @@ pub fn privacy_section() -> godwit_core::privacy_overview::PrivacySection {
                 vec![link("How You Can Appeal Our Actions, Discord (16 Feb 2024)", APPEALS)],
             ),
         ],
-        takeaway: "In short: Discord's text messages are stored by Discord and are not described as end-to-end encrypted, and its data retention was the subject of a regulator's fine. For private conversations, a network with end-to-end encryption is a better fit right now.".to_owned(),
+        takeaway: "For private conversations, a network with end-to-end encryption is a better fit right now.".to_owned(),
         caveat: godwit_core::privacy_overview::SOURCES_CAVEAT.to_owned(),
     }
 }

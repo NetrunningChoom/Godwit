@@ -246,6 +246,7 @@ impl Shell {
         // The network's own privacy overview, if it has one.
         let section = self.account(&id).and_then(|a| a.privacy_section());
         ui.set_settings_overview_title(section.as_ref().map_or("", |s| s.title.as_str()).into());
+        ui.set_settings_overview_intro(section.as_ref().map_or("", |s| s.intro.as_str()).into());
         ui.set_settings_overview_caveat(section.as_ref().map(|s| s.footer()).unwrap_or_default().into());
         let paras: Vec<crate::ui::PrivPara> = section
             .iter()

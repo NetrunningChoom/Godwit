@@ -100,6 +100,7 @@ export component Settings inherits Rectangle {
     in property <string> data-policy-label;
     callback open-policy(string);
     in property <string> overview-title;
+    in property <string> overview-intro;
     in property <[PrivPara]> overview;
     in property <string> overview-caveat;
     callback open-source(int, int);
@@ -359,6 +360,7 @@ export component Settings inherits Rectangle {
                     policy-label: root.data-policy-label;
                     open-policy(url) => { root.open-policy(url); }
                     overview-title: root.overview-title;
+                    overview-intro: root.overview-intro;
                     overview: root.overview;
                     overview-caveat: root.overview-caveat;
                     open-source(p, s) => { root.open-source(p, s); }

@@ -20,6 +20,8 @@ pub const SOURCES_CAVEAT: &str = "These sources are from the dates shown and may
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivacySection {
     pub title: String,
+    /// What the sources below are about, shown under the title (may be empty).
+    pub intro: String,
     pub paragraphs: Vec<PrivacyParagraph>,
     /// An optional closing line the network writes, shown above the caveat.
     pub takeaway: String,
@@ -53,6 +55,7 @@ mod tests {
     fn unsourced_claims_are_caught() {
         let mut s = PrivacySection {
             title: "T".into(),
+            intro: String::new(),
             paragraphs: vec![PrivacyParagraph {
                 text: "x".into(),
                 why: "y".into(),
