@@ -123,6 +123,14 @@ impl DiscordAccount {
                 self.profile_for = Some((user.raw.to_string(), guild));
                 self.sync_profile(&mut out);
             }
+            // What the gateway would say after the request, as the real account sees it.
+            Command::BlockUser { user } if user.raw.as_ref() != self.me() => {
+                let d = json!({"id": user.raw.as_ref(), "type": store::BLOCKED});
+                self.dispatch("RELATIONSHIP_ADD", &d, &mut out);
+            }
+            Command::UnblockUser { user } if user.raw.as_ref() != self.me() => {
+                self.dispatch("RELATIONSHIP_REMOVE", &json!({"id": user.raw.as_ref()}), &mut out);
+            }
             Command::LoadInvite { code } => {
                 // Every demo invite leads to the demo's server.
                 let account = self.account.clone()?;

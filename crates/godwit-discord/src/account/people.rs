@@ -65,6 +65,22 @@ impl DiscordAccount {
                 people: friends,
             });
         }
+        let mut blocked: Vec<UserId> = self
+            .store
+            .relationships
+            .iter()
+            .filter(|(_, k)| **k == store::BLOCKED)
+            .filter_map(|(u, _)| self.user_id(u))
+            .collect();
+        // By id, not by name: a rename mustn't send the list again.
+        blocked.sort_by(|a, b| a.raw.cmp(&b.raw));
+        if blocked != self.blocked {
+            self.blocked = blocked.clone();
+            out.push(Event::Blocked {
+                account: account.clone(),
+                users: blocked,
+            });
+        }
         if requests != self.requests {
             self.requests = requests.clone();
             out.push(Event::FriendRequests {
@@ -196,8 +212,9 @@ impl DiscordAccount {
             has_friends: true,
             moderation: guild.as_deref().and_then(|g| self.moderation(g, user)),
             group_moderation: None,
-            can_block: false,
-            // Discord's report flow isn't wired yet.
+            // The web client's user context menu offers Block for anyone but us.
+            can_block: user != self.me(),
+            // Discord's report menu is server-driven (/reporting/menu, breadcrumbs), which the neutral fixed reason lists can't express.
             can_report: false,
         })
     }

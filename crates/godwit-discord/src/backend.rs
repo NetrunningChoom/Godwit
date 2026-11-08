@@ -86,6 +86,13 @@ pub enum Request {
     RemoveFriend {
         user: String,
     },
+    BlockUser {
+        user: String,
+    },
+    /// Lifts a block (the same DELETE as unfriending).
+    UnblockUser {
+        user: String,
+    },
     CustomStatus(Option<String>),
     /// The first-run privacy choice: data-use consents revoked, activity hidden.
     TightenPrivacy,
@@ -711,6 +718,17 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::AddFriend { user } => Answer::Done {
             what: "adding a friend",
             result: api.add_friend(&user, "User Profile").await.map_err(RequestError::from),
+        },
+        Request::BlockUser { user } => Answer::Done {
+            what: "blocking someone",
+            result: api.block_user(&user, "User Profile").await.map_err(RequestError::from),
+        },
+        Request::UnblockUser { user } => Answer::Done {
+            what: "unblocking someone",
+            result: api
+                .remove_relationship(&user, "User Profile")
+                .await
+                .map_err(RequestError::from),
         },
         Request::AddFriendByName { request, name } => Answer::FriendRequest {
             request,

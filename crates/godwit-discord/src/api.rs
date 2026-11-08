@@ -600,6 +600,14 @@ impl Api {
         self.empty(request.header("X-Context-Properties", context(place))).await
     }
 
+    /// Blocks `user`: a relationship of type 2 (docs.discord.food,
+    /// resources/relationships, "Create Relationship"; Yapfast does the same).
+    pub async fn block_user(&self, user: &str, place: &str) -> Result<()> {
+        let path = format!("/users/@me/relationships/{user}");
+        let request = with_json(self.request(Method::PUT, &path), &json!({"type": 2}));
+        self.empty(request.header("X-Context-Properties", context(place))).await
+    }
+
     /// Sends a friend request to whoever has `username`.
     pub async fn add_friend_by_username(&self, username: &str) -> Result<()> {
         let body = json!({"username": username, "discriminator": null});

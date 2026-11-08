@@ -83,6 +83,8 @@ pub struct DiscordAccount {
     servers: Vec<CoreServer>,
     friends: Vec<Person>,
     requests: (Vec<Person>, Vec<Person>),
+    /// The users we blocked, as last sent to the core.
+    blocked: Vec<UserId>,
     /// Friends' activities as last sent (Event::Activities), to send changes only.
     activities: Vec<(UserId, Arc<str>)>,
     /// The custom emoji groups as last sent (Event::CustomEmoji).
@@ -168,6 +170,7 @@ impl DiscordAccount {
             servers: Vec::new(),
             friends: Vec::new(),
             requests: (Vec::new(), Vec::new()),
+            blocked: Vec::new(),
             activities: Vec::new(),
             emoji_sent: None,
             viewing: None,
@@ -926,6 +929,19 @@ impl NetworkAccount for DiscordAccount {
                     user: user.raw.to_string(),
                 },
             ),
+            // The web client offers Block for anyone but yourself.
+            Command::BlockUser { user } if user.raw.as_ref() != self.me() => req(
+                &self.net,
+                Request::BlockUser {
+                    user: user.raw.to_string(),
+                },
+            ),
+            Command::UnblockUser { user } if user.raw.as_ref() != self.me() => req(
+                &self.net,
+                Request::UnblockUser {
+                    user: user.raw.to_string(),
+                },
+            ),
             Command::SendFriendRequest { request, name } => req(
                 &self.net,
                 Request::AddFriendByName {
@@ -1592,6 +1608,65 @@ mod tests {
                 .any(|e| matches!(e, Event::Friends { people, .. } if people.len() == 1))
         );
         assert_eq!(a.status(), &Status::Ready);
+    }
+
+    #[test]
+    fn blocking_sends_requests_never_for_ourselves_and_lists_the_blocked() {
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        let zarg = a.user_id("200").unwrap();
+        a.run(Command::BlockUser { user: zarg.clone() });
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::Request(Request::BlockUser { user })) if user == "200"
+        ));
+        a.run(Command::UnblockUser { user: zarg.clone() });
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::Request(Request::UnblockUser { user })) if user == "200"
+        ));
+        let me = a.user_id(a.me()).unwrap();
+        a.run(Command::BlockUser { user: me });
+        assert!(cmds.try_recv().is_err(), "no blocking ourselves");
+        // The gateway's word is what the core hears.
+        let mut out = Vec::new();
+        a.dispatch("RELATIONSHIP_ADD", &json!({"id": "200", "type": 2}), &mut out);
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Blocked { users, .. } if users == std::slice::from_ref(&zarg)))
+        );
+        let mut out = Vec::new();
+        a.dispatch("RELATIONSHIP_REMOVE", &json!({"id": "200"}), &mut out);
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Blocked { users, .. } if users.is_empty()))
+        );
+    }
+
+    #[test]
+    fn demo_blocks_and_unblocks_with_the_events_discord_would_send() {
+        let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
+        let zarg = a.user_id("200").unwrap();
+        a.run(Command::LoadProfile {
+            user: zarg.clone(),
+            room: None,
+        });
+        let out = a.run(Command::BlockUser { user: zarg.clone() });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Blocked { users, .. } if users.len() == 1))
+        );
+        let Some(Event::Profile(p)) = out.iter().find(|e| matches!(e, Event::Profile(_))) else {
+            panic!("{out:?}")
+        };
+        assert_eq!(p.relationship, Relationship::Blocked);
+        assert!(p.can_block);
+        let out = a.run(Command::UnblockUser { user: zarg });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Blocked { users, .. } if users.is_empty()))
+        );
     }
 
     #[test]
