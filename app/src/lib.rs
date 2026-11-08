@@ -45,9 +45,6 @@ pub mod wheel;
 #[cfg(windows)]
 pub mod win32;
 
-/// Code generated from `ui/*.slint`. Slint's generator unwraps and uses
-/// `todo!` internally; the lints are relaxed for that generated code only.
-pub mod ui {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::todo)]
-    slint::include_modules!();
-}
+/// The Slint UI, generated in its own crate (`crates/godwit-ui`) so it
+/// compiles once and stays cached.
+pub use godwit_ui as ui;

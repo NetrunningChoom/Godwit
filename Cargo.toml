@@ -21,6 +21,7 @@ godwit-gchat = { path = "crates/godwit-gchat" }
 godwit-secrets = { path = "crates/godwit-secrets" }
 godwit-voice = { path = "crates/godwit-voice" }
 godwit-media = { path = "crates/godwit-media" }
+godwit-ui = { path = "crates/godwit-ui" }
 anyhow = "1.0.104"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "unstable-locales"] }
 cpal = "0.18.2"
@@ -65,6 +66,11 @@ opt-level = 2
 # davey reads a DAVE frame's LEB128 nonce with a shift that overflows past ten
 # bytes; a received frame shouldn't be able to panic a debug build (release
 # builds wrap anyway, and davey then rejects the frame).
+# The generated UI is tens of MB of Rust; full debug info for it roughly
+# doubles rustc's memory and is rarely useful (line tables keep backtraces).
+[profile.dev.package.godwit-ui]
+debug = "line-tables-only"
+
 [profile.dev.package.davey]
 overflow-checks = false
 

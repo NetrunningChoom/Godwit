@@ -641,12 +641,12 @@ export component Sidebar inherits Rectangle {
                             width: 24px;
                             height: 24px;
                             source: root.call-status != "Voice connected"
-                                ? @image-url("../../assets/icons/yapfast/volume-2.svg")
+                                ? @image-url("../../../assets/icons/yapfast/volume-2.svg")
                                 : root.call-quality == 2
-                                    ? @image-url("../../assets/icons/yapfast/signal-low.svg")
+                                    ? @image-url("../../../assets/icons/yapfast/signal-low.svg")
                                     : root.call-quality == 1
-                                        ? @image-url("../../assets/icons/yapfast/signal-medium.svg")
-                                        : @image-url("../../assets/icons/yapfast/signal-high.svg");
+                                        ? @image-url("../../../assets/icons/yapfast/signal-medium.svg")
+                                        : @image-url("../../../assets/icons/yapfast/signal-high.svg");
                             image-fit: contain;
                             colorize: root.call-status != "Voice connected" ? Theme.warning
                                 : root.call-quality == 2 ? Theme.error

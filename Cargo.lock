@@ -3161,6 +3161,7 @@ dependencies = [
  "godwit-steam",
  "godwit-stoat",
  "godwit-teams",
+ "godwit-ui",
  "godwit-voice",
  "image",
  "material-colors",
@@ -3177,7 +3178,6 @@ dependencies = [
  "serde",
  "serde_json",
  "slint",
- "slint-build",
  "syntect",
  "tokio",
  "unicode-segmentation",
@@ -3403,6 +3403,14 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-tungstenite 0.30.0",
+]
+
+[[package]]
+name = "godwit-ui"
+version = "0.1.5"
+dependencies = [
+ "slint",
+ "slint-build",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
-//! Keeps raw values out of `app/ui/*.slint`: colours and sizes come from
+//! Keeps raw values out of `crates/godwit-ui/ui/*.slint`: colours and sizes come from
 //! `Theme` (theme.slint), so a change of scale happens in one place.
 //!
 //! Flagged, outside comments and strings: hex colours outside theme.slint;
@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// File (under `app/ui`) → most raw values allowed.
+/// File (under `crates/godwit-ui/ui`) → most raw values allowed.
 const ALLOWED: &[(&str, usize)] = &[];
 
 const MARKER: &str = "// literal:";
@@ -136,11 +136,11 @@ fn count(file: &str, source: &str) -> usize {
 
 #[test]
 fn slint_files_use_theme_tokens() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../crates/godwit-ui/ui");
     let allowed: BTreeMap<&str, usize> = ALLOWED.iter().copied().collect();
     let mut over = Vec::new();
     let mut lower = Vec::new();
-    for entry in std::fs::read_dir(&dir).expect("app/ui") {
+    for entry in std::fs::read_dir(&dir).expect("crates/godwit-ui/ui") {
         let path = entry.expect("entry").path();
         if path.extension().is_none_or(|e| e != "slint") {
             continue;

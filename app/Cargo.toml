@@ -10,6 +10,7 @@ readme = "../README.md"
 arboard.workspace = true
 emojis.workspace = true
 godwit-core.workspace = true
+godwit-ui.workspace = true
 godwit-cache.workspace = true
 godwit-steam.workspace = true
 godwit-discord.workspace = true
@@ -54,9 +55,6 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 
 [dev-dependencies]
 godwit-secrets = { workspace = true, features = ["test-support"] }
-
-[build-dependencies]
-slint-build.workspace = true
 
 [lints]
 workspace = true

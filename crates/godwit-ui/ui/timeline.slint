@@ -665,8 +665,8 @@ export component Timeline inherits Rectangle {
                 padding: Theme.space-3;
             ImageIconButton {
                 icon: root.call-muted
-                    ? @image-url("../../assets/icons/yapfast/mic-off.svg")
-                    : @image-url("../../assets/icons/yapfast/mic.svg");
+                    ? @image-url("../../../assets/icons/yapfast/mic-off.svg")
+                    : @image-url("../../../assets/icons/yapfast/mic.svg");
                 tooltip: root.call-muted ? "Unmute" : "Mute";
                 enabled: !root.call-deafened;
                 tint: root.call-muted ? Theme.error : root.call-speaking ? Theme.online : Theme.on-surface;
@@ -675,8 +675,8 @@ export component Timeline inherits Rectangle {
             }
             ImageIconButton {
                 icon: root.call-deafened
-                    ? @image-url("../../assets/icons/yapfast/headphone-off.svg")
-                    : @image-url("../../assets/icons/yapfast/headphones.svg");
+                    ? @image-url("../../../assets/icons/yapfast/headphone-off.svg")
+                    : @image-url("../../../assets/icons/yapfast/headphones.svg");
                 tooltip: root.call-deafened ? "Undeafen" : "Deafen";
                 tint: root.call-deafened ? Theme.error : Theme.on-surface;
                 fill: root.call-deafened ? Theme.error.with-alpha(0.18) : Theme.surface-high;
@@ -684,8 +684,8 @@ export component Timeline inherits Rectangle {
             }
             if root.call-video-network || root.call-camera: ImageIconButton {
                 icon: root.call-camera
-                    ? @image-url("../../assets/icons/yapfast/video.svg")
-                    : @image-url("../../assets/icons/yapfast/video-off.svg");
+                    ? @image-url("../../../assets/icons/yapfast/video.svg")
+                    : @image-url("../../../assets/icons/yapfast/video-off.svg");
                 tooltip: root.call-camera ? "Turn camera off" : "Turn camera on";
                 enabled: root.call-can-video || root.call-camera;
                 fill: root.call-camera ? Theme.primary-container : Theme.surface-high;
@@ -693,8 +693,8 @@ export component Timeline inherits Rectangle {
             }
             if root.call-video-network || root.call-screen-share: ImageIconButton {
                 icon: root.call-screen-share
-                    ? @image-url("../../assets/icons/yapfast/screen-share-off.svg")
-                    : @image-url("../../assets/icons/yapfast/screen-share.svg");
+                    ? @image-url("../../../assets/icons/yapfast/screen-share-off.svg")
+                    : @image-url("../../../assets/icons/yapfast/screen-share.svg");
                 tooltip: root.call-screen-share ? "Stop sharing" : "Share your screen";
                 enabled: root.call-can-video || root.call-screen-share;
                 fill: root.call-screen-share ? Theme.primary-container : Theme.surface-high;
@@ -702,7 +702,7 @@ export component Timeline inherits Rectangle {
             }
             Rectangle { width: Theme.space-3; }
             ImageIconButton {
-                icon: @image-url("../../assets/icons/yapfast/phone-off.svg");
+                icon: @image-url("../../../assets/icons/yapfast/phone-off.svg");
                 tooltip: "Leave call";
                 tint: Theme.on-error;
                 fill: Theme.error;

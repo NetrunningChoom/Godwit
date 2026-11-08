@@ -202,7 +202,7 @@ export component FullscreenVideo inherits Rectangle {
                 padding: Theme.space-2;
                 spacing: Theme.space-1;
                 ImageIconButton {
-                    icon: root.call-muted ? @image-url("../../assets/icons/yapfast/mic-off.svg") : @image-url("../../assets/icons/yapfast/mic.svg");
+                    icon: root.call-muted ? @image-url("../../../assets/icons/yapfast/mic-off.svg") : @image-url("../../../assets/icons/yapfast/mic.svg");
                     tooltip: root.call-muted ? "Unmute" : "Mute";
                     enabled: !root.call-deafened;
                     tint: root.call-muted ? Theme.error : root.call-speaking ? Theme.online : white;
@@ -210,14 +210,14 @@ export component FullscreenVideo inherits Rectangle {
                     clicked => { root.toggle-mute(); }
                 }
                 ImageIconButton {
-                    icon: root.call-deafened ? @image-url("../../assets/icons/yapfast/headphone-off.svg") : @image-url("../../assets/icons/yapfast/headphones.svg");
+                    icon: root.call-deafened ? @image-url("../../../assets/icons/yapfast/headphone-off.svg") : @image-url("../../../assets/icons/yapfast/headphones.svg");
                     tooltip: root.call-deafened ? "Undeafen" : "Deafen";
                     tint: root.call-deafened ? Theme.error : white;
                     fill: Theme.on-media-faint;
                     clicked => { root.toggle-deafen(); }
                 }
                 if root.call-can-video || root.call-camera: ImageIconButton {
-                    icon: root.call-camera ? @image-url("../../assets/icons/yapfast/video.svg") : @image-url("../../assets/icons/yapfast/video-off.svg");
+                    icon: root.call-camera ? @image-url("../../../assets/icons/yapfast/video.svg") : @image-url("../../../assets/icons/yapfast/video-off.svg");
                     tooltip: root.call-camera ? "Turn camera off" : "Turn camera on";
                     enabled: root.call-can-video || root.call-camera;
                     tint: white;
@@ -225,7 +225,7 @@ export component FullscreenVideo inherits Rectangle {
                     clicked => { root.set-camera(!root.call-camera); }
                 }
                 if root.call-can-video || root.call-screen-share: ImageIconButton {
-                    icon: root.call-screen-share ? @image-url("../../assets/icons/yapfast/screen-share-off.svg") : @image-url("../../assets/icons/yapfast/screen-share.svg");
+                    icon: root.call-screen-share ? @image-url("../../../assets/icons/yapfast/screen-share-off.svg") : @image-url("../../../assets/icons/yapfast/screen-share.svg");
                     tooltip: root.call-screen-share ? "Stop sharing" : "Share your screen";
                     enabled: root.call-can-video || root.call-screen-share;
                     tint: white;
@@ -242,7 +242,7 @@ export component FullscreenVideo inherits Rectangle {
                     color: white;
                 }
                 ImageIconButton {
-                    icon: @image-url("../../assets/icons/yapfast/phone-off.svg");
+                    icon: @image-url("../../../assets/icons/yapfast/phone-off.svg");
                     tooltip: "Leave call";
                     tint: Theme.on-error;
                     fill: Theme.error;
@@ -262,7 +262,7 @@ export component FullscreenVideo inherits Rectangle {
             Image {
                 width: 18px;
                 height: 18px;
-                source: root.call-muted ? @image-url("../../assets/icons/yapfast/mic-off.svg") : @image-url("../../assets/icons/yapfast/mic.svg");
+                source: root.call-muted ? @image-url("../../../assets/icons/yapfast/mic-off.svg") : @image-url("../../../assets/icons/yapfast/mic.svg");
                 colorize: root.call-muted ? Theme.error : Theme.online;
             }
         }

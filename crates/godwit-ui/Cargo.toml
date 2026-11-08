@@ -1,0 +1,24 @@
+[package]
+name = "godwit-ui"
+description = "Godwit's Slint UI, generated from ui/*.slint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Its own crate so the generated code (tens of MB of Rust) compiles once and
+# stays cached: edits to the app's Rust, and the app's test harness, no longer
+# rebuild it, and only one rustc ever holds it in memory.
+# No tests of its own: a test harness would compile the generated code a
+# second time (another ~5 GB rustc) for nothing.
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+slint.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+
+[lints]
+workspace = true

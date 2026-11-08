@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
 
-fn main() -> Result<(), slint_build::CompileError> {
+fn main() {
     identical_code_folding();
     commit();
     embedded_player();
     if std::env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "windows") {
         windows_icon();
     }
-    // Material is the design language of the official Stoat client.
-    let config = slint_build::CompilerConfiguration::new().with_style("material-dark".into());
-    slint_build::compile_with_config("ui/app.slint", config)
 }
 
 /// The commit this is built from, for About: `GODWIT_COMMIT` when set (the
