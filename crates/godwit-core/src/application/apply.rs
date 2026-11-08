@@ -478,6 +478,11 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::Stickers { account, groups } => {
+                self.state.stickers.retain(|g| g.server.account != account);
+                self.state.stickers.extend(groups);
+                Vec::new()
+            }
             Event::CustomEmoji { account, groups } => {
                 self.state.emoji.retain(|g| g.server.account != account);
                 self.state.emoji.extend(groups);

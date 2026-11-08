@@ -248,6 +248,8 @@ pub struct AppState {
     pub voice_since: HashMap<RoomId, i64>,
     /// Every account's custom emoji, by server.
     pub emoji: Vec<EmojiGroup>,
+    /// Every account's sendable stickers, by server.
+    pub stickers: Vec<crate::stickers::StickerGroup>,
     /// Where the "New messages" divider goes in the open room: after this
     /// message (what was read when it was opened unread).
     pub unread_from: Option<MessageId>,
@@ -341,6 +343,19 @@ impl AppState {
         // The room's own server first.
         groups.sort_by_key(|g| Some(&g.server) != here);
         groups
+    }
+
+    /// The stickers `room` can send: its own server's only (what one account
+    /// may send elsewhere needs a subscription Godwit never offers), and none
+    /// where the room can't take stickers.
+    pub fn stickers_for(&self, room: &RoomId) -> Vec<&crate::stickers::StickerGroup> {
+        let Some(r) = self.room(room).filter(|r| r.capabilities.stickers) else {
+            return Vec::new();
+        };
+        let RoomKind::Channel { server } = &r.kind else {
+            return Vec::new();
+        };
+        self.stickers.iter().filter(|g| &g.server == server).collect()
     }
 
     /// Rooms outside any server (DMs, groups, notes), in their order.

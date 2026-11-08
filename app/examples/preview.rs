@@ -732,6 +732,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         discord_scene("discord-channel", false),
         discord_scene("discord-dm", true),
+        // The picker's Stickers tab over a server channel (tiles filled below).
+        discord_scene("discord-stickers", false),
         forum_scene(),
         Scene::new(
             "discord-privacy",
@@ -2059,6 +2061,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (rows, _) = godwit::view::forward_results(app.state(), &from, "", &mut images.borrow_mut());
             ui.set_forward_results(slint::ModelRc::new(slint::VecModel::from(rows)));
             ui.set_forward_open(true);
+        }
+        if scene.name == "discord-stickers" {
+            use slint::ComponentHandle;
+            let mut tiles = godwit::stickers::StickerTiles::default();
+            tiles.show(app.state(), true, &mut images.borrow_mut());
+            let gifs = ui.global::<godwit::ui::Gifs>();
+            gifs.set_stickers_available(true);
+            gifs.set_available(true);
+            gifs.set_sticker_tiles(tiles.model());
+            gifs.set_tab(1);
+            gifs.set_open(true);
         }
         if scene.name == "poll" {
             let model = |items: &[&str]| {

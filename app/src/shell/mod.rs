@@ -136,6 +136,8 @@ pub struct Shell {
     picker_room: Option<RoomId>,
     /// The GIF picker's tiles (gifs.rs).
     gif_tiles: crate::gifs::GifTiles,
+    /// The picker's Stickers tab (stickers.rs).
+    sticker_tiles: crate::stickers::StickerTiles,
     /// The "Games in common" dialog's models (games.rs).
     games: crate::games::GamesDialog,
     /// The timeline's text selection (selection.rs).
@@ -339,6 +341,11 @@ impl Shell {
             use slint::ComponentHandle;
             ui.global::<crate::ui::Gifs>().set_tiles(gif_tiles.model());
         }
+        let sticker_tiles = crate::stickers::StickerTiles::default();
+        {
+            use slint::ComponentHandle;
+            ui.global::<crate::ui::Gifs>().set_sticker_tiles(sticker_tiles.model());
+        }
         if demo {
             crate::demo::pictures(&mut images);
             crate::demo::steam_pictures(&mut images);
@@ -408,6 +415,7 @@ impl Shell {
             picker_for: None,
             picker_room: None,
             gif_tiles,
+            sticker_tiles,
             games: crate::games::GamesDialog::default(),
             selection: crate::selection::ChatSelection::default(),
             card_selection: crate::selection::BlockSelection::default(),
@@ -1083,6 +1091,7 @@ impl Shell {
             Some(&self.inline_players),
         );
         self.show_gifs(ui);
+        self.show_stickers(ui);
         self.show_selection(ui);
         self.schedule_animation();
         self.show_join_server(ui);

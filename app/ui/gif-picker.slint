@@ -19,6 +19,15 @@ export struct GifTileItem {
     title: string,
 }
 
+// One sticker tile (app/src/stickers.rs): its still picture, its name for
+// the hover hint; not `enabled` while the network refuses it.
+export struct StickerTileItem {
+    image: image,
+    has-image: bool,
+    name: string,
+    enabled: bool,
+}
+
 // The GIF picker's contents (app/src/gifs.rs), as a global: the composer and
 // the panel both read it without passing it down through every view.
 export global Gifs {
@@ -43,6 +52,42 @@ export global Gifs {
     // Whether a link is starred; `version` changes with every star, so stars redraw.
     pure callback is-favourite(string, int) -> bool;
     in-out property <int> favourites-version;
+    // The picker's tab: 0 GIFs, 1 Stickers (a room that takes stickers).
+    in-out property <int> tab;
+    in property <bool> stickers-available;
+    in property <[StickerTileItem]> sticker-tiles;
+    in property <string> sticker-status;
+    callback sticker-search(string);
+    callback sticker-picked(int);
+    // The top row on screen.
+    callback sticker-scrolled(int);
+    callback tab-changed();
+}
+
+// A picker tab: the active one is underlined as the official client's.
+component PickerTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    height: 32px;
+    background: tab-touch.has-hover && !root.active ? Theme.surface-highest : transparent;
+    border-radius: Theme.radius-sm;
+    Text {
+        text: root.label;
+        color: root.active ? Theme.on-surface : Theme.on-surface-variant;
+        font-weight: root.active ? 700 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if root.active: Rectangle {
+        y: parent.height - 2px;
+        height: 2px;
+        background: Theme.primary;
+    }
+    tab-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
 }
 
 // A GIF's star: filled once it's a favourite. On GIFs in the picker and in chat.
@@ -92,24 +137,84 @@ export component GifPicker inherits Rectangle {
     VerticalLayout {
         padding: Theme.space-4;
         spacing: Theme.space-3;
-        search := TextField {
+        if Gifs.stickers-available && Gifs.available: HorizontalLayout {
+            spacing: Theme.space-3;
+            PickerTab {
+                label: "GIFs";
+                active: Gifs.tab == 0;
+                clicked => { Gifs.tab = 0; Gifs.tab-changed(); }
+            }
+            PickerTab {
+                label: "Stickers";
+                active: Gifs.tab == 1;
+                clicked => { Gifs.tab = 1; Gifs.tab-changed(); }
+            }
+        }
+        if Gifs.tab == 1: sticker-search := TextField {
+            placeholder: "Search for stickers...";
+            autofocus: true;
+            edited(t) => { Gifs.sticker-search(t); }
+        }
+        if Gifs.tab == 1 && Gifs.sticker-status != "": Text {
+            text: Gifs.sticker-status;
+            color: Theme.on-surface-variant;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        if Gifs.tab == 1: sticker-list := ListView {
+            vertical-stretch: 1;
+            changed content-y => { Gifs.sticker-scrolled(floor(-self.content-y / 88px)); }
+            for row[i] in ceil(Gifs.sticker-tiles.length / 4): HorizontalLayout {
+                height: 88px;
+                spacing: Theme.space-2;
+                padding-bottom: Theme.space-2;
+                for j in 4: Rectangle {
+                    width: 80px;
+                    border-radius: Theme.radius-sm;
+                    background: i * 4 + j < Gifs.sticker-tiles.length ? Theme.surface-highest : transparent;
+                    property <StickerTileItem> tile: Gifs.sticker-tiles[i * 4 + j];
+                    if i * 4 + j < Gifs.sticker-tiles.length && tile.has-image: Image {
+                        width: parent.width - 8px;
+                        height: parent.height - 8px;
+                        source: tile.image;
+                        image-fit: contain;
+                        opacity: tile.enabled ? 1 : 0.35;
+                    }
+                    if i * 4 + j < Gifs.sticker-tiles.length: sticker-touch := TouchArea {
+                        mouse-cursor: tile.enabled ? pointer : default;
+                        enabled: tile.enabled;
+                        clicked => { Gifs.sticker-picked(i * 4 + j); }
+                    }
+                    if i * 4 + j < Gifs.sticker-tiles.length && sticker-hover.has-hover && tile.enabled: Rectangle {
+                        border-radius: Theme.radius-sm;
+                        border-width: 2px;
+                        border-color: Theme.primary;
+                    }
+                    sticker-hover := TouchArea { enabled: false; }
+                }
+            }
+        }
+        if Gifs.tab == 0: search := TextField {
             placeholder: "Search for GIFs...";
             autofocus: true;
             text: Gifs.query == "trending" ? "" : Gifs.query;
             edited(t) => { Gifs.search(t); }
         }
-        if Gifs.status != "": Text {
+        if Gifs.tab == 0 && Gifs.status != "": Text {
             text: Gifs.status;
             color: Theme.on-surface-variant;
             horizontal-alignment: center;
             wrap: word-wrap;
         }
-        list := ListView {
+        if Gifs.tab == 0: list := ListView {
             vertical-stretch: 1;
             // Not `scrolled`: it doesn't fire for the mouse wheel.
-            changed content-y => {
-                root.report();
-            }
+            changed content-y => { Gifs.scrolled(
+                floor(-self.content-y / 120px),
+                -self.content-y + self.visible-height > self.content-height - 360px); }
+            init => { Gifs.scrolled(
+                floor(-self.content-y / 120px),
+                -self.content-y + self.visible-height > self.content-height - 360px); }
             for row[i] in ceil(Gifs.tiles.length / 2): HorizontalLayout {
                 height: 120px;
                 spacing: Theme.space-3;
@@ -157,10 +262,4 @@ export component GifPicker inherits Rectangle {
         }
     }
     }
-    function report() {
-        Gifs.scrolled(
-            floor(-list.content-y / 120px),
-            -list.content-y + list.visible-height > list.content-height - 360px);
-    }
-    init => { self.report(); }
 }

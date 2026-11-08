@@ -246,6 +246,7 @@ impl Application {
         self.state.gifs.remove(&account);
         self.state.typing.retain(|room, _| room.account != account);
         self.state.emoji.retain(|group| group.server.account != account);
+        self.state.stickers.retain(|group| group.server.account != account);
         if self
             .state
             .profile

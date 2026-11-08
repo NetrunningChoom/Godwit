@@ -1230,7 +1230,7 @@ export component Timeline inherits Rectangle {
                     }
                 }
                 // The official GIF button: only while there's nothing to send.
-                if Gifs.available && root.can-send && input.text == "" && root.files.length == 0: Rectangle {
+                if (Gifs.available || Gifs.stickers-available) && root.can-send && input.text == "" && root.files.length == 0: Rectangle {
                     y: (parent.height - self.height) / 2;
                     width: 36px;
                     height: 36px;
@@ -1248,7 +1248,9 @@ export component Timeline inherits Rectangle {
                         mouse-cursor: pointer;
                         clicked => {
                             Gifs.open = true;
+                            Gifs.tab = Gifs.available ? 0 : 1;
                             Gifs.opened();
+                            Gifs.tab-changed();
                         }
                     }
                 }

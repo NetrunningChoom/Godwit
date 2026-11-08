@@ -84,6 +84,13 @@ pub enum Command {
         reply_to: Option<MessageId>,
         files: Vec<Outgoing>,
     },
+    /// Send a sticker (a network's id from [`crate::stickers::Sticker`]) with
+    /// no text; the message arrives like any other.
+    SendSticker {
+        room: RoomId,
+        sticker: Arc<str>,
+        reply_to: Option<MessageId>,
+    },
     /// Open the direct chat with `user`, creating it if needed; answered
     /// with [`Event::RoomOpened`].
     OpenDirect {

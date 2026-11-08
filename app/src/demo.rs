@@ -1063,7 +1063,13 @@ pub fn discord_world() -> (
                 {"id": memes, "type": 0, "name": bogus.word(), "position": 1, "parent_id": category, "last_message_id": flake(220)},
                 {"id": lounge, "type": 2, "name": capitalise(&bogus.word()), "position": 2, "parent_id": category}
             ],
-            "emojis": [{"id": emoji, "name": bogus.word(), "animated": false}]
+            "emojis": [{"id": emoji, "name": bogus.word(), "animated": false}],
+            "stickers": [
+                {"id": flake(112), "name": "Wave", "tags": "hello, hi, wave", "format_type": 1, "available": true},
+                {"id": flake(113), "name": "Party", "tags": "celebrate, tada", "format_type": 4, "available": true},
+                {"id": flake(114), "name": "Shrug", "tags": "idk, whatever", "format_type": 2, "available": true},
+                {"id": flake(115), "name": "Sleepy", "tags": "tired, zzz", "format_type": 1, "available": false}
+            ]
         }],
         "merged_members": [[{"user_id": me_id, "roles": [mods]}, {"user_id": people[0].0, "roles": [members]}, {"user_id": people[1].0, "roles": [mods]}]],
         "private_channels": [
@@ -1234,6 +1240,26 @@ pub fn discord_pictures(images: &mut Images) {
             let url = godwit_discord::store::emoji_url(id, false);
             images.put(&url, EMOJI, 40, 40, &disc(40, [0xff, 0x9f, 0x43]));
             images.put(&url, JUMBO, 192, 192, &disc(192, [0xff, 0x9f, 0x43]));
+        }
+    }
+    // The server's stickers (still pictures: the picker shows first frames).
+    for (i, s) in ready["guilds"][0]["stickers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let (Some(id), Some(format)) = (s["id"].as_str(), s["format_type"].as_u64()) else {
+            continue;
+        };
+        if let Some(url) = godwit_discord::store::sticker_url(id, format, 160) {
+            images.put(
+                &url,
+                crate::stickers::STICKER,
+                160,
+                160,
+                &disc(160, colours[(i + 2) % colours.len()]),
+            );
         }
     }
 }

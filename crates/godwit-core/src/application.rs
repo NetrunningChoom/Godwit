@@ -354,6 +354,7 @@ impl Application {
             | Event::Gifs { account, .. }
             | Event::GifsFailed { account, .. }
             | Event::InviteLoaded { account, .. }
+            | Event::Stickers { account, .. }
             | Event::CustomEmoji { account, .. } => signed_in(account),
             Event::Profile(p) => signed_in(&p.user.account),
             Event::GameLibrary { user, .. } => signed_in(&user.account),

@@ -95,6 +95,9 @@ pub struct DiscordAccount {
     activities: Vec<(UserId, Arc<str>)>,
     /// The custom emoji groups as last sent (Event::CustomEmoji).
     emoji_sent: Option<Vec<godwit_core::message::EmojiGroup>>,
+    /// The sticker groups last sent to core, so an unchanged list isn't sent
+    /// again (as `emoji_sent`).
+    stickers_sent: Option<Vec<godwit_core::stickers::StickerGroup>>,
     /// The channel on screen.
     viewing: Option<String>,
     /// The call's video is on screen (its room, or the app's pop-out).
@@ -181,6 +184,7 @@ impl DiscordAccount {
             blocked: Vec::new(),
             activities: Vec::new(),
             emoji_sent: None,
+            stickers_sent: None,
             viewing: None,
             call_shown: false,
             subscribed: Default::default(),
@@ -399,15 +403,9 @@ fn stickers(m: &Value) -> Vec<(Arc<str>, Arc<str>)> {
         .filter_map(|s| {
             let id = s["id"].as_str()?;
             let name = s["name"].as_str().unwrap_or("Sticker");
-            let ext = match s["format_type"].as_u64() {
-                Some(3) => return None,
-                Some(4) => "gif",
-                _ => "png",
-            };
-            Some((
-                format!("https://media.discordapp.net/stickers/{id}.{ext}?size=160").into(),
-                name.into(),
-            ))
+            // The picker's tiles use the same address (store::sticker_url).
+            let url = crate::store::sticker_url(id, s["format_type"].as_u64().unwrap_or(1), 160)?;
+            Some((url.into(), name.into()))
         })
         .collect()
 }
@@ -840,6 +838,27 @@ impl NetworkAccount for DiscordAccount {
                         files: files.into_iter().map(|f| (f.path, f.name.to_string())).collect(),
                     },
                 );
+            }
+            Command::SendSticker {
+                room,
+                sticker,
+                reply_to,
+            } => {
+                let Some(channel) = self.channel_of(&room) else {
+                    return out;
+                };
+                // The dispatcher checked already; this guards a stale room.
+                if !self.store.can(&channel, p::SEND_MESSAGES) {
+                    out.push(Event::Error(
+                        "Discord, sending a sticker: you can't send messages here.".into(),
+                    ));
+                    return out;
+                }
+                let guild = self.store.channels.get(&channel).and_then(|c| c.guild.clone());
+                let message = reply_to.as_ref().map(|r| r.0.as_ref());
+                let reply = message.map(|m| (guild.as_deref(), channel.as_str(), m));
+                let body = crate::api::sticker_body(&sticker, &crate::api::nonce(), reply);
+                req(&self.net, Request::SendSticker { channel, body });
             }
             Command::EditMessage { room, message, text } => {
                 if let Some(channel) = self.channel_of(&room) {
@@ -1586,6 +1605,99 @@ mod tests {
         let mut out = Vec::new();
         a.handle(Ev::Ready(Box::new(crate::store::test_ready())), &mut out);
         out
+    }
+
+    #[test]
+    fn demo_stickers_are_listed_for_the_server_and_sending_one_arrives_as_a_message() {
+        let ready = json!({
+            "user": {"id": "100", "username": "me_bloop"},
+            "guilds": [{
+                "id": "10", "properties": {"name": "Qux Hall", "owner_id": "100"},
+                "roles": [{"id": "10", "name": "@everyone", "permissions": (crate::permissions::VIEW_CHANNEL | crate::permissions::SEND_MESSAGES).to_string(), "position": 0}],
+                "channels": [{"id": "13", "type": 0, "name": "general", "position": 0}],
+                "stickers": [
+                    {"id": "1", "name": "Wave", "tags": "hi", "format_type": 1},
+                    {"id": "2", "name": "Fancy", "format_type": 3}
+                ]
+            }],
+            "private_channels": [{"id": "50", "type": 1, "recipients": [{"id": "7", "username": "robin"}]}],
+            "relationships": [], "merged_members": [],
+        });
+        let (mut a, events) = DiscordAccount::demo(ready, HashMap::new());
+        let groups = events
+            .iter()
+            .find_map(|e| match e {
+                Event::Stickers { groups, .. } => Some(groups.clone()),
+                _ => None,
+            })
+            .expect("stickers from READY");
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].stickers.len(), 1, "Lottie can't be drawn");
+        assert!(groups[0].stickers[0].image_url.ends_with("/stickers/1.png?size=160"));
+        let channel = a.room_id("13").expect("the channel");
+        let dm = a.room_id("50").expect("the DM");
+        let caps = |r: &godwit_core::ids::RoomId| {
+            events.iter().find_map(|e| match e {
+                Event::AccountReady { rooms, .. } => rooms.iter().find(|x| x.id == *r).map(|x| x.capabilities.stickers),
+                _ => None,
+            })
+        };
+        assert_eq!(caps(&channel), Some(true));
+        assert_eq!(caps(&dm), Some(false), "server stickers stay in their server");
+        let out = a.run(Command::SendSticker {
+            room: channel,
+            sticker: "1".into(),
+            reply_to: None,
+        });
+        let sent = out.iter().find_map(|e| match e {
+            Event::MessageAdded { message, .. } => Some(message.clone()),
+            _ => None,
+        });
+        let sent = sent.expect("the sticker comes back as a message");
+        assert!(
+            sent.jumbo.iter().any(|(url, _)| url.contains("/stickers/1.png")),
+            "shown large, with its picture"
+        );
+    }
+
+    #[test]
+    fn a_sticker_goes_out_as_sticker_ids_and_refreshes_with_the_server() {
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        let channel = a.room_id("13").expect("general");
+        a.run(Command::SendSticker {
+            room: channel,
+            sticker: "42".into(),
+            reply_to: None,
+        });
+        let Ok(Cmd::Request(Request::SendSticker { channel, body })) = cmds.try_recv() else {
+            panic!("a request")
+        };
+        assert_eq!(channel, "13");
+        assert_eq!(body["sticker_ids"], json!(["42"]));
+        let mut out = Vec::new();
+        a.handle(
+            Ev::Dispatch(
+                "GUILD_STICKERS_UPDATE".into(),
+                json!({"guild_id": "10", "stickers": [{"id": "9", "name": "New", "format_type": 2}]}),
+            ),
+            &mut out,
+        );
+        assert!(matches!(
+            out.as_slice(),
+            [Event::Stickers { groups, .. }] if groups[0].stickers[0].name.as_ref() == "New"
+        ));
+        // Unchanged lists aren't resent.
+        let mut again = Vec::new();
+        a.handle(
+            Ev::Dispatch(
+                "GUILD_STICKERS_UPDATE".into(),
+                json!({"guild_id": "10", "stickers": [{"id": "9", "name": "New", "format_type": 2}]}),
+            ),
+            &mut again,
+        );
+        assert!(again.is_empty());
     }
 
     #[test]

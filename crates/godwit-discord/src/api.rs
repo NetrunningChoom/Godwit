@@ -1054,6 +1054,14 @@ impl Api {
             .map(drop)
     }
 
+    /// Sends a sticker, as a reply when `reply` names a message.
+    pub async fn send_sticker(&self, channel: &str, body: &Value) -> Result<()> {
+        let path = format!("/channels/{channel}/messages");
+        self.json(with_json(self.request(Method::POST, &path), body))
+            .await
+            .map(drop)
+    }
+
     /// Ends our poll now (End Poll, docs.discord.food Message resource);
     /// Discord sends MESSAGE_UPDATE with the final results.
     pub async fn end_poll(&self, channel: &str, message: &str) -> Result<()> {
@@ -1173,6 +1181,22 @@ fn message_body(content: &str, nonce: &str) -> Value {
     })
 }
 
+/// A sticker's message: no text, the sticker's id (`sticker_ids`, up to 3;
+/// docs.discord.food Message resource, Create Message).
+pub fn sticker_body(sticker: &str, nonce: &str, reply: Option<(Option<&str>, &str, &str)>) -> Value {
+    let mut body = message_body("", nonce);
+    body["sticker_ids"] = json!([sticker]);
+    if let Some((guild, channel, message)) = reply {
+        body["message_reference"] = json!({
+            "guild_id": guild,
+            "channel_id": channel,
+            "message_id": message,
+            "type": 0,
+        });
+    }
+    body
+}
+
 /// A new poll's message as the web client posts it (docs.discord.food, Poll
 /// Create Structure): text-only answers, layout 1 (default).
 pub fn poll_body(question: &str, answers: &[String], hours: u32, multi: bool, nonce: &str) -> Value {
@@ -1239,6 +1263,17 @@ pub fn encode(segment: &str) -> String {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn a_sticker_is_sent_as_sticker_ids_with_no_text() {
+        let body = sticker_body("42", "n1", None);
+        assert_eq!(body["sticker_ids"], json!(["42"]));
+        assert_eq!(body["content"], "");
+        assert!(body.get("message_reference").is_none());
+        let reply = sticker_body("42", "n1", Some((Some("g"), "c", "m")));
+        assert_eq!(reply["message_reference"]["message_id"], "m");
+        assert_eq!(reply["message_reference"]["guild_id"], "g");
+    }
 
     async fn reply(socket: &mut tokio::net::TcpStream, headers: &str) {
         let mut bytes = [0; 4096];

@@ -155,6 +155,9 @@ impl DiscordAccount {
             // Channel overrides in our guild settings; DMs take a mute only.
             notify_settings: !c.thread(),
             // The picker sends the GIF's link, which needs embedding.
+            // Stickers: a server's own, in its channels (no Nitro, so no other
+            // servers and no DMs); the same permission as any message.
+            stickers: send && c.guild.is_some(),
             gifs: can(p::SEND_MESSAGES) && (c.guild.is_none() || can(p::EMBED_LINKS)),
             max_upload: upload_limit(
                 self.store.premium_type,

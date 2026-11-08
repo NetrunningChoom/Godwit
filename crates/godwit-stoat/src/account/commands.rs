@@ -316,7 +316,7 @@ impl StoatAccount {
             }
             // Stoat has no polls or threads.
             // Stoat has no polls (its rooms leave `polls` off).
-            Command::VotePoll { .. } | Command::CreatePoll { .. } | Command::EndPoll { .. } | Command::CreateThread { .. } => Vec::new(),
+            Command::VotePoll { .. } | Command::SendSticker { .. } | Command::CreatePoll { .. } | Command::EndPoll { .. } | Command::CreateThread { .. } => Vec::new(),
             Command::LeaveCall => {
                 self.net.send(Cmd::Voice(VoiceCommand::Voice(VoiceCmd::Leave)));
                 Vec::new()

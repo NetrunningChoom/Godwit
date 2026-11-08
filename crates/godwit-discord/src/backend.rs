@@ -54,6 +54,11 @@ pub enum Request {
         channel: String,
         body: serde_json::Value,
     },
+    /// Post a sticker (the whole message body, see `api::sticker_body`).
+    SendSticker {
+        channel: String,
+        body: serde_json::Value,
+    },
     EndPoll {
         channel: String,
         message: String,
@@ -1081,6 +1086,10 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::CreatePoll { channel, body } => Answer::Done {
             what: "creating a poll",
             result: api.create_poll(&channel, &body).await.map_err(RequestError::from),
+        },
+        Request::SendSticker { channel, body } => Answer::Done {
+            what: "sending a sticker",
+            result: api.send_sticker(&channel, &body).await.map_err(RequestError::from),
         },
         Request::EndPoll { channel, message } => Answer::Done {
             what: "ending a poll",

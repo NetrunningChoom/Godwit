@@ -34,6 +34,7 @@ pub mod selection;
 pub mod server_settings;
 pub mod settings;
 pub mod shell;
+pub mod stickers;
 pub mod stream;
 pub mod textlayout;
 pub mod theme;

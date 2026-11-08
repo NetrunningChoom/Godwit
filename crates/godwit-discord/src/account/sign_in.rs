@@ -184,6 +184,39 @@ impl DiscordAccount {
                 }
                 self.dispatch("MESSAGE_CREATE", &m, &mut out);
             }
+            // The sticker arrives as the gateway would send it: no content,
+            // `sticker_items` (docs.discord.food, Message: Sticker Item).
+            Command::SendSticker {
+                room,
+                sticker,
+                reply_to,
+            } => {
+                let me = self.store.me.clone().unwrap_or_default();
+                let found = self
+                    .store
+                    .channels
+                    .get(room.raw.as_ref())
+                    .and_then(|c| c.guild.as_ref())
+                    .and_then(|g| self.store.guilds.get(g))
+                    .and_then(|g| g.stickers.iter().find(|s| *s.id == **sticker))
+                    .cloned();
+                let Some(found) = found else {
+                    return Some(out);
+                };
+                let mut m = json!({
+                    "id": crate::api::nonce(), "channel_id": room.raw.as_ref(), "content": "", "type": if reply_to.is_some() { 19 } else { 0 },
+                    "author": {"id": me.id, "username": me.username, "global_name": me.global_name, "avatar": me.avatar},
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "sticker_items": [{"id": found.id, "name": found.name, "format_type": found.format}],
+                });
+                if let Some(r) = reply_to {
+                    m["message_reference"] = json!({"message_id": r.0.as_ref()});
+                }
+                if let Some(g) = self.store.channels.get(room.raw.as_ref()).and_then(|c| c.guild.clone()) {
+                    m["guild_id"] = json!(g);
+                }
+                self.dispatch("MESSAGE_CREATE", &m, &mut out);
+            }
             // The forward arrives as the gateway would send it: a message with
             // no content of its own, carrying a snapshot of the original.
             Command::ForwardMessage {

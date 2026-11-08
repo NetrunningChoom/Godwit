@@ -336,6 +336,7 @@ impl DiscordAccount {
                 self.sync_rooms(out);
                 self.sync_servers(out);
                 self.sync_emoji(out);
+                self.sync_stickers(out);
                 self.voice_dispatch(event, d, out);
             }
             "GUILD_EMOJIS_UPDATE" => {
@@ -344,6 +345,12 @@ impl DiscordAccount {
                 }
                 self.sync_emoji(out);
                 self.sync_emoji_page(out);
+            }
+            "GUILD_STICKERS_UPDATE" => {
+                if let Some(guild) = d["guild_id"].as_str().and_then(|g| self.store.guilds.get_mut(g)) {
+                    store::put_stickers(guild, &d["stickers"]);
+                }
+                self.sync_stickers(out);
             }
             "USER_GUILD_SETTINGS_UPDATE" => {
                 self.store.apply_guild_settings(d);
@@ -364,6 +371,7 @@ impl DiscordAccount {
                     self.sync_rooms(out);
                     self.sync_servers(out);
                     self.sync_emoji(out);
+                    self.sync_stickers(out);
                 }
             }
             "GUILD_ROLE_CREATE" | "GUILD_ROLE_UPDATE" => {

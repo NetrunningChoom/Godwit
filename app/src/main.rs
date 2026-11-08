@@ -712,6 +712,27 @@ fn connect_callbacks(ui: &AppWindow) {
                 );
             }
         });
+        gifs.on_sticker_search({
+            let w = w.clone();
+            let latest = Rc::new(std::cell::RefCell::new(String::new()));
+            let timer = Rc::new(slint::Timer::default());
+            move |text| {
+                *latest.borrow_mut() = text.to_string();
+                let (w, latest) = (w.clone(), latest.clone());
+                // The stickers are in memory: a short pause is enough.
+                timer.start(
+                    slint::TimerMode::SingleShot,
+                    std::time::Duration::from_millis(120),
+                    move || {
+                        let query = latest.borrow().clone();
+                        with_shell(&w, move |sh, ui| sh.sticker_search(ui, &query));
+                    },
+                );
+            }
+        });
+        callback!(gifs.on_sticker_picked(i) => |sh, ui| sh.sticker_picked(ui, i));
+        callback!(gifs.on_sticker_scrolled(first) => |sh, ui| sh.sticker_scrolled(ui, first));
+        callback!(gifs.on_tab_changed() => |sh, ui| sh.picker_tab_changed(ui));
         callback!(gifs.on_picked(i) => |sh, ui| sh.gif_picked(ui, i, now_ms()));
         callback!(gifs.on_scrolled(first, near_end) => |sh, ui| sh.gif_scrolled(ui, first, near_end));
         callback!(gifs.on_toggle_favourite(url, picture) => |sh, ui| sh.toggle_gif_favourite(ui, &url, &picture));

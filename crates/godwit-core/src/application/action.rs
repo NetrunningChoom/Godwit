@@ -396,6 +396,10 @@ pub enum Action {
         query: String,
         more: bool,
     },
+    /// Send a picked sticker (by id) in the selected room, keeping a reply.
+    SendSticker {
+        sticker: Arc<str>,
+    },
     /// Send a picked GIF's link in the selected room (keeping a reply).
     SendGif {
         url: Arc<str>,

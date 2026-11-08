@@ -71,6 +71,10 @@ pub struct Capabilities {
     /// The GIF picker can send here (Stoat: the SendEmbeds permission).
     #[serde(default)]
     pub gifs: bool,
+    /// The sticker picker can send stickers here (Discord: Send Messages in
+    /// a server; the stickers are that server's own).
+    #[serde(default)]
+    pub stickers: bool,
     /// The largest file that can be attached here, in bytes (0: not known).
     #[serde(default)]
     pub max_upload: u64,
@@ -121,6 +125,7 @@ impl Capabilities {
             typing: true,
             external_emoji: true,
             gifs: true,
+            stickers: false,
             max_upload: 0,
             pin_messages: false,
             manage_channel: false,
@@ -337,6 +342,7 @@ mod tests {
                 c.typing,
                 c.external_emoji,
                 c.gifs,
+                c.stickers,
                 c.pin_messages,
                 c.manage_channel,
             ]

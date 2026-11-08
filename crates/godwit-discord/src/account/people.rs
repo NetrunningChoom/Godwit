@@ -98,6 +98,52 @@ impl DiscordAccount {
         self.sync_roles(out);
         self.sync_profile(out);
         self.sync_emoji(out);
+        self.sync_stickers(out);
+    }
+
+    /// The servers' own stickers, for the picker. Only still-sendable ones
+    /// are offered: Discord lets a user without Nitro send a server's own
+    /// stickers in that server, nothing from other servers or the standard
+    /// packs (Nitro, docs.discord.food Stickers), so the core shows each
+    /// server's in its own channels only. Lottie ones (servers with the
+    /// VERIFIED/PARTNERED feature) can't be drawn, so they're left out.
+    pub(super) fn sync_stickers(&mut self, out: &mut Vec<Event>) {
+        use godwit_core::stickers::{Sticker, StickerGroup};
+        let Some(account) = self.account.clone() else { return };
+        let groups: Vec<StickerGroup> = self
+            .store
+            .guild_order
+            .iter()
+            .filter_map(|id| self.store.guilds.get(id))
+            .filter_map(|g| {
+                let mut stickers: Vec<Sticker> = g
+                    .stickers
+                    .iter()
+                    .filter_map(|s| {
+                        Some(Sticker {
+                            id: s.id.as_str().into(),
+                            name: s.name.as_str().into(),
+                            tags: s.tags.as_str().into(),
+                            image_url: store::sticker_url(&s.id, s.format, 160)?.into(),
+                            available: s.available,
+                        })
+                    })
+                    .collect();
+                if stickers.is_empty() {
+                    return None;
+                }
+                stickers.sort_by_key(|s| s.name.to_lowercase());
+                Some(StickerGroup {
+                    server: ServerId::new(account.clone(), g.id.as_str()),
+                    title: g.name.as_str().into(),
+                    stickers,
+                })
+            })
+            .collect();
+        if self.stickers_sent.as_deref().unwrap_or_default() != groups.as_slice() {
+            self.stickers_sent = Some(groups.clone());
+            out.push(Event::Stickers { account, groups });
+        }
     }
 
     /// The servers' custom emoji we may use, for the picker. Without Nitro,

@@ -337,6 +337,11 @@ pub enum Event {
     /// A profile asked for with [`Command::LoadProfile`] (sent again as
     /// more of it arrives).
     Profile(Profile),
+    /// The stickers the account may send, by server (all of them).
+    Stickers {
+        account: AccountId,
+        groups: Vec<crate::stickers::StickerGroup>,
+    },
     /// The account's custom emoji, all of them, by server.
     CustomEmoji {
         account: AccountId,

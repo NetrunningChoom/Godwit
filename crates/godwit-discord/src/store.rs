@@ -210,6 +210,18 @@ impl Channel {
     }
 }
 
+/// A server's sticker (docs.discord.food, Stickers: Sticker Structure).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GuildSticker {
+    pub id: String,
+    pub name: String,
+    pub tags: String,
+    /// 1 PNG, 2 APNG, 3 Lottie, 4 GIF.
+    pub format: u64,
+    /// False once the server lost the boost level that kept it usable.
+    pub available: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Guild {
     pub id: String,
@@ -224,6 +236,8 @@ pub struct Guild {
     pub emojis: HashMap<String, (String, bool)>,
     /// Who may use each one (id → rule), for the emoji picker.
     pub emoji_rules: HashMap<String, EmojiRule>,
+    /// Its stickers, for the picker (READY, GUILD_CREATE, GUILD_STICKERS_UPDATE).
+    pub stickers: Vec<GuildSticker>,
     pub system_channel: Option<String>,
     /// Its boost level (0–3); level 2 and 3 raise the upload limit.
     pub premium_tier: u8,
@@ -645,6 +659,7 @@ impl Store {
             }
         }
         put_emojis(&mut guild, &g["emojis"]);
+        put_stickers(&mut guild, &g["stickers"]);
         // READY and GUILD_CREATE list the active threads we can see beside the channels.
         for c in g["channels"]
             .as_array()
@@ -1178,6 +1193,37 @@ pub fn put_emoji(guild: &mut Guild, e: &Value) {
     }
 }
 
+/// A server's sticker list (READY, GUILD_CREATE, GUILD_STICKERS_UPDATE),
+/// replacing what was known.
+pub fn put_stickers(guild: &mut Guild, list: &Value) {
+    guild.stickers = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| {
+            Some(GuildSticker {
+                id: s["id"].as_str()?.to_owned(),
+                name: s["name"].as_str()?.to_owned(),
+                tags: s["tags"].as_str().unwrap_or_default().to_owned(),
+                format: s["format_type"].as_u64().unwrap_or(1),
+                available: s["available"] != false,
+            })
+        })
+        .collect();
+}
+
+/// A sticker's picture, from the CDN's sticker address (GIF stickers only
+/// live on media.discordapp.net, docs.discord.food Stickers: Format Types).
+/// Lottie (format 3) isn't a picture: None.
+pub fn sticker_url(id: &str, format: u64, size: u32) -> Option<String> {
+    let ext = match format {
+        3 => return None,
+        4 => "gif",
+        _ => "png",
+    };
+    Some(format!("https://media.discordapp.net/stickers/{id}.{ext}?size={size}"))
+}
+
 pub fn emoji_url(id: &str, animated: bool) -> String {
     let format = if animated { "gif" } else { "png" };
     format!("{CDN}/emojis/{id}.{format}?size=48")
@@ -1263,6 +1309,31 @@ pub(crate) fn test_ready() -> Value {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn stickers_are_read_from_a_servers_list_and_lottie_has_no_picture() {
+        let mut guild = Guild::default();
+        put_stickers(
+            &mut guild,
+            &serde_json::json!([
+                {"id": "1", "name": "Wave", "tags": "hi, hello", "format_type": 1},
+                {"id": "2", "name": "Spin", "format_type": 4, "available": false},
+                {"id": "3", "name": "Fancy", "format_type": 3},
+                {"name": "no id"}
+            ]),
+        );
+        assert_eq!(guild.stickers.len(), 3);
+        assert_eq!(guild.stickers[0].tags, "hi, hello");
+        assert!(!guild.stickers[1].available && guild.stickers[0].available);
+        assert_eq!(
+            sticker_url("1", 1, 160).as_deref(),
+            Some("https://media.discordapp.net/stickers/1.png?size=160")
+        );
+        assert_eq!(
+            sticker_url("2", 4, 160).as_deref(),
+            Some("https://media.discordapp.net/stickers/2.gif?size=160")
+        );
+        assert_eq!(sticker_url("3", 3, 160), None);
+    }
 
     #[test]
     fn activities_read_as_discord_words_them() {

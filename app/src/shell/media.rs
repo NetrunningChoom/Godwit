@@ -459,10 +459,11 @@ impl Shell {
         let state = self.app.state();
         let available = crate::gifs::available(state);
         gifs.set_available(available);
-        if !available {
+        // The picker stays for the Stickers tab alone.
+        if !available && !crate::stickers::available(state) {
             gifs.set_open(false);
         }
-        if !gifs.get_open() {
+        if !gifs.get_open() || gifs.get_tab() != 0 {
             self.gif_tiles.favourites = false;
             if slint::Model::row_count(&*self.gif_tiles.model) > 0 {
                 self.gif_tiles.show(None, &[], &mut self.images);
@@ -476,6 +477,53 @@ impl Shell {
             &mut self.images,
         );
         gifs.set_status(status.into());
+    }
+
+    /// The picker's tab changed: the one left lets go of its pictures.
+    pub fn picker_tab_changed(&mut self, ui: &AppWindow) {
+        self.sticker_search(ui, "");
+        self.show_gifs(ui);
+        self.schedule_animation();
+    }
+
+    /// The picker's Stickers tab: a search (typing has paused).
+    pub fn sticker_search(&mut self, ui: &AppWindow, query: &str) {
+        self.sticker_tiles.first_row = 0;
+        self.sticker_tiles.query = query.trim().to_lowercase();
+        self.show_stickers(ui);
+    }
+
+    /// A sticker was picked: it's sent at once, as in the official client
+    /// (the core checks the room takes it); one the server refuses stays.
+    pub fn sticker_picked(&mut self, ui: &AppWindow, index: i32) {
+        use slint::ComponentHandle;
+        let Some(sticker) = usize::try_from(index).ok().and_then(|i| self.sticker_tiles.pick(i)) else {
+            return;
+        };
+        ui.global::<crate::ui::Gifs>().set_open(false);
+        self.act(ui, Action::SendSticker { sticker });
+    }
+
+    pub fn sticker_scrolled(&mut self, ui: &AppWindow, first: i32) {
+        self.sticker_tiles.first_row = usize::try_from(first).unwrap_or(0);
+        self.show_stickers(ui);
+    }
+
+    pub(super) fn show_stickers(&mut self, ui: &AppWindow) {
+        use slint::ComponentHandle;
+        let gifs = ui.global::<crate::ui::Gifs>();
+        let state = self.app.state();
+        let available = crate::stickers::available(state);
+        gifs.set_stickers_available(available);
+        if !available && gifs.get_tab() == 1 {
+            gifs.set_tab(0);
+        }
+        let open = gifs.get_open() && gifs.get_tab() == 1 && available;
+        if !open && slint::Model::row_count(&self.sticker_tiles.model()) == 0 {
+            return;
+        }
+        let status = self.sticker_tiles.show(state, open, &mut self.images);
+        gifs.set_sticker_status(status.into());
     }
 
     /// Plays the animations in rows near the view, and only those.

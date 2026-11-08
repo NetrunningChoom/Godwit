@@ -4357,3 +4357,63 @@ fn a_forum_loads_its_posts_and_a_required_tag_gates_new_posts() {
     ));
     assert!(app.dispatch(Action::LoadMoreForum).is_empty(), "not while loading");
 }
+
+fn sticker(id: &str, available: bool) -> crate::stickers::Sticker {
+    crate::stickers::Sticker {
+        id: id.into(),
+        name: id.into(),
+        tags: "".into(),
+        image_url: "".into(),
+        available,
+    }
+}
+
+#[test]
+fn stickers_send_only_from_their_own_server_and_only_when_available() {
+    let mut app = Application::default();
+    let n = Network::Discord;
+    let mut here = room(
+        n,
+        "c1",
+        RoomKind::Channel {
+            server: ServerId::new(account(n), "s1"),
+        },
+    );
+    here.capabilities.stickers = true;
+    let mut there = room(
+        n,
+        "c2",
+        RoomKind::Channel {
+            server: ServerId::new(account(n), "s2"),
+        },
+    );
+    there.capabilities.stickers = true;
+    ready(&mut app, n, vec![here, there, dm(n, "d", "them")]);
+    app.apply(Event::Stickers {
+        account: account(n),
+        groups: vec![crate::stickers::StickerGroup {
+            server: ServerId::new(account(n), "s1"),
+            title: "One".into(),
+            stickers: vec![sticker("ok", true), sticker("boost-lost", false)],
+        }],
+    });
+    let sent = |app: &mut Application, room: &str, id: &str| {
+        app.dispatch(Action::SelectRoom(RoomId::new(account(n), room)));
+        let effects = app.dispatch(Action::SendSticker { sticker: id.into() });
+        commands(&effects)
+            .iter()
+            .any(|c| matches!(c, Command::SendSticker { sticker, .. } if &**sticker == id))
+    };
+    assert!(sent(&mut app, "c1", "ok"));
+    assert!(!sent(&mut app, "c1", "boost-lost"), "the server refuses it");
+    assert!(!sent(&mut app, "c2", "ok"), "another server's sticker needs Nitro");
+    assert!(!sent(&mut app, "d", "ok"), "no server stickers in DMs");
+    assert!(app.state().stickers_for(&RoomId::new(account(n), "c2")).is_empty());
+    assert!(app.state().stickers_for(&RoomId::new(account(n), "d")).is_empty());
+    // Signing out forgets them.
+    app.apply(Event::AccountLost {
+        account: account(n),
+        reason: "gone".into(),
+    });
+    assert!(app.state().stickers.is_empty());
+}

@@ -161,6 +161,34 @@ impl Application {
                 }
                 effects
             }
+            Action::SendSticker { sticker } => {
+                let Some(room) = self.state.selected.clone() else {
+                    return Vec::new();
+                };
+                let usable = self
+                    .state
+                    .stickers_for(&room)
+                    .iter()
+                    .any(|g| g.stickers.iter().any(|s| s.id == sticker && s.available));
+                if !usable || !self.allows(&room, |c| c.send) {
+                    return Vec::new();
+                }
+                let reply_to = match self.state.compose.get(&room) {
+                    Some(Compose::Reply(id)) => Some(id.clone()),
+                    _ => None,
+                };
+                if reply_to.is_some() {
+                    self.state.compose.remove(&room);
+                }
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::SendSticker {
+                        room,
+                        sticker,
+                        reply_to,
+                    },
+                }]
+            }
             Action::LoadEarlier => self.load_earlier(),
             Action::MergeContacts { into, from } => {
                 if self.state.contacts.merge(into, from) {

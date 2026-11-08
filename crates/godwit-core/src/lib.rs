@@ -35,6 +35,7 @@ pub mod room_sync;
 pub mod search;
 pub mod server;
 pub mod server_settings;
+pub mod stickers;
 
 pub mod backend;
 
