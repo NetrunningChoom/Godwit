@@ -34,6 +34,10 @@ pub const STREAM: u64 = 1 << 9;
 pub const CONNECT: u64 = 1 << 20;
 pub const SPEAK: u64 = 1 << 21;
 pub const MANAGE_ROLES: u64 = 1 << 28;
+pub const CHANGE_NICKNAME: u64 = 1 << 26;
+pub const MANAGE_NICKNAMES: u64 = 1 << 27;
+/// Timing members out (docs.discord.food/topics/permissions).
+pub const MODERATE_MEMBERS: u64 = 1 << 40;
 pub const ALL: u64 = u64::MAX;
 
 /// A channel's change to one role's or member's permissions.

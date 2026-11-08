@@ -123,7 +123,7 @@ impl Shell {
 
     /// The profile card's Kick or Ban, confirmed: the change arrives as the
     /// member leaving; a refusal shows in Problems.
-    pub fn moderate_member(&mut self, ui: &AppWindow, ban: bool, reason: &str) {
+    pub fn moderate_member(&mut self, ui: &AppWindow, ban: bool, reason: &str, delete_history: usize) {
         use godwit_core::server_settings::ServerAdmin;
         let Some((user, Some(profile))) = self.app.state().profile.clone() else {
             return;
@@ -135,12 +135,74 @@ impl Shell {
             true if m.ban => ServerAdmin::Ban {
                 user,
                 reason: reason.trim().into(),
+                delete_seconds: godwit_core::server_settings::BAN_DELETE_CHOICES
+                    .get(delete_history)
+                    .map_or(0, |c| c.1),
             },
             false if m.kick => ServerAdmin::Kick(user),
             _ => return,
         };
         self.act(ui, Action::ServerAdmin { server: m.server, op });
         self.act(ui, Action::CloseProfile);
+    }
+
+    /// The profile card's Roles checklist: one role given or taken. The
+    /// card comes back updated with the member's change.
+    pub fn toggle_member_role(&mut self, ui: &AppWindow, index: usize, on: bool) {
+        use godwit_core::server_settings::ServerAdmin;
+        self.member_change(ui, |user, m| {
+            let role = m.roles.get(index)?.id.clone();
+            Some(ServerAdmin::SetMemberRole { user, role, on })
+        });
+    }
+
+    /// Lifts the member's timeout.
+    pub fn lift_member_timeout(&mut self, ui: &AppWindow) {
+        self.timeout_member(ui, None);
+    }
+
+    /// Times the member out for the dialog's choice (None lifts it; the
+    /// dialog only ever passes a valid index).
+    pub fn timeout_member(&mut self, ui: &AppWindow, choice: Option<usize>) {
+        use godwit_core::server_settings::{ServerAdmin, TIMEOUT_CHOICES};
+        self.member_change(ui, |user, m| {
+            let duration = match choice {
+                Some(i) => Some(std::time::Duration::from_secs(TIMEOUT_CHOICES.get(i)?.1)),
+                None => None,
+            };
+            m.timeout.then_some(ServerAdmin::Timeout { user, duration })
+        });
+    }
+
+    /// A server nickname for the card's member; empty resets it.
+    pub fn set_member_nickname(&mut self, ui: &AppWindow, nick: &str) {
+        use godwit_core::server_settings::ServerAdmin;
+        let nick = nick.trim();
+        self.member_change(ui, |user, m| {
+            m.nickname.then(|| ServerAdmin::SetServerNickname {
+                user,
+                nick: (!nick.is_empty()).then(|| nick.into()),
+            })
+        });
+    }
+
+    fn member_change(
+        &mut self,
+        ui: &AppWindow,
+        op: impl FnOnce(
+            godwit_core::ids::UserId,
+            &godwit_core::members::Moderation,
+        ) -> Option<godwit_core::server_settings::ServerAdmin>,
+    ) {
+        let Some((user, Some(profile))) = self.app.state().profile.clone() else {
+            return;
+        };
+        let Some(m) = profile.moderation else {
+            return;
+        };
+        if let Some(op) = op(user, &m) {
+            self.act(ui, Action::ServerAdmin { server: m.server, op });
+        }
     }
 
     /// Remove the profile's member from the group after the confirmation dialog.

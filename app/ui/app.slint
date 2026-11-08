@@ -11,7 +11,7 @@ import { Palette, Slider, ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
-    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem,
     ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, PermissionItem, PinItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
@@ -52,7 +52,7 @@ import { CallDialogs, ManagementDialogs } from "app-dialogs.slint";
 export {
     Palette,
     Theme, Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
-    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, EmojiRowItem, EmojiCellItem, SwitchItem, PinItem, ActiveItem, NotificationItem, ThreadItem
+    CallMemberItem, CallVideoItem, NetworkItem, AccountItem, BlockItem, MemberItem, RoleItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, SwitchItem, PinItem, ActiveItem, NotificationItem, ThreadItem
 }
 
 export component AppWindow inherits Window {
@@ -177,6 +177,25 @@ export component AppWindow inherits Window {
     // The profile card's Kick / Ban (ban: true), with the ban's reason.
     in property <bool> card-can-kick;
     in property <bool> card-can-ban;
+    in property <bool> card-ban-history;
+    in property <bool> card-can-roles;
+    in property <bool> card-can-timeout;
+    in property <bool> card-timed-out;
+    in property <bool> card-can-nickname;
+    in property <string> card-nickname;
+    in property <[MemberRoleItem]> card-member-roles;
+    in property <[string]> timeout-choices;
+    in property <[string]> ban-delete-choices;
+    in-out property <bool> roles-open;
+    in-out property <bool> timeout-open;
+    in-out property <bool> nickname-open;
+    in-out property <int> timeout-index: 3;
+    in-out property <int> ban-delete-index: 0;
+    in-out property <string> nickname-text;
+    callback toggle-member-role(int, bool);
+    callback timeout-member(int);
+    callback remove-member-timeout();
+    callback set-member-nickname(string);
     in property <bool> card-can-remove-group-member;
     in property <bool> card-can-transfer-group-ownership;
     in property <bool> card-can-block;
@@ -185,7 +204,7 @@ export component AppWindow inherits Window {
     // Kept on the window and exposed for generated off-screen scenes.
     in-out property <int> confirm-moderate: 0;
     in-out property <string> ban-reason;
-    callback moderate-member(bool, string);
+    callback moderate-member(bool, string, int);
     in-out property <bool> confirm-remove-group-member: false;
     callback remove-group-member();
     in-out property <bool> confirm-transfer-group-ownership: false;
@@ -1294,6 +1313,14 @@ export component AppWindow inherits Window {
         link => { root.link-profile(); }
         can-kick: root.card-can-kick;
         can-ban: root.card-can-ban;
+        can-roles: root.card-can-roles;
+        can-timeout: root.card-can-timeout;
+        timed-out: root.card-timed-out;
+        can-nickname: root.card-can-nickname;
+        edit-roles => { root.roles-open = true; }
+        timeout => { root.timeout-open = true; }
+        remove-timeout => { root.remove-member-timeout(); }
+        edit-nickname => { root.nickname-text = root.card-nickname; root.nickname-open = true; }
         can-remove-group-member: root.card-can-remove-group-member;
         can-transfer-group-ownership: root.card-can-transfer-group-ownership;
         can-block: root.card-can-block;
@@ -1303,7 +1330,7 @@ export component AppWindow inherits Window {
         can-report: root.card-can-report;
         report => { root.report-profile(); }
         kick => { root.confirm-moderate = 1; }
-        ban => { root.confirm-moderate = 2; root.ban-reason = ""; }
+        ban => { root.confirm-moderate = 2; root.ban-reason = ""; root.ban-delete-index = 0; }
         remove-group-member => { root.confirm-remove-group-member = true; }
         transfer-group-ownership => { root.confirm-transfer-group-ownership = true; }
         close => { root.close-profile(); }
@@ -1666,7 +1693,20 @@ export component AppWindow inherits Window {
         confirm-moderate <=> root.confirm-moderate;
         card-name: root.card-name;
         ban-reason <=> root.ban-reason;
-        moderate-member(ban, reason) => { root.moderate-member(ban, reason); }
+        ban-delete-choices: root.ban-delete-choices;
+        ban-history: root.card-ban-history;
+        ban-delete-index <=> root.ban-delete-index;
+        moderate-member(ban, reason, delete) => { root.moderate-member(ban, reason, delete); }
+        card-member-roles: root.card-member-roles;
+        timeout-choices: root.timeout-choices;
+        roles-open <=> root.roles-open;
+        timeout-open <=> root.timeout-open;
+        nickname-open <=> root.nickname-open;
+        timeout-index <=> root.timeout-index;
+        nickname-text <=> root.nickname-text;
+        toggle-member-role(i, on) => { root.toggle-member-role(i, on); }
+        timeout-member(i) => { root.timeout-member(i); }
+        set-member-nickname(n) => { root.set-member-nickname(n); }
         confirm-remove-group-member <=> root.confirm-remove-group-member;
         remove-group-member => { root.remove-group-member(); }
         confirm-transfer-group-ownership <=> root.confirm-transfer-group-ownership;

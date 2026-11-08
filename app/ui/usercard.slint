@@ -33,6 +33,15 @@ export component UserCard inherits Rectangle {
     // Seen in a server where we outrank them (the official UserContextMenu).
     in property <bool> can-kick;
     in property <bool> can-ban;
+    // The member menu: roles, timeout (timed-out offers lifting it) and server nickname.
+    in property <bool> can-roles;
+    in property <bool> can-timeout;
+    in property <bool> timed-out;
+    in property <bool> can-nickname;
+    callback edit-roles();
+    callback timeout();
+    callback remove-timeout();
+    callback edit-nickname();
     in property <bool> can-remove-group-member;
     in property <bool> can-transfer-group-ownership;
     // The card may block them (the official UserContextMenu's safety group),
@@ -189,6 +198,13 @@ export component UserCard inherits Rectangle {
                 if !root.me && root.can-report: HorizontalLayout {
                     alignment: start;
                     Button { text: "Report user"; kind: "text"; danger: true; clicked => { root.report(); } }
+                }
+                if root.can-nickname || (!root.me && (root.can-roles || root.can-timeout)): HorizontalLayout {
+                    spacing: Theme.space-3; alignment: start;
+                    if !root.me && root.can-roles: Button { text: "Roles"; kind: "tonal"; clicked => { root.edit-roles(); } }
+                    if !root.me && root.can-timeout && !root.timed-out: Button { text: "Timeout"; kind: "tonal"; clicked => { root.timeout(); } }
+                    if !root.me && root.can-timeout && root.timed-out: Button { text: "Remove timeout"; kind: "tonal"; clicked => { root.remove-timeout(); } }
+                    if root.can-nickname: Button { text: "Change nickname"; kind: "tonal"; clicked => { root.edit-nickname(); } }
                 }
                 if !root.me && (root.can-kick || root.can-ban): HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;

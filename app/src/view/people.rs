@@ -590,6 +590,33 @@ pub fn profile(ui: &AppWindow, p: &Profile, images: &mut Images) {
     ui.set_card_me(p.me);
     ui.set_card_can_kick(p.moderation.as_ref().is_some_and(|m| m.kick));
     ui.set_card_can_ban(p.moderation.as_ref().is_some_and(|m| m.ban));
+    ui.set_card_ban_history(p.moderation.as_ref().is_some_and(|m| m.ban_history));
+    ui.set_card_can_roles(p.moderation.as_ref().is_some_and(|m| !m.roles.is_empty()));
+    ui.set_card_can_timeout(p.moderation.as_ref().is_some_and(|m| m.timeout));
+    ui.set_card_timed_out(p.moderation.as_ref().is_some_and(|m| m.timed_out));
+    ui.set_card_can_nickname(p.moderation.as_ref().is_some_and(|m| m.nickname));
+    ui.set_card_nickname(
+        p.moderation
+            .as_ref()
+            .and_then(|m| m.nick.as_deref())
+            .unwrap_or_default()
+            .into(),
+    );
+    let member_roles: Vec<MemberRoleItem> = p
+        .moderation
+        .iter()
+        .flat_map(|m| &m.roles)
+        .map(|r| {
+            let [red, green, blue] = r.colour.unwrap_or_default();
+            MemberRoleItem {
+                name: r.name.as_ref().into(),
+                colour: slint::Color::from_rgb_u8(red, green, blue),
+                has_colour: r.colour.is_some(),
+                assigned: r.assigned,
+            }
+        })
+        .collect();
+    ui.set_card_member_roles(ModelRc::new(VecModel::from(member_roles)));
     ui.set_card_can_remove_group_member(p.group_moderation.as_ref().is_some_and(|m| m.remove_member));
     ui.set_card_can_block(p.can_block);
     ui.set_card_blocked(p.relationship == Relationship::Blocked);

@@ -64,6 +64,18 @@ fn people(app: &mut Application, _: &AppWindow, _: &RoomId, _: &RoomId) -> Scree
     Screen::Main
 }
 
+/// The member dialogs' fixed choice lists, which the app sets once at startup.
+fn member_choices(ui: &AppWindow) {
+    use godwit_core::server_settings::{BAN_DELETE_CHOICES, TIMEOUT_CHOICES};
+    let labels = |l: Vec<&str>| {
+        slint::ModelRc::new(slint::VecModel::from(
+            l.into_iter().map(slint::SharedString::from).collect::<Vec<_>>(),
+        ))
+    };
+    ui.set_ban_delete_choices(labels(BAN_DELETE_CHOICES.iter().map(|c| c.0).collect()));
+    ui.set_timeout_choices(labels(TIMEOUT_CHOICES.iter().map(|c| c.0).collect()));
+}
+
 /// Ann's profile card, open.
 fn open_profile(app: &mut Application, blocked: bool) -> Screen {
     app.dispatch(Action::OpenProfile(user("u0")));
@@ -89,9 +101,23 @@ fn open_profile(app: &mut Application, blocked: bool) -> Screen {
         // Seen in our server, so the card shows Kick and Ban.
         can_report: true,
         moderation: Some(godwit_core::members::Moderation {
-            server: ServerId::new(account(), "S"),
             kick: true,
             ban: true,
+            ban_history: true,
+            timeout: true,
+            nickname: true,
+            nick: Some("Nickname".into()),
+            roles: ["Moderators", "Helpers", "Artists", "Event hosts"]
+                .iter()
+                .enumerate()
+                .map(|(i, name)| godwit_core::members::ModerationRole {
+                    id: format!("R{i}").into(),
+                    name: (*name).into(),
+                    colour: (i % 2 == 0).then_some([0xff, 0x7b, 0x72]),
+                    assigned: i < 2,
+                })
+                .collect(),
+            ..godwit_core::members::Moderation::new(ServerId::new(account(), "S"))
         }),
         // Block user (or Unblock, for `blocked`).
         can_block: true,
@@ -1403,8 +1429,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "cleanup-ban",
             Box::new(|app, ui, _, _| {
                 open_profile(app, false);
+                member_choices(ui);
                 ui.set_confirm_moderate(2);
+                ui.set_ban_delete_index(4);
                 ui.set_ban_reason("Example reason".into());
+                Screen::Main
+            }),
+        ),
+        // The member card's roles checklist, timeout and nickname dialogs.
+        Scene::new(
+            "member-roles",
+            Box::new(|app, ui, _, _| {
+                open_profile(app, false);
+                ui.set_roles_open(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "member-timeout",
+            Box::new(|app, ui, _, _| {
+                open_profile(app, false);
+                member_choices(ui);
+                ui.set_timeout_open(true);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
+            "member-nickname",
+            Box::new(|app, ui, _, _| {
+                open_profile(app, false);
+                ui.set_nickname_text("Nickname".into());
+                ui.set_nickname_open(true);
                 Screen::Main
             }),
         ),

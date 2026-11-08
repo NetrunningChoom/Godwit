@@ -509,6 +509,14 @@ export struct RoleItem {
     has-colour: bool,
 }
 
+// A row of the member card's Roles checklist.
+export struct MemberRoleItem {
+    name: string,
+    colour: color,
+    has-colour: bool,
+    assigned: bool,
+}
+
 // A picker row: a heading, or up to nine emoji.
 export struct EmojiRowItem {
     header: bool,

@@ -118,9 +118,9 @@ impl StoatAccount {
         let kick = self.store.can_in_server(server, KICK_MEMBERS);
         let ban = self.store.can_in_server(server, BAN_MEMBERS);
         (kick || ban).then(|| godwit_core::members::Moderation {
-            server: ServerId::new(account.clone(), server),
             kick,
             ban,
+            ..godwit_core::members::Moderation::new(ServerId::new(account.clone(), server))
         })
     }
 

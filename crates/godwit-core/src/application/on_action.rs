@@ -101,12 +101,45 @@ impl Application {
         }]
     }
 
+    /// Role, timeout and nickname changes only go out for the member whose
+    /// card is open, with the powers the network gave that card, and within
+    /// the length limits (so a stale or forged action never reaches a network).
+    fn member_change_allowed(&self, server: &ServerId, op: &crate::server_settings::ServerAdmin) -> bool {
+        use crate::server_settings::{NICKNAME_MAX, ServerAdmin as A, TIMEOUT_MAX_SECS};
+        let Some(target) = op.member_target() else {
+            return true;
+        };
+        let Some((user, Some(profile))) = &self.state.profile else {
+            return false;
+        };
+        let Some(m) = profile
+            .moderation
+            .as_ref()
+            .filter(|m| user == target && m.server == *server)
+        else {
+            return false;
+        };
+        match op {
+            A::SetMemberRole { role, .. } => m.roles.iter().any(|r| r.id == *role),
+            A::Timeout { duration, .. } => {
+                m.timeout && duration.is_none_or(|d| (1..=TIMEOUT_MAX_SECS).contains(&d.as_secs()))
+            }
+            A::SetServerNickname { nick, .. } => {
+                m.nickname && nick.as_ref().is_none_or(|n| n.trim().chars().count() <= NICKNAME_MAX)
+            }
+            _ => true,
+        }
+    }
+
     pub(super) fn dispatch_server_admin(
         &mut self,
         server: ServerId,
         op: crate::server_settings::ServerAdmin,
     ) -> Vec<Effect> {
         if self.state.server(&server).is_none() {
+            return Vec::new();
+        }
+        if !self.member_change_allowed(&server, &op) {
             return Vec::new();
         }
         if op == crate::server_settings::ServerAdmin::CreateInvite {

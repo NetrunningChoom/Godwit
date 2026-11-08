@@ -24,7 +24,7 @@ use std::time::Instant;
 use godwit_core::account::NetworkAccount;
 use godwit_core::application::{AlertKind, Command, Event, Person};
 use godwit_core::ids::{AccountId, MessageId, RoomId, ServerId, UserId};
-use godwit_core::members::{Member, MemberGroup, Moderation, Presence, Profile, Relationship};
+use godwit_core::members::{Member, MemberGroup, Moderation, ModerationRole, Presence, Profile, Relationship};
 use godwit_core::message::{Attachment, AttachmentKind, Embed, EmbedStyle, InvitePreview, Markup, Message, Reaction};
 use godwit_core::network::Network;
 use godwit_core::room::{Capabilities, Room, RoomEncryption, RoomKind};
@@ -1974,6 +1974,290 @@ mod tests {
         });
         assert!(
             matches!(out.as_slice(), [Event::ServerAdmin { result: Ok(ServerAdminResult::Roles(r)), .. }] if r.roles.len() == 1)
+        );
+    }
+}
+
+#[cfg(test)]
+mod member_admin_tests {
+    use super::*;
+    use godwit_core::server_settings::ServerAdmin;
+    use std::time::Duration;
+
+    /// Qux Hall with us (100) in "Mods" (position 3) holding Manage Roles,
+    /// Moderate Members and the nickname permissions; the owner is 200 and
+    /// 300 is a member with the lower role "20".
+    fn staffed() -> (DiscordAccount, tokio::sync::mpsc::UnboundedReceiver<Cmd>) {
+        let (net, mut cmds) = Handle::detached();
+        let (_tx, events) = mpsc::channel();
+        let mut a = DiscordAccount::with(u32::MAX, net, events, Status::Connecting);
+        let mut ready = crate::store::test_ready();
+        let mods = p::MANAGE_ROLES | p::MODERATE_MEMBERS | p::MANAGE_NICKNAMES | p::CHANGE_NICKNAME;
+        let roles = ready["guilds"][0]["roles"].as_array_mut().unwrap();
+        roles[1]["permissions"] = json!(mods.to_string());
+        roles.push(json!({"id": "20", "name": "Helpers", "permissions": "0", "position": 1, "color": 0xff0000}));
+        roles.push(json!({"id": "21", "name": "Bosses", "permissions": "0", "position": 5}));
+        roles.push(json!({"id": "22", "name": "Bot", "permissions": "0", "position": 2, "managed": true}));
+        a.handle(Ev::Ready(Box::new(ready)), &mut Vec::new());
+        let mut out = Vec::new();
+        let member = json!({"guild_id": "10", "user": {"id": "300", "username": "kim"}, "roles": ["20"]});
+        a.dispatch("GUILD_MEMBER_ADD", &member, &mut out);
+        while cmds.try_recv().is_ok() {}
+        (a, cmds)
+    }
+
+    fn send(
+        a: &mut DiscordAccount,
+        cmds: &mut tokio::sync::mpsc::UnboundedReceiver<Cmd>,
+        op: ServerAdmin,
+    ) -> Option<Admin> {
+        let server = ServerId::new(a.account.clone().unwrap(), "10");
+        a.run(Command::ServerAdmin { server, op });
+        match cmds.try_recv() {
+            Ok(Cmd::Request(Request::Admin { op, .. })) => Some(op),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn the_card_offers_only_what_hierarchy_and_permissions_allow() {
+        let (a, _cmds) = staffed();
+        let m = a.moderation("10", "300").unwrap();
+        // Not @everyone, not the managed role, nothing at or above our role.
+        let ids: Vec<&str> = m.roles.iter().map(|r| &*r.id).collect();
+        assert_eq!(ids, ["20"]);
+        assert!(m.roles[0].assigned && m.roles[0].colour == Some([0xff, 0, 0]));
+        assert!(m.timeout && !m.timed_out && m.nickname);
+        assert!(a.moderation("10", "200").is_none(), "the owner is out of reach");
+        let own = a.moderation("10", "100").unwrap();
+        assert!(own.nickname && own.roles.is_empty() && !own.timeout && !own.kick);
+        assert_eq!(own.nick.as_deref(), Some("Bloopy"));
+    }
+
+    #[test]
+    fn the_owner_may_hand_out_any_role_and_admins_cannot_be_timed_out() {
+        let (mut a, _cmds) = staffed();
+        a.store.guilds.get_mut("10").unwrap().owner = "100".into();
+        let ids = |a: &DiscordAccount| -> Vec<String> {
+            a.moderation("10", "300")
+                .unwrap()
+                .roles
+                .iter()
+                .map(|r| r.id.to_string())
+                .collect()
+        };
+        // Highest first; the managed "Bot" role and @everyone stay out.
+        assert_eq!(ids(&a), ["21", "11", "20"]);
+        a.store.guilds.get_mut("10").unwrap().owner = "200".into();
+        a.store
+            .guilds
+            .get_mut("10")
+            .unwrap()
+            .roles
+            .get_mut("20")
+            .unwrap()
+            .permissions = p::ADMINISTRATOR;
+        assert!(
+            !a.moderation("10", "300").unwrap().timeout,
+            "Discord refuses to time admins out"
+        );
+    }
+
+    #[test]
+    fn role_timeout_and_nickname_requests_have_the_documented_shape() {
+        let (mut a, mut cmds) = staffed();
+        let user = a.user_id("300").unwrap();
+        let op = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::SetMemberRole {
+                user: user.clone(),
+                role: "20".into(),
+                on: false,
+            },
+        );
+        assert!(matches!(op, Some(Admin::MemberRole { user, role, on: false }) if user == "300" && role == "20"));
+        // Above our role: refused with no request.
+        let refused = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::SetMemberRole {
+                user: user.clone(),
+                role: "21".into(),
+                on: true,
+            },
+        );
+        assert!(refused.is_none());
+        let Some(Admin::ModifyMember { user: target, body }) = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::Timeout {
+                user: user.clone(),
+                duration: Some(Duration::from_secs(600)),
+            },
+        ) else {
+            panic!("no timeout request")
+        };
+        assert_eq!(target, "300");
+        let until =
+            chrono::DateTime::parse_from_rfc3339(body["communication_disabled_until"].as_str().unwrap()).unwrap();
+        let ahead = until.timestamp() - chrono::Utc::now().timestamp();
+        assert!((595..=600).contains(&ahead), "{ahead}");
+        let Some(Admin::ModifyMember { body, .. }) = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::Timeout {
+                user: user.clone(),
+                duration: None,
+            },
+        ) else {
+            panic!("no lift request")
+        };
+        assert!(body["communication_disabled_until"].is_null());
+        let Some(Admin::ModifyMember { user: target, body }) = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::SetServerNickname {
+                user: user.clone(),
+                nick: Some("Kimmy".into()),
+            },
+        ) else {
+            panic!("no nickname request")
+        };
+        assert_eq!((target.as_str(), body["nick"].as_str()), ("300", Some("Kimmy")));
+        // Ours goes to @me; empty resets with null.
+        let me = a.user_id("100").unwrap();
+        let Some(Admin::ModifyMember { user: target, body }) = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::SetServerNickname {
+                user: me,
+                nick: Some("  ".into()),
+            },
+        ) else {
+            panic!("no own nickname request")
+        };
+        assert_eq!(target, "@me");
+        assert!(body["nick"].is_null());
+        // The owner and anyone ranked at or above us are refused.
+        let owner = a.user_id("200").unwrap();
+        let refused = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::Timeout {
+                user: owner,
+                duration: Some(Duration::from_secs(60)),
+            },
+        );
+        assert!(refused.is_none());
+    }
+
+    #[test]
+    fn member_updates_show_the_timeout_and_the_new_roles() {
+        let (mut a, _cmds) = staffed();
+        let until = (chrono::Utc::now() + Duration::from_secs(3_600)).to_rfc3339();
+        let d = json!({"guild_id": "10", "user": {"id": "300", "username": "kim"}, "roles": [], "nick": "Kimmy", "communication_disabled_until": until});
+        a.dispatch("GUILD_MEMBER_UPDATE", &d, &mut Vec::new());
+        let m = a.moderation("10", "300").unwrap();
+        assert!(m.timed_out && m.nick.as_deref() == Some("Kimmy") && !m.roles[0].assigned);
+        let past = (chrono::Utc::now() - Duration::from_secs(60)).to_rfc3339();
+        let d = json!({"guild_id": "10", "user": {"id": "300", "username": "kim"}, "roles": [], "communication_disabled_until": past});
+        a.dispatch("GUILD_MEMBER_UPDATE", &d, &mut Vec::new());
+        assert!(
+            !a.moderation("10", "300").unwrap().timed_out,
+            "an ended timeout is none"
+        );
+    }
+
+    #[test]
+    fn ban_sends_the_chosen_history_window() {
+        let (mut a, mut cmds) = staffed();
+        a.store
+            .guilds
+            .get_mut("10")
+            .unwrap()
+            .roles
+            .get_mut("11")
+            .unwrap()
+            .permissions |= p::BAN_MEMBERS;
+        let user = a.user_id("300").unwrap();
+        let op = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::Ban {
+                user,
+                reason: "spam".into(),
+                delete_seconds: 86_400,
+            },
+        );
+        assert!(matches!(
+            op,
+            Some(Admin::Ban {
+                delete_seconds: 86_400,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn demo_member_changes_come_back_as_gateway_updates() {
+        let mut ready = crate::store::test_ready();
+        let mods = p::MANAGE_ROLES | p::MODERATE_MEMBERS | p::MANAGE_NICKNAMES;
+        let roles = ready["guilds"][0]["roles"].as_array_mut().unwrap();
+        roles[1]["permissions"] = json!(mods.to_string());
+        roles.push(json!({"id": "20", "name": "Helpers", "permissions": "0", "position": 1}));
+        let (mut a, _) = DiscordAccount::demo(ready, HashMap::new());
+        a.dispatch(
+            "GUILD_MEMBER_ADD",
+            &json!({"guild_id": "10", "user": {"id": "300", "username": "kim"}, "roles": []}),
+            &mut Vec::new(),
+        );
+        let user = a.user_id("300").unwrap();
+        let server = ServerId::new(a.account.clone().unwrap(), "10");
+        a.run(Command::LoadProfile {
+            user: user.clone(),
+            room: None,
+        });
+        a.profile_for = Some(("300".into(), Some("10".into())));
+        let mut change = |op| {
+            a.run(Command::ServerAdmin {
+                server: server.clone(),
+                op,
+            })
+        };
+        let out = change(ServerAdmin::SetMemberRole {
+            user: user.clone(),
+            role: "20".into(),
+            on: true,
+        });
+        let Some(Event::Profile(p)) = out.iter().find(|e| matches!(e, Event::Profile(_))) else {
+            panic!("{out:?}")
+        };
+        assert!(p.moderation.as_ref().unwrap().roles[0].assigned);
+        let out = change(ServerAdmin::Timeout {
+            user: user.clone(),
+            duration: Some(Duration::from_secs(60)),
+        });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Profile(p) if p.moderation.as_ref().is_some_and(|m| m.timed_out)))
+        );
+        let out = change(ServerAdmin::Timeout {
+            user: user.clone(),
+            duration: None,
+        });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Profile(p) if p.moderation.as_ref().is_some_and(|m| !m.timed_out)))
+        );
+        let out = change(ServerAdmin::SetServerNickname {
+            user,
+            nick: Some("Kimmy".into()),
+        });
+        assert!(out.iter().any(|e| matches!(e, Event::Profile(p) if p.moderation.as_ref().is_some_and(|m| m.nick.as_deref() == Some("Kimmy")))));
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::ServerAdmin { result: Ok(_), .. }))
         );
     }
 }

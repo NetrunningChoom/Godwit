@@ -3515,3 +3515,91 @@ fn games_page_replaces_the_room_and_goes_with_its_data() {
     assert!(!app.state().showing_games && app.state().games.is_none());
     assert_eq!(app.state().selected.as_ref(), Some(&room));
 }
+
+#[test]
+fn member_changes_need_the_open_card_and_its_powers() {
+    use crate::members::{Moderation, ModerationRole};
+    use crate::server_settings::{NICKNAME_MAX, ServerAdmin};
+    use std::time::Duration;
+    let mut app = Application::default();
+    let (server, _) = server_settings_open(&mut app);
+    // The card sends these without the settings' one-change-at-a-time wait.
+    app.dispatch(Action::CloseServerSettings);
+    let zed = UserId::new(account(Network::Stoat), "zed");
+    let other = UserId::new(account(Network::Stoat), "other");
+    let role = |id: &str| -> std::sync::Arc<str> { id.into() };
+    let op_role = |user: &UserId, id: &str| Action::ServerAdmin {
+        server: server.clone(),
+        op: ServerAdmin::SetMemberRole {
+            user: user.clone(),
+            role: role(id),
+            on: true,
+        },
+    };
+    assert!(app.dispatch(op_role(&zed, "r1")).is_empty(), "no card is open");
+    app.dispatch(Action::OpenProfile(zed.clone()));
+    let card = |moderation: Moderation| Profile {
+        user: zed.clone(),
+        name: "Zed".into(),
+        username: "zed".into(),
+        avatar_url: None,
+        banner_url: None,
+        presence: Presence::Online,
+        status: None,
+        bio: None,
+        roles: Vec::new(),
+        me: false,
+        relationship: Default::default(),
+        bot: false,
+        has_friends: true,
+        moderation: Some(moderation),
+        group_moderation: None,
+        can_block: false,
+        can_report: false,
+    };
+    let mut powers = Moderation::new(server.clone());
+    app.apply(Event::Profile(card(powers.clone())));
+    assert!(app.dispatch(op_role(&zed, "r1")).is_empty(), "no roles offered");
+    powers.roles = vec![ModerationRole {
+        id: role("r1"),
+        name: "Helpers".into(),
+        colour: None,
+        assigned: false,
+    }];
+    powers.nickname = true;
+    app.apply(Event::Profile(card(powers)));
+    assert_eq!(app.dispatch(op_role(&zed, "r1")).len(), 1);
+    assert!(
+        app.dispatch(op_role(&zed, "r9")).is_empty(),
+        "only roles the card lists"
+    );
+    assert!(
+        app.dispatch(op_role(&other, "r1")).is_empty(),
+        "only the open card's member"
+    );
+    let timeout = |secs: Option<u64>| Action::ServerAdmin {
+        server: server.clone(),
+        op: ServerAdmin::Timeout {
+            user: zed.clone(),
+            duration: secs.map(Duration::from_secs),
+        },
+    };
+    assert!(app.dispatch(timeout(Some(60))).is_empty(), "no timeout power");
+    let nick = |n: Option<&str>| Action::ServerAdmin {
+        server: server.clone(),
+        op: ServerAdmin::SetServerNickname {
+            user: zed.clone(),
+            nick: n.map(Into::into),
+        },
+    };
+    assert_eq!(app.dispatch(nick(Some("Zedd"))).len(), 1);
+    assert_eq!(app.dispatch(nick(None)).len(), 1, "reset");
+    assert!(app.dispatch(nick(Some(&"x".repeat(NICKNAME_MAX + 1)))).is_empty());
+    let mut powers = Moderation::new(server.clone());
+    powers.timeout = true;
+    app.apply(Event::Profile(card(powers)));
+    assert_eq!(app.dispatch(timeout(Some(60))).len(), 1);
+    assert_eq!(app.dispatch(timeout(None)).len(), 1, "lifting");
+    assert!(app.dispatch(timeout(Some(29 * 86_400))).is_empty(), "28 days at most");
+    assert!(app.dispatch(timeout(Some(0))).is_empty());
+}

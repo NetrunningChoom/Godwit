@@ -2,8 +2,9 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { Theme } from "theme.slint";
-import { Screen } from "types.slint";
-import { Dialog, ConfirmDialog, Button, TextField, TextArea, Select } from "widgets.slint";
+import { Screen, MemberRoleItem } from "types.slint";
+import { ScrollView } from "std-widgets.slint";
+import { Dialog, ConfirmDialog, Button, TextField, TextArea, Select, Toggle } from "widgets.slint";
 
 // These stay below the fullscreen viewer, as in AppWindow's original stack.
 export component CallDialogs inherits Rectangle {
@@ -146,7 +147,21 @@ export component ManagementDialogs inherits Rectangle {
     in-out property <int> confirm-moderate;
     in property <string> card-name;
     in-out property <string> ban-reason;
-    callback moderate-member(bool, string);
+    callback moderate-member(bool, string, int);
+    // The member card's Roles checklist, Timeout and Change nickname dialogs, and the ban's delete-history choice.
+    in property <[string]> ban-delete-choices;
+    in property <bool> ban-history;
+    in-out property <int> ban-delete-index;
+    in property <[MemberRoleItem]> card-member-roles;
+    in property <[string]> timeout-choices;
+    in-out property <bool> roles-open;
+    in-out property <bool> timeout-open;
+    in-out property <bool> nickname-open;
+    in-out property <int> timeout-index;
+    in-out property <string> nickname-text;
+    callback toggle-member-role(int, bool);
+    callback timeout-member(int);
+    callback set-member-nickname(string);
     in-out property <bool> confirm-remove-group-member;
     callback remove-group-member();
     in-out property <bool> confirm-transfer-group-ownership;
@@ -248,6 +263,9 @@ export component ManagementDialogs inherits Rectangle {
             text: root.confirm-moderate == 2 ? "They won't be able to rejoin unless they're unbanned." : "They can rejoin with an invite.";
             wrap: word-wrap; color: Theme.on-surface-variant;
         }
+        // The official ban modal's label for the history window.
+        if root.confirm-moderate == 2 && root.ban-history: Text { text: "Delete message history"; color: Theme.on-surface-variant; }
+        if root.confirm-moderate == 2 && root.ban-history: Select { model: root.ban-delete-choices; current-index <=> root.ban-delete-index; }
         if root.confirm-moderate == 2: TextField { placeholder: "Reason (optional)"; text <=> root.ban-reason; }
         HorizontalLayout {
             alignment: end;
@@ -257,10 +275,51 @@ export component ManagementDialogs inherits Rectangle {
                 text: root.confirm-moderate == 2 ? "Ban" : "Kick";
                 danger: true;
                 clicked => {
-                    root.moderate-member(root.confirm-moderate == 2, root.ban-reason);
+                    root.moderate-member(root.confirm-moderate == 2, root.ban-reason, root.ban-delete-index);
                     root.confirm-moderate = 0;
                 }
             }
+        }
+    }
+    // The web client's member menu: the Roles checklist (each toggle goes out at once).
+    if root.roles-open: Dialog {
+        title: "Roles for " + root.card-name;
+        closable: true;
+        dismissed => { root.roles-open = false; }
+        ScrollView {
+            height: min(root.card-member-roles.length * Theme.row-header, 320px);
+            VerticalLayout {
+                for r[i] in root.card-member-roles: HorizontalLayout {
+                    height: Theme.row-header;
+                    spacing: Theme.gap-sm;
+                    Toggle { y: (parent.height - self.height) / 2; checked: r.assigned; toggled => { root.toggle-member-role(i, self.checked); } }
+                    Text { text: r.name; color: r.has-colour ? r.colour : Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                }
+            }
+        }
+    }
+    if root.timeout-open: Dialog {
+        title: "Timeout " + root.card-name;
+        dismissed => { root.timeout-open = false; }
+        Text { text: "They can't send messages, react or join calls until it ends."; wrap: word-wrap; color: Theme.on-surface-variant; }
+        Select { model: root.timeout-choices; current-index <=> root.timeout-index; }
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.gap-sm;
+            Button { text: "Cancel"; clicked => { root.timeout-open = false; } }
+            Button { text: "Timeout"; danger: true; clicked => { root.timeout-member(root.timeout-index); root.timeout-open = false; } }
+        }
+    }
+    if root.nickname-open: Dialog {
+        title: "Change nickname";
+        dismissed => { root.nickname-open = false; }
+        Text { text: "A nickname only shows in this server. Leave it empty to reset it."; wrap: word-wrap; color: Theme.on-surface-variant; }
+        TextField { placeholder: "Nickname"; text <=> root.nickname-text; accepted => { root.set-member-nickname(root.nickname-text); root.nickname-open = false; } }
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.gap-sm;
+            Button { text: "Cancel"; clicked => { root.nickname-open = false; } }
+            Button { text: "Save"; kind: "filled"; clicked => { root.set-member-nickname(root.nickname-text); root.nickname-open = false; } }
         }
     }
     if root.confirm-remove-group-member: ConfirmDialog {

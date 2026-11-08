@@ -178,13 +178,38 @@ pub enum Admin {
     RevokeInvite(String),
     Bans,
     Unban(String),
-    Kick { user: String, reason: String },
-    Ban { user: String, reason: String },
+    Kick {
+        user: String,
+        reason: String,
+    },
+    Ban {
+        user: String,
+        reason: String,
+        delete_seconds: u32,
+    },
+    MemberRole {
+        user: String,
+        role: String,
+        on: bool,
+    },
+    /// Timeout or nickname; `user` is "@me" for our own nickname.
+    ModifyMember {
+        user: String,
+        body: Value,
+    },
     CreateRole(String),
-    ModifyRole { role: String, body: Value },
+    ModifyRole {
+        role: String,
+        body: Value,
+    },
     DeleteRole(String),
-    CreateInvite { channel: String },
-    CreateChannel { name: String, voice: bool },
+    CreateInvite {
+        channel: String,
+    },
+    CreateChannel {
+        name: String,
+        voice: bool,
+    },
     Leave,
     Delete,
     ModifyGuild(Value),
@@ -889,8 +914,21 @@ async fn admin(api: &Api, guild: &str, op: Admin) -> anyhow::Result<AdminAnswer>
             api.kick(guild, &user, &reason).await?;
             AdminAnswer::Done
         }
-        Admin::Ban { user, reason } => {
-            api.ban(guild, &user, &reason).await?;
+        Admin::Ban {
+            user,
+            reason,
+            delete_seconds,
+        } => {
+            api.ban(guild, &user, &reason, delete_seconds).await?;
+            AdminAnswer::Done
+        }
+        // The member's change arrives as GUILD_MEMBER_UPDATE.
+        Admin::MemberRole { user, role, on } => {
+            api.set_member_role(guild, &user, &role, on).await?;
+            AdminAnswer::Done
+        }
+        Admin::ModifyMember { user, body } => {
+            api.modify_member(guild, &user, &body).await?;
             AdminAnswer::Done
         }
         // Role changes arrive as GUILD_ROLE_* events.

@@ -774,10 +774,28 @@ impl Api {
             .await
     }
 
-    pub async fn ban(&self, guild: &str, user: &str, reason: &str) -> Result<()> {
+    /// `delete_message_seconds` is how much of their history goes (0 to
+    /// 604800), docs.discord.food/resources/guild, Create Guild Ban.
+    pub async fn ban(&self, guild: &str, user: &str, reason: &str, delete_seconds: u32) -> Result<()> {
         let path = format!("/guilds/{guild}/bans/{user}");
-        let request = with_json(self.request(Method::PUT, &path), &json!({"delete_message_seconds": 0}));
+        let body = json!({"delete_message_seconds": delete_seconds.min(604_800)});
+        let request = with_json(self.request(Method::PUT, &path), &body);
         self.empty(audit_reason(request, reason)).await
+    }
+
+    /// Adds or removes one role of a member (the member's gateway update
+    /// follows).
+    pub async fn set_member_role(&self, guild: &str, user: &str, role: &str, on: bool) -> Result<()> {
+        let path = format!("/guilds/{guild}/members/{user}/roles/{role}");
+        let method = if on { Method::PUT } else { Method::DELETE };
+        self.empty(self.request(method, &path)).await
+    }
+
+    /// Timeout (`communication_disabled_until`) and nickname changes; `user`
+    /// is `@me` for our own nickname (docs.discord.food, Modify Guild Member).
+    pub async fn modify_member(&self, guild: &str, user: &str, body: &Value) -> Result<()> {
+        let path = format!("/guilds/{guild}/members/{user}");
+        self.empty(with_json(self.request(Method::PATCH, &path), body)).await
     }
 
     pub async fn create_role(&self, guild: &str, body: &Value) -> Result<Value> {

@@ -219,20 +219,51 @@ impl DiscordAccount {
         })
     }
 
-    /// Kick and Ban on a member's card: with the permission, only for
-    /// members ranked below us (Discord refuses the rest).
+    /// What the member's card offers (the web client's member menu): Kick,
+    /// Ban, the Roles checklist, Timeout and server nicknames, each with its
+    /// permission and only for members ranked below us; for ourselves only
+    /// the nickname (Change Nickname).
     pub(super) fn moderation(&self, guild: &str, user: &str) -> Option<Moderation> {
-        if user == self.me() || self.store.rank(guild, self.me()) <= self.store.rank(guild, user) {
+        let account = self.account.clone()?;
+        let g = self.store.guilds.get(guild)?;
+        let perms = self.store.guild_permissions(guild);
+        let member = self.store.members.get(&(guild.to_owned(), user.to_owned()));
+        let mut m = Moderation::new(ServerId::new(account, guild));
+        m.nick = member.and_then(|m| m.nick.as_deref()).map(Arc::from);
+        if user == self.me() {
+            m.nickname = perms & p::CHANGE_NICKNAME != 0;
+            return m.any().then_some(m);
+        }
+        let mine = self.store.rank(guild, self.me());
+        if mine <= self.store.rank(guild, user) {
             return None;
         }
-        let perms = self.store.guild_permissions(guild);
-        let (kick, ban) = (perms & p::KICK_MEMBERS != 0, perms & p::BAN_MEMBERS != 0);
-        let account = self.account.clone()?;
-        (kick || ban).then(|| Moderation {
-            server: ServerId::new(account, guild),
-            kick,
-            ban,
-        })
+        m.kick = perms & p::KICK_MEMBERS != 0;
+        m.ban = perms & p::BAN_MEMBERS != 0;
+        m.ban_history = m.ban;
+        m.nickname = perms & p::MANAGE_NICKNAMES != 0;
+        m.timeout = perms & p::MODERATE_MEMBERS != 0 && !self.store.is_admin(guild, user);
+        m.timed_out = m.timeout && member.is_some_and(|m| m.timed_out(chrono::Utc::now().timestamp()));
+        if perms & p::MANAGE_ROLES != 0 {
+            // Only roles below our highest (the owner's is unbounded); @everyone
+            // and managed (integration) roles can't be handed out.
+            let mut roles: Vec<&store::Role> = g
+                .roles
+                .values()
+                .filter(|r| r.id != guild && !r.managed && r.position < mine)
+                .collect();
+            roles.sort_by_key(|r| std::cmp::Reverse(r.position));
+            m.roles = roles
+                .into_iter()
+                .map(|r| ModerationRole {
+                    id: Arc::from(r.id.as_str()),
+                    name: Arc::from(r.name.as_str()),
+                    colour: (r.color != 0).then_some([(r.color >> 16) as u8, (r.color >> 8) as u8, r.color as u8]),
+                    assigned: member.is_some_and(|m| m.roles.contains(&r.id)),
+                })
+                .collect();
+        }
+        m.any().then_some(m)
     }
 
     pub(super) fn sync_profile(&mut self, out: &mut Vec<Event>) {

@@ -358,7 +358,25 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_report_server() => |sh, ui| sh.report_server(ui));
     callback!(ui.on_submit_report(reason, detail) => |sh, ui| sh.submit_report(ui, reason, &detail));
     callback!(ui.on_close_report() => |sh, ui| sh.close_report(ui));
-    callback!(ui.on_moderate_member(ban, reason) => |sh, ui| sh.moderate_member(ui, ban, &reason));
+    callback!(ui.on_moderate_member(ban, reason, delete) => |sh, ui| sh.moderate_member(ui, ban, &reason, usize::try_from(delete).unwrap_or(0)));
+    callback!(ui.on_toggle_member_role(i, on) => |sh, ui| sh.toggle_member_role(ui, usize::try_from(i).unwrap_or(usize::MAX), on));
+    callback!(ui.on_timeout_member(i) => |sh, ui| {
+        if let Ok(i) = usize::try_from(i) {
+            sh.timeout_member(ui, Some(i));
+        }
+    });
+    callback!(ui.on_remove_member_timeout() => |sh, ui| sh.lift_member_timeout(ui));
+    callback!(ui.on_set_member_nickname(nick) => |sh, ui| sh.set_member_nickname(ui, &nick));
+    {
+        use godwit_core::server_settings::{BAN_DELETE_CHOICES, TIMEOUT_CHOICES};
+        let labels = |l: &mut dyn Iterator<Item = &str>| {
+            slint::ModelRc::new(slint::VecModel::from(
+                l.map(slint::SharedString::from).collect::<Vec<_>>(),
+            ))
+        };
+        ui.set_ban_delete_choices(labels(&mut BAN_DELETE_CHOICES.iter().map(|c| c.0)));
+        ui.set_timeout_choices(labels(&mut TIMEOUT_CHOICES.iter().map(|c| c.0)));
+    }
     callback!(ui.on_remove_group_member() => |sh, ui| sh.remove_group_member(ui));
     callback!(ui.on_block_user() => |sh, ui| sh.block_profile(ui, true));
     callback!(ui.on_unblock_user() => |sh, ui| sh.block_profile(ui, false));

@@ -38,7 +38,7 @@ fn extracted_dialogs_preserve_dismissal_and_parent_state() -> Result<(), Box<dyn
     let observed = destructive.clone();
     ui.on_log_out_account(move |_| observed.set(observed.get() + 1));
     let observed = destructive.clone();
-    ui.on_moderate_member(move |_, _| observed.set(observed.get() + 1));
+    ui.on_moderate_member(move |_, _, _| observed.set(observed.get() + 1));
     let mut pixels = vec![Rgb8Pixel::default(); 800 * 600];
     let mut dismiss = || {
         slint::platform::update_timers_and_animations();

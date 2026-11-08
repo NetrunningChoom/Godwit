@@ -231,6 +231,26 @@ pub enum ServerAdmin {
     Ban {
         user: UserId,
         reason: Arc<str>,
+        /// How much of their message history goes with them, in seconds
+        /// (one of [`BAN_DELETE_CHOICES`]).
+        delete_seconds: u32,
+    },
+    /// Gives or takes a role from a member (the profile card's Roles list).
+    SetMemberRole {
+        user: UserId,
+        role: Arc<str>,
+        on: bool,
+    },
+    /// Times a member out for that long, or lifts it with None.
+    Timeout {
+        user: UserId,
+        duration: Option<std::time::Duration>,
+    },
+    /// A member's nickname in this server (ours included); None resets it.
+    /// Not the local contact nickname of `Action::SetNickname`.
+    SetServerNickname {
+        user: UserId,
+        nick: Option<Arc<str>>,
     },
     DeleteServer,
     /// The server menu's entries.
@@ -245,7 +265,46 @@ pub enum ServerAdmin {
     },
 }
 
+/// The ban dialog's "delete message history" choices, as the official
+/// client lists them (docs.discord.food/resources/guild, Create Guild Ban:
+/// 0 to 604800 seconds).
+pub const BAN_DELETE_CHOICES: [(&str, u32); 7] = [
+    ("Don't delete any", 0),
+    ("Previous hour", 3_600),
+    ("Previous 6 hours", 21_600),
+    ("Previous 12 hours", 43_200),
+    ("Previous 24 hours", 86_400),
+    ("Previous 3 days", 259_200),
+    ("Previous 7 days", 604_800),
+];
+
+/// The member menu's timeout durations, as the official client lists them.
+pub const TIMEOUT_CHOICES: [(&str, u64); 6] = [
+    ("60 seconds", 60),
+    ("5 minutes", 300),
+    ("10 minutes", 600),
+    ("1 hour", 3_600),
+    ("1 day", 86_400),
+    ("1 week", 604_800),
+];
+
+/// The longest timeout (28 days).
+pub const TIMEOUT_MAX_SECS: u64 = 28 * 86_400;
+
+/// The longest server nickname.
+pub const NICKNAME_MAX: usize = 32;
+
 impl ServerAdmin {
+    /// The member a change on the profile card is aimed at.
+    pub fn member_target(&self) -> Option<&UserId> {
+        match self {
+            Self::SetMemberRole { user, .. } | Self::Timeout { user, .. } | Self::SetServerNickname { user, .. } => {
+                Some(user)
+            }
+            _ => None,
+        }
+    }
+
     /// Loads only read; everything else changes the server.
     pub fn is_load(&self) -> bool {
         matches!(

@@ -131,6 +131,60 @@ impl DiscordAccount {
             Command::UnblockUser { user } if user.raw.as_ref() != self.me() => {
                 self.dispatch("RELATIONSHIP_REMOVE", &json!({"id": user.raw.as_ref()}), &mut out);
             }
+            // Member changes answer with the GUILD_MEMBER_UPDATE Discord would send.
+            Command::ServerAdmin { server, op } if op.member_target().is_some() => {
+                use godwit_core::server_settings::ServerAdmin as A;
+                let guild = server.raw.to_string();
+                let user = match self.member_change(&guild, op) {
+                    Ok(Some(user)) => user,
+                    Ok(None) => return None,
+                    Err(e) => {
+                        out.push(Event::ServerAdmin {
+                            server: server.clone(),
+                            result: Err(e.into()),
+                        });
+                        return Some(out);
+                    }
+                };
+                let current = self.store.members.get(&(guild.clone(), user.clone()))?;
+                let (mut roles, mut nick, mut until) = (current.roles.clone(), current.nick.clone(), None);
+                match op {
+                    A::SetMemberRole { role, on, .. } => {
+                        roles.retain(|r| r.as_str() != role.as_ref());
+                        if *on {
+                            roles.push(role.to_string());
+                        }
+                    }
+                    A::Timeout { duration, .. } => {
+                        until = duration.map(|d| (chrono::Utc::now() + d).to_rfc3339());
+                    }
+                    A::SetServerNickname { nick: n, .. } => {
+                        nick = n.as_ref().map(|n| n.trim().to_owned()).filter(|n| !n.is_empty());
+                    }
+                    _ => {}
+                }
+                // A timeout survives other changes, as on the real member.
+                if !matches!(op, A::Timeout { .. }) {
+                    until = current
+                        .timeout_until
+                        .and_then(|t| chrono::DateTime::from_timestamp(t, 0).map(|t| t.to_rfc3339()));
+                }
+                let username = self
+                    .store
+                    .users
+                    .get(&user)
+                    .map(|u| u.username.clone())
+                    .unwrap_or_default();
+                let d = json!({
+                    "guild_id": guild, "user": {"id": user, "username": username},
+                    "roles": roles, "nick": nick, "communication_disabled_until": until,
+                });
+                self.dispatch("GUILD_MEMBER_UPDATE", &d, &mut out);
+                out.push(Event::ServerAdmin {
+                    server: server.clone(),
+                    result: Ok(ServerAdminResult::Done("Done.".into())),
+                });
+            }
             Command::LoadInvite { code } => {
                 // Every demo invite leads to the demo's server.
                 let account = self.account.clone()?;

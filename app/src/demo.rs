@@ -1215,6 +1215,8 @@ pub struct DemoAccount {
     friends: Vec<godwit_core::application::Person>,
     incoming: Vec<godwit_core::application::Person>,
     outgoing: Vec<godwit_core::application::Person>,
+    /// Roles, timeouts and nicknames given to members from their cards.
+    members: std::collections::HashMap<String, DemoMember>,
 }
 
 /// A demo server's overview. Only the first server is ours to manage, so the
@@ -1413,6 +1415,7 @@ impl DemoAccount {
             incoming,
             outgoing,
             sent: 0,
+            members: Default::default(),
             reactions,
             call: None,
             muted: false,
@@ -1661,7 +1664,9 @@ impl DemoAccount {
                 admin.roles.default_allow = allow;
                 R::Roles(admin.roles.clone())
             }
-            A::Kick(_) | A::Ban { .. } => R::Done("Done.".into()),
+            A::Kick(_) | A::Ban { .. } | A::SetMemberRole { .. } | A::Timeout { .. } | A::SetServerNickname { .. } => {
+                R::Done("Done.".into())
+            }
             A::CreateInvite => R::InviteCreated(format!("https://stt.gg/{}", Bogus::new(77).word()).into()),
             A::MarkRead => R::Done("Marked as read.".into()),
             A::SetNotify(_) => R::Done("Notifications changed.".into()),
@@ -1811,6 +1816,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
     fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
         use godwit_core::application::Command;
         match command {
+            Command::ServerAdmin { server, op } if op.member_target().is_some() => self.member_change(&server, op),
             Command::ServerAdmin { server, op } => {
                 use godwit_core::server_settings::ServerAdminResult as R;
                 let change = !op.is_load();
@@ -2127,32 +2133,15 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
             Command::BlockUser { user } => self.block(user, true),
             Command::UnblockUser { user } => self.block(user, false),
             Command::LoadProfile { user, room } => {
-                let raw = user.raw.to_string();
                 // Seen in a channel of a server we manage: the card offers Kick and Ban.
-                let moderation = room
+                let server = room
                     .and_then(|room| {
                         self.overviews
                             .iter()
                             .find(|(_, o)| o.can_manage && o.channels.iter().any(|(r, _)| *r == room))
                     })
-                    .filter(|_| raw != "me")
-                    .map(|(server, _)| godwit_core::members::Moderation {
-                        server: ServerId::new(account(), server.as_str()),
-                        kick: true,
-                        ban: true,
-                    });
-                let name = self.names.get(&raw).cloned().unwrap_or_else(|| raw.clone());
-                let relationship = self
-                    .relationships
-                    .get(&raw)
-                    .copied()
-                    .unwrap_or_else(|| relationship(&raw));
-                vec![Event::Profile(godwit_core::members::Profile {
-                    relationship,
-                    can_block: raw != "me",
-                    moderation,
-                    ..profile(user, &name)
-                })]
+                    .map(|(server, _)| server.clone());
+                vec![self.card(user, server.as_deref())]
             }
             _ => Vec::new(),
         }
@@ -2163,6 +2152,116 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
     }
 
     fn log_out(&mut self) {}
+}
+
+impl DemoAccount {
+    /// What the card of `raw` offers us in a server we manage (everything, as
+    /// the demo's owner; only a nickname for ourselves).
+    fn demo_moderation(&self, server: &str, raw: &str) -> godwit_core::members::Moderation {
+        use godwit_core::members::{Moderation, ModerationRole};
+        let state = self.members.get(raw);
+        let mut m = Moderation::new(ServerId::new(account(), server));
+        m.nickname = true;
+        m.nick = state.and_then(|s| s.nick.clone());
+        if raw == "me" {
+            return m;
+        }
+        m.kick = true;
+        m.ban = true;
+        m.ban_history = true;
+        m.timeout = true;
+        m.timed_out = state.is_some_and(|s| s.timed_out);
+        m.roles = self.admin.get(server).map_or_else(Vec::new, |a| {
+            a.roles
+                .roles
+                .iter()
+                .map(|r| ModerationRole {
+                    id: r.id.clone(),
+                    name: r.name.clone(),
+                    colour: r.colour.as_deref().and_then(|c| {
+                        let v = u32::from_str_radix(c.trim_start_matches('#'), 16).ok()?;
+                        Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
+                    }),
+                    assigned: state.is_some_and(|s| s.roles.contains(&r.id)),
+                })
+                .collect()
+        });
+        m
+    }
+
+    /// The profile card of `user`, with moderation when seen in `server`.
+    fn card(&self, user: UserId, server: Option<&str>) -> Event {
+        let raw = user.raw.to_string();
+        let name = self.names.get(&raw).cloned().unwrap_or_else(|| raw.clone());
+        let relationship = self
+            .relationships
+            .get(&raw)
+            .copied()
+            .unwrap_or_else(|| relationship(&raw));
+        Event::Profile(godwit_core::members::Profile {
+            relationship,
+            can_block: raw != "me",
+            moderation: server.map(|s| self.demo_moderation(s, &raw)),
+            ..profile(user, &name)
+        })
+    }
+
+    /// A role, timeout or nickname change on a member: kept, and the card
+    /// shown again, as the gateway's member update would do.
+    fn member_change(&mut self, server: &ServerId, op: godwit_core::server_settings::ServerAdmin) -> Vec<Event> {
+        use godwit_core::server_settings::{ServerAdmin as A, ServerAdminResult as R};
+        let Some(user) = op.member_target().cloned() else {
+            return Vec::new();
+        };
+        let raw = user.raw.to_string();
+        let allowed = self.demo_moderation(server.raw.as_ref(), &raw);
+        let ok = match &op {
+            A::SetMemberRole { role, .. } => allowed.roles.iter().any(|r| r.id == *role),
+            A::Timeout { .. } => allowed.timeout,
+            _ => allowed.nickname,
+        };
+        if !ok {
+            // The card comes back too, so its toggles show the true state.
+            return vec![
+                self.card(user, Some(server.raw.as_ref())),
+                Event::ServerAdmin {
+                    server: server.clone(),
+                    result: Err("You can't change this member.".into()),
+                },
+            ];
+        }
+        let state = self.members.entry(raw).or_default();
+        match op {
+            A::SetMemberRole { role, on, .. } => {
+                state.roles.retain(|r| *r != role);
+                if on {
+                    state.roles.push(role);
+                }
+            }
+            A::Timeout { duration, .. } => state.timed_out = duration.is_some(),
+            A::SetServerNickname { nick, .. } => {
+                state.nick = nick
+                    .map(|n| n.trim().into())
+                    .filter(|n: &std::sync::Arc<str>| !n.is_empty());
+            }
+            _ => {}
+        }
+        vec![
+            self.card(user, Some(server.raw.as_ref())),
+            Event::ServerAdmin {
+                server: server.clone(),
+                result: Ok(R::Done("Done.".into())),
+            },
+        ]
+    }
+}
+
+/// What the demo remembers of a member's moderation state.
+#[derive(Default)]
+struct DemoMember {
+    roles: Vec<std::sync::Arc<str>>,
+    timed_out: bool,
+    nick: Option<std::sync::Arc<str>>,
 }
 
 /// Notifications for the demo: the newest messages from others in the
@@ -2473,6 +2572,78 @@ mod tests {
         let shown = app.state().profile.clone();
         assert!(shown.is_some_and(|(u, p)| u == friend
             && p.is_some_and(|p| p.relationship == godwit_core::members::Relationship::Blocked && p.can_block)));
+    }
+
+    #[test]
+    fn demo_member_changes_update_the_card() {
+        use godwit_core::server_settings::ServerAdmin;
+        let (mut app, _, _) = world(Contacts::default());
+        let mut demo = DemoAccount::new(&app);
+        let (server, member) = (ServerId::new(account(), "S"), user("u0"));
+        app.dispatch(Action::OpenProfile(member.clone()));
+        let channel = demo.overviews["S"].channels[0].0.clone();
+        feed(
+            &mut app,
+            &mut demo,
+            Command::LoadProfile {
+                user: member.clone(),
+                room: Some(channel),
+            },
+        );
+        let shown = |app: &Application| app.state().profile.clone().and_then(|(_, p)| p?.moderation).unwrap();
+        let role = shown(&app).roles[0].id.clone();
+        let mut change = |app: &mut Application, op| {
+            run(
+                app,
+                &mut demo,
+                Action::ServerAdmin {
+                    server: server.clone(),
+                    op,
+                },
+            )
+        };
+        change(
+            &mut app,
+            ServerAdmin::SetMemberRole {
+                user: member.clone(),
+                role: role.clone(),
+                on: true,
+            },
+        );
+        assert!(shown(&app).roles[0].assigned);
+        change(
+            &mut app,
+            ServerAdmin::SetMemberRole {
+                user: member.clone(),
+                role,
+                on: false,
+            },
+        );
+        assert!(!shown(&app).roles[0].assigned);
+        change(
+            &mut app,
+            ServerAdmin::Timeout {
+                user: member.clone(),
+                duration: Some(std::time::Duration::from_secs(60)),
+            },
+        );
+        assert!(shown(&app).timed_out);
+        change(
+            &mut app,
+            ServerAdmin::Timeout {
+                user: member.clone(),
+                duration: None,
+            },
+        );
+        assert!(!shown(&app).timed_out);
+        change(
+            &mut app,
+            ServerAdmin::SetServerNickname {
+                user: member,
+                nick: Some("Nick".into()),
+            },
+        );
+        assert_eq!(shown(&app).nick.as_deref(), Some("Nick"));
     }
 
     #[test]

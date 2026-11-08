@@ -210,9 +210,16 @@ pub struct Member {
     pub roles: Vec<String>,
     pub nick: Option<String>,
     pub avatar: Option<String>,
+    /// `communication_disabled_until`, as unix seconds: timed out until then.
+    pub timeout_until: Option<i64>,
 }
 
 impl Member {
+    /// Whether the timeout is still running at `now` (unix seconds).
+    pub fn timed_out(&self, now: i64) -> bool {
+        self.timeout_until.is_some_and(|t| t > now)
+    }
+
     fn from(v: &Value) -> Self {
         Self {
             roles: v["roles"]
@@ -224,6 +231,10 @@ impl Member {
                 .collect(),
             nick: v["nick"].as_str().filter(|n| !n.is_empty()).map(str::to_owned),
             avatar: v["avatar"].as_str().map(str::to_owned),
+            timeout_until: v["communication_disabled_until"]
+                .as_str()
+                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                .map(|t| t.timestamp()),
         }
     }
 }
@@ -861,6 +872,19 @@ impl Store {
             .max_by_key(|r| r.position)?;
         let c = role.color;
         Some([(c >> 16) as u8, (c >> 8) as u8, c as u8])
+    }
+
+    /// Whether one of their roles (or @everyone, whose id is the guild's)
+    /// grants Administrator; Discord refuses to time such members out.
+    pub fn is_admin(&self, guild: &str, user: &str) -> bool {
+        let Some(g) = self.guilds.get(guild) else { return false };
+        let member = self.members.get(&(guild.to_owned(), user.to_owned()));
+        member
+            .into_iter()
+            .flat_map(|m| &m.roles)
+            .chain(std::iter::once(&guild.to_owned()))
+            .filter_map(|r| g.roles.get(r))
+            .any(|r| r.permissions & permissions::ADMINISTRATOR != 0)
     }
 
     /// The highest position among a member's roles (0 for none; the owner highest).

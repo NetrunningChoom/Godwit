@@ -40,6 +40,10 @@ impl StoatAccount {
             | ServerAdmin::DeleteEmoji(_) => Some((p::MANAGE_CUSTOMISATION, "Manage Customisation")),
             ServerAdmin::CreateInvite => Some((p::INVITE_OTHERS, "Invite Others")),
             ServerAdmin::CreateChannel { .. } => Some((p::MANAGE_CHANNEL, "Manage Channels")),
+            // The card never offers these here (no capability is set).
+            ServerAdmin::SetMemberRole { .. } | ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => {
+                None
+            }
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -52,6 +56,9 @@ impl StoatAccount {
             return fail(server, &format!("You need the {name} permission for this."));
         }
         let cmd = match op {
+            ServerAdmin::SetMemberRole { .. } | ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => {
+                return fail(server, "This isn't available here yet.");
+            }
             ServerAdmin::LoadInvites => Cmd::Server(ServerCmd::FetchServerInvites { server: raw }),
             ServerAdmin::DeleteInvite(code) => Cmd::Server(ServerCmd::DeleteInvite {
                 server: raw,
@@ -66,7 +73,11 @@ impl StoatAccount {
                 server: raw,
                 user: user.raw.to_string(),
             }),
-            ServerAdmin::Ban { user, reason } => {
+            ServerAdmin::Ban {
+                user,
+                reason,
+                delete_seconds,
+            } => {
                 // DataBanCreate: a reason of at most 1024 characters.
                 if reason.chars().count() > 1024 {
                     return fail(server, "The reason can be at most 1024 characters.");
@@ -75,7 +86,7 @@ impl StoatAccount {
                     server: raw,
                     user: user.raw.to_string(),
                     reason: reason.trim().to_owned(),
-                    delete_message_seconds: 0,
+                    delete_message_seconds: delete_seconds.into(),
                 })
             }
             ServerAdmin::LoadRoles => {

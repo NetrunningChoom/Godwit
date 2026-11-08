@@ -115,4 +115,54 @@ pub struct Moderation {
     pub server: ServerId,
     pub kick: bool,
     pub ban: bool,
+    /// The ban dialog offers deleting message history.
+    #[serde(default)]
+    pub ban_history: bool,
+    /// The roles we may toggle on them (already limited to what the
+    /// network allows us to hand out); empty when we may not.
+    #[serde(default)]
+    pub roles: Vec<ModerationRole>,
+    /// We may time them out (or lift it).
+    #[serde(default)]
+    pub timeout: bool,
+    /// They are timed out right now, so the card offers lifting it.
+    #[serde(default)]
+    pub timed_out: bool,
+    /// We may change their nickname in this server (our own, for ourselves).
+    #[serde(default)]
+    pub nickname: bool,
+    /// Their current nickname in this server.
+    #[serde(default)]
+    pub nick: Option<std::sync::Arc<str>>,
+}
+
+impl Moderation {
+    /// No powers over the member yet; the network switches on what we hold.
+    pub fn new(server: ServerId) -> Self {
+        Self {
+            server,
+            kick: false,
+            ban: false,
+            ban_history: false,
+            roles: Vec::new(),
+            timeout: false,
+            timed_out: false,
+            nickname: false,
+            nick: None,
+        }
+    }
+
+    /// Whether the card has anything to offer at all.
+    pub fn any(&self) -> bool {
+        self.kick || self.ban || !self.roles.is_empty() || self.timeout || self.nickname
+    }
+}
+
+/// One role in the member's "Roles" checklist.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModerationRole {
+    pub id: std::sync::Arc<str>,
+    pub name: std::sync::Arc<str>,
+    pub colour: Option<[u8; 3]>,
+    pub assigned: bool,
 }

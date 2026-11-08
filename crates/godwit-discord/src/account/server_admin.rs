@@ -72,6 +72,29 @@ impl DiscordAccount {
         }
     }
 
+    /// For a role, timeout or nickname change: the member it is aimed at, if
+    /// our powers over them (permission and hierarchy, as the card shows
+    /// them) allow it; None for other changes.
+    pub(super) fn member_change(&self, guild: &str, op: &ServerAdmin) -> Result<Option<String>, &'static str> {
+        let (ServerAdmin::SetMemberRole { user, .. }
+        | ServerAdmin::Timeout { user, .. }
+        | ServerAdmin::SetServerNickname { user, .. }) = op
+        else {
+            return Ok(None);
+        };
+        let user = user.raw.to_string();
+        let allowed = self.moderation(guild, &user).is_some_and(|m| match op {
+            ServerAdmin::SetMemberRole { role, .. } => m.roles.iter().any(|r| r.id == *role),
+            ServerAdmin::Timeout { .. } => m.timeout,
+            _ => m.nickname,
+        });
+        if allowed {
+            Ok(Some(user))
+        } else {
+            Err("You can't change this member.")
+        }
+    }
+
     pub(super) fn server_admin(&mut self, server: ServerId, op: ServerAdmin) -> Vec<Event> {
         let fail = |server: ServerId, e: &str| {
             vec![Event::ServerAdmin {
@@ -101,6 +124,10 @@ impl DiscordAccount {
             | ServerAdmin::CreateEmoji { .. }
             | ServerAdmin::RenameEmoji { .. }
             | ServerAdmin::DeleteEmoji(_) => return fail(server, "Emoji can't be managed here yet."),
+            // Checked against the member's own powers below (hierarchy included).
+            ServerAdmin::SetMemberRole { .. } | ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => {
+                None
+            }
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -112,6 +139,15 @@ impl DiscordAccount {
         {
             return fail(server, &format!("You need the {name} permission for this."));
         }
+        let target = match self.member_change(&guild, &op) {
+            Ok(user) => user,
+            Err(e) => {
+                // The card comes back too, so its toggles show the true state.
+                let mut out = fail(server, e);
+                self.sync_profile(&mut out);
+                return out;
+            }
+        };
         let admin = match op {
             ServerAdmin::LoadInvites => Admin::Invites,
             ServerAdmin::DeleteInvite(code) => Admin::RevokeInvite(code.to_string()),
@@ -126,9 +162,35 @@ impl DiscordAccount {
                 user: user.raw.to_string(),
                 reason: String::new(),
             },
-            ServerAdmin::Ban { user, reason } => Admin::Ban {
+            ServerAdmin::Ban {
+                user,
+                reason,
+                delete_seconds,
+            } => Admin::Ban {
                 user: user.raw.to_string(),
                 reason: reason.to_string(),
+                delete_seconds,
+            },
+            ServerAdmin::SetMemberRole { role, on, .. } => Admin::MemberRole {
+                user: target.unwrap_or_default(),
+                role: role.to_string(),
+                on,
+            },
+            ServerAdmin::Timeout { duration, .. } => Admin::ModifyMember {
+                user: target.unwrap_or_default(),
+                // Null lifts it; otherwise an ISO8601 time (docs.discord.food, Modify Guild Member).
+                body: json!({"communication_disabled_until": duration.map(|d| {
+                    (chrono::Utc::now() + d).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                })}),
+            },
+            ServerAdmin::SetServerNickname { user, nick } => Admin::ModifyMember {
+                // Our own nickname has its own route.
+                user: if &*user.raw == self.me() {
+                    "@me".into()
+                } else {
+                    user.raw.to_string()
+                },
+                body: json!({"nick": nick.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty())}),
             },
             ServerAdmin::LoadRoles => {
                 let roles = self.roles(&guild);
@@ -251,7 +313,7 @@ impl DiscordAccount {
     }
 
     pub(super) fn admin_answer(
-        &self,
+        &mut self,
         guild: &str,
         result: Result<AdminAnswer, crate::backend::RequestError>,
         out: &mut Vec<Event>,
@@ -305,10 +367,15 @@ impl DiscordAccount {
         };
         // A list after a change (revoke, unban) also finishes the change.
         let listed = matches!(result, Ok(ServerAdminResult::Invites(_) | ServerAdminResult::Bans(_)));
+        let failed = result.is_err();
         out.push(Event::ServerAdmin {
             server: server.clone(),
             result,
         });
+        if failed {
+            // A refused member change leaves the card's toggles ahead of the member.
+            self.sync_profile(out);
+        }
         if listed {
             out.push(Event::ServerAdmin {
                 server,
