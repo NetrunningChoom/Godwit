@@ -352,7 +352,7 @@ impl GChatAccount {
             reply_to: None,
             jumbo: Vec::new(),
             attachments: crate::media::attachments(m, &self.media),
-            embeds: Vec::new(),
+            embeds: crate::media::embeds(m, &self.media),
             invites: Vec::new(),
             reactions: m
                 .reactions

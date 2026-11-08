@@ -5,8 +5,8 @@
 //! Cookies go only to Google domains, including after redirecting back from
 //! googleusercontent.com; they never go to an external attachment host.
 
-use godwit_core::media::{Media, Rule, https, kind};
-use godwit_core::message::{Attachment, AttachmentKind};
+use godwit_core::media::{Media, Rule, https};
+use godwit_core::message::{Attachment, AttachmentKind, Embed};
 
 use crate::{proto, session::Saved};
 
@@ -40,6 +40,65 @@ pub fn configure(media: &Media, saved: &Saved) {
             vec![("Cookie", crate::auth::cookie_header(saved))],
         )],
     );
+}
+
+/// Video and audio need their own kinds so the app's player path is used
+/// (the shared `media::kind` only tells images from files).
+fn kind(mime: &str) -> AttachmentKind {
+    if mime.starts_with("video/") {
+        AttachmentKind::Video
+    } else if mime.starts_with("audio/") {
+        AttachmentKind::Audio
+    } else {
+        godwit_core::media::kind(mime)
+    }
+}
+
+/// A URL annotation that is a file (non-HTML MIME) rather than a web page:
+/// it becomes an attachment, never a card.
+fn is_file_link(meta: &proto::UrlMetadata) -> bool {
+    let mime = meta.mime_type();
+    !mime.is_empty() && !mime.starts_with("text/html")
+}
+
+/// Link previews (`url_metadata`) as cards, so a link is openable from the
+/// message and not only from a text span. Chat doesn't send file sizes in
+/// any of these messages (see `docs/gchat.md`), so sizes stay unknown (0).
+pub fn embeds(message: &proto::Message, media: &Media) -> Vec<Embed> {
+    let mut out: Vec<Embed> = Vec::new();
+    for annotation in &message.annotations {
+        if !annotation.has_url_metadata() {
+            continue;
+        }
+        let meta = annotation.url_metadata();
+        if meta.should_not_render() || is_file_link(meta) {
+            continue;
+        }
+        let Some(link) = [meta.url.url(), meta.redirect_url.url(), meta.gws_url.url()]
+            .into_iter()
+            .find_map(https)
+            .map(String::from)
+        else {
+            continue;
+        };
+        if out.iter().any(|e| e.url.as_deref() == Some(link.as_str())) {
+            continue;
+        }
+        let text = |s: &str| (!s.is_empty()).then(|| s.into());
+        out.push(Embed {
+            title: text(meta.title()),
+            description: text(meta.snippet()),
+            site_name: text(meta.domain()),
+            image_url: media.address("", meta.image_url()).map(Into::into),
+            media_dimensions: u32::try_from(meta.int_image_width())
+                .ok()
+                .filter(|n| *n > 0)
+                .zip(u32::try_from(meta.int_image_height()).ok().filter(|n| *n > 0)),
+            url: Some(link.into()),
+            ..Embed::default()
+        });
+    }
+    out
 }
 
 /// The media scope for Chat's own uploaded attachments (see `configure`).
@@ -106,15 +165,23 @@ pub fn attachments(message: &proto::Message, media: &Media) -> Vec<Attachment> {
             if meta.should_not_render() {
                 continue;
             }
-            let image = !meta.image_url().is_empty();
-            // A normal web link isn't a downloadable file. Keep it in the
-            // text; only file MIME types and preview images become media.
-            let mime = meta.mime_type();
-            if !image && (mime.is_empty() || mime.starts_with("text/html")) {
+            // A normal web link is an embed card (see `embeds`), not a
+            // file; only file MIME types become attachments.
+            if !is_file_link(meta) {
                 continue;
             }
-            let url = if image { meta.image_url() } else { meta.url.url() };
-            media.address("", url).map(|url| Attachment {
+            let mime = meta.mime_type();
+            // The real file, never its preview image (core has no thumbnail field).
+            let raw = meta.url.url();
+            let kind = kind(mime);
+            // Players fetch an external video themselves, so it keeps its
+            // plain address (cookies never go to an external host anyway).
+            let url = if matches!(kind, AttachmentKind::Video | AttachmentKind::Audio) {
+                https(raw).map(String::from)
+            } else {
+                media.address("", raw)
+            };
+            url.map(|url| Attachment {
                 name: if meta.title().is_empty() {
                     "attachment"
                 } else {
@@ -123,7 +190,7 @@ pub fn attachments(message: &proto::Message, media: &Media) -> Vec<Attachment> {
                 .into(),
                 url: url.into(),
                 original_url: None,
-                kind: if image { AttachmentKind::Image } else { kind(mime) },
+                kind,
                 size: 0,
                 dimensions: u32::try_from(meta.int_image_width())
                     .ok()
@@ -342,5 +409,139 @@ mod tests {
         assert_eq!(files[0].kind, AttachmentKind::Image);
         assert!(files[0].original_url.is_some());
         assert!(files[0].url.starts_with("gchat-media://"));
+    }
+
+    fn upload_message(name: &str, mime: &str) -> proto::Message {
+        let mut upload = proto::UploadMetadata::new();
+        upload.set_attachment_token("tok".into());
+        upload.set_content_name(name.into());
+        upload.set_content_type(mime.into());
+        let mut annotation = proto::Annotation::new();
+        annotation.set_upload_metadata(upload);
+        let mut message = proto::Message::new();
+        message.annotations.push(annotation);
+        message
+    }
+
+    fn link_message(link: &str, mime: &str) -> proto::Message {
+        let mut url = proto::Url::new();
+        url.set_url(link.into());
+        let mut meta = proto::UrlMetadata::new();
+        meta.url = Some(url).into();
+        meta.set_title("Title".into());
+        meta.set_snippet("About".into());
+        meta.set_domain("example.org".into());
+        if !mime.is_empty() {
+            meta.set_mime_type(mime.into());
+        }
+        let mut annotation = proto::Annotation::new();
+        annotation.set_url_metadata(meta);
+        annotation.set_start_index(0);
+        annotation.set_length(4);
+        let mut message = proto::Message::new();
+        message.set_text_body("link and more".into());
+        message.annotations.push(annotation);
+        message
+    }
+
+    #[test]
+    fn uploaded_video_is_a_video_with_a_download_address() {
+        let files = attachments(&upload_message("clip.mp4", "video/mp4"), &Media::new("gchat"));
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].kind, AttachmentKind::Video);
+        assert!(files[0].url.starts_with("gchat-media://"));
+        assert!(files[0].url.contains("DOWNLOAD_URL"));
+        assert_eq!(files[0].name.as_ref(), "clip.mp4");
+    }
+
+    #[test]
+    fn uploaded_image_and_file_kinds() {
+        let m = Media::new("gchat");
+        assert_eq!(
+            attachments(&upload_message("a.png", "image/png"), &m)[0].kind,
+            AttachmentKind::Image
+        );
+        assert_eq!(
+            attachments(&upload_message("a.pdf", "application/pdf"), &m)[0].kind,
+            AttachmentKind::File
+        );
+        assert_eq!(
+            attachments(&upload_message("a.mp3", "audio/mpeg"), &m)[0].kind,
+            AttachmentKind::Audio
+        );
+    }
+
+    #[test]
+    fn drive_video_is_a_video_attachment() {
+        let mut drive = proto::DriveMetadata::new();
+        drive.set_id("vid".into());
+        drive.set_mimetype("video/mp4".into());
+        let mut annotation = proto::Annotation::new();
+        annotation.set_drive_metadata(drive);
+        let mut message = proto::Message::new();
+        message.annotations.push(annotation);
+        let files = attachments(&message, &Media::new("gchat"));
+        assert_eq!(files[0].kind, AttachmentKind::Video);
+    }
+
+    #[test]
+    fn a_plain_url_is_an_openable_embed_not_a_file() {
+        let message = link_message("https://example.org/page", "");
+        let media = Media::new("gchat");
+        assert!(attachments(&message, &media).is_empty());
+        let cards = embeds(&message, &media);
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].url.as_deref(), Some("https://example.org/page"));
+        assert_eq!(cards[0].title.as_deref(), Some("Title"));
+        assert_eq!(cards[0].site_name.as_deref(), Some("example.org"));
+    }
+
+    #[test]
+    fn text_with_a_url_keeps_the_link_in_text_and_as_a_card() {
+        let message = link_message("https://example.org/page", "text/html");
+        assert_eq!(
+            crate::annotations::text(&message),
+            "[link](<https://example.org/page>) and more"
+        );
+        assert_eq!(embeds(&message, &Media::new("gchat")).len(), 1);
+    }
+
+    #[test]
+    fn a_remote_video_link_keeps_its_plain_address() {
+        let message = link_message("https://example.org/v.mp4", "video/mp4");
+        let files = attachments(&message, &Media::new("gchat"));
+        assert_eq!(files[0].kind, AttachmentKind::Video);
+        assert_eq!(files[0].url.as_ref(), "https://example.org/v.mp4");
+    }
+
+    #[test]
+    fn file_links_are_attachments_only() {
+        let message = link_message("https://example.org/v.mp4", "video/mp4");
+        let media = Media::new("gchat");
+        assert_eq!(attachments(&message, &media).len(), 1);
+        assert!(embeds(&message, &media).is_empty());
+    }
+
+    #[test]
+    fn video_with_preview_image_keeps_real_url_and_kind() {
+        let mut message = link_message("https://example.org/v.mp4", "video/mp4");
+        message.annotations[0]
+            .mut_url_metadata()
+            .set_image_url("https://example.org/p.jpg".into());
+        let files = attachments(&message, &Media::new("gchat"));
+        assert_eq!(files[0].kind, AttachmentKind::Video);
+        assert_eq!(files[0].url.as_ref(), "https://example.org/v.mp4");
+    }
+
+    #[test]
+    fn unsafe_urls_make_no_card_or_attachment() {
+        let media = Media::new("gchat");
+        for link in ["javascript:alert(1)", "data:text/html,hi"] {
+            for mime in ["", "video/mp4"] {
+                let message = link_message(link, mime);
+                assert!(embeds(&message, &media).is_empty());
+                assert!(attachments(&message, &media).is_empty());
+            }
+        }
     }
 }

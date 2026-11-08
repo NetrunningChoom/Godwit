@@ -606,6 +606,9 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
                 name: a.name.as_ref().into(),
                 detail: if uploading {
                     "Uploading…".into()
+                } else if a.size == 0 {
+                    // Some networks (Google Chat) don't report sizes.
+                    "".into()
                 } else {
                     human_size(a.size).into()
                 },
