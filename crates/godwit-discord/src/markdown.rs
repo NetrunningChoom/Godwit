@@ -141,28 +141,130 @@ impl<N: Names> Resolve for Unpadded<'_, N> {
     }
 }
 
+/// The reader's locale for dates: `LC_ALL`, `LC_TIME` then `LANG` (POSIX
+/// order), as a chrono locale; en-US when unset, "C" or unknown. Windows and
+/// macOS processes mostly lack these variables and get en-US too.
+/// Read once: the locale doesn't change while the app runs.
+static SYSTEM_LOCALE: std::sync::OnceLock<chrono::Locale> = std::sync::OnceLock::new();
+
+fn system_locale() -> chrono::Locale {
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let raw = var("LC_ALL")
+        .or_else(|| var("LC_TIME"))
+        .or_else(|| var("LANG"))
+        .unwrap_or_default();
+    parse_locale(&raw).unwrap_or(chrono::Locale::en_US)
+}
+
+/// `de_DE.UTF-8@euro`, `de-DE` or a bare `de` as a chrono locale.
+fn parse_locale(raw: &str) -> Option<chrono::Locale> {
+    let tag = raw.split(['.', '@']).next()?.replace('-', "_");
+    if matches!(tag.as_str(), "C" | "POSIX") {
+        return None;
+    }
+    if let Ok(l) = chrono::Locale::try_from(tag.as_str()) {
+        return Some(l);
+    }
+    // A bare language: its usual region (de -> de_DE, nl -> nl_NL), or the
+    // first locale of that language.
+    let lang = tag.split('_').next()?;
+    chrono::Locale::try_from(format!("{lang}_{}", lang.to_uppercase()).as_str()).ok()
+}
+
 /// A `<t:…>` timestamp as Discord's client words it, in the reader's time
-/// zone `tz` (docs.discord.food, Reference, "Message Formatting" timestamp
-/// styles). The docs' examples are en-US ("April 20, 2021 at 16:20"); the
-/// official client follows the locale, and we use the en-GB order, which
-/// matches the app's own dd/mm dates, with a 24-hour clock.
+/// zone `tz` and the system locale. The official client formats with
+/// `Intl.DateTimeFormat` in the user's locale (styles: t/T time, d numeric
+/// date, D long date, f/F long date and time, s/S numeric date and time;
+/// docs.discord.food, Reference, "Message Formatting" timestamp styles).
 /// `now` and `tz` are parameters so tests are exact. `R` is computed when the
 /// message is drawn and never ticks: a timer would be idle work for little.
 pub fn timestamp<Tz: chrono::TimeZone>(secs: i64, style: Option<char>, now: i64, tz: &Tz) -> String
 where
     Tz::Offset: std::fmt::Display,
 {
+    timestamp_in(secs, style, now, tz, *SYSTEM_LOCALE.get_or_init(system_locale))
+}
+
+/// [`timestamp`] in a given locale. Intl's patterns aren't in chrono's
+/// locale data (only month and day names, numeric dates, 12 or 24 hours), so
+/// the long date's word order and the "at" joiner come from a small table
+/// of the common languages; others get the day-month-year order, with ", ".
+pub fn timestamp_in<Tz: chrono::TimeZone>(
+    secs: i64,
+    style: Option<char>,
+    now: i64,
+    tz: &Tz,
+    locale: chrono::Locale,
+) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
     let Some(t) = tz.timestamp_opt(secs, 0).single() else {
         return format!("<t:{secs}>");
     };
+    let loc = format!("{locale:?}");
+    let (lang, region) = loc.split_once('_').unwrap_or((loc.as_str(), ""));
+    let h12 = {
+        let (x, p) = (
+            t.format_localized("%X", locale).to_string(),
+            t.format_localized("%p", locale).to_string(),
+        );
+        !p.is_empty() && x.contains(&p)
+    };
+    let clock = |seconds: bool| {
+        let fmt = match (h12, seconds) {
+            (true, false) => "%-I:%M %p",
+            (true, true) => "%-I:%M:%S %p",
+            (false, false) => "%H:%M",
+            (false, true) => "%H:%M:%S",
+        };
+        t.format_localized(fmt, locale).to_string()
+    };
+    // Numeric date with two-digit day and month, in the locale's order.
+    let numeric = || match lang {
+        "en" if region == "US" || region == "PH" => t.format("%m/%d/%Y").to_string(),
+        "de" | "ru" | "pl" | "tr" | "cs" | "fi" | "nb" | "nn" | "no" | "uk" | "ro" | "da" => {
+            t.format("%d.%m.%Y").to_string()
+        }
+        "nl" => t.format("%-d-%-m-%Y").to_string(),
+        "ja" | "zh" | "sv" | "lt" | "hu" | "ko" => t.format("%Y-%m-%d").to_string(),
+        _ => t.format("%d/%m/%Y").to_string(),
+    };
+    let long = || match (lang, region) {
+        ("en", "US" | "CA" | "PH") => t.format_localized("%B %-d, %Y", locale).to_string(),
+        ("de" | "nb" | "nn" | "no" | "cs" | "fi", _) => t.format_localized("%-d. %B %Y", locale).to_string(),
+        ("es" | "pt", _) => t.format_localized("%-d de %B de %Y", locale).to_string(),
+        _ => t.format_localized("%-d %B %Y", locale).to_string(),
+    };
+    let joiner = match lang {
+        "en" => " at ",
+        "de" => " um ",
+        "fr" => " à ",
+        "nl" => " om ",
+        _ => ", ",
+    };
     match style {
-        Some('t') => t.format("%H:%M").to_string(),
-        Some('T') => t.format("%H:%M:%S").to_string(),
-        Some('d') => t.format("%d/%m/%Y").to_string(),
-        Some('s') => t.format("%d/%m/%Y, %H:%M").to_string(),
-        Some('S') => t.format("%d/%m/%Y, %H:%M:%S").to_string(),
-        Some('D') => t.format("%-d %B %Y").to_string(),
-        Some('F') => t.format("%A, %-d %B %Y %H:%M").to_string(),
+        Some('t') => clock(false),
+        Some('T') => clock(true),
+        Some('d') => numeric(),
+        Some('s') => format!("{}, {}", numeric(), clock(false)),
+        Some('S') => format!("{}, {}", numeric(), clock(true)),
+        Some('D') => long(),
+        Some('F') => {
+            // English, German... put a comma after the weekday, except the
+            // day-first English regions (en-GB, en-AU).
+            let comma = if lang == "en" && !matches!(region, "US" | "CA" | "PH") {
+                ""
+            } else {
+                ","
+            };
+            format!(
+                "{}{comma} {}{joiner}{}",
+                t.format_localized("%A", locale),
+                long(),
+                clock(false)
+            )
+        }
         Some('R') => {
             let diff = now - secs;
             let r = godwit_stoat::timefmt::relative(diff.abs() * 1000);
@@ -172,7 +274,7 @@ where
                 format!("in {}", r.trim_end_matches(" ago"))
             }
         }
-        _ => t.format("%-d %B %Y %H:%M").to_string(),
+        _ => format!("{}{joiner}{}", long(), clock(false)),
     }
 }
 
@@ -250,22 +352,55 @@ mod tests {
     }
 
     #[test]
-    fn timestamp_styles() {
+    fn timestamp_styles_follow_the_locale() {
+        use chrono::Locale;
         let tz = chrono::FixedOffset::east_opt(2 * 3600).unwrap();
         let t = 1_618_928_430; // 2021-04-20 14:20:30 UTC, 16:20:30 at +2
-        let f = |c| timestamp(t, c, t, &tz);
-        assert_eq!(f(Some('t')), "16:20");
-        assert_eq!(f(Some('T')), "16:20:30");
-        assert_eq!(f(Some('d')), "20/04/2021");
-        assert_eq!(f(Some('s')), "20/04/2021, 16:20");
-        assert_eq!(f(Some('S')), "20/04/2021, 16:20:30");
-        assert_eq!(f(Some('D')), "20 April 2021");
-        assert_eq!(f(None), "20 April 2021 16:20");
-        assert_eq!(f(Some('f')), "20 April 2021 16:20");
-        assert_eq!(f(Some('F')), "Tuesday, 20 April 2021 16:20");
-        assert_eq!(f(Some('R')), "just now");
-        assert_eq!(timestamp(t, Some('R'), t + 2 * 86_400, &tz), "2 days ago");
-        assert_eq!(timestamp(t, Some('R'), t - 3 * 3600, &tz), "in 3 hours");
+        let f = |l, c| timestamp_in(t, c, t, &tz, l);
+        // en-US as Intl words it (12-hour clock, month first).
+        let us = |c| f(Locale::en_US, c);
+        assert_eq!(us(Some('t')), "4:20 PM");
+        assert_eq!(us(Some('T')), "4:20:30 PM");
+        assert_eq!(us(Some('d')), "04/20/2021");
+        assert_eq!(us(Some('s')), "04/20/2021, 4:20 PM");
+        assert_eq!(us(Some('S')), "04/20/2021, 4:20:30 PM");
+        assert_eq!(us(Some('D')), "April 20, 2021");
+        assert_eq!(us(None), "April 20, 2021 at 4:20 PM");
+        assert_eq!(us(Some('f')), "April 20, 2021 at 4:20 PM");
+        assert_eq!(us(Some('F')), "Tuesday, April 20, 2021 at 4:20 PM");
+        let gb = |c| f(Locale::en_GB, c);
+        assert_eq!(gb(Some('t')), "16:20");
+        assert_eq!(gb(Some('T')), "16:20:30");
+        assert_eq!(gb(Some('d')), "20/04/2021");
+        assert_eq!(gb(Some('S')), "20/04/2021, 16:20:30");
+        assert_eq!(gb(Some('D')), "20 April 2021");
+        assert_eq!(gb(Some('f')), "20 April 2021 at 16:20");
+        assert_eq!(gb(Some('F')), "Tuesday 20 April 2021 at 16:20");
+        let de = |c| f(Locale::de_DE, c);
+        assert_eq!(de(Some('t')), "16:20");
+        assert_eq!(de(Some('d')), "20.04.2021");
+        assert_eq!(de(Some('s')), "20.04.2021, 16:20");
+        assert_eq!(de(Some('D')), "20. April 2021");
+        assert_eq!(de(Some('f')), "20. April 2021 um 16:20");
+        assert_eq!(de(Some('F')), "Dienstag, 20. April 2021 um 16:20");
+        assert_eq!(us(Some('R')), "just now");
+        assert_eq!(
+            timestamp_in(t, Some('R'), t + 2 * 86_400, &tz, Locale::en_US),
+            "2 days ago"
+        );
+        assert_eq!(
+            timestamp_in(t, Some('R'), t - 3 * 3600, &tz, Locale::en_US),
+            "in 3 hours"
+        );
+    }
+
+    #[test]
+    fn locale_names_parse() {
+        assert_eq!(parse_locale("de_DE.UTF-8"), Some(chrono::Locale::de_DE));
+        assert_eq!(parse_locale("en-GB"), Some(chrono::Locale::en_GB));
+        assert_eq!(parse_locale("nl"), Some(chrono::Locale::nl_NL));
+        assert_eq!(parse_locale("C"), None);
+        assert_eq!(parse_locale(""), None);
     }
 
     #[test]

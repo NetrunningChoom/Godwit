@@ -22,7 +22,7 @@ godwit-secrets = { path = "crates/godwit-secrets" }
 godwit-voice = { path = "crates/godwit-voice" }
 godwit-media = { path = "crates/godwit-media" }
 anyhow = "1.0.104"
-chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "unstable-locales"] }
 cpal = "0.18.2"
 directories = "6.0.0"
 emojis = "0.9.1"
