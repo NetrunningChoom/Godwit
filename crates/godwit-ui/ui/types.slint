@@ -462,9 +462,11 @@ export struct GamesFriendItem {
 }
 
 // A row of "Games in common": a section's heading ("Everyone owns (12)") or
-// a game with its store picture (decoded only while near the view).
+// a game with its store picture (decoded only while near the view). `sub`:
+// a heading within a section ("also Bob (11)").
 export struct GameRowItem {
     header: bool,
+    sub: bool,
     title: string,
     image: image,
     has-image: bool,

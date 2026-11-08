@@ -1099,18 +1099,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_games_venn(3);
                 ui.set_games_legend("Left: You · Right: Robin · Bottom: Sam".into());
                 ui.set_games_regions(ModelRc::new(VecModel::from(vec![0, 4, 2, 3, 1, 5, 2, 6])));
-                ui.set_games_region(7);
-                let row = |header: bool, t: &str| godwit::ui::GameRowItem {
+                // You and Robin: an inclusive list, split by whether Sam owns them too.
+                ui.set_games_region(3);
+                let row = |header: bool, sub: bool, t: &str| godwit::ui::GameRowItem {
                     header,
+                    sub,
                     title: t.into(),
                     image: slint::Image::default(),
                     has_image: false,
                 };
                 ui.set_games_rows(ModelRc::new(VecModel::from(vec![
-                    row(true, "Everyone owns (6)"),
-                    row(false, "Goose Chase"),
-                    row(false, "Harbour Lights"),
-                    row(false, "Star Forge"),
+                    row(true, false, "You and Robin both own (9)"),
+                    row(true, true, "also Sam (6)"),
+                    row(false, false, "Goose Chase"),
+                    row(false, false, "Harbour Lights"),
+                    row(false, false, "Star Forge"),
+                    row(true, true, "not Sam (3)"),
+                    row(false, false, "Tidewater"),
                 ])));
                 ui.set_games_accounts(ModelRc::new(VecModel::from(vec![
                     slint::SharedString::from("Ana"),

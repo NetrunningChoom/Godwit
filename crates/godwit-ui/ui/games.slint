@@ -178,6 +178,9 @@ export component GamesPage inherits Rectangle {
                     for r in root.rows: HorizontalLayout {
                         height: root.row-height;
                         spacing: Theme.space-4;
+                        // A sub-heading sits under its section's heading: the
+                        // layout's spacing indents it.
+                        if r.sub: Rectangle { width: 0px; }
                         if !r.header: Rectangle {
                             // A capsule is 184×69: this keeps its shape.
                             width: 107px;

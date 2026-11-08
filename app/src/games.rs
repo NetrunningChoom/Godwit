@@ -26,6 +26,8 @@ const ON_SCREEN: usize = 24;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     pub header: bool,
+    /// A heading within a region's list ("also Bob (11)").
+    pub sub: bool,
     pub title: SharedString,
     pub image_url: Option<Arc<str>>,
 }
@@ -117,6 +119,7 @@ fn and_list(names: &[&str]) -> String {
 fn game_row(game: &OwnedGame) -> Row {
     Row {
         header: false,
+        sub: false,
         title: game.name.as_ref().into(),
         image_url: game.image_url.clone(),
     }
@@ -125,8 +128,36 @@ fn game_row(game: &OwnedGame) -> Row {
 fn header(title: String) -> Row {
     Row {
         header: true,
+        sub: false,
         title: title.into(),
         image_url: None,
+    }
+}
+
+fn sub_header(title: String) -> Row {
+    Row {
+        sub: true,
+        ..header(title)
+    }
+}
+
+/// A region's sub-heading, by which of the people outside it (`others`)
+/// also own the games: "also Bob", "not Bob", "also Ann, not Bob",
+/// "not Ann or Bob".
+fn also_not(also: &[&str], not: &[&str]) -> String {
+    // Mid-sentence, "You" is "you".
+    fn lower<'a>(names: &[&'a str]) -> Vec<&'a str> {
+        names.iter().map(|n| if *n == "You" { "you" } else { *n }).collect()
+    }
+    let (also, not) = (&lower(also)[..], &lower(not)[..]);
+    let or_list = |names: &[&str]| match names {
+        [rest @ .., last] if !rest.is_empty() => format!("{} or {last}", rest.join(", ")),
+        _ => names.join(""),
+    };
+    match (also.is_empty(), not.is_empty()) {
+        (false, true) => format!("also {}", and_list(also)),
+        (true, _) => format!("not {}", or_list(not)),
+        (false, false) => format!("also {}, not {}", and_list(also), or_list(not)),
     }
 }
 
@@ -171,24 +202,51 @@ pub fn contents(state: &AppState, g: &GamesInCommon, region: u32) -> Contents {
             .map(|(side, name)| format!("{side}: {name}"))
             .collect::<Vec<_>>()
             .join(" · ");
-        let count = regions.get(out.region as usize).copied().unwrap_or(0);
-        let title = if out.region == all {
-            format!("Everyone owns ({count})")
-        } else {
-            let who: Vec<&str> = (0..n)
-                .filter(|i| out.region & (1 << i) != 0)
-                .map(|i| name_refs[i])
-                .collect();
-            format!("Only {} ({count})", and_list(&who))
-        };
         out.regions = regions;
+        // The circles count each region on its own (owned by exactly those
+        // people), but the list is inclusive: every game the region's
+        // people all own, grouped by who else owns it too.
+        let region = out.region;
+        let inside: Vec<_> = shared.iter().filter(|s| s.owners & region == region).collect();
+        let count = inside.len();
+        let who: Vec<&str> = (0..n)
+            .filter(|i| region & (1 << i) != 0)
+            .map(|i| name_refs[i])
+            .collect();
+        let title = match who.as_slice() {
+            _ if region == all => format!("Everyone owns ({count})"),
+            ["You"] => format!("You own ({count})"),
+            [one] => format!("{one} owns ({count})"),
+            many => format!("{} both own ({count})", and_list(many)),
+        };
         out.rows.push(header(title));
-        out.rows.extend(
-            shared
+        if region == all {
+            out.rows.extend(inside.iter().map(|s| game_row(s.game)));
+            return out;
+        }
+        let rest = all & !region;
+        // Everyone else first, then by how many others, then by mask.
+        let mut extras: Vec<u32> = (0..=rest).filter(|m| m & !rest == 0).collect();
+        extras.sort_by_key(|m| (std::cmp::Reverse(m.count_ones()), *m));
+        for extra in extras {
+            let games: Vec<Row> = inside
                 .iter()
-                .filter(|s| s.owners == out.region)
-                .map(|s| game_row(s.game)),
-        );
+                .filter(|s| s.owners & rest == extra)
+                .map(|s| game_row(s.game))
+                .collect();
+            if games.is_empty() {
+                continue;
+            }
+            let pick = |want: bool| -> Vec<&str> {
+                (0..n)
+                    .filter(|i| rest & (1 << i) != 0 && (extra & (1 << i) != 0) == want)
+                    .map(|i| name_refs[i])
+                    .collect()
+            };
+            let title = format!("{} ({})", also_not(&pick(true), &pick(false)), games.len());
+            out.rows.push(sub_header(title));
+            out.rows.extend(games);
+        }
         return out;
     }
     // Four or more: a ranked list, everyone's first, then each "all but one".
@@ -216,7 +274,8 @@ pub fn contents(state: &AppState, g: &GamesInCommon, region: u32) -> Contents {
 }
 
 /// Every list as Markdown, to paste to a friend or a group: each Venn region
-/// (everyone's first, then by how many own them), or for four or more people
+/// as the page lists it (everyone's first, then by how many people it holds,
+/// each with its sub-headings), or for four or more people
 /// everyone's and each "everyone but". Empty lists are left out; `None` when
 /// there's nothing to compare yet.
 pub fn markdown(state: &AppState, g: &GamesInCommon) -> Option<String> {
@@ -235,9 +294,12 @@ pub fn markdown(state: &AppState, g: &GamesInCommon) -> Option<String> {
     let mut any = false;
     for (i, row) in rows.iter().enumerate() {
         if row.header {
-            // A heading only when games follow it.
-            if rows.get(i + 1).is_some_and(|next| !next.header) {
-                out.push_str(&format!("\n### {}\n", markdown_escape(&row.title)));
+            // A heading only when games (or, for a region, its sub-headings
+            // with their games) follow it.
+            let next = rows.get(i + 1);
+            if next.is_some_and(|next| !next.header || (next.sub && !row.sub)) {
+                let level = if row.sub { "####" } else { "###" };
+                out.push_str(&format!("\n{level} {}\n", markdown_escape(&row.title)));
             }
         } else {
             any = true;
@@ -351,6 +413,7 @@ impl GamesDialog {
                     .and_then(|u| images.get(u, CAPSULE));
                 GameRowItem {
                     header: r.header,
+                    sub: r.sub,
                     title: r.title.clone(),
                     has_image: image.is_some(),
                     image: image.unwrap_or_else(crate::view::no_image),
@@ -419,8 +482,57 @@ mod tests {
         assert_eq!(c.regions, [0, 1, 0, 1]);
         assert_eq!(titles(&c), ["Everyone owns (1)", "Portal"]);
         assert_eq!(c.legend, "Left: You · Right: Ann");
-        let only_me = contents(&state, &g, 1);
-        assert_eq!(titles(&only_me), ["Only You (1)", "Dota"]);
+        // Inclusive: every game you own, then who else owns it.
+        let mine = contents(&state, &g, 1);
+        assert_eq!(
+            titles(&mine),
+            ["You own (2)", "also Ann (1)", "Portal", "not Ann (1)", "Dota"]
+        );
+        assert!(mine.rows[1].sub && mine.rows[0].header && !mine.rows[0].sub);
+    }
+
+    #[test]
+    fn three_people_list_a_region_inclusively_with_who_else() {
+        let lib = |g: &[OwnedGame]| Library::Games(g.to_vec().into());
+        let (state, g) = setup(
+            3,
+            &[
+                lib(&[game(1, "Portal"), game(2, "Dota"), game(3, "Celeste")]),
+                lib(&[game(1, "Portal"), game(2, "Dota"), game(4, "Hades")]),
+                lib(&[game(1, "Portal"), game(4, "Hades")]),
+            ],
+        );
+        let c = contents(&state, &g, 0b011);
+        // The circles still count each region on its own.
+        assert_eq!(c.regions[0b011], 1);
+        assert_eq!(
+            titles(&c),
+            [
+                "You and Ann both own (2)",
+                "also Bob (1)",
+                "Portal",
+                "not Bob (1)",
+                "Dota"
+            ]
+        );
+        let ann = contents(&state, &g, 0b010);
+        assert_eq!(
+            titles(&ann),
+            [
+                "Ann owns (3)",
+                "also you and Bob (1)",
+                "Portal",
+                "also you, not Bob (1)",
+                "Dota",
+                "also Bob, not you (1)",
+                "Hades"
+            ]
+        );
+        let bob = contents(&state, &g, 0b100);
+        assert_eq!(bob.rows.len(), 5);
+        let mine = contents(&state, &g, 0b001);
+        assert_eq!(titles(&mine)[5..], ["not Ann or Bob (1)", "Celeste"]);
+        assert_eq!(titles(&contents(&state, &g, 0b111)), ["Everyone owns (1)", "Portal"]);
     }
 
     #[test]
@@ -438,8 +550,12 @@ mod tests {
             md,
             "**Games in common: You and Ann**\n\
              \n### Everyone owns (1)\n- Portal\n\
-             \n### Only You (2)\n- Dota\n- Half\\_Life\n\
-             \n### Only Ann (1)\n- Celeste\n"
+             \n### You own (3)\n\
+             \n#### also Ann (1)\n- Portal\n\
+             \n#### not Ann (2)\n- Dota\n- Half\\_Life\n\
+             \n### Ann owns (2)\n\
+             \n#### also you (1)\n- Portal\n\
+             \n#### not you (1)\n- Celeste\n"
         );
     }
 
