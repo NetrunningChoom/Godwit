@@ -375,6 +375,43 @@ impl Api {
 
     // Signing in and out.
 
+    /// Signs in with email/phone and password, optionally carrying the
+    /// captcha solution Discord requested (Authentication page).
+    pub async fn password_login_solved(
+        &self,
+        login: &str,
+        password: &str,
+        solved: Option<(&crate::captcha::Captcha, &str)>,
+    ) -> Result<Value> {
+        let mut request = with_json(
+            self.request(Method::POST, "/auth/login"),
+            &json!({"login": login, "password": password, "undelete": false, "login_source": null, "gift_code_sku_id": null}),
+        );
+        if let Some((captcha, solution)) = solved {
+            for (name, value) in captcha.headers(solution) {
+                request = request.header(name, value);
+            }
+        }
+        self.json(request).await
+    }
+
+    /// Completes one of Discord's login MFA methods.
+    pub async fn login_mfa(&self, method: &str, code: &str, ticket: &str) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::POST, &format!("/auth/mfa/{method}")),
+            &json!({"code": code, "ticket": ticket, "login_source": null, "gift_code_sku_id": null}),
+        ))
+        .await
+    }
+
+    pub async fn login_sms(&self, ticket: &str) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::POST, "/auth/mfa/sms/send"),
+            &json!({"ticket": ticket}),
+        ))
+        .await
+    }
+
     /// Trades a remote login's ticket for the sign-in, encrypted to the key
     /// that started it, in base64 (see [`crate::remote_auth`]).
     pub async fn remote_auth_login(
@@ -1237,6 +1274,15 @@ fn refusal(status: StatusCode, body: &Value) -> anyhow::Error {
     if body.get("captcha_key").is_some() {
         return anyhow!(CaptchaRequired);
     }
+    if body.to_string().contains("ACCOUNT_LOGIN_VERIFICATION_EMAIL") {
+        return anyhow!("Discord sent you an email to confirm this sign-in. Confirm it, then try again.");
+    }
+    if body
+        .get("errors")
+        .is_some_and(|e| e.get("login").is_some() || e.get("password").is_some())
+    {
+        return anyhow!("Wrong email or password.");
+    }
     anyhow!(DiscordError {
         status,
         code: body["code"].as_u64(),
@@ -1522,6 +1568,28 @@ mod tests {
         assert!(e.to_string().contains("Missing Permissions"));
         let captcha = refusal(StatusCode::BAD_REQUEST, &json!({"captcha_key": ["captcha-required"]}));
         assert!(captcha.downcast_ref::<CaptchaRequired>().is_some());
+    }
+
+    #[test]
+    fn login_refusals_are_actionable_and_do_not_echo_credentials() {
+        let wrong = refusal(
+            StatusCode::BAD_REQUEST,
+            &json!({"errors":{"login":{"_errors":[{"message":"bad"}]},"password":{"_errors":[{"message":"bad"}]}}}),
+        );
+        assert_eq!(wrong.to_string(), "Wrong email or password.");
+        let email = refusal(
+            StatusCode::BAD_REQUEST,
+            &json!({"code": "ACCOUNT_LOGIN_VERIFICATION_EMAIL"}),
+        );
+        assert_eq!(
+            email.to_string(),
+            "Discord sent you an email to confirm this sign-in. Confirm it, then try again."
+        );
+        let captcha = refusal(
+            StatusCode::BAD_REQUEST,
+            &json!({"captcha_key":["captcha-required"],"captcha_service":"hcaptcha","captcha_sitekey":"site"}),
+        );
+        assert!(captcha.downcast_ref::<crate::captcha::Captcha>().is_some());
     }
 
     #[test]

@@ -7,6 +7,30 @@
 use super::*;
 
 impl DiscordAccount {
+    pub fn password_login(&mut self, login: String, password: String) {
+        self.status = Status::LoggingIn;
+        self.net.send(Cmd::PasswordLogin {
+            login,
+            password: Secret(password),
+        });
+    }
+
+    pub fn submit_login_code(&mut self, code: String) {
+        let Status::NeedsCode {
+            ticket, totp, backup, ..
+        } = &self.status
+        else {
+            return;
+        };
+        let compact: String = code.chars().filter(|c| !c.is_whitespace() && *c != '-').collect();
+        let method = login_code_method(&compact, *backup, *totp);
+        self.net.send(Cmd::LoginCode {
+            ticket: Secret(ticket.0.clone()),
+            method: method.to_owned(),
+            code: Secret(compact),
+        });
+    }
+
     /// A made-up account for demo mode: signed in from `ready` (a READY
     /// payload), with `history` (messages by channel, newest first, as
     /// Discord pages them). It runs this bridge's real conversions, and
@@ -587,8 +611,43 @@ impl DiscordAccount {
 
     /// Gives up signing in.
     pub fn cancel_link(&mut self) {
-        if matches!(self.status, Status::Qr { .. }) {
+        if matches!(
+            self.status,
+            Status::Qr { .. } | Status::LoggingIn | Status::NeedsCode { .. }
+        ) {
             self.status = Status::SignedOut { error: None };
         }
+    }
+}
+
+fn login_code_method(code: &str, backup: bool, totp: bool) -> &'static str {
+    if backup && code.len() == 8 && code.chars().all(char::is_alphanumeric) {
+        "backup"
+    } else if totp {
+        "totp"
+    } else if backup {
+        "backup"
+    } else {
+        "sms"
+    }
+}
+
+#[cfg(test)]
+mod login_tests {
+    use super::login_code_method;
+    #[test]
+    fn commands_do_not_debug_print_secrets() {
+        let cmd = crate::backend::Cmd::PasswordLogin {
+            login: "a@b.c".into(),
+            password: crate::backend::Secret("hunter2".into()),
+        };
+        assert!(!format!("{cmd:?}").contains("hunter2"));
+    }
+    #[test]
+    fn code_method_prefers_eight_character_backup_codes() {
+        assert_eq!(login_code_method("AB12CD34", true, true), "backup");
+        assert_eq!(login_code_method("123456", true, true), "totp");
+        assert_eq!(login_code_method("123456", false, false), "sms");
+        assert_eq!(login_code_method("123456", true, false), "backup");
     }
 }

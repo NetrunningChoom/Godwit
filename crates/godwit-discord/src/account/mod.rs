@@ -38,7 +38,7 @@ use godwit_core::server_settings::{
 };
 use serde_json::{Value, json};
 
-use crate::backend::{self, Admin, AdminAnswer, Answer, Cmd, Ev, Handle, Request, Waker};
+use crate::backend::{self, Admin, AdminAnswer, Answer, Cmd, Ev, Handle, Request, Secret, Waker};
 use crate::permissions as p;
 use crate::remote_auth::Step;
 use crate::session;
@@ -63,9 +63,39 @@ pub enum Status {
         /// Discord wants a captcha solved: the page with it, opened in the browser.
         captcha: Option<String>,
     },
+    NeedsCode {
+        ticket: LoginTicket,
+        totp: bool,
+        sms: bool,
+        backup: bool,
+        webauthn: bool,
+        hint: String,
+        error: Option<String>,
+    },
+    LoggingIn,
     Connecting,
     Ready,
 }
+
+/// A login ticket is deliberately omitted from diagnostics because it can
+/// authorize completion of the pending sign-in.
+pub struct LoginTicket(String);
+impl std::fmt::Debug for LoginTicket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LoginTicket([redacted])")
+    }
+}
+impl Clone for LoginTicket {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+impl PartialEq for LoginTicket {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl Eq for LoginTicket {}
 
 /// A notification shows this much of a message.
 const ALERT_CHARS: usize = 200;
@@ -1651,6 +1681,22 @@ fn gifs(v: &Value) -> Vec<godwit_core::gifs::Gif> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_ticket_debug_is_redacted_even_inside_status() {
+        let status = Status::NeedsCode {
+            ticket: LoginTicket("sensitive-ticket".into()),
+            totp: true,
+            sms: false,
+            backup: false,
+            webauthn: false,
+            hint: String::new(),
+            error: None,
+        };
+        let debug = format!("{status:?}");
+        assert!(!debug.contains("sensitive-ticket"));
+        assert!(debug.contains("redacted"));
+    }
 
     #[test]
     fn polls_show_their_answers_and_votes() {

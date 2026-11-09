@@ -342,6 +342,18 @@ pub enum Admin {
 pub enum Cmd {
     /// Start signing in by QR code.
     Link,
+    PasswordLogin {
+        login: String,
+        password: Secret,
+    },
+    LoginCode {
+        ticket: Secret,
+        method: String,
+        code: Secret,
+    },
+    SendLoginSms {
+        ticket: Secret,
+    },
     /// Connect with a kept sign-in.
     UseSession {
         token: String,
@@ -501,6 +513,10 @@ pub enum Ev {
     /// Signed in: the token to keep.
     Linked(String),
     LinkFailed(String),
+    PasswordResult(Result<Value, String>),
+    LoginCaptcha(String),
+    LoginCodeResult(Result<Value, String>),
+    LoginSmsResult(Result<Value, String>),
     Ready(Box<Value>),
     Dispatch(String, Value),
     /// Discord refreshed the sign-in; keep this token instead.
@@ -523,6 +539,27 @@ pub enum Ev {
 type Out = godwit_core::backend::Events<Ev>;
 
 pub type Handle = godwit_core::backend::Handle<Cmd>;
+
+/// A password, MFA code or ticket: its Debug never shows the text, so a
+/// logged command can't leak it.
+#[derive(Clone)]
+pub struct Secret(pub String);
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[redacted]")
+    }
+}
+
+fn login_error(error: &anyhow::Error) -> String {
+    let text = error.to_string();
+    if text.contains("Wrong email or password.") {
+        return "Wrong email or password.".into();
+    }
+    if text.contains("Discord sent you an email to confirm this sign-in.") {
+        return "Discord sent you an email to confirm this sign-in. Confirm it, then try again.".into();
+    }
+    "Discord couldn't complete sign-in. Try again.".into()
+}
 
 pub fn spawn(wake: Waker) -> std::io::Result<(Handle, mpsc::Receiver<Ev>)> {
     godwit_core::backend::spawn(
@@ -585,6 +622,62 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
 
 fn handle(cmd: Cmd, state: &mut State, out: &Out, inner: &tmpsc::UnboundedSender<Inner>) {
     match cmd {
+        Cmd::PasswordLogin { login, password } => {
+            let out = out.clone();
+            tokio::spawn(async move {
+                let steps = out.clone();
+                let result = match Api::new(String::new()) {
+                    Ok(_) => crate::captcha::solving(
+                        |solved| {
+                            let login = login.clone();
+                            let password = password.clone();
+                            async move {
+                                let api = Api::new(String::new())?;
+                                api.password_login_solved(
+                                    &login,
+                                    &password.0,
+                                    solved.as_ref().map(|(c, s)| (c, s.as_str())),
+                                )
+                                .await
+                            }
+                        },
+                        |page| {
+                            steps.send(Ev::LoginCaptcha(page.to_owned()));
+                        },
+                    )
+                    .await
+                    .map_err(|error| login_error(&error)),
+                    Err(_) => Err("Discord couldn't start sign-in. Try again.".to_owned()),
+                };
+                out.send(Ev::PasswordResult(result));
+            });
+        }
+        Cmd::LoginCode { ticket, method, code } => {
+            let out = out.clone();
+            tokio::spawn(async move {
+                let result = match Api::new(String::new()) {
+                    Ok(api) => api
+                        .login_mfa(&method, &code.0, &ticket.0)
+                        .await
+                        .map_err(|_| "Discord couldn't verify that code. Try again.".to_owned()),
+                    Err(_) => Err("Discord couldn't start sign-in. Try again.".to_owned()),
+                };
+                out.send(Ev::LoginCodeResult(result));
+            });
+        }
+        Cmd::SendLoginSms { ticket } => {
+            let out = out.clone();
+            tokio::spawn(async move {
+                let result = match Api::new(String::new()) {
+                    Ok(api) => api
+                        .login_sms(&ticket.0)
+                        .await
+                        .map_err(|_| "Discord couldn't send a text message. Try again.".to_owned()),
+                    Err(_) => Err("Discord couldn't start sign-in. Try again.".to_owned()),
+                };
+                out.send(Ev::LoginSmsResult(result));
+            });
+        }
         Cmd::Link => {
             if let Some(link) = state.link.take() {
                 link.abort();

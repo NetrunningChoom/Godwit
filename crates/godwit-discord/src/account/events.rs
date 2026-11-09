@@ -34,17 +34,81 @@ impl DiscordAccount {
                     };
                 }
             }
-            Ev::Linked(token) => {
-                session::save(
-                    self.slot,
-                    &session::Saved {
-                        user: String::new(),
-                        token: token.clone(),
-                    },
-                );
-                self.net.send(Cmd::UseSession { token });
-                self.status = Status::Connecting;
+            Ev::PasswordResult(Ok(answer)) => {
+                if let Some(token) = answer["token"].as_str() {
+                    self.finish_login(token.to_owned());
+                } else if answer["mfa"] == true {
+                    let ticket = answer["ticket"].as_str().unwrap_or_default().to_owned();
+                    let (totp, sms, backup, webauthn) = (
+                        answer["totp"] == true,
+                        answer["sms"] == true,
+                        answer["backup"] == true,
+                        answer["webauthn"] == true,
+                    );
+                    if webauthn && !totp && !sms && !backup {
+                        self.status = Status::SignedOut { error: Some("This account only allows a security key, which Godwit can't use yet. Sign in with the QR code.".into()) };
+                    } else {
+                        let hint = if totp {
+                            "Enter the 6-digit code from your authenticator app, or an 8-digit backup code.".to_owned()
+                        } else {
+                            "Enter the code Discord texted to your phone.".to_owned()
+                        };
+                        self.status = Status::NeedsCode {
+                            ticket: LoginTicket(ticket),
+                            totp,
+                            sms,
+                            backup,
+                            webauthn,
+                            hint,
+                            error: None,
+                        };
+                        if sms
+                            && !totp
+                            && !backup
+                            && let Status::NeedsCode { ticket, .. } = &self.status
+                        {
+                            self.net.send(Cmd::SendLoginSms {
+                                ticket: Secret(ticket.0.clone()),
+                            });
+                        }
+                    }
+                } else {
+                    self.status = Status::SignedOut {
+                        error: Some("Discord couldn't complete sign-in. Try again.".into()),
+                    };
+                }
             }
+            Ev::LoginCaptcha(page) => {
+                self.status = Status::Qr {
+                    url: None,
+                    scanned: None,
+                    captcha: Some(page),
+                };
+            }
+            Ev::PasswordResult(Err(error)) => self.status = Status::SignedOut { error: Some(error) },
+            Ev::LoginCodeResult(Ok(answer)) => {
+                if let Some(token) = answer["token"].as_str() {
+                    self.finish_login(token.to_owned());
+                }
+            }
+            Ev::LoginCodeResult(Err(error)) => {
+                if let Status::NeedsCode { error: slot, .. } = &mut self.status {
+                    *slot = Some(error);
+                }
+            }
+            Ev::LoginSmsResult(Ok(answer)) => {
+                if let Status::NeedsCode { hint, .. } = &mut self.status
+                    && let Some(phone) = answer["phone"].as_str()
+                {
+                    *hint = format!("Enter the code Discord texted to {phone}.");
+                }
+            }
+            Ev::LoginSmsResult(Err(error)) => {
+                if let Status::NeedsCode { error: slot, .. } = &mut self.status {
+                    *slot = Some(error);
+                }
+            }
+            Ev::Linked(token) => self.finish_login(token),
             Ev::LinkFailed(error) => {
                 const RENEWALS: u32 = 5;
                 let expired = error == crate::remote_auth::Stopped::Expired.to_string();
@@ -91,6 +155,18 @@ impl DiscordAccount {
             Ev::Answer(answer) => self.answer(answer, out),
             Ev::Call { call, event } => self.on_call(call, event, out),
         }
+    }
+
+    fn finish_login(&mut self, token: String) {
+        session::save(
+            self.slot,
+            &session::Saved {
+                user: String::new(),
+                token: token.clone(),
+            },
+        );
+        self.net.send(Cmd::UseSession { token });
+        self.status = Status::Connecting;
     }
 
     pub(super) fn ready(&mut self, d: &Value, out: &mut Vec<Event>) {

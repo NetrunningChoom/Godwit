@@ -89,7 +89,7 @@ export component Login inherits Rectangle {
     property <string> email;
     // Steam signs in with a QR code first, its account name and password second.
     property <bool> steam: root.network >= 0 && root.networks[root.network].key == "steam";
-    // Discord signs in only by QR code, scanned with its phone app.
+    // Discord offers QR and password sign-in on the same form.
     property <bool> discord: root.network >= 0 && root.networks[root.network].key == "discord";
     // Teams signs in with a code entered on Microsoft's own page.
     property <bool> teams: root.network >= 0 && root.networks[root.network].key == "teams";
@@ -98,7 +98,7 @@ export component Login inherits Rectangle {
     // Slack and Google Chat sign in on their own pages, in their own windows.
     property <bool> slack: root.network >= 0 && root.networks[root.network].key == "slack";
     property <bool> gchat: root.network >= 0 && root.networks[root.network].key == "gchat";
-    property <bool> no-form: root.discord || root.teams || root.slack || root.gchat;
+    property <bool> no-form: root.teams || root.slack || root.gchat;
     property <string> password;
     property <string> code;
 
@@ -176,7 +176,7 @@ export component Login inherits Rectangle {
                     Text {
                         text: root.mfa ? (root.mfa-hint != "" ? root.mfa-hint : "Enter the code from your authenticator app, or a recovery code.")
                                        : root.steam ? "Scan the code with the Steam mobile app (Steam Guard → scan a QR code). Godwit never sees your password this way."
-                                       : root.discord ? "Scan the code with the Discord mobile app (Settings → Scan QR Code). Godwit never sees your password."
+                                       : root.discord ? "Scan the code with the Discord mobile app, or sign in below with your email or phone and password."
                                        : root.teams ? "Open Microsoft's sign-in page in your browser, enter the code below, and sign in there with your work or school account. Godwit never sees your password."
                                        : root.slack ? "Slack's sign-in page opened in a window of its own. Sign in there (any workspace; single sign-on works too): Godwit continues by itself once Slack has opened, and brings in every workspace you signed in to. Godwit never sees your password."
                                        : root.gchat ? "Google's sign-in page opened in a window of its own. Sign in there with your Google account (Workspace single sign-on works too): Godwit continues by itself once Google Chat has opened. Godwit never sees your password."
@@ -259,7 +259,7 @@ export component Login inherits Rectangle {
                         wrap: word-wrap;
                     }
                     if !root.mfa && !root.no-form: TextField {
-                        placeholder: root.steam ? "Account name" : "Email";
+                        placeholder: root.steam ? "Account name" : root.discord ? "Email or phone number" : "Email";
                         enabled: !root.busy;
                         edited(t) => { root.email = t; }
                     }

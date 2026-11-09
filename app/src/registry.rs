@@ -335,6 +335,8 @@ impl Account for DiscordAccount {
     fn status(&self) -> Status {
         match DiscordAccount::status(self) {
             DiscordStatus::Qr { .. } => Status::SignedOut { error: None },
+            DiscordStatus::NeedsCode { error, .. } => Status::NeedsMfa { error: error.clone() },
+            DiscordStatus::LoggingIn => Status::LoggingIn,
             DiscordStatus::SignedOut { error } => Status::SignedOut { error: error.clone() },
             DiscordStatus::Connecting => Status::Connecting,
             DiscordStatus::Ready => Status::Ready,
@@ -344,27 +346,39 @@ impl Account for DiscordAccount {
         matches!(DiscordAccount::status(self), DiscordStatus::SignedOut { .. })
     }
     fn login_view(&self) -> LoginView {
-        let DiscordStatus::Qr { url, scanned, captcha } = DiscordAccount::status(self) else {
-            return LoginView::default();
-        };
-        let hint = match (captcha, scanned) {
-            (Some(page), _) => format!(
-                "Discord wants to check you're a person: solve the captcha that opened in your browser ({page})."
-            ),
-            (None, Some(name)) => format!("Scanned by {name}. Confirm the sign-in on your phone."),
-            (None, None) => String::new(),
-        };
-        LoginView {
-            qr: url.clone(),
-            scanned: !hint.is_empty(),
-            hint,
-            link: String::new(),
-            open_once: captcha.clone(),
+        match DiscordAccount::status(self) {
+            DiscordStatus::NeedsCode { hint, .. } => LoginView {
+                hint: hint.clone(),
+                ..LoginView::default()
+            },
+            DiscordStatus::Qr { url, scanned, captcha } => {
+                let hint = match (captcha, scanned) {
+                    (Some(page), _) => format!(
+                        "Discord wants to check you're a person: solve the captcha that opened in your browser ({page})."
+                    ),
+                    (None, Some(name)) => format!("Scanned by {name}. Confirm the sign-in on your phone."),
+                    (None, None) => String::new(),
+                };
+                LoginView {
+                    qr: url.clone(),
+                    scanned: !hint.is_empty(),
+                    hint,
+                    open_once: captcha.clone(),
+                    ..LoginView::default()
+                }
+            }
+            _ => LoginView::default(),
         }
     }
-    /// Discord signs in only by QR code, as its web login offers first.
+    /// Discord offers QR and password sign-in on the same form.
     fn begin_sign_in(&mut self, _helper: Option<PathBuf>) {
         self.link();
+    }
+    fn log_in(&mut self, user: String, password: String) {
+        DiscordAccount::password_login(self, user, password);
+    }
+    fn submit_code(&mut self, code: String) {
+        DiscordAccount::submit_login_code(self, code);
     }
     fn cancel_sign_in(&mut self) {
         self.cancel_link();
