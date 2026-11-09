@@ -707,8 +707,8 @@ impl Api {
 
     /// Discord's web client reads and edits the current member profile in a guild;
     /// endpoint and fields follow docs.discord.food's User Profiles routes.
-    pub async fn guild_member_profile(&self, guild: &str) -> Result<Value> {
-        self.json(self.request(Method::GET, &format!("/users/@me/profile?guild_id={guild}")))
+    pub async fn guild_member_profile(&self, user: &str, guild: &str) -> Result<Value> {
+        self.json(self.request(Method::GET, &format!("/users/{user}/profile?guild_id={guild}")))
             .await
     }
 

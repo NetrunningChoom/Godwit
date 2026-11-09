@@ -298,7 +298,10 @@ impl DiscordAccount {
             Answer::ServerProfileSaved { guild, result } => match result {
                 Ok(()) => {
                     self.server_profile_saved.insert(guild.clone());
-                    self.net.send(Cmd::Request(Request::LoadServerProfile { guild }));
+                    self.net.send(Cmd::Request(Request::LoadServerProfile {
+                        user: self.me().to_owned(),
+                        guild,
+                    }));
                 }
                 Err(error) => {
                     if let Some(account) = self.account.clone() {

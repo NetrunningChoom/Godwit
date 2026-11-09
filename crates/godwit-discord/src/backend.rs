@@ -120,6 +120,7 @@ pub enum Request {
         guild: Option<String>,
     },
     LoadServerProfile {
+        user: String,
         guild: String,
     },
     /// Our private note on `user`, asked when their profile opens.
@@ -1120,9 +1121,12 @@ async fn answer(api: &Api, request: Request) -> Answer {
             let result = api.profile(&user, guild.as_deref()).await.map_err(RequestError::from);
             Answer::Profile { user, guild, result }
         }
-        Request::LoadServerProfile { guild } => Answer::ServerProfile {
+        Request::LoadServerProfile { user, guild } => Answer::ServerProfile {
             guild: guild.clone(),
-            result: api.guild_member_profile(&guild).await.map_err(RequestError::from),
+            result: api
+                .guild_member_profile(&user, &guild)
+                .await
+                .map_err(RequestError::from),
         },
         Request::Note { user } => {
             let result = api.note(&user).await.map_err(RequestError::from);

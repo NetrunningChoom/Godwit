@@ -1302,6 +1302,7 @@ impl NetworkAccount for DiscordAccount {
             Command::LoadServerProfile { server } => req(
                 &self.net,
                 Request::LoadServerProfile {
+                    user: self.me().to_owned(),
                     guild: server.raw.to_string(),
                 },
             ),
