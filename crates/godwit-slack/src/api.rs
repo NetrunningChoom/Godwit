@@ -555,6 +555,43 @@ mod tests {
     }
 
     #[test]
+    fn users_list_page_members_map_to_workspace_people() {
+        // `users.list` returns users under `members`; Connect users appear
+        // only when Slack includes them in this documented response.
+        let response = json!({"members":[
+            {"id":"U1","profile":{"display_name":"ada","image_72":"https://avatars.slack-edge.com/a.png"}},
+            {"id":"U2","name":"bea","profile":{"real_name":"Bea"}},
+            {"id":"U3","deleted":true,"name":"gone"},
+            {"id":"U4","is_bot":true,"name":"bot"}
+        ]});
+        let mapped: Vec<_> = response["members"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|u| {
+                let skip = u["deleted"].as_bool() == Some(true)
+                    || u["is_bot"].as_bool() == Some(true)
+                    || u["id"].as_str() == Some("USLACKBOT");
+                if skip {
+                    return None;
+                }
+                Some((u["id"].as_str()?.to_owned(), user_name(u)?, user_picture(u)))
+            })
+            .collect();
+        assert_eq!(
+            mapped,
+            vec![
+                (
+                    "U1".into(),
+                    "ada".into(),
+                    Some("https://avatars.slack-edge.com/a.png".into())
+                ),
+                ("U2".into(), "Bea".into(), None),
+            ]
+        );
+    }
+
+    #[test]
     fn only_slacks_pictures_load() {
         assert!(picture("https://avatars.slack-edge.com/2024/a_72.png").is_some());
         assert!(picture("https://secure.gravatar.com/avatar/x.jpg").is_some());

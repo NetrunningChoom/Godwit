@@ -18,6 +18,10 @@ pub trait Names {
     fn user(&self, id: &str) -> (String, String);
     /// A channel's name, and the room id to link, if known.
     fn channel(&self, id: &str) -> (String, Option<String>);
+    /// A custom emoji's image URL from the workspace's `emoji.list` response.
+    fn custom_emoji(&self, _name: &str) -> Option<(String, String)> {
+        None
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -202,14 +206,22 @@ fn line(text: &str, names: &impl Names, out: &mut Out) {
                 }
                 if let Some(end) = end {
                     let name: String = chars[i + 1..end].iter().collect();
-                    if !name.is_empty()
-                        && name.chars().all(|c| c.is_ascii_alphanumeric() || "_+-:".contains(c))
-                        && let Some(emoji) = shortcode(&name)
-                    {
-                        flush(&mut plain, out);
-                        out.text(&emoji);
-                        i = end + 1;
-                        continue;
+                    if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || "_+-:".contains(c)) {
+                        if let Some(emoji) = shortcode(&name) {
+                            flush(&mut plain, out);
+                            out.text(&emoji);
+                            i = end + 1;
+                            continue;
+                        }
+                        if let Some((canonical, url)) = names.custom_emoji(&name)
+                            && url.starts_with("https://")
+                        {
+                            flush(&mut plain, out);
+                            out.rich.push_str(&rich::emoji(&canonical, &url));
+                            out.plain.push_str(&format!(":{canonical}:"));
+                            i = end + 1;
+                            continue;
+                        }
                     }
                 }
             }
@@ -366,6 +378,9 @@ mod tests {
         fn channel(&self, id: &str) -> (String, Option<String>) {
             ("general".into(), Some(format!("T1:{id}")))
         }
+        fn custom_emoji(&self, name: &str) -> Option<(String, String)> {
+            (name == "celebrate").then(|| ("party".into(), "https://emoji.slack-edge.com/T/party.png".into()))
+        }
     }
 
     fn conv(s: &str) -> Converted {
@@ -410,6 +425,10 @@ mod tests {
             Some(("party", "https://emoji.slack-edge.com/T/party.png"))
         );
         assert_eq!(custom_emoji("missing", map), None);
+        let rendered = conv(":celebrate:");
+        assert_eq!(rendered.plain, ":party:");
+        assert!(rendered.rich.contains("godwit://emoji/"));
+        assert!(rendered.rich.contains("party.png"));
     }
 
     #[test]

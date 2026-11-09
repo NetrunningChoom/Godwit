@@ -293,9 +293,27 @@ impl mrkdwn::Names for Names<'_> {
             known.map(|_| format!("{}:{id}", self.team)),
         )
     }
+    fn custom_emoji(&self, name: &str) -> Option<(String, String)> {
+        let map = self.account.workspaces.get(self.team)?.emoji.as_object()?;
+        let (canonical, url) = mrkdwn::custom_emoji(name, map)?;
+        Some((canonical.to_owned(), url.to_owned()))
+    }
 }
 
 impl NetworkAccount for SlackAccount {
+    fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
+        match kind {
+            godwit_core::autocomplete::TriggerKind::Person => {
+                format!("<@{}>", id.rsplit(':').next().unwrap_or(id))
+            }
+            godwit_core::autocomplete::TriggerKind::Channel => {
+                // Room ids are `team:channel`; Slack's token takes the channel.
+                format!("<#{}>", id.rsplit(':').next().unwrap_or(id))
+            }
+            godwit_core::autocomplete::TriggerKind::Emoji => format!(":{name}:"),
+        }
+    }
+
     fn network(&self) -> Network {
         Network::Slack
     }
@@ -909,6 +927,16 @@ mod tests {
             Some("https://emoji.slack-edge.com/T/party.png")
         );
         assert!(message.reactions[0].me);
+    }
+
+    #[test]
+    fn autocomplete_uses_slack_wire_tokens() {
+        let (a, _cmds) = account();
+        use godwit_core::account::NetworkAccount;
+        use godwit_core::autocomplete::TriggerKind;
+        assert_eq!(a.autocomplete_text(TriggerKind::Person, "T1:U2", "Bea"), "<@U2>");
+        assert_eq!(a.autocomplete_text(TriggerKind::Channel, "T1:C3", "general"), "<#C3>");
+        assert_eq!(a.autocomplete_text(TriggerKind::Emoji, "party", "party"), ":party:");
     }
 
     #[test]
