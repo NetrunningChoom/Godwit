@@ -10,6 +10,8 @@ pub enum Effect {
     Backend { account: AccountId, command: Command },
     /// Contacts changed: write them to disk.
     SaveContacts,
+    /// Put a webhook's URL on the clipboard.
+    CopyWebhookUrl(crate::webhooks::WebhookUrl),
     /// Watch or stop watching `user`'s screen share in our call in `room`:
     /// [`crate::account::NetworkAccount::watch_stream`] on `account`.
     WatchStream {

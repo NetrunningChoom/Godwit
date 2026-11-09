@@ -59,6 +59,9 @@ impl ChannelEditor {
             })
         })
     }
+    pub fn copy_webhook_url(&self, id: String) -> Action {
+        Action::ChangeWebhook(godwit_core::webhooks::WebhookChange::CopyUrl { id: id.into() })
+    }
     pub fn delete_webhook(&self, id: String) -> Action {
         Action::ChangeWebhook(godwit_core::webhooks::WebhookChange::Delete { id: id.into() })
     }
@@ -409,6 +412,7 @@ impl ChannelEditor {
         let hooks = state.webhooks.as_ref().filter(|w| w.room == s.room);
         ui.set_channel_edit_has_webhooks(state.room(&s.room).is_some_and(|r| r.capabilities.manage_webhooks));
         ui.set_channel_edit_webhooks_loading(hooks.is_none_or(|w| w.loading));
+        ui.set_channel_edit_webhook_copy(state.room(&s.room).is_some_and(|r| r.capabilities.webhook_url));
         ui.set_channel_edit_webhooks_busy(hooks.is_some_and(|w| w.busy));
         ui.set_channel_edit_webhook_status(
             hooks

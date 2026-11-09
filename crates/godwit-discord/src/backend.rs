@@ -334,6 +334,23 @@ pub enum Request {
 
 #[derive(Debug, Clone)]
 pub enum Admin {
+    /// A channel's webhooks; every webhook change answers with the list again.
+    Webhooks {
+        channel: String,
+    },
+    CreateWebhook {
+        channel: String,
+        name: String,
+    },
+    RenameWebhook {
+        channel: String,
+        id: String,
+        name: String,
+    },
+    DeleteWebhook {
+        channel: String,
+        id: String,
+    },
     Invites,
     RevokeInvite(String),
     Bans,
@@ -612,6 +629,16 @@ pub enum Answer {
 
 #[derive(Debug)]
 pub enum AdminAnswer {
+    /// A channel's webhooks (their tokens never print).
+    Webhooks {
+        channel: String,
+        list: Vec<crate::webhooks::Hook>,
+    },
+    /// A webhook request failed; the page stops waiting.
+    WebhooksFailed {
+        channel: String,
+        error: RequestError,
+    },
     Invites(Value),
     Bans(Value),
     Emojis(Value),
@@ -866,10 +893,14 @@ fn handle(cmd: Cmd, state: &mut State, out: &Out, inner: &tmpsc::UnboundedSender
                     // and goes again once.
                     Request::Admin { guild, op } => {
                         let raise = |id, methods| out.send(Ev::StepUpRequired { id, methods });
+                        let channel = op.webhook_channel().map(str::to_owned);
                         let result = crate::mfa::stepping_up(&prompts, raise, || admin(&api, &guild, op.clone()))
                             .await
                             .map_err(RequestError::from);
-                        Answer::Admin { guild, result }
+                        Answer::Admin {
+                            guild,
+                            result: webhook_failure(channel, result),
+                        }
                     }
                     other => answer(&api, other).await,
                 };
@@ -1624,14 +1655,63 @@ async fn answer(api: &Api, request: Request) -> Answer {
             Answer::Joined { code, result }
         }
         Request::Admin { guild, op } => {
+            let channel = op.webhook_channel().map(str::to_owned);
             let result = admin(api, &guild, op).await.map_err(RequestError::from);
-            Answer::Admin { guild, result }
+            Answer::Admin {
+                guild,
+                result: webhook_failure(channel, result),
+            }
         }
     }
 }
 
+impl Admin {
+    /// The channel a webhook request is about.
+    fn webhook_channel(&self) -> Option<&str> {
+        match self {
+            Admin::Webhooks { channel }
+            | Admin::CreateWebhook { channel, .. }
+            | Admin::RenameWebhook { channel, .. }
+            | Admin::DeleteWebhook { channel, .. } => Some(channel),
+            _ => None,
+        }
+    }
+}
+
+/// A failed webhook request still names its channel, so the page that waits
+/// for the list can stop waiting and show the reason.
+fn webhook_failure(
+    channel: Option<String>,
+    result: Result<AdminAnswer, RequestError>,
+) -> Result<AdminAnswer, RequestError> {
+    match (channel, result) {
+        (Some(channel), Err(error)) => Ok(AdminAnswer::WebhooksFailed { channel, error }),
+        (_, result) => result,
+    }
+}
+
+async fn webhook_list(api: &Api, channel: String) -> anyhow::Result<AdminAnswer> {
+    let list = crate::webhooks::parse_list(&api.channel_webhooks(&channel).await?);
+    Ok(AdminAnswer::Webhooks { channel, list })
+}
+
 async fn admin(api: &Api, guild: &str, op: Admin) -> anyhow::Result<AdminAnswer> {
     Ok(match op {
+        Admin::Webhooks { channel } => webhook_list(api, channel).await?,
+        Admin::CreateWebhook { channel, name } => {
+            api.create_webhook(&channel, &crate::webhooks::create_body(&name))
+                .await?;
+            webhook_list(api, channel).await?
+        }
+        Admin::RenameWebhook { channel, id, name } => {
+            api.modify_webhook(&id, &crate::webhooks::modify_body(Some(&name), None))
+                .await?;
+            webhook_list(api, channel).await?
+        }
+        Admin::DeleteWebhook { channel, id } => {
+            api.delete_webhook(&id).await?;
+            webhook_list(api, channel).await?
+        }
         Admin::Invites => AdminAnswer::Invites(api.guild_invites(guild).await?),
         Admin::RevokeInvite(code) => {
             api.revoke_invite(&code).await?;

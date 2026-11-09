@@ -47,6 +47,8 @@ pub const USE_SOUNDBOARD: u64 = 1 << 42;
 /// Play another server's sound (Discord Soundboard resource).
 pub const USE_EXTERNAL_SOUNDS: u64 = 1 << 45;
 pub const MANAGE_ROLES: u64 = 1 << 28;
+/// Manage Webhooks (docs.discord.food, Permissions): list, create, edit and delete a channel's webhooks.
+pub const MANAGE_WEBHOOKS: u64 = 1 << 29;
 pub const CHANGE_NICKNAME: u64 = 1 << 26;
 pub const MANAGE_NICKNAMES: u64 = 1 << 27;
 /// Timing members out (docs.discord.food/topics/permissions).

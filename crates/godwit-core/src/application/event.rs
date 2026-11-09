@@ -92,6 +92,11 @@ pub enum Event {
         room: RoomId,
         result: Result<Vec<crate::webhooks::Webhook>, Arc<str>>,
     },
+    /// A webhook's URL to copy; it holds the webhook's secret.
+    WebhookUrl {
+        room: RoomId,
+        result: Result<crate::webhooks::WebhookUrl, Arc<str>>,
+    },
     WebhookChanged {
         room: RoomId,
         result: Result<Vec<crate::webhooks::Webhook>, Arc<str>>,

@@ -194,12 +194,15 @@ impl StoatAccount {
                         godwit_core::webhooks::WebhookChange::Create { name } => !name.trim().is_empty(),
                         godwit_core::webhooks::WebhookChange::Rename { id, name } => !name.trim().is_empty() && self.store.channels.get(&*room.raw).is_some_and(|c| c.server.is_some()) && !id.trim().is_empty(),
                         godwit_core::webhooks::WebhookChange::Delete { id } => !id.trim().is_empty() && self.store.channels.get(&*room.raw).is_some_and(|c| c.server.is_some()),
+                        // Stoat's webhook list holds no URLs to copy.
+                        godwit_core::webhooks::WebhookChange::CopyUrl { .. } => false,
                     };
                 if !valid { return Vec::new(); }
                 let cmd = match change {
                     godwit_core::webhooks::WebhookChange::Create { name } => WebhookEditCmd::CreateWebhook { channel: room.raw.to_string(), name: name.to_string() },
                     godwit_core::webhooks::WebhookChange::Rename { id, name } => WebhookEditCmd::EditWebhook { id: id.to_string(), body: serde_json::json!({ "name": name }), avatar: None },
                     godwit_core::webhooks::WebhookChange::Delete { id } => WebhookEditCmd::DeleteWebhook { id: id.to_string() },
+                    godwit_core::webhooks::WebhookChange::CopyUrl { .. } => return Vec::new(),
                 };
                 self.webhook_room = Some(room);
                 self.net.send(Cmd::Webhook(WebhookCmd::Edit(cmd)));

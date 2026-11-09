@@ -1116,6 +1116,7 @@ impl Shell {
                         queue.extend(self.app.apply(event));
                     }
                 }
+                Effect::CopyWebhookUrl(url) => copy_to_clipboard(url.as_str().to_owned()),
                 Effect::SaveContacts => {
                     if let Some(path) = &self.contacts_path
                         && let Err(e) = contacts_store::save(path, &self.app.state().contacts)

@@ -43,6 +43,8 @@ export component ChannelSettings inherits Rectangle {
     callback create-webhook(string); callback rename-webhook(string, string); callback delete-webhook(string);
     callback confirm-channel-delete();
     callback refresh-webhooks();
+    in property <bool> webhook-copy;
+    callback copy-webhook(string);
     in property <bool> has-slowmode;
     in property <[string]> slowmode-choices;
     in-out property <int> slowmode-index;
@@ -214,6 +216,7 @@ export component ChannelSettings inherits Rectangle {
                             HorizontalLayout { spacing: Theme.space-3;
                                 if hook.has-avatar: Avatar { size: 36px; source: hook.avatar; has-image: true; initials: ""; }
                                 Text { text: hook.name; vertical-alignment: center; horizontal-stretch: 1; color: Theme.on-surface; }
+                                if root.webhook-copy: Button { text: "Copy URL"; kind: "text"; clicked => { root.copy-webhook(hook.id); } }
                                 Button { text: "Rename"; kind: "text"; enabled: !root.webhooks-busy; clicked => { root.webhook-edit-index = i; root.webhook-edit-name = hook.name; } }
                                 Button { text: "Delete"; kind: "text"; enabled: !root.webhooks-busy; clicked => { root.delete-index = i; root.confirm-delete = true; } }
                             }

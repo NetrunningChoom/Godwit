@@ -2478,6 +2478,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                         }
                     }
                     godwit_core::webhooks::WebhookChange::Delete { id } => entries.retain(|e| e.id != id),
+                    godwit_core::webhooks::WebhookChange::CopyUrl { .. } => {}
                 }
                 vec![Event::WebhookChanged {
                     room,

@@ -168,6 +168,8 @@ export component AppWindow inherits Window {
     callback create-channel-webhook(string); callback rename-channel-webhook(string, string); callback delete-channel-webhook(string);
     callback confirm-delete-channel();
     callback refresh-channel-webhooks();
+    in property <bool> channel-edit-webhook-copy;
+    callback copy-channel-webhook(string);
     callback close-channel-settings(); callback save-channel-overview(); callback reset-channel-overview(); callback channel-overview-edited();
     callback pick-channel-image(); callback remove-channel-image(); callback delete-channel();
     in property <bool> server-edit-loaded;
@@ -1851,6 +1853,8 @@ export component AppWindow inherits Window {
         pick-image => { root.pick-channel-image(); } remove-image => { root.remove-channel-image(); }
         delete-channel => { root.delete-channel(); } confirm-channel-delete => { root.confirm-delete-channel(); }
         refresh-webhooks => { root.refresh-channel-webhooks(); }
+        webhook-copy: root.channel-edit-webhook-copy;
+        copy-webhook(i) => { root.copy-channel-webhook(i); }
         page: root.channel-edit-page; has-overrides: root.channel-edit-has-overrides;
         override-entries: root.channel-edit-override-entries; override-index: root.channel-edit-override-index;
         override-perms: root.channel-edit-override-perms; override-can-edit: root.channel-edit-override-can-edit;

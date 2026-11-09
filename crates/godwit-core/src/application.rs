@@ -403,7 +403,9 @@ impl Application {
             | Event::VoiceOccupants { room, .. }
             | Event::Typing { room, .. }
             | Event::HistoryAround { room, .. } => self.state.room(room).is_some(),
-            Event::Webhooks { room, .. } | Event::WebhookChanged { room, .. } => self.state.room(room).is_some(),
+            Event::Webhooks { room, .. } | Event::WebhookChanged { room, .. } | Event::WebhookUrl { room, .. } => {
+                self.state.room(room).is_some()
+            }
             Event::Reactors { room, .. } => self.state.room(room).is_some(),
             _ => true,
         }

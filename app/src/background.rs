@@ -103,7 +103,7 @@ impl Shelf {
                 }
                 // Nothing on screen watches a stream, and the contacts file
                 // is written by the profile in use only.
-                Effect::WatchStream { .. } | Effect::SaveContacts => {}
+                Effect::WatchStream { .. } | Effect::SaveContacts | Effect::CopyWebhookUrl(_) => {}
             }
         }
     }

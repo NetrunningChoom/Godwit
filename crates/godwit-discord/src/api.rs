@@ -1166,6 +1166,30 @@ impl Api {
         self.json(with_json(self.request(Method::PATCH, &path), body)).await
     }
 
+    /// A channel's webhooks (Get Channel Webhooks, docs.discord.food/resources/webhook).
+    pub async fn channel_webhooks(&self, channel: &str) -> Result<Value> {
+        self.json(self.request(Method::GET, &format!("/channels/{channel}/webhooks")))
+            .await
+    }
+
+    pub async fn create_webhook(&self, channel: &str, body: &Value) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::POST, &format!("/channels/{channel}/webhooks")),
+            body,
+        ))
+        .await
+    }
+
+    pub async fn modify_webhook(&self, id: &str, body: &Value) -> Result<Value> {
+        self.json(with_json(self.request(Method::PATCH, &format!("/webhooks/{id}")), body))
+            .await
+    }
+
+    pub async fn delete_webhook(&self, id: &str) -> Result<()> {
+        self.empty(self.request(Method::DELETE, &format!("/webhooks/{id}")))
+            .await
+    }
+
     pub async fn delete_role(&self, guild: &str, role: &str) -> Result<()> {
         self.empty(self.request(Method::DELETE, &format!("/guilds/{guild}/roles/{role}")))
             .await

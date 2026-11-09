@@ -127,6 +127,13 @@ impl DiscordAccount {
                     .and_then(|g| self.store.guilds.get(g))
                     .is_some_and(|g| g.forwarding_disabled),
             forward_to: send,
+            // Webhooks belong to a server's text-like channels, not categories
+            // or threads; copying the URL needs the token Discord lists.
+            manage_webhooks: c.guild.is_some()
+                && !c.thread()
+                && c.kind != store::GUILD_CATEGORY
+                && can(p::MANAGE_WEBHOOKS),
+            webhook_url: true,
             polls: (send && can(p::SEND_POLLS)).then_some(POLL_LIMITS),
             react: can(p::ADD_REACTIONS),
             // Other servers' emoji are a Nitro feature, which Godwit never offers.

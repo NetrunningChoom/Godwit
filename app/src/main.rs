@@ -652,6 +652,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_rename_channel_webhook(id, name) => |sh, ui| sh.channel_webhooks_rename(ui, id.to_string(), name.to_string()));
     callback!(ui.on_delete_channel_webhook(id) => |sh, ui| sh.channel_webhooks_delete(ui, id.to_string()));
     callback!(ui.on_confirm_delete_channel() => |sh, ui| sh.act(ui, Action::DeleteChannel));
+    callback!(ui.on_copy_channel_webhook(id) => |sh, ui| sh.channel_webhooks_copy(ui, id.to_string()));
     callback!(ui.on_refresh_channel_webhooks() => |sh, ui| sh.channel_webhooks_load(ui));
     callback!(ui.on_remove_channel_image() => |sh, ui| sh.remove_channel_icon(ui));
     callback!(ui.on_delete_channel() => |sh, ui| sh.act(ui, Action::DeleteChannel));

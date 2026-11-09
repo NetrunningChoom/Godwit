@@ -362,7 +362,7 @@ fn commands(effects: &[Effect]) -> Vec<&Command> {
         .iter()
         .filter_map(|e| match e {
             Effect::Backend { command, .. } => Some(command),
-            Effect::SaveContacts | Effect::WatchStream { .. } => None,
+            Effect::SaveContacts | Effect::WatchStream { .. } | Effect::CopyWebhookUrl(_) => None,
         })
         .collect()
 }
@@ -4201,6 +4201,55 @@ fn webhook_actions_are_capability_gated_and_secrets_have_no_core_debug_field() {
         }
     );
     assert!(!text.contains("token"));
+}
+
+#[test]
+fn copying_a_webhook_url_needs_the_capability_and_the_secret_never_prints() {
+    use crate::webhooks::{WebhookChange, WebhookUrl};
+    let n = Network::Stoat;
+    let build = |url: bool| {
+        let mut app = Application::default();
+        let mut managed = room(
+            n,
+            "C",
+            RoomKind::Channel {
+                server: ServerId::new(account(n), "S"),
+            },
+        );
+        managed.capabilities.manage_channel = true;
+        managed.capabilities.manage_webhooks = true;
+        managed.capabilities.webhook_url = url;
+        ready(&mut app, n, vec![managed]);
+        app.dispatch(Action::OpenChannelSettings(RoomId::new(account(n), "C")));
+        app
+    };
+    let room = RoomId::new(account(n), "C");
+    let mut app = build(false);
+    let copy = || Action::ChangeWebhook(WebhookChange::CopyUrl { id: "h1".into() });
+    assert!(app.dispatch(copy()).is_empty(), "the network offers no URLs");
+    let mut app = build(true);
+    // Copying is a read: it works while a change is in flight.
+    app.state.webhooks.as_mut().unwrap().busy = true;
+    assert!(matches!(
+        app.dispatch(copy()).as_slice(),
+        [Effect::Backend {
+            command: Command::ChangeWebhook {
+                change: WebhookChange::CopyUrl { .. },
+                ..
+            },
+            ..
+        }]
+    ));
+    let url = WebhookUrl::new("https://example.test/hook/secret-token");
+    assert!(!format!("{url:?}").contains("secret"));
+    let effects = app.apply(Event::WebhookUrl {
+        room: room.clone(),
+        result: Ok(url.clone()),
+    });
+    assert_eq!(effects, vec![Effect::CopyWebhookUrl(url.clone())]);
+    // With the page closed nothing is copied.
+    app.dispatch(Action::CloseChannelSettings);
+    assert!(app.apply(Event::WebhookUrl { room, result: Ok(url) }).is_empty());
 }
 
 #[test]

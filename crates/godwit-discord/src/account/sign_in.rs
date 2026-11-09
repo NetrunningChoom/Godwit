@@ -176,7 +176,9 @@ impl DiscordAccount {
                     });
                 }
             }
-            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => return Some(Vec::new()),
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {
+                return Some(self.webhook_command(command.clone()));
+            }
             Command::LoadReactors { room, message, emoji } => {
                 let people = vec!["100000000000000001", "100000000000000002"]
                     .into_iter()

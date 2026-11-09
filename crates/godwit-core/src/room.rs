@@ -122,6 +122,9 @@ pub struct Capabilities {
     /// Webhooks for this channel can be managed (Stoat: Manage Webhooks).
     #[serde(default)]
     pub manage_webhooks: bool,
+    /// The network can hand out a webhook's URL to copy (Discord).
+    #[serde(default)]
+    pub webhook_url: bool,
     /// We can set how loudly this room notifies (a mute, or a level of its
     /// own): the menu offers it, [`Room::notify`] shows the state (Discord:
     /// channel overrides in the user's guild settings).
@@ -173,6 +176,7 @@ impl Capabilities {
             pin_messages: false,
             manage_channel: false,
             manage_webhooks: false,
+            webhook_url: false,
             notify_settings: false,
             forum: false,
             report: false,

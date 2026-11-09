@@ -148,6 +148,18 @@ impl Application {
                 if !self.state.room(&room).is_some_and(|r| r.capabilities.manage_webhooks) {
                     return Vec::new();
                 }
+                // Copying only reads, so it needs neither the busy gate nor a request lock.
+                if let crate::webhooks::WebhookChange::CopyUrl { id } = &change {
+                    let offered = self.state.room(&room).is_some_and(|r| r.capabilities.webhook_url);
+                    return if offered && !id.trim().is_empty() {
+                        vec![Effect::Backend {
+                            account: room.account.clone(),
+                            command: Command::ChangeWebhook { room, change },
+                        }]
+                    } else {
+                        Vec::new()
+                    };
+                }
                 let Some(s) = self.state.webhooks.as_mut() else {
                     return Vec::new();
                 };

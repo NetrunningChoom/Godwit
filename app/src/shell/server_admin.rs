@@ -515,6 +515,10 @@ impl Shell {
             self.act(ui, action);
         }
     }
+    pub fn channel_webhooks_copy(&mut self, ui: &AppWindow, id: String) {
+        let action = self.channel_editor.copy_webhook_url(id);
+        self.act(ui, action);
+    }
     pub fn channel_webhooks_delete(&mut self, ui: &AppWindow, id: String) {
         ui.set_channel_edit_webhook_edit_index(-1);
         let action = self.channel_editor.delete_webhook(id);

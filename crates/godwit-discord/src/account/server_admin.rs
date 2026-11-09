@@ -751,6 +751,11 @@ impl DiscordAccount {
         out: &mut Vec<Event>,
     ) {
         let Some(account) = self.account.clone() else { return };
+        let result = match result {
+            Ok(AdminAnswer::Webhooks { channel, list }) => return self.webhook_list(channel, list, out),
+            Ok(AdminAnswer::WebhooksFailed { channel, error }) => return self.webhook_failed(&channel, error, out),
+            other => other,
+        };
         let server = ServerId::new(account.clone(), guild);
         let result = match result {
             Ok(AdminAnswer::Invites(list)) => Ok(ServerAdminResult::Invites(
@@ -825,6 +830,7 @@ impl DiscordAccount {
                 }
                 Ok(ServerAdminResult::RoleMembers(self.role_members(guild, &role)))
             }
+            Ok(AdminAnswer::Webhooks { .. } | AdminAnswer::WebhooksFailed { .. }) => return,
             Ok(AdminAnswer::Done) => Ok(ServerAdminResult::Done("Done.".into())),
             Err(e) => Err(e.into()),
         };

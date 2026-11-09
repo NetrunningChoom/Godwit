@@ -34,6 +34,7 @@ pub mod settings;
 pub(crate) mod soundboard;
 pub mod store;
 pub mod voice;
+pub mod webhooks;
 
 fn link(label: &str, url: &str) -> (String, String) {
     (label.to_owned(), url.to_owned())

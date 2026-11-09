@@ -16,6 +16,7 @@ mod people;
 mod rooms;
 mod server_admin;
 mod sign_in;
+mod webhooks;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -169,6 +170,9 @@ pub struct DiscordAccount {
     member_search: crate::member_search::SearchGate,
     /// The server whose Emoji page is open, and the list last sent.
     emoji_page: Option<(String, godwit_core::server_settings::ServerEmojis)>,
+    /// The channel whose webhook list is open, with the list last answered
+    /// (tokens included, never printed): the copied URL is built from it.
+    webhooks: Option<(String, Vec<crate::webhooks::Hook>)>,
     /// A DM being opened from a profile, to open once it exists.
     opening_dm: bool,
     /// New codes shown since the form opened: the login gateway closes a
@@ -272,6 +276,7 @@ impl DiscordAccount {
             soundboard_requested: false,
             next_call: 0,
             ringing: HashMap::new(),
+            webhooks: None,
             demo: None,
             settings_channel: None,
         }
@@ -1870,8 +1875,7 @@ impl NetworkAccount for DiscordAccount {
             | Command::SaveChannelOverview { .. }
             | Command::SetChannelOverride { .. }
             | Command::DeleteChannel { .. } => out.extend(self.channel_command(command)),
-            // Discord's webhook manager is not wired in this account yet.
-            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => out.extend(self.webhook_command(command)),
             Command::LoadServerOverview { server, request } => {
                 let result = self
                     .overview(&server.raw)

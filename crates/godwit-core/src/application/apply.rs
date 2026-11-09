@@ -106,6 +106,23 @@ impl Application {
                 Vec::new()
             }
             Event::ChannelOverrides { room, overrides } => self.receive_channel_overrides(room, overrides),
+            Event::WebhookUrl { room, result } => {
+                let is_open = self
+                    .state
+                    .channel_settings
+                    .as_ref()
+                    .is_some_and(|settings| settings.room == room);
+                match result {
+                    Ok(url) if is_open => return vec![Effect::CopyWebhookUrl(url)],
+                    Err(error) if is_open => {
+                        if let Some(state) = self.state.webhooks.as_mut().filter(|s| s.room == room) {
+                            state.error = Some(error);
+                        }
+                    }
+                    _ => {}
+                }
+                Vec::new()
+            }
             Event::Webhooks { room, result } | Event::WebhookChanged { room, result } => {
                 let is_open = self
                     .state
