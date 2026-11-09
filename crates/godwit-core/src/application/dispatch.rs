@@ -540,15 +540,27 @@ impl Application {
                 effects
             }
             Action::SetNickname { contact, nickname } => {
-                let Some(c) = self.state.contacts.get_mut(contact) else {
+                let Some(c) = self.state.contacts.get(contact).cloned() else {
                     return Vec::new();
                 };
                 let nickname = nickname.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty());
                 if c.nickname == nickname {
                     return Vec::new();
                 }
-                c.nickname = nickname;
-                vec![Effect::SaveContacts]
+                if let Some(c) = self.state.contacts.get_mut(contact) {
+                    c.nickname = nickname.clone();
+                }
+                let mut effects = vec![Effect::SaveContacts];
+                for user in c.identities.into_iter().filter(|u| u.network().keeps_nicknames()) {
+                    effects.push(Effect::Backend {
+                        account: user.account.clone(),
+                        command: Command::SetNickname {
+                            user,
+                            nickname: nickname.clone().unwrap_or_default(),
+                        },
+                    });
+                }
+                effects
             }
             Action::SetContactFavourite { contact, favourite } => {
                 let Some(c) = self.state.contacts.get_mut(contact) else {

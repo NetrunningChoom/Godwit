@@ -5,7 +5,7 @@ use std::{env, fs, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = PathBuf::from(env::var("OUT_DIR")?);
-    for name in ["voice", "friendslist"] {
+    for name in ["voice", "friendslist", "nicknames"] {
         println!("cargo:rerun-if-changed=proto/{name}.proto");
         protobuf_codegen::Codegen::new()
             .pure()

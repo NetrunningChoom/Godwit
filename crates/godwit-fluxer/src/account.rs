@@ -717,6 +717,8 @@ impl FluxerAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            // Fluxer contact nicknames stay in Godwit's local contact model.
+            Command::SetNickname { .. } => {}
             // Fluxer rooms do not currently expose group leave or recipient editing.
             Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
             // Fluxer has no channel webhook manager in this account.

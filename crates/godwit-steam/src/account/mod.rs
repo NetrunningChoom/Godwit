@@ -486,6 +486,11 @@ impl NetworkAccount for SteamAccount {
                     });
                 }
             }
+            Command::SetNickname { user, nickname } => {
+                if let Ok(friend) = user.raw.parse::<u64>() {
+                    self.net.send(Cmd::SetNickname { friend, nickname });
+                }
+            }
             Command::RemoveFriend { user } => {
                 if let Ok(friend) = user.raw.parse::<u64>() {
                     self.net.send(Cmd::RemoveFriend(friend));
@@ -1159,6 +1164,28 @@ mod tests {
         let events = a.poll();
         assert!(events.iter().any(|e| matches!(e, Event::RoomUpdated(room)
             if &*room.id.raw == "g20-200" && &*room.name == "Renamed group")));
+    }
+
+    #[test]
+    fn steam_nickname_list_maps_to_core_event_and_set_command() {
+        let (mut account, tx, mut commands) = ready_with_commands();
+        let friend = backend::steam_id(7);
+        tx.send(Ev::Nicknames(vec![(backend::account_id(friend), "Alex".into())]))
+            .unwrap();
+        let events = account.poll();
+        let self_id = AccountId::new(Network::Steam, backend::steam_id(1).to_string());
+        assert!(events.iter().any(|event| matches!(event,
+            Event::Nicknames { account, nicknames }
+                if account == &self_id
+                    && nicknames == &vec![(UserId::new(self_id.clone(), friend.to_string()), "Alex".into())]
+        )));
+        account.run(Command::SetNickname {
+            user: UserId::new(self_id, friend.to_string()),
+            nickname: "Ace".into(),
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::SetNickname { friend: id, nickname }) if id == friend && nickname == "Ace")
+        );
     }
 
     #[test]

@@ -33,6 +33,8 @@ impl StoatAccount {
             Command::LoadPrivacy | Command::SetPrivacy { .. } => Vec::new(),
             // Stoat keeps no favourites (`Network::keeps_favourites`).
             Command::SetFavourite { .. } => Vec::new(),
+            // Contact nicknames stay in Godwit's local contact model here.
+            Command::SetNickname { .. } => Vec::new(),
             Command::LoadSessions => {
                 let Some(account) = self.account.clone() else { return Vec::new() };
                 self.net.send(Cmd::Settings(SettingsCmd::FetchSessions));

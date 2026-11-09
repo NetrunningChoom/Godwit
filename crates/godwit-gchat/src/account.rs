@@ -1005,6 +1005,8 @@ impl NetworkAccount for GChatAccount {
 
     fn run(&mut self, command: Command) -> Vec<Event> {
         match command {
+            // Google Chat contact nicknames stay in Godwit's local contact model.
+            Command::SetNickname { .. } => {}
             // Google Chat rooms do not currently expose group leave or recipient editing.
             Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
             // Google Chat has no channel webhook manager.

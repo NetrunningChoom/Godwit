@@ -254,6 +254,11 @@ pub enum Event {
         account: AccountId,
         users: Vec<UserId>,
     },
+    /// Network-owned nicknames for this account, as a complete snapshot.
+    Nicknames {
+        account: AccountId,
+        nicknames: Vec<(UserId, String)>,
+    },
     /// The account's pending friend requests, both ways.
     FriendRequests {
         account: AccountId,

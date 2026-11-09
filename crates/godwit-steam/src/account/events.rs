@@ -165,6 +165,20 @@ impl SteamAccount {
                     out.push(Event::Favourites { account, users });
                 }
             }
+            Ev::Nicknames(nicknames) => {
+                if let Some(account) = self.account.clone() {
+                    let nicknames = nicknames
+                        .into_iter()
+                        .map(|(id, nickname)| {
+                            (
+                                UserId::new(account.clone(), crate::backend::steam_id(id).to_string()),
+                                nickname,
+                            )
+                        })
+                        .collect();
+                    out.push(Event::Nicknames { account, nicknames });
+                }
+            }
             Ev::Library { steam_id, library } => {
                 self.loading_libraries.remove(&steam_id);
                 // A failure isn't kept, so opening the dialog again retries.

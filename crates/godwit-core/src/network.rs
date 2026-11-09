@@ -56,6 +56,11 @@ impl Network {
         matches!(self, Self::Steam)
     }
 
+    /// The network stores contact nicknames itself, so edits sync to its clients.
+    pub fn keeps_nicknames(self) -> bool {
+        matches!(self, Self::Steam)
+    }
+
     /// Rooms' member lists come from the network; on the others they're
     /// who has written lately.
     pub fn has_member_lists(self) -> bool {

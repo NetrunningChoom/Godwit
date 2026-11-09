@@ -761,6 +761,8 @@ impl NetworkAccount for DiscordAccount {
                     );
                 }
             }
+            // Discord contact nicknames stay in Godwit's local contact model.
+            Command::SetNickname { .. } => {}
             Command::Focus { room } => {
                 self.viewing = room.as_ref().and_then(|r| self.channel_of(r));
                 // Leaving a forum (and its posts) lets go of its loaded

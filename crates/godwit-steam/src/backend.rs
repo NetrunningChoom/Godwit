@@ -67,6 +67,11 @@ pub enum Cmd {
         friend: u32,
         favourite: bool,
     },
+    /// Set or clear a Steam friend nickname.
+    SetNickname {
+        friend: u64,
+        nickname: String,
+    },
     AddFriend {
         request: Option<u64>,
         name: String,
@@ -267,6 +272,8 @@ pub enum Ev {
     Personas(Vec<Persona>),
     /// The people in the friends list's favourites (account ids), all of them.
     Favourites(Vec<u32>),
+    /// A full nickname list or Steam's incremental nickname notification.
+    Nicknames(Vec<(u32, String)>),
     /// Steam games' names, by app id, as asked with [`Cmd::AppNames`].
     AppNames(Vec<(u32, String)>),
     /// A game library asked for with [`Cmd::OwnedGames`].
@@ -653,6 +660,31 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                             out.send(Ev::Favourites(crate::favourites::people(&list)));
                         }
                     }
+                }
+            });
+        }
+        Cmd::SetNickname { friend, nickname } => {
+            let Some(conn) = st.conn.clone() else {
+                return out.send(Ev::Notice(
+                    "Steam is disconnected. Try again after reconnecting.".into(),
+                ));
+            };
+            let out = out.clone();
+            tokio::spawn(async move {
+                use crate::nicknames::CMsgClientSetPlayerNickname;
+                // SteamKit2 sends this client message; an empty nickname clears the server-side value.
+                let result = conn
+                    .job::<CMsgClientSetPlayerNickname, crate::nicknames::CMsgClientSetPlayerNicknameResponse>(
+                        CMsgClientSetPlayerNickname {
+                            steamid: Some(friend),
+                            nickname: Some(nickname),
+                            ..Default::default()
+                        },
+                    )
+                    .await;
+                // Steam's EResult value 1 is k_EResultOK (SteamKit2 enum).
+                if !matches!(result, Ok(response) if response.eresult() == 1) {
+                    out.send(Ev::Notice("Couldn't save the Steam nickname.".into()));
                 }
             });
         }
@@ -1356,6 +1388,7 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
     let mut group_states = conn.on_notification::<ChatRoomClient_NotifyChatGroupUserStateChanged_Notification>();
     let mut member_states = conn.on_notification::<CChatRoom_MemberStateChange_Notification>();
     let mut favourites_changed = conn.on_notification::<crate::favourites::Changed>();
+    let mut nicknames_changed = conn.on::<crate::nicknames::Changed>();
 
     // Messages that came before we listened (the friends list arrives with
     // the sign-in): read them first.
@@ -1560,6 +1593,23 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
         })
         .abort_handle(),
     );
+    // Steam pushes nickname-list changes to signed-in clients; no polling is needed.
+    let o = out.clone();
+    let c = conn.clone();
+    tasks.push(
+        tokio::spawn(async move {
+            while let Some(item) = nicknames_changed.next().await {
+                if item.is_ok() {
+                    // Steam marks this client message as incremental or a removal;
+                    // reread the small list on push so core receives one complete snapshot.
+                    if let Ok(entries) = crate::nicknames::get(&c).await {
+                        o.send(Ev::Nicknames(entries));
+                    }
+                }
+            }
+        })
+        .abort_handle(),
+    );
     // Incoming messages and typing; the stream ends when the connection does.
     let (o, i) = (out.clone(), inner.clone());
     tasks.push(
@@ -1641,6 +1691,10 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
             match crate::favourites::get(&c).await {
                 Ok(list) => o.send(Ev::Favourites(crate::favourites::people(&list))),
                 Err(e) => diag(&format!("Steam favourites not read: {e}")),
+            }
+            match crate::nicknames::get(&c).await {
+                Ok(entries) => o.send(Ev::Nicknames(entries)),
+                Err(e) => diag(&format!("Steam nicknames not read: {e}")),
             }
             let req = CFriendsMessages_GetActiveMessageSessions_Request {
                 only_sessions_with_messages: Some(true),

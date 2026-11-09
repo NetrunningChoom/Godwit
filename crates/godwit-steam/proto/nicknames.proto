@@ -1,0 +1,32 @@
+// SteamKit/SteamDatabase names and field numbers for Steam friend nicknames.
+// https://github.com/SteamDatabase/Protobufs (The Unlicense),
+// steammessages_player.steamclient.proto and steammessages_clientserver_friends.proto.
+syntax = "proto2";
+
+message CPlayer_GetNicknameList_Request {}
+message CPlayer_GetNicknameList_Response {
+	message PlayerNickname {
+		optional uint32 accountid = 1;
+		optional string nickname = 2;
+	}
+	repeated PlayerNickname nicknames = 1;
+}
+
+message CMsgClientPlayerNicknameList {
+	message PlayerNickname {
+		optional fixed64 steamid = 1;
+		optional string nickname = 2;
+	}
+	optional bool removal = 1;
+	optional bool incremental = 2;
+	repeated PlayerNickname nicknames = 3;
+}
+
+message CMsgClientSetPlayerNickname {
+	optional fixed64 steamid = 1;
+	optional string nickname = 2;
+}
+
+message CMsgClientSetPlayerNicknameResponse {
+	optional int32 eresult = 1;
+}

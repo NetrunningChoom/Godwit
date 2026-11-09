@@ -3852,6 +3852,65 @@ fn favourites_reach_only_networks_that_keep_them_and_follow_their_list() {
 }
 
 #[test]
+fn nicknames_route_to_networks_that_keep_them_and_follow_their_list() {
+    let mut app = Application::default();
+    ready(&mut app, Network::Steam, Vec::new());
+    ready(&mut app, Network::Stoat, Vec::new());
+    let steam_user = UserId::new(account(Network::Steam), "76561197960265729");
+    let stoat_user = UserId::new(account(Network::Stoat), "ann");
+    let contact = app.state.contacts.ensure(steam_user.clone(), "Alex");
+    app.state.contacts.get_mut(contact).unwrap().identities.push(stoat_user);
+
+    assert_eq!(
+        app.dispatch(Action::SetNickname {
+            contact,
+            nickname: Some(" Ace ".into())
+        }),
+        vec![
+            Effect::SaveContacts,
+            Effect::Backend {
+                account: account(Network::Steam),
+                command: Command::SetNickname {
+                    user: steam_user.clone(),
+                    nickname: "Ace".into()
+                },
+            },
+        ]
+    );
+    assert_eq!(
+        app.state.contacts.get(contact).unwrap().nickname.as_deref(),
+        Some("Ace")
+    );
+
+    app.apply(Event::Nicknames {
+        account: account(Network::Steam),
+        nicknames: vec![(steam_user.clone(), "Steam name".into())],
+    });
+    assert_eq!(
+        app.state.contacts.get(contact).unwrap().nickname.as_deref(),
+        Some("Steam name")
+    );
+    app.apply(Event::Nicknames {
+        account: account(Network::Steam),
+        nicknames: Vec::new(),
+    });
+    assert_eq!(app.state.contacts.get(contact).unwrap().nickname, None);
+
+    let only_stoat = app
+        .state
+        .contacts
+        .ensure(UserId::new(account(Network::Stoat), "beth"), "Beth");
+    assert!(
+        app.dispatch(Action::SetNickname {
+            contact: only_stoat,
+            nickname: Some("B".into())
+        })
+        .iter()
+        .all(|effect| !matches!(effect, Effect::Backend { .. }))
+    );
+}
+
+#[test]
 fn games_in_common_loads_each_library_once_and_keeps_us_in() {
     let mut app = Application::new(Contacts::default());
     // Networks without libraries offer nothing.

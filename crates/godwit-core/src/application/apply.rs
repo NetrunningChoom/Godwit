@@ -341,6 +341,28 @@ impl Application {
                 self.state.favourites.extend(users);
                 Vec::new()
             }
+            Event::Nicknames { account, nicknames } => {
+                let affected: Vec<_> = self
+                    .state
+                    .contacts
+                    .iter()
+                    .filter(|c| c.identities.iter().any(|u| u.account == account))
+                    .map(|c| c.id)
+                    .collect();
+                for id in affected {
+                    if let Some(c) = self.state.contacts.get_mut(id) {
+                        c.nickname = None;
+                    }
+                }
+                for (user, nickname) in nicknames {
+                    if let Some(contact) = self.state.contacts.of(&user).map(|c| c.id)
+                        && let Some(contact) = self.state.contacts.get_mut(contact)
+                    {
+                        contact.nickname = Some(nickname);
+                    }
+                }
+                Vec::new()
+            }
             Event::Presences { account, presence } => self.receive_presences(&account, presence),
             Event::VoiceSince { room, since_ms } => {
                 match since_ms {

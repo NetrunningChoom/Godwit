@@ -133,6 +133,11 @@ pub enum Command {
         user: UserId,
         favourite: bool,
     },
+    /// Set or clear this person's nickname in the network's own contact list.
+    SetNickname {
+        user: UserId,
+        nickname: String,
+    },
     /// Unfriend, cancel our request, or decline theirs.
     RemoveFriend {
         user: UserId,

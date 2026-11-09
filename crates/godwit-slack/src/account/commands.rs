@@ -352,6 +352,8 @@ impl SlackAccount {
     pub(super) fn run_command(&mut self, command: Command) -> Vec<Event> {
         let mut out = Vec::new();
         match command {
+            // Slack contact nicknames stay in Godwit's local contact model.
+            Command::SetNickname { .. } => {}
             // Slack rooms do not currently expose group leave or recipient editing.
             Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
             // Slack has no channel webhook manager in this account.
