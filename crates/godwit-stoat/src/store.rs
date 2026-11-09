@@ -511,6 +511,40 @@ pub fn folder_add_server(list: &mut [Value], id: &str, server: &str) {
     }
 }
 
+/// Applies a network-neutral folder edit to the synced `folders` list. Only
+/// the fields an edit owns are written, so a folder keeps any the official
+/// client (or a newer one) added. `new_id` names a folder `Create` makes.
+pub fn apply_folder_edit(list: &mut Vec<Value>, edit: &godwit_core::folder_edit::FolderEdit, new_id: String) {
+    use godwit_core::folder_edit::FolderEdit as E;
+    let find = |list: &mut [Value], id: &str| -> Option<usize> {
+        list.iter()
+            .position(|f| f.get("id").and_then(Value::as_str) == Some(id))
+    };
+    match edit {
+        E::Create { servers } => list.push(serde_json::json!({
+            "id": new_id, "name": "", "colour": null, "collapsed": false,
+            "servers": servers.iter().map(|s| s.raw.to_string()).collect::<Vec<_>>(),
+        })),
+        E::AddServer { folder, server, at } => {
+            folder_add_server(list, &folder.raw, &server.raw);
+            if let Some(at) = at {
+                folder_place_server(list, &folder.raw, &server.raw, *at);
+            }
+        }
+        E::RemoveServer { server } => folder_remove_server(list, &server.raw),
+        E::Rename { folder, name } => {
+            if let Some(i) = find(list, &folder.raw) {
+                list[i]["name"] = serde_json::json!(name.clone().unwrap_or_default());
+            }
+        }
+        E::Recolour { folder, colour } => {
+            if let Some(i) = find(list, &folder.raw) {
+                list[i]["colour"] = serde_json::json!(colour.map(|c| format!("#{c:06x}")));
+            }
+        }
+    }
+}
+
 /// Moves `server` to position `at` among the other servers of folder `id`
 /// (the official `place`).
 pub fn folder_place_server(list: &mut [Value], id: &str, server: &str, at: usize) {
@@ -618,8 +652,8 @@ impl Store {
     }
 
     /// Edits the synced server folders like the official store (each folder
-    /// object keeps fields we don't use; folders left empty are dropped, as
-    /// officially) and returns the JSON to save, or None before synced settings load.
+    /// object keeps fields we don't use; folders left with fewer than two servers
+    /// dissolve) and returns the JSON to save, or None before synced settings load.
     pub fn edit_folders(&mut self, f: impl FnOnce(&mut Vec<Value>)) -> Option<String> {
         if !self.synced_loaded {
             return None;
@@ -639,7 +673,7 @@ impl Store {
             folder
                 .get("servers")
                 .and_then(Value::as_array)
-                .is_some_and(|s| !s.is_empty())
+                .is_some_and(|s| s.len() >= 2)
         });
         raw["folders"] = Value::Array(list);
         if let Some(folders) = raw.get("folders").cloned().and_then(|x| serde_json::from_value(x).ok()) {
@@ -1674,6 +1708,71 @@ mod tests {
         assert_eq!(s.folders[0].servers, ["s3", "s2"], "reordered within the folder");
         let id = new_folder_id();
         assert!(id.starts_with("folder-") && id.len() == 7 + 26, "folder- plus a ULID");
+    }
+
+    #[test]
+    fn neutral_folder_edits_write_only_their_fields() {
+        use godwit_core::folder_edit::FolderEdit as E;
+        use godwit_core::ids::{AccountId, ServerId};
+        use godwit_core::network::Network;
+        use serde_json::json;
+        let acc = AccountId::new(Network::Stoat, "me");
+        let id = |raw: &str| ServerId::new(acc.clone(), raw);
+        let mut s = Store::default();
+        s.apply_synced(&json!({ "server-folders": [0, json!({"folders": [
+            {"id": "folder-A", "name": "A", "colour": "#112233", "servers": ["s1", "s2"], "extra": true},
+        ], "other": 1}).to_string()] }));
+        let mut edit = |e: E| -> Value {
+            serde_json::from_str(
+                &s.edit_folders(|l| apply_folder_edit(l, &e, "folder-NEW".into()))
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        // Create: a new folder, the old one untouched.
+        let out = edit(E::Create {
+            servers: [id("s3"), id("s4")],
+        });
+        assert_eq!(out["folders"][1]["id"], json!("folder-NEW"));
+        assert_eq!(out["folders"][1]["servers"], json!(["s3", "s4"]));
+        assert_eq!(out["other"], json!(1), "unknown top-level fields stay");
+        // Add: s3 joins A and leaves the new one, which dissolves with one left.
+        let out = edit(E::AddServer {
+            folder: id("folder-A"),
+            server: id("s3"),
+            at: None,
+        });
+        assert_eq!(out["folders"].as_array().unwrap().len(), 1);
+        assert_eq!(out["folders"][0]["servers"], json!(["s1", "s2", "s3"]));
+        assert_eq!(out["folders"][0]["extra"], json!(true), "unknown folder fields stay");
+        // Rename and recolour change just their own key.
+        let out = edit(E::Rename {
+            folder: id("folder-A"),
+            name: Some("Mates".into()),
+        });
+        assert_eq!(
+            (&out["folders"][0]["name"], &out["folders"][0]["colour"]),
+            (&json!("Mates"), &json!("#112233"))
+        );
+        let out = edit(E::Recolour {
+            folder: id("folder-A"),
+            colour: Some(0x5470ec),
+        });
+        assert_eq!(
+            (&out["folders"][0]["name"], &out["folders"][0]["colour"]),
+            (&json!("Mates"), &json!("#5470ec"))
+        );
+        let out = edit(E::Recolour {
+            folder: id("folder-A"),
+            colour: None,
+        });
+        assert_eq!(out["folders"][0]["colour"], Value::Null);
+        // Remove: a folder of three keeps two; of two, it dissolves.
+        let out = edit(E::RemoveServer { server: id("s3") });
+        assert_eq!(out["folders"][0]["servers"], json!(["s1", "s2"]));
+        let out = edit(E::RemoveServer { server: id("s1") });
+        assert!(out["folders"].as_array().unwrap().is_empty());
+        assert!(s.folders.is_empty());
     }
 
     #[test]

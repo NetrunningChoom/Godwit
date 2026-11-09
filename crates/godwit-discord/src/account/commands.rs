@@ -29,6 +29,11 @@ impl DiscordAccount {
 
     pub(super) fn answer(&mut self, answer: Answer, out: &mut Vec<Event>) {
         match answer {
+            Answer::Folders(result) => {
+                if let Err(error) = result {
+                    out.push(Event::Error(format!("Discord, saving server folders: {error}").into()));
+                }
+            }
             Answer::AuditLog { guild, before, result } => {
                 let Some(account) = self.account.clone() else { return };
                 let server = ServerId::new(account, guild.as_str());

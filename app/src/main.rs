@@ -921,8 +921,15 @@ fn connect_callbacks(ui: &AppWindow) {
     }
     callback!(ui.on_panels_resized(sidebar, members) => |sh, _| sh.panels_resized(sidebar, members));
     callback!(ui.on_move_server_by(row, steps) => |sh, ui| sh.move_server_by(ui, row, steps));
+    callback!(ui.on_drop_server(row, steps, centre) => |sh, ui| sh.drop_server(ui, row, steps, centre));
     callback!(ui.on_move_account_by(row, steps) => |sh, ui| sh.move_account_by(ui, row, steps));
     callback!(ui.on_move_server(row, delta) => |sh, ui| sh.move_server(ui, row, delta));
+    callback!(ui.on_edit_folder(row) => |sh, ui| {
+        if let Ok(row) = usize::try_from(row) { sh.edit_folder(ui, row); }
+    });
+    callback!(ui.on_remove_from_folder(row) => |sh, ui| sh.remove_server_from_folder(ui, row));
+    callback!(ui.on_save_folder_settings(name, colour) => |sh, ui| sh.save_folder_settings(ui, &name, colour));
+    callback!(ui.on_close_folder_settings() => |sh, ui| sh.close_folder_settings(ui));
     callback!(ui.on_search_home(q) => |sh, ui| sh.search_home(ui, q.to_string()));
     callback!(ui.on_member_rows(first, last) => |sh, ui| sh.act(
         ui,

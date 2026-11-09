@@ -805,6 +805,18 @@ impl Api {
         .map(drop)
     }
 
+    /// Saves the complete guild-folder setting through Discord's web-client
+    /// settings-proto PATCH, preserving unrelated fields from the last read.
+    pub async fn set_folders(&self, proto: &str, folders: &[crate::settings::Folder]) -> Result<()> {
+        let body = json!({"settings": crate::settings::write_folder_list(proto, folders)});
+        self.json(with_json(
+            self.request(Method::PATCH, "/users/@me/settings-proto/1"),
+            &body,
+        ))
+        .await
+        .map(drop)
+    }
+
     /// Revokes data-use consents (docs.discord.food, User Settings: Modify
     /// User Consents): `usage_statistics` ("use data to improve Discord")
     /// and `personalization` ("use data to personalize my experience").

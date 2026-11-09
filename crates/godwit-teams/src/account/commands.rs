@@ -227,6 +227,7 @@ impl TeamsAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            Command::EditFolders(_) => {}
             // Teams message components are not available through this account.
             Command::ActivateMessageButton { .. } => {}
             // Teams contact nicknames stay in Godwit's local contact model.

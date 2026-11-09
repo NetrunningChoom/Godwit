@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Dialog, Button, TextField } from "widgets.slint";
+
+export component FolderSettings inherits Dialog {
+    in-out property <string> name;
+    in-out property <int> colour-index;
+    in-out property <bool> clear-colour;
+    in property <[color]> colours: Theme.accent-swatches;
+    callback save(string, int);
+    callback cancel();
+    title: "Folder settings";
+    dismissed => { root.cancel(); }
+    TextField { text <=> root.name; placeholder: "Folder name"; }
+    Text { text: "Colour"; color: Theme.on-surface-variant; }
+    HorizontalLayout {
+        spacing: Theme.gap-sm;
+        Button { text: "Default"; kind: root.clear-colour ? "filled" : "tonal"; clicked => { root.clear-colour = true; } }
+        for colour[i] in root.colours: Rectangle {
+            width: Theme.avatar;
+            height: Theme.avatar;
+            border-radius: Theme.radius-sm;
+            background: colour;
+            border-width: !root.clear-colour && root.colour-rgb[i] == root.colour-index ? 2px : 0px;
+            border-color: Theme.on-surface;
+            TouchArea { clicked => { root.colour-index = root.colour-rgb[i]; root.clear-colour = false; } }
+        }
+    }
+    in property <[int]> colour-rgb: [5533932, 3120783, 4169034, 13672490, 14708782, 14042448, 12731535, 9065942];
+    HorizontalLayout {
+        alignment: end;
+        spacing: Theme.gap-md;
+        Button { text: "Cancel"; kind: "tonal"; clicked => { root.cancel(); } }
+        Button { text: "Save"; clicked => { root.save(root.name, root.colour-index); } }
+    }
+}

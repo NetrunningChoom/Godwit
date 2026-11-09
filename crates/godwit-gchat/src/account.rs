@@ -1007,6 +1007,7 @@ impl NetworkAccount for GChatAccount {
 
     fn run(&mut self, command: Command) -> Vec<Event> {
         match command {
+            Command::EditFolders(_) => {}
             // Google Chat interactive cards aren't mapped to message buttons.
             Command::ActivateMessageButton { .. } => {}
             // Google Chat contact nicknames stay in Godwit's local contact model.

@@ -97,6 +97,21 @@ impl StoatAccount {
 
     pub(super) fn run_command(&mut self, command: Command) -> Vec<Event> {
         match command {
+            Command::EditFolders(edit) => {
+                let Some(account) = self.account.as_ref() else { return Vec::new() };
+                if edit.server_ids().iter().any(|s| &s.account != account) {
+                    return Vec::new();
+                }
+                let new_id = crate::store::new_folder_id();
+                let apply = move |list: &mut Vec<Value>| crate::store::apply_folder_edit(list, &edit, new_id);
+                let Some(value) = self.store.edit_folders(apply) else {
+                    return vec![Event::Error("Your Stoat settings haven't loaded yet; try again in a moment.".into())];
+                };
+                self.net.send(Cmd::Settings(SettingsCmd::SetSyncedSetting { key: "server-folders".into(), value }));
+                let mut out = Vec::new();
+                self.sync_servers(&mut out);
+                out
+            }
             // Stoat does not provide message component buttons.
             Command::ActivateMessageButton { .. } => Vec::new(),
             Command::AccountSecurity(_) => self.security_command(command),

@@ -6,6 +6,8 @@ use super::*;
 /// Work for a network backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
+    /// Change server folders; the account answers with its updated server list.
+    EditFolders(crate::folder_edit::FolderEdit),
     /// The account's privacy switches (Settings → Privacy).
     LoadPrivacy,
     SetPrivacy {

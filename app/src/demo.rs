@@ -1068,6 +1068,7 @@ impl godwit_core::account::NetworkAccount for DemoSteam {
 
     fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
         match command {
+            godwit_core::application::Command::EditFolders(_) => Vec::new(),
             godwit_core::application::Command::AccountSecurity(_) => Vec::new(),
             godwit_core::application::Command::LoadReactors { room, message, emoji } => vec![Event::Reactors {
                 room: room.clone(),
@@ -2243,6 +2244,67 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
     fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
         use godwit_core::application::Command;
         match command {
+            Command::EditFolders(edit) => {
+                let mut servers = self.servers.clone();
+                match edit {
+                    godwit_core::folder_edit::FolderEdit::Create { servers: ids } => {
+                        let folder = std::sync::Arc::new(godwit_core::server::ServerFolder {
+                            id: format!("demo-folder-{}", self.sent).into(),
+                            name: None,
+                            colour: Some(0x5470ec),
+                        });
+                        for id in ids {
+                            if let Some(s) = servers.iter_mut().find(|s| s.id == id) {
+                                s.folder = Some(folder.clone());
+                            }
+                        }
+                    }
+                    godwit_core::folder_edit::FolderEdit::AddServer { folder, server, .. } => {
+                        let value = servers.iter().find(|s| s.id == folder).and_then(|s| s.folder.clone());
+                        if let Some(value) = value {
+                            if let Some(s) = servers.iter_mut().find(|s| s.id == server) {
+                                s.folder = Some(value);
+                            }
+                        }
+                    }
+                    godwit_core::folder_edit::FolderEdit::RemoveServer { server } => {
+                        if let Some(s) = servers.iter_mut().find(|s| s.id == server) {
+                            s.folder = None;
+                        }
+                    }
+                    godwit_core::folder_edit::FolderEdit::Rename { folder, name } => {
+                        for s in servers
+                            .iter_mut()
+                            .filter(|s| s.folder.as_ref().is_some_and(|f| f.id == folder.raw))
+                        {
+                            if let Some(f) = s.folder.as_ref() {
+                                s.folder = Some(std::sync::Arc::new(godwit_core::server::ServerFolder {
+                                    name: name.clone().filter(|n| !n.is_empty()).map(Into::into),
+                                    ..(**f).clone()
+                                }));
+                            }
+                        }
+                    }
+                    godwit_core::folder_edit::FolderEdit::Recolour { folder, colour } => {
+                        for s in servers
+                            .iter_mut()
+                            .filter(|s| s.folder.as_ref().is_some_and(|f| f.id == folder.raw))
+                        {
+                            if let Some(f) = s.folder.as_ref() {
+                                s.folder = Some(std::sync::Arc::new(godwit_core::server::ServerFolder {
+                                    colour,
+                                    ..(**f).clone()
+                                }));
+                            }
+                        }
+                    }
+                }
+                self.servers = servers.clone();
+                vec![Event::ServersChanged {
+                    account: self.id.clone(),
+                    servers,
+                }]
+            }
             Command::LoadModerationLog { server, before } => {
                 use godwit_core::server_settings::{ModerationLogAction as K, ModerationLogEntry};
                 let entries = if before.is_none() {

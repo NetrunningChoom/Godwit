@@ -20,7 +20,9 @@ component RailEntry inherits Rectangle {
     callback context;
     // Dragging it up or down (servers and accounts): how far, when let go.
     in property <bool> draggable;
-    callback dropped(length);
+    // Where it was let go: how far it moved, and whether it ended toward the
+    // right edge (a drop *onto* the entry, to join or make a folder).
+    callback dropped(length, bool);
     property <bool> dragging;
     property <length> drag-y;
     // The release that ended a drag isn't also a click.
@@ -76,7 +78,7 @@ component RailEntry inherits Rectangle {
             if e.button == PointerEventButton.left && e.kind == PointerEventKind.up && root.dragging {
                 root.dragging = false;
                 root.dropped-now = true;
-                root.dropped(root.drag-y);
+                root.dropped(root.drag-y, touch.mouse-x > root.width * 0.7);
             }
         }
     }
@@ -150,6 +152,9 @@ export component Rail inherits Rectangle {
     callback select-server(int);
     // A folder's row: open or close it.
     callback toggle-folder(int);
+    callback edit-folder(int);
+    callback remove-from-folder(int);
+    callback drop-server(int, int, bool);
     callback join-server();
     // A server's right-click menu: move it (-1 up, 1 down, 0 to the top of
     // its account's servers).
@@ -164,6 +169,8 @@ export component Rail inherits Rectangle {
     in property <bool> menu-settings;
     in property <bool> menu-can-leave;
     in property <bool> menu-can-report;
+    in property <bool> folders-enabled;
+    in property <bool> menu-folder-enabled;
     callback server-report();
     callback server-invite();
     callback server-mark-read();
@@ -240,11 +247,11 @@ export component Rail inherits Rectangle {
                         // Still connecting: there, but greyed out.
                         opacity: item.pending ? 0.45 : 1;
                         draggable: !item.folder && !item.in-folder && !item.pending && !item.sign-in;
-                        dropped(dy) => {
+                        dropped(dy, onto) => {
                             if item.account {
                                 root.move-account-by(i, round(dy / self.height));
                             } else {
-                                root.move-server-by(i, round(dy / self.height));
+                                root.drop-server(i, round(dy / self.height), onto);
                             }
                         }
                         selected: item.selected;
@@ -263,6 +270,10 @@ export component Rail inherits Rectangle {
                         context => {
                             if item.account {
                                 root.open-account(i);
+                            } else if item.folder {
+                                root.menu-row = i;
+                                root.menu-y = self.absolute-position.y - root.absolute-position.y;
+                                server-menu.show();
                             } else {
                                 if !item.selected {
                                     root.select-server(i);
@@ -368,10 +379,11 @@ export component Rail inherits Rectangle {
             MenuRow { glyph: Icons.unread; label: "Mark as read"; clicked => { root.server-mark-read(); } }
             if root.menu-settings: MenuRow { glyph: Icons.settings; label: "Server settings"; clicked => { root.server-settings(); } }
             MenuDivider { }
-            // Folder editing isn't built: a folder's servers stay put.
+            if root.folders-enabled && root.menu-folder-enabled && root.menu-row >= 0 && root.servers[root.menu-row].folder: MenuRow { glyph: Icons.settings; label: "Folder settings"; clicked => { root.edit-folder(root.menu-row); } }
             if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.move-server(root.menu-row, -1); } }
             if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.move-server(root.menu-row, 1); } }
             if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.arrow-forward; label: "Move to top"; clicked => { root.move-server(root.menu-row, 0); } }
+            if root.folders-enabled && root.menu-row >= 0 && root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.arrow-forward; label: "Remove from folder"; clicked => { root.remove-from-folder(root.menu-row); } }
             if root.menu-can-report: MenuDivider { }
             if root.menu-can-report: MenuRow { glyph: Icons.error; label: "Report server"; danger: true; clicked => { root.server-report(); } }
             if root.menu-can-leave && !root.menu-can-report: MenuDivider { }

@@ -31,6 +31,7 @@ import { ForumPostItem, ForumTagItem, ProfileItem } from "types.slint";
 import { Timeline } from "timeline.slint";
 import { Friends } from "friends.slint";
 import { JoinServer } from "join-server.slint";
+import { FolderSettings } from "folder-settings.slint";
 import { ShareSettings } from "share-settings.slint";
 import { ShareSource } from "share-source.slint";
 import { People } from "people.slint";
@@ -103,12 +104,23 @@ export component AppWindow inherits Window {
     in property <bool> account-has-avatar;
 
     in property <[ServerItem]> servers;
+    in property <bool> folders-enabled;
     in property <bool> home-selected: true;
     // Counts Home clicks while Home is open (the sidebar scrolls back up).
     property <int> home-scroll-reset;
     in property <bool> server-settings-available;
+    in property <bool> menu-folder-enabled;
     in property <bool> can-edit-server-profile;
     in property <bool> server-settings-open;
+    in property <bool> folder-settings-open;
+    in-out property <string> folder-edit-name;
+    in-out property <int> folder-edit-colour;
+    in-out property <bool> folder-edit-clear;
+    callback save-folder-settings(string, int);
+    callback close-folder-settings();
+    callback edit-folder(int);
+    callback remove-from-folder(int);
+    callback drop-server(int, int, bool);
     // A server channel's settings (see channel-settings.slint).
     in property <bool> channel-settings-open;
     in property <bool> channel-edit-loaded;
@@ -1115,13 +1127,18 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             Rail {
                 servers: root.servers;
+                folders-enabled: root.folders-enabled;
+                menu-folder-enabled: root.menu-folder-enabled;
                 home-selected: root.home-selected;
                 // The account's profile, for that account (the popup and
                 // presence act on it): opened, or closed when open on it.
                 toggle-account(i) => { root.toggle-account(i); }
                 toggle-folder(i) => { root.toggle-folder(i); }
                 move-server(i, d) => { root.move-server(i, d); }
+                edit-folder(i) => { root.edit-folder(i); }
+                remove-from-folder(i) => { root.remove-from-folder(i); }
                 move-server-by(i, d) => { root.move-server-by(i, d); }
+                drop-server(i, d, centre) => { root.drop-server(i, d, centre); }
                 move-account-by(i, d) => { root.move-account-by(i, d); }
                 menu-can-invite: root.server-can-invite;
                 menu-settings: root.server-settings-available;
@@ -1710,6 +1727,13 @@ export component AppWindow inherits Window {
         save-role => { root.save-server-role(); } delete-role => { root.delete-server-role(); }
         move-role(up) => { root.move-server-role(up); }
         delete-server => { root.delete-server(); }
+    }
+    if root.folder-settings-open && screen == Screen.main: FolderSettings {
+        name <=> root.folder-edit-name;
+        colour-index <=> root.folder-edit-colour;
+        clear-colour <=> root.folder-edit-clear;
+        save(n, c) => { root.save-folder-settings(n, c); }
+        cancel => { root.close-folder-settings(); }
     }
     if root.channel-settings-open && screen == Screen.main: ChannelSettings {
         title: root.channel-edit-title;

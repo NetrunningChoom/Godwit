@@ -1122,6 +1122,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         ),
         Scene::new(
+            "folder-settings",
+            Box::new(|_, ui, _, _| {
+                ui.set_folder_settings_open(true);
+                ui.set_folder_edit_name("Friends".into());
+                ui.set_folder_edit_colour(0x5470ec);
+                Screen::Main
+            }),
+        ),
+        Scene::new(
             "create-server",
             Box::new(|_, ui, _, _| {
                 ui.set_join_server_accounts(slint::ModelRc::new(slint::VecModel::from(vec!["Demo — Stoat".into()])));

@@ -18,6 +18,7 @@ pub mod contacts;
 pub mod emoji_packs;
 pub mod emoticons;
 pub mod encoding;
+pub mod folder_edit;
 pub mod forum;
 pub mod games;
 pub mod gifs;

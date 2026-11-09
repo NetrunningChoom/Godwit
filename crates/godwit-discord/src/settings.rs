@@ -4,7 +4,7 @@
 // Copyright (C) the Yapfast authors, GPL-3.0-or-later.
 //! The account's status as Discord's user settings keep it, written as the
 //! web client writes it: a `PreloadedUserSettings` protobuf in base64, sent to
-//! `PATCH /users/@me/settings-proto/1`, of which only `status` is written
+//! `PATCH /users/@me/settings-proto/1`, including the server-folder list
 //! (by hand, as Yapfast's `settings.rs` does). Each session also tells the
 //! gateway its presence.
 
@@ -78,6 +78,67 @@ pub fn write_custom(text: Option<&str>) -> String {
     status_settings(&inner)
 }
 
+/// Encodes the complete folder list at field 14 of PreloadedUserSettings.
+pub fn write_folder_list(encoded: &str, folders: &[Folder]) -> String {
+    let old = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .unwrap_or_default();
+    let mut root = Vec::new();
+    for (number, value) in fields(&old) {
+        if number == GUILD_FOLDERS {
+            continue;
+        }
+        match value {
+            Field::Varint(v) => {
+                put_varint(&mut root, number << 3);
+                put_varint(&mut root, v);
+            }
+            Field::Fixed64(v) => {
+                put_varint(&mut root, (number << 3) | 1);
+                root.extend_from_slice(&v.to_le_bytes());
+            }
+            Field::Bytes(v) => put_bytes(&mut root, number, v),
+            Field::Fixed32(v) => {
+                put_varint(&mut root, (number << 3) | 5);
+                root.extend_from_slice(&v);
+            }
+        }
+    }
+    let mut list = Vec::new();
+    for folder in folders {
+        let mut entry = Vec::new();
+        let mut packed = Vec::new();
+        for id in &folder.guilds {
+            if let Ok(id) = id.parse::<u64>() {
+                packed.extend_from_slice(&id.to_le_bytes());
+            }
+        }
+        if !packed.is_empty() {
+            put_bytes(&mut entry, FOLDER_GUILDS, &packed);
+        }
+        if let Some(id) = folder.id.as_deref().and_then(|s| s.parse::<i64>().ok()) {
+            let mut wrapper = Vec::new();
+            put_varint(&mut wrapper, 8);
+            put_varint(&mut wrapper, id as u64);
+            put_bytes(&mut entry, FOLDER_ID, &wrapper);
+        }
+        if let Some(name) = folder.name.as_deref().filter(|s| !s.is_empty()) {
+            let mut wrapper = Vec::new();
+            put_bytes(&mut wrapper, 1, name.as_bytes());
+            put_bytes(&mut entry, FOLDER_NAME, &wrapper);
+        }
+        if let Some(colour) = folder.colour {
+            let mut wrapper = Vec::new();
+            put_varint(&mut wrapper, 8);
+            put_varint(&mut wrapper, u64::from(colour));
+            put_bytes(&mut entry, FOLDER_COLOUR, &wrapper);
+        }
+        put_bytes(&mut list, FOLDERS, &entry);
+    }
+    put_bytes(&mut root, GUILD_FOLDERS, &list);
+    base64::engine::general_purpose::STANDARD.encode(root)
+}
+
 /// `PreloadedUserSettings.guild_folders` and in it `folders` (each a
 /// `GuildFolder` whose field 1 lists its servers) and the older `guild_positions`.
 const GUILD_FOLDERS: u64 = 14;
@@ -94,7 +155,7 @@ enum Field<'a> {
     Varint(u64),
     Fixed64(u64),
     Bytes(&'a [u8]),
-    Fixed32,
+    Fixed32([u8; 4]),
 }
 
 fn varint(data: &mut &[u8]) -> Option<u64> {
@@ -128,9 +189,9 @@ fn fields(mut data: &[u8]) -> impl Iterator<Item = (u64, Field<'_>)> {
                 Field::Bytes(bytes)
             }
             5 => {
-                let (_, rest) = data.split_first_chunk::<4>()?;
+                let (bytes, rest) = data.split_first_chunk::<4>()?;
                 data = rest;
-                Field::Fixed32
+                Field::Fixed32(*bytes)
             }
             _ => return None,
         };
@@ -333,6 +394,52 @@ pub(crate) fn test_folders_proto(folders: &[(u64, &[u64])]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_edited_folder_list_round_trips_and_keeps_other_fields() {
+        // A status, plus a field we don't know (99, a varint, and 98, a fixed32).
+        let mut old = Vec::new();
+        let mut wrapper = Vec::new();
+        put_bytes(&mut wrapper, 1, b"dnd");
+        let mut status = Vec::new();
+        put_bytes(&mut status, STATUS_STATUS, &wrapper);
+        put_bytes(&mut old, STATUS, &status);
+        put_varint(&mut old, 99 << 3);
+        put_varint(&mut old, 7);
+        put_varint(&mut old, (98 << 3) | 5);
+        old.extend_from_slice(&[1, 2, 3, 4]);
+        let old = base64::engine::general_purpose::STANDARD.encode(old);
+        let folders = vec![
+            Folder {
+                id: Some("9007199254740991".into()),
+                name: Some("Games".into()),
+                colour: Some(0x5470ec),
+                guilds: vec!["111".into(), "18446744073709551".into()],
+            },
+            Folder {
+                guilds: vec!["333".into()],
+                ..Folder::default()
+            },
+        ];
+        let new = write_folder_list(&old, &folders);
+        let read = read(&new);
+        assert_eq!(read.folders.as_deref(), Some(folders.as_slice()));
+        assert_eq!(
+            read.guild_order,
+            Some(vec!["111".into(), "18446744073709551".into(), "333".into()])
+        );
+        assert_eq!(read.status.as_deref(), Some("dnd"), "fields it doesn't own are kept");
+        let bytes = decode(&new);
+        assert!(fields(&bytes).any(|(n, v)| n == 99 && matches!(v, Field::Varint(7))));
+        assert!(fields(&bytes).any(|(n, v)| n == 98 && matches!(v, Field::Fixed32([1, 2, 3, 4]))));
+        // Writing again over the result replaces the list, not appends to it.
+        let again = write_folder_list(&new, &folders[..1]);
+        assert_eq!(read_folders(&again).len(), 1);
+    }
+
+    fn read_folders(proto: &str) -> Vec<Folder> {
+        read(proto).folders.unwrap_or_default()
+    }
 
     fn decode(s: &str) -> Vec<u8> {
         base64::engine::general_purpose::STANDARD.decode(s).unwrap()

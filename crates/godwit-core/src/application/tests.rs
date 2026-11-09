@@ -5357,3 +5357,53 @@ fn message_button_action_requires_an_enabled_non_link_button_in_the_timeline() {
         );
     }
 }
+
+#[test]
+fn folder_edits_are_gated_to_networks_with_folders_and_to_real_changes() {
+    use crate::folder_edit::{FolderEdit, tests::server};
+    for (network, sent) in [
+        (Network::Discord, true),
+        (Network::Steam, false),
+        (Network::Slack, false),
+    ] {
+        let mut app = Application::default();
+        let acc = account(network);
+        app.apply(Event::AccountReady {
+            account: acc.clone(),
+            display_name: "Me".into(),
+            username: "me".into(),
+            avatar_url: None,
+            rooms: Vec::new(),
+            servers: vec![
+                server(&acc, "1", Some(("f", None, None))).as_ref().clone(),
+                server(&acc, "2", Some(("f", None, None))).as_ref().clone(),
+                server(&acc, "3", None).as_ref().clone(),
+            ],
+        });
+        let add = Action::EditFolders(
+            acc.clone(),
+            FolderEdit::AddServer {
+                folder: ServerId::new(acc.clone(), "f"),
+                server: ServerId::new(acc.clone(), "3"),
+                at: None,
+            },
+        );
+        assert_eq!(app.dispatch(add).len(), usize::from(sent), "{network:?}");
+        let noop = Action::EditFolders(
+            acc.clone(),
+            FolderEdit::Rename {
+                folder: ServerId::new(acc.clone(), "f"),
+                name: None,
+            },
+        );
+        assert!(app.dispatch(noop).is_empty(), "unchanged: no request on {network:?}");
+        let other = account(Network::Stoat);
+        let foreign = Action::EditFolders(
+            acc.clone(),
+            FolderEdit::RemoveServer {
+                server: ServerId::new(other, "1"),
+            },
+        );
+        assert!(app.dispatch(foreign).is_empty(), "another account's server");
+    }
+}

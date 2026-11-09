@@ -83,6 +83,10 @@ pub enum Request {
         message: String,
         emoji: String,
     },
+    EditFolders {
+        proto: String,
+        folders: Vec<crate::settings::Folder>,
+    },
     Ack {
         channel: String,
         message: String,
@@ -422,6 +426,7 @@ pub enum Answer {
         emoji: String,
         result: Result<Value, RequestError>,
     },
+    Folders(Result<(), RequestError>),
     Sent {
         channel: String,
         nonce: String,
@@ -965,6 +970,9 @@ impl From<RequestError> for Arc<str> {
 
 async fn answer(api: &Api, request: Request) -> Answer {
     match request {
+        Request::EditFolders { proto, folders } => {
+            Answer::Folders(api.set_folders(&proto, &folders).await.map_err(RequestError::from))
+        }
         Request::History {
             channel,
             before,

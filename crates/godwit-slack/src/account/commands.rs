@@ -352,6 +352,7 @@ impl SlackAccount {
     pub(super) fn run_command(&mut self, command: Command) -> Vec<Event> {
         let mut out = Vec::new();
         match command {
+            Command::EditFolders(_) => {}
             // Slack message components are not mapped by this account.
             Command::ActivateMessageButton { .. } => {}
             // Slack contact nicknames stay in Godwit's local contact model.

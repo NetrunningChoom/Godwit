@@ -15,6 +15,19 @@ impl Application {
 
     pub fn dispatch(&mut self, action: Action) -> Vec<Effect> {
         match action {
+            Action::EditFolders(account, edit) => {
+                if account.network.has_server_folders()
+                    && edit.server_ids().iter().all(|id| id.account == account)
+                    && edit.changes(&self.state.servers)
+                {
+                    vec![Effect::Backend {
+                        account,
+                        command: Command::EditFolders(edit),
+                    }]
+                } else {
+                    Vec::new()
+                }
+            }
             Action::LoadPrivacy(account) => vec![Effect::Backend {
                 account,
                 command: Command::LoadPrivacy,

@@ -32,6 +32,10 @@ pub enum Network {
 }
 
 impl Network {
+    /// The account keeps an editable server-folder list on its own servers.
+    pub fn has_server_folders(self) -> bool {
+        matches!(self, Self::Discord | Self::Stoat)
+    }
     /// It has friends (requests, a friends list) and messaging goes through
     /// them, as on Stoat and Discord.
     /// A friends list of its own, with requests (adding by name).

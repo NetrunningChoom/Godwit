@@ -412,6 +412,7 @@ impl NetworkAccount for SteamAccount {
     fn run(&mut self, command: Command) -> Vec<Event> {
         let mut out = Vec::new();
         match command {
+            Command::EditFolders(_) => {}
             Command::AccountSecurity(_) => {}
             // Steam messages have no interactive component controls.
             Command::ActivateMessageButton { .. } => {}

@@ -311,6 +311,9 @@ pub struct Store {
     /// Server → its folder, for the folders of two or more servers (a
     /// folder entry without an id, or of one server, is a plain server).
     pub folder_of: HashMap<String, Arc<godwit_core::server::ServerFolder>>,
+    /// The last folder list read from the gateway, preserved for editing.
+    pub settings_folders: Vec<crate::settings::Folder>,
+    pub settings_proto: String,
     pub guilds: HashMap<String, Guild>,
     pub channels: HashMap<String, Channel>,
     /// Archived forum posts the user loaded: listed as rooms (not in the
@@ -538,6 +541,7 @@ impl Store {
     /// the server list's order (servers it doesn't place go first, as new
     /// ones do in Discord's list).
     pub fn apply_settings(&mut self, proto: &str) {
+        self.settings_proto = proto.to_owned();
         let read = crate::settings::read(proto);
         if read.show_game.is_some() {
             self.show_game = read.show_game;
@@ -566,6 +570,7 @@ impl Store {
 
     /// Takes the folder list (settings' `guild_folders`).
     pub fn set_folders(&mut self, folders: &[crate::settings::Folder]) {
+        self.settings_folders = folders.to_vec();
         self.folder_of.clear();
         for f in folders {
             let Some(id) = f.id.as_deref().filter(|_| f.guilds.len() > 1) else {

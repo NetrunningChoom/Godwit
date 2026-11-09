@@ -544,6 +544,180 @@ impl Shell {
         self.reorder_server(ui, row, i64::from(steps), false);
     }
 
+    pub fn remove_server_from_folder(&mut self, ui: &AppWindow, row: i32) {
+        let Some(view::RailRow::Server(server)) = usize::try_from(row)
+            .ok()
+            .and_then(|r| self.presenter.server_rows.get(r))
+            .cloned()
+        else {
+            return;
+        };
+        if self.app.state().server(&server).is_some_and(|s| s.folder.is_some()) {
+            self.act(
+                ui,
+                Action::EditFolders(
+                    server.account.clone(),
+                    godwit_core::folder_edit::FolderEdit::RemoveServer { server },
+                ),
+            );
+        }
+    }
+
+    pub fn drop_server(&mut self, ui: &AppWindow, row: i32, steps: i32, centre: bool) {
+        let Some(source) = usize::try_from(row)
+            .ok()
+            .and_then(|r| self.presenter.server_rows.get(r).cloned())
+        else {
+            return;
+        };
+        let Some(source) = (match source {
+            view::RailRow::Server(s) => Some(s),
+            _ => None,
+        }) else {
+            return;
+        };
+        let rows = &self.presenter.server_rows;
+        let last = i64::try_from(rows.len()).unwrap_or(1) - 1;
+        let target_row = usize::try_from((i64::from(row) + i64::from(steps)).clamp(0, last)).unwrap_or(0);
+        let target = rows.get(target_row).cloned();
+        if !source.account.network.has_server_folders() {
+            self.reorder_server(ui, row, i64::from(steps), false);
+            return;
+        }
+        let action = match target {
+            Some(view::RailRow::Folder(account, folder)) if account == source.account && centre => {
+                Some(godwit_core::folder_edit::FolderEdit::AddServer {
+                    folder: ServerId::new(source.account.clone(), folder.to_string()),
+                    server: source.clone(),
+                    at: None,
+                })
+            }
+            Some(view::RailRow::Server(other)) if other.account == source.account && centre && other != source => {
+                if self
+                    .app
+                    .state()
+                    .server(&other)
+                    .and_then(|s| s.folder.as_ref())
+                    .is_some()
+                {
+                    self.app
+                        .state()
+                        .server(&other)
+                        .and_then(|s| s.folder.as_ref())
+                        .map(|f| godwit_core::folder_edit::FolderEdit::AddServer {
+                            folder: ServerId::new(source.account.clone(), f.id.to_string()),
+                            server: source.clone(),
+                            at: None,
+                        })
+                } else if self
+                    .app
+                    .state()
+                    .server(&source)
+                    .and_then(|s| s.folder.as_ref())
+                    .is_some()
+                {
+                    self.app
+                        .state()
+                        .server(&source)
+                        .and_then(|s| s.folder.as_ref())
+                        .map(|f| godwit_core::folder_edit::FolderEdit::AddServer {
+                            folder: ServerId::new(source.account.clone(), f.id.to_string()),
+                            server: other,
+                            at: None,
+                        })
+                } else {
+                    Some(godwit_core::folder_edit::FolderEdit::Create {
+                        servers: [source.clone(), other],
+                    })
+                }
+            }
+            // Dragged off its folder onto a server outside it: out it goes.
+            // Within the same folder it is only a reorder.
+            Some(view::RailRow::Server(other)) if source.account == other.account => {
+                let folder_of = |id: &ServerId| {
+                    self.app
+                        .state()
+                        .server(id)
+                        .and_then(|s| s.folder.as_ref().map(|f| f.id.clone()))
+                };
+                let from = folder_of(&source);
+                (from.is_some() && from != folder_of(&other))
+                    .then(|| godwit_core::folder_edit::FolderEdit::RemoveServer { server: source.clone() })
+            }
+            _ => None,
+        };
+        if let Some(edit) = action {
+            self.act(ui, Action::EditFolders(source.account.clone(), edit));
+        } else {
+            self.reorder_server(ui, row, i64::from(steps), false);
+        }
+    }
+
+    pub fn edit_folder(&mut self, ui: &AppWindow, row: usize) {
+        let Some(view::RailRow::Folder(account, folder)) = self.presenter.server_rows.get(row).cloned() else {
+            return;
+        };
+        let Some(server) = self
+            .app
+            .state()
+            .servers
+            .iter()
+            .find(|s| s.id.account == account && s.folder.as_ref().is_some_and(|f| f.id == folder))
+            .cloned()
+        else {
+            return;
+        };
+        let colour = server.folder.as_ref().and_then(|f| f.colour);
+        self.folder_edit = Some((account.clone(), ServerId::new(account, folder.to_string()), colour));
+        ui.set_folder_edit_name(
+            server
+                .folder
+                .as_ref()
+                .and_then(|f| f.name.as_deref())
+                .unwrap_or_default()
+                .into(),
+        );
+        ui.set_folder_edit_colour(colour.map_or(-1, |c| i32::try_from(c).unwrap_or(-1)));
+        ui.set_folder_edit_clear(colour.is_none());
+        ui.set_folder_settings_open(true);
+    }
+
+    pub fn close_folder_settings(&mut self, ui: &AppWindow) {
+        self.folder_edit = None;
+        ui.set_folder_settings_open(false);
+    }
+
+    pub fn save_folder_settings(&mut self, ui: &AppWindow, name: &str, colour: i32) {
+        let Some((account, folder, old_colour)) = self.folder_edit.take() else {
+            return;
+        };
+        let name = name.trim().to_owned();
+        self.act(
+            ui,
+            Action::EditFolders(
+                account.clone(),
+                godwit_core::folder_edit::FolderEdit::Rename {
+                    folder: folder.clone(),
+                    name: (!name.is_empty()).then_some(name),
+                },
+            ),
+        );
+        let selected = (!ui.get_folder_edit_clear()).then(|| u32::try_from(colour).unwrap_or(0));
+        if selected != old_colour {
+            self.act(
+                ui,
+                Action::EditFolders(
+                    account,
+                    godwit_core::folder_edit::FolderEdit::Recolour {
+                        folder,
+                        colour: selected,
+                    },
+                ),
+            );
+        }
+        ui.set_folder_settings_open(false);
+    }
+
     fn reorder_server(&mut self, ui: &AppWindow, row: i32, steps: i64, top: bool) {
         let rows = &self.presenter.server_rows;
         let Some(r) = usize::try_from(row).ok() else { return };

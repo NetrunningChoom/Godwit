@@ -96,6 +96,7 @@ pub struct Shell {
     crop: Option<crate::cropper::Crop>,
     /// The message a thread is being started from (the dialog's).
     thread_from: Option<MessageId>,
+    folder_edit: Option<(AccountId, ServerId, Option<u32>)>,
     /// Trigger and ranked rows currently shown for the composer.
     autocomplete: Vec<godwit_core::autocomplete::Candidate>,
     autocomplete_trigger: Option<godwit_core::autocomplete::Trigger>,
@@ -430,6 +431,7 @@ impl Shell {
             viewer_anim: None,
             crop: None,
             thread_from: None,
+            folder_edit: None,
             autocomplete: Vec::new(),
             autocomplete_trigger: None,
             autocomplete_room: None,
@@ -1021,6 +1023,20 @@ impl Shell {
 
     pub fn refresh(&mut self, ui: &AppWindow) {
         ui.set_send_error(self.send_error.clone().into());
+        ui.set_folders_enabled(
+            self.app
+                .state()
+                .accounts
+                .iter()
+                .any(|a| a.id.network.has_server_folders()),
+        );
+        ui.set_menu_folder_enabled(
+            self.app
+                .state()
+                .selected_server
+                .as_ref()
+                .is_some_and(|s| s.account.network.has_server_folders()),
+        );
         let media_active =
             self.app.state().call.as_ref().is_some_and(|call| {
                 call.camera || call.screen_share || call.streams.iter().any(|stream| stream.watching)

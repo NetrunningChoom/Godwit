@@ -400,6 +400,94 @@ fn upload_limit(premium_type: u8, premium_tier: Option<u8>) -> u64 {
     own.max(boosted)
 }
 
+/// A new folder's id: random, and below 2^53 so the web client's JavaScript
+/// numbers hold it exactly (the client makes its own the same way).
+fn new_folder_id() -> String {
+    rand::random_range(1..(1u64 << 53)).to_string()
+}
+
+/// Applies a folder edit to Discord's `guild_folders` list, which holds every
+/// server: a folder has an id, a server on its own is an entry without one.
+/// Returns the new list, or None when the edit names a folder we don't have.
+/// A folder left with fewer than two servers dissolves into plain servers
+/// (as in the official client); `order` is READY's server order, used to
+/// order a new folder's members.
+fn edit_discord_folders(
+    folders: &[crate::settings::Folder],
+    edit: &godwit_core::folder_edit::FolderEdit,
+    order: &[String],
+    new_id: String,
+) -> Option<Vec<crate::settings::Folder>> {
+    use crate::settings::Folder;
+    use godwit_core::folder_edit::FolderEdit as E;
+    let mut folders = folders.to_vec();
+    let has = |folders: &[Folder], id: &str| folders.iter().any(|f| f.id.as_deref() == Some(id));
+    // Takes `server` out of whichever entry holds it; returns where that was.
+    let take = |folders: &mut Vec<Folder>, server: &str| -> Option<usize> {
+        let at = folders.iter().position(|f| f.guilds.iter().any(|g| g == server))?;
+        folders[at].guilds.retain(|g| g != server);
+        Some(at)
+    };
+    match edit {
+        E::Create { servers } => {
+            let mut members = [servers[0].raw.to_string(), servers[1].raw.to_string()];
+            members.sort_by_key(|id| order.iter().position(|x| x == id).unwrap_or(usize::MAX));
+            let at = members
+                .iter()
+                .filter_map(|m| take(&mut folders, m))
+                .min()
+                .unwrap_or(folders.len());
+            folders.insert(
+                at,
+                Folder {
+                    id: Some(new_id),
+                    guilds: members.into(),
+                    ..Default::default()
+                },
+            );
+        }
+        E::AddServer { folder, server, at } => {
+            if !has(&folders, &folder.raw) {
+                return None;
+            }
+            take(&mut folders, &server.raw);
+            let target = folders.iter_mut().find(|f| f.id.as_deref() == Some(&*folder.raw))?;
+            let pos = at.unwrap_or(target.guilds.len()).min(target.guilds.len());
+            target.guilds.insert(pos, server.raw.to_string());
+        }
+        E::RemoveServer { server } => {
+            let from = take(&mut folders, &server.raw)?;
+            folders.insert(
+                from + 1,
+                Folder {
+                    guilds: vec![server.raw.to_string()],
+                    ..Default::default()
+                },
+            );
+        }
+        E::Rename { folder, name } => {
+            folders.iter_mut().find(|f| f.id.as_deref() == Some(&*folder.raw))?.name =
+                name.clone().filter(|n| !n.trim().is_empty());
+        }
+        E::Recolour { folder, colour } => {
+            folders
+                .iter_mut()
+                .find(|f| f.id.as_deref() == Some(&*folder.raw))?
+                .colour = *colour;
+        }
+    }
+    // Dissolve: a folder of one becomes a plain server (its name and colour
+    // go with it), an empty one disappears.
+    folders.retain(|f| !f.guilds.is_empty());
+    for f in folders.iter_mut().filter(|f| f.guilds.len() == 1 && f.id.is_some()) {
+        *f = Folder {
+            guilds: std::mem::take(&mut f.guilds),
+            ..Default::default()
+        };
+    }
+    Some(folders)
+}
+
 /// A poll, as text under the message (Yapfast's `Poll::of`): the question,
 /// each answer with its votes (✓ for ours), and whether it's over. Voting
 /// from Godwit isn't built yet.
@@ -762,6 +850,42 @@ impl NetworkAccount for DiscordAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            Command::EditFolders(edit) => {
+                // Without the settings we read at READY we'd write a list of
+                // only this edit and lose the rest.
+                if self.store.settings_proto.is_empty() {
+                    return Vec::new();
+                }
+                let proto = self.store.settings_proto.clone();
+                let Some(folders) = edit_discord_folders(
+                    &self.store.settings_folders,
+                    &edit,
+                    &self.store.guild_order,
+                    new_folder_id(),
+                ) else {
+                    return Vec::new();
+                };
+                self.store.set_folders(&folders);
+                // The rail follows the list's order; servers it doesn't place
+                // stay first, as `apply_settings` keeps them.
+                let placed: Vec<String> = folders
+                    .iter()
+                    .flat_map(|f| f.guilds.iter())
+                    .filter(|g| self.store.guilds.contains_key(*g))
+                    .cloned()
+                    .collect();
+                let mut order: Vec<String> = self
+                    .store
+                    .guild_order
+                    .iter()
+                    .filter(|g| !placed.contains(g))
+                    .cloned()
+                    .collect();
+                order.extend(placed);
+                self.store.guild_order = order;
+                self.sync_servers(&mut out);
+                self.net.send(Cmd::Request(Request::EditFolders { proto, folders }));
+            }
             Command::AccountSecurity(_) => {}
             Command::LoadReactors { room, message, emoji } => {
                 if !self.store.can(&room.raw, p::VIEW_CHANNEL | p::READ_MESSAGE_HISTORY) {
@@ -1813,6 +1937,78 @@ fn gifs(v: &Value) -> Vec<godwit_core::gifs::Gif> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_edits_keep_every_server_and_dissolve_small_folders() {
+        use crate::settings::Folder;
+        use godwit_core::folder_edit::FolderEdit as E;
+        let acc = AccountId::new(godwit_core::network::Network::Discord, "me");
+        let id = |raw: &str| ServerId::new(acc.clone(), raw);
+        let plain = |g: &str| Folder {
+            guilds: vec![g.into()],
+            ..Folder::default()
+        };
+        let folder = |i: &str, gs: &[&str]| Folder {
+            id: Some(i.into()),
+            name: Some("N".into()),
+            colour: Some(1),
+            guilds: gs.iter().map(|g| (*g).into()).collect(),
+        };
+        let list = vec![plain("1"), folder("50", &["2", "3"]), plain("4"), plain("5")];
+        let order: Vec<String> = ["1", "2", "3", "4", "5"].map(String::from).into();
+        let edit = |e: E| edit_discord_folders(&list, &e, &order, "777".into());
+        let guilds = |l: &[Folder]| l.iter().map(|f| f.guilds.join("+")).collect::<Vec<_>>();
+        // Create: both leave their entries, the folder sits where the first was.
+        let made = edit(E::Create {
+            servers: [id("5"), id("4")],
+        })
+        .unwrap();
+        assert_eq!(guilds(&made), ["1", "2+3", "4+5",]);
+        assert_eq!(made[2].id.as_deref(), Some("777"));
+        // Add: moves out of its plain entry, which vanishes (nothing is listed twice).
+        let added = edit(E::AddServer {
+            folder: id("50"),
+            server: id("4"),
+            at: Some(0),
+        })
+        .unwrap();
+        assert_eq!(guilds(&added), ["1", "4+2+3", "5"]);
+        // Remove from a folder of two: it dissolves, both servers stay as plain ones, in place.
+        let removed = edit(E::RemoveServer { server: id("2") }).unwrap();
+        assert_eq!(guilds(&removed), ["1", "3", "2", "4", "5"]);
+        assert!(
+            removed
+                .iter()
+                .all(|f| f.id.is_none() && f.name.is_none() && f.colour.is_none())
+        );
+        // Rename and recolour touch only their own field; an unknown folder is refused.
+        let renamed = edit(E::Rename {
+            folder: id("50"),
+            name: Some("Games".into()),
+        })
+        .unwrap();
+        assert_eq!(
+            (renamed[1].name.as_deref(), renamed[1].colour),
+            (Some("Games"), Some(1))
+        );
+        let recoloured = edit(E::Recolour {
+            folder: id("50"),
+            colour: None,
+        })
+        .unwrap();
+        assert_eq!((recoloured[1].name.as_deref(), recoloured[1].colour), (Some("N"), None));
+        assert!(
+            edit(E::Rename {
+                folder: id("51"),
+                name: None
+            })
+            .is_none()
+        );
+        for _ in 0..50 {
+            let n: u64 = new_folder_id().parse().unwrap();
+            assert!((1..1u64 << 53).contains(&n), "exact in JavaScript numbers");
+        }
+    }
 
     #[test]
     fn login_ticket_debug_is_redacted_even_inside_status() {
