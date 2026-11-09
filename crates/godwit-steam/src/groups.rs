@@ -7,10 +7,10 @@
 
 use steam_vent::{Connection, ConnectionTrait};
 use steam_vent_proto_steam::steammessages_chat_steamclient::{
-    CChatRoom_AckChatMessage_Notification, CChatRoom_GetChatRoomGroupSummary_Request,
-    CChatRoom_GetChatRoomGroupSummary_Response, CChatRoom_GetMessageHistory_Request,
-    CChatRoom_GetMyChatRoomGroups_Request, CChatRoom_JoinChatRoomGroup_Request, CChatRoom_SendChatMessage_Request,
-    CChatRoom_SetSessionActiveChatRoomGroups_Request, CChatRoomState,
+    CChatRoom_AckChatMessage_Notification, CChatRoom_CreateChatRoomGroup_Request,
+    CChatRoom_GetChatRoomGroupSummary_Request, CChatRoom_GetChatRoomGroupSummary_Response,
+    CChatRoom_GetMessageHistory_Request, CChatRoom_GetMyChatRoomGroups_Request, CChatRoom_JoinChatRoomGroup_Request,
+    CChatRoom_SendChatMessage_Request, CChatRoom_SetSessionActiveChatRoomGroups_Request, CChatRoomState,
 };
 
 use crate::backend::Line;
@@ -170,6 +170,17 @@ pub async fn join(conn: &Connection, group: u64, chat: u64) -> Result<(), String
     let req = CChatRoom_JoinChatRoomGroup_Request {
         chat_group_id: Some(group),
         chat_id: Some(chat).filter(|c| *c != 0),
+        ..Default::default()
+    };
+    conn.service_method(req).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Create an ad-hoc group chat with Steam friends, as Steam's ChatRoom service does.
+pub async fn create(conn: &Connection, name: &str, friends: &[u64]) -> Result<(), String> {
+    let req = CChatRoom_CreateChatRoomGroup_Request {
+        name: Some(name.to_owned()),
+        steamid_invitees: friends.to_vec(),
         ..Default::default()
     };
     conn.service_method(req).await.map_err(|e| e.to_string())?;

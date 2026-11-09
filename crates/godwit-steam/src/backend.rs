@@ -180,6 +180,11 @@ pub enum Cmd {
         chat: u64,
         settings: Box<VoiceSettings>,
     },
+    /// Create an ad-hoc chat with Steam friends (answered by refreshing groups).
+    GroupCreate {
+        name: String,
+        friends: Vec<u64>,
+    },
 }
 
 /// A friend's persona, as far as Steam said.
@@ -767,6 +772,17 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
         Cmd::Groups => {
             if let Some(conn) = st.conn.clone() {
                 tokio::spawn(fetch_groups(conn, out.clone()));
+            }
+        }
+        Cmd::GroupCreate { name, friends } => {
+            if let Some(conn) = st.conn.clone() {
+                let out = out.clone();
+                tokio::spawn(async move {
+                    match crate::groups::create(&conn, &name, &friends).await {
+                        Ok(()) => fetch_groups(conn, out).await,
+                        Err(error) => out.send(Ev::Notice(format!("Couldn't create Steam group chat: {error}"))),
+                    }
+                });
             }
         }
         Cmd::GroupSend {

@@ -41,7 +41,7 @@ impl Network {
 
     /// Creates named group conversations from existing friends.
     pub fn can_create_group(self) -> bool {
-        matches!(self, Self::Stoat)
+        matches!(self, Self::Stoat | Self::Steam)
     }
 
     /// The network has a chat with yourself that can be created by opening

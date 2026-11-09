@@ -2596,6 +2596,40 @@ fn server_creation_trims_and_checks_the_name_and_requires_a_signed_in_account() 
 }
 
 #[test]
+fn steam_group_creation_is_gated_to_a_signed_in_steam_account() {
+    let (mut app, _) = open_dm(&[]);
+    let steam_account = account(Network::Steam);
+    let users = vec![
+        UserId::new(steam_account.clone(), "101"),
+        UserId::new(steam_account.clone(), "102"),
+    ];
+    ready(&mut app, Network::Steam, vec![]);
+    let effects = app.dispatch(Action::CreateGroup {
+        account: steam_account.clone(),
+        name: "Friends".into(),
+        users: users.clone(),
+    });
+    assert_eq!(
+        commands(&effects),
+        [&Command::CreateGroup {
+            name: "Friends".into(),
+            users
+        }]
+    );
+    assert!(
+        app.dispatch(Action::CreateGroup {
+            account: steam_account,
+            name: "Friends".into(),
+            users: vec![
+                UserId::new(account(Network::Discord), "101"),
+                UserId::new(account(Network::Discord), "102"),
+            ],
+        })
+        .is_empty()
+    );
+}
+
+#[test]
 fn leaving_a_group_requires_the_room_capability() {
     let mut app = Application::default();
     let mut group = room(Network::Discord, "g1", RoomKind::Group);

@@ -405,6 +405,12 @@ impl NetworkAccount for SteamAccount {
     fn run(&mut self, command: Command) -> Vec<Event> {
         let mut out = Vec::new();
         match command {
+            Command::CreateGroup { name, users } => {
+                let friends: Vec<u64> = users.into_iter().filter_map(|user| user.raw.parse().ok()).collect();
+                if friends.len() >= 2 {
+                    self.net.send(Cmd::GroupCreate { name, friends });
+                }
+            }
             Command::SendFriendRequest { request, name } => self.net.send(Cmd::AddFriend {
                 request: Some(request),
                 name,
