@@ -305,7 +305,14 @@ impl Shell {
                 eprintln!("error: saving settings: {e}");
             }
         }
+        if settings.expire_media_debug_log(env!("CARGO_PKG_VERSION")) {
+            eprintln!("note: the media debug log was switched off after the update");
+            if let Some(path) = settings_path.as_deref() {
+                let _ = settings::save(path, &settings);
+            }
+        }
         settings.apply_net_debug_log();
+        settings.apply_media_debug_log();
         if demo {
             // Two made-up profiles, in memory only (settings aren't saved in demo).
             settings.migrate_profiles();

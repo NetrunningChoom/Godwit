@@ -36,6 +36,9 @@ export component CallDialogs inherits Rectangle {
     in property <string> update-status;
     in property <float> update-progress: -1;
     callback update-now();
+    in-out property <string> update-check-result;
+    in-out property <bool> reset-data-open;
+    callback reset-data-confirmed();
 
     if root.discord-privacy-open && screen == Screen.main: ConfirmDialog {
         title: "Turn off Discord's data use?";
@@ -116,6 +119,26 @@ export component CallDialogs inherits Rectangle {
         confirm-kind: "filled";
         cancelled => { root.update-version = ""; }
         confirmed => { root.update-now(); }
+    }
+    if root.update-check-result != "" && screen == Screen.main: ConfirmDialog {
+        title: "Check for updates";
+        card-width: 440px;
+        message: root.update-check-result;
+        single: true;
+        dismiss-confirms: true;
+        confirm-text: "OK";
+        confirmed => { root.update-check-result = ""; }
+    }
+    if root.reset-data-open && screen == Screen.main: ConfirmDialog {
+        title: "Reset Godwit data?";
+        card-width: 500px;
+        message: "This resets Godwit entirely, as a fresh install. It signs out every account and removes kept sessions, settings, message cache, media caches, logs and drafts from Godwit's own data, config and cache folders. The installed app entry and binary stay. Godwit will restart into first run.";
+        cancel-text: "Cancel";
+        confirm-text: "Reset data";
+        confirm-kind: "filled";
+        danger: true;
+        cancelled => { root.reset-data-open = false; }
+        confirmed => { root.reset-data-open = false; root.reset-data-confirmed(); }
     }
     // Before a link leaves the app: where it really goes, in full.
     if root.confirm-link != "" && screen == Screen.main: ConfirmDialog {

@@ -672,6 +672,12 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_clear_cache() => |sh, ui| sh.clear_cache(ui));
+    callback!(ui.on_check_for_updates() => |sh, ui| sh.check_for_updates(ui));
+    callback!(ui.on_open_project_link() => |sh, _| sh.open_project_link());
+    callback!(ui.on_reset_data() => |sh, ui| sh.request_reset_data(ui));
+    callback!(ui.on_reset_data_confirmed() => |sh, ui| sh.reset_data(ui));
+    callback!(ui.on_open_debug_folder() => |sh, _| sh.open_media_debug_folder());
+    callback!(ui.on_open_data_folder(index) => |sh, _| sh.open_data_folder(index));
     callback!(ui.on_mic_test(on) => |sh, ui| sh.mic_test(ui, on));
     callback!(ui.on_list_devices() => |sh, ui| sh.settings_opened(ui));
     callback!(ui.on_log_out() => |sh, _| sh.log_out());

@@ -19,6 +19,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+pub mod debug;
 pub mod live;
 mod vpx;
 mod vpx_size;

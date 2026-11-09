@@ -553,6 +553,9 @@ fn decode(jobs: &channel::Receiver<Job>, threads: usize, shown: &(dyn Fn() + Sen
             entry => {
                 let Some(decoder) = LiveDecoder::with_threads(codec.live(), threads) else {
                     note(&format!("can't decode {} video", codec.name()));
+                    if godwit_media::debug::enabled() {
+                        godwit_media::debug::debug_log(&format!("call decoder unavailable codec={}", codec.name()));
+                    }
                     continue;
                 };
                 let fresh = Shown {
@@ -580,6 +583,14 @@ fn decode(jobs: &channel::Receiver<Job>, threads: usize, shown: &(dyn Fn() + Sen
                 let size = [picture.width as usize, picture.height as usize];
                 if feed.shown == 0 {
                     note(&format!("{sid}: first frame, {}x{} {}", size[0], size[1], codec.name()));
+                    if godwit_media::debug::enabled() {
+                        godwit_media::debug::debug_log(&format!(
+                            "call video first frame codec={} size={}x{}",
+                            codec.name(),
+                            size[0],
+                            size[1]
+                        ));
+                    }
                 }
                 feed.shown = feed.shown.saturating_add(1);
                 if feed.slot.put(size, std::mem::take(&mut feed.rgba)) {
@@ -590,6 +601,13 @@ fn decode(jobs: &channel::Receiver<Job>, threads: usize, shown: &(dyn Fn() + Sen
             Err(e) => {
                 if feed.failed == 0 {
                     note(&format!("{sid}: a frame didn't decode ({e:?})"));
+                    if godwit_media::debug::enabled() {
+                        godwit_media::debug::debug_log(&format!(
+                            "call video decode error codec={} frame_bytes={} keyframe_requested=true",
+                            codec.name(),
+                            data.len()
+                        ));
+                    }
                 }
                 feed.failed = feed.failed.saturating_add(1);
                 keyframe.store(true, Ordering::Relaxed);

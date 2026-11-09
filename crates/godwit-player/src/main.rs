@@ -66,6 +66,72 @@ fn main() {
     run_helper(&args);
 }
 
+/// Writes helper diagnostics only when the app explicitly passes a log path.
+#[cfg(target_os = "linux")]
+fn media_log(event: impl FnOnce() -> String) {
+    if std::env::var_os("GODWIT_MEDIA_LOG").is_none() {
+        return;
+    }
+    eprintln!("GODWIT_MEDIA: {}", event());
+}
+
+#[cfg(target_os = "linux")]
+fn media_environment() -> String {
+    fn version(packages: &[&str]) -> String {
+        packages
+            .iter()
+            .find_map(|package| {
+                let result = std::process::Command::new("pkg-config")
+                    .args(["--modversion", package])
+                    .output()
+                    .ok()?;
+                result
+                    .status
+                    .success()
+                    .then(|| String::from_utf8_lossy(&result.stdout).trim().to_owned())
+            })
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "unavailable".into())
+    }
+    fn decoders(names: &[&str]) -> String {
+        names
+            .iter()
+            .filter(|name| {
+                std::process::Command::new("gst-inspect-1.0")
+                    .arg(name)
+                    .output()
+                    .is_ok_and(|result| result.status.success())
+            })
+            .copied()
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+    format!(
+        "environment os={} arch={} webkit={} gstreamer={} h264=[{}] vp8=[{}] vp9=[{}] av1=[{}] hevc=[{}]",
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        version(&["webkit2gtk-4.1", "webkit2gtk-4.0"]),
+        version(&["gstreamer-1.0"]),
+        decoders(&["avdec_h264", "openh264dec", "vah264dec", "v4l2slh264dec", "nvh264dec"]),
+        decoders(&["vp8dec", "avdec_vp8"]),
+        decoders(&["vp9dec", "avdec_vp9"]),
+        decoders(&["dav1ddec", "av1dec", "avdec_av1", "nvav1dec"]),
+        decoders(&["avdec_h265", "vah265dec", "v4l2slh265dec", "nvh265dec"]),
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+fn media_environment() -> String {
+    format!(
+        "environment os={} arch={} decoder inventory unavailable on this player",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+fn media_log(_: impl FnOnce() -> String) {}
+
 /// Writes a helper → app message without a body.
 #[cfg(any(target_os = "linux", windows))]
 fn write_header(out: &mut impl std::io::Write, tag: u8, a: u32, b: u32) -> std::io::Result<()> {
@@ -88,6 +154,23 @@ fn run_helper(args: &[String]) -> ! {
     let Some(kind) = kind.filter(|_| valid_player_url(url)) else {
         std::process::exit(2);
     };
+    if std::env::var_os("GODWIT_MEDIA_LOG").is_some() {
+        let safe = url::Url::parse(url)
+            .map(|parsed| {
+                format!(
+                    "{}://{}{}",
+                    parsed.scheme(),
+                    parsed.host_str().unwrap_or_default(),
+                    parsed.path()
+                )
+            })
+            .unwrap_or_else(|_| "<invalid URL>".into());
+        media_log(|| format!("spawn kind={kind:?} url={safe}"));
+    }
+    if std::env::var_os("GODWIT_MEDIA_SUMMARY").is_some() {
+        media_log(media_environment);
+        media_log(|| format!("sandbox_available={}", player_sandbox_available()));
+    }
     let width = args
         .get(2)
         .and_then(|v| v.parse::<i32>().ok())
@@ -170,6 +253,9 @@ fn run_helper(args: &[String]) -> ! {
         &[],
     ));
     let (context, sandboxed) = player_context();
+    if !sandboxed {
+        media_log(|| "sandbox fallback selected; remote playback is disabled".into());
+    }
     let web = webkit2gtk::WebView::builder()
         .web_context(&context)
         .user_content_manager(&content)
@@ -202,6 +288,7 @@ fn run_helper(args: &[String]) -> ! {
         let failed = fallback_page(url);
         let fallback_context = context.clone();
         web.connect_web_process_terminated(move |view, _| {
+            media_log(|| "webkit web process terminated; switching to local sandbox fallback".into());
             // WebKit can fail to start its sandboxed subprocess even when the
             // required executables are present. Replace remote content with a
             // local page without the sandbox; it contains no remote content.
@@ -209,6 +296,23 @@ fn run_helper(args: &[String]) -> ! {
             view.load_html(&failed, Some("https://stoat.chat/"));
         });
     }
+    web.connect_load_failed(|_, event, uri, error| {
+        if std::env::var_os("GODWIT_MEDIA_LOG").is_some() {
+            let safe = url::Url::parse(uri)
+                .map(|parsed| {
+                    format!(
+                        "{}://{}{}",
+                        parsed.scheme(),
+                        parsed.host_str().unwrap_or_default(),
+                        parsed.path()
+                    )
+                })
+                .unwrap_or_else(|_| "<invalid URL>".into());
+            media_log(|| format!("webkit load error state={event:?} url={safe} error={error}"));
+        }
+        false
+    });
+    web.connect_load_changed(|_, event| media_log(|| format!("webkit load state={event:?}")));
     if let Some(settings) = WebViewExt::settings(&web) {
         settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::Never);
         settings.set_media_playback_requires_user_gesture(false);
@@ -226,6 +330,7 @@ fn run_helper(args: &[String]) -> ! {
     } else {
         fallback_page(url)
     };
+    media_log(|| "playback page loaded".into());
     web.load_html(&page, Some("https://stoat.chat/"));
     web.grab_focus();
 

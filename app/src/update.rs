@@ -29,6 +29,22 @@ const MAX_BYTES: usize = 400 * 1024 * 1024;
 const MAX_DECOMPRESSED_BYTES: usize = 512 * 1024 * 1024;
 const KEY: Option<&str> = option_env!("GODWIT_UPDATE_KEY");
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ManualCheck {
+    Checking,
+    UpToDate,
+    Available(String),
+    Failed(String),
+}
+
+pub fn finish_manual_check(result: Result<Option<String>, String>) -> ManualCheck {
+    match result {
+        Ok(Some(version)) => ManualCheck::Available(version),
+        Ok(None) => ManualCheck::UpToDate,
+        Err(error) => ManualCheck::Failed(error),
+    }
+}
+
 /// The release asset for this platform, if releases have one.
 fn asset_name() -> Option<&'static str> {
     if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
@@ -108,6 +124,53 @@ pub fn start(offer: impl FnOnce(String) + Send + 'static) {
             Err(e) => eprintln!("update: {e}"),
         }
     });
+}
+
+/// Checks once on demand, without consulting or updating the six-hour stamp.
+/// The callback runs on the update thread and reports why a build cannot check.
+pub fn check_now(done: impl FnOnce(Result<Option<String>, String>) + Send + 'static) {
+    if cfg!(debug_assertions) {
+        return done(Err("Debug builds do not check for updates.".into()));
+    }
+    if std::env::var_os("GODWIT_NO_UPDATE").is_some() {
+        return done(Err("Updates are disabled by GODWIT_NO_UPDATE.".into()));
+    }
+    if KEY.and_then(hex).is_none() {
+        return done(Err(
+            "This build has no update signing key, so it cannot check for updates.".into(),
+        ));
+    }
+    let Some(asset) = asset_name() else {
+        return done(Err("Updates are not available for this platform.".into()));
+    };
+    background(async move {
+        let result = latest(asset).await.map(|release| {
+            release.map(|release| {
+                let version = release.version.clone();
+                *found() = Some(release);
+                version
+            })
+        });
+        done(result);
+    });
+}
+
+#[cfg(test)]
+mod manual_check_tests {
+    use super::*;
+
+    #[test]
+    fn manual_check_transitions_report_current_available_and_failure() {
+        assert_eq!(finish_manual_check(Ok(None)), ManualCheck::UpToDate);
+        assert_eq!(
+            finish_manual_check(Ok(Some("1.2.3".into()))),
+            ManualCheck::Available("1.2.3".into())
+        );
+        assert_eq!(
+            finish_manual_check(Err("offline".into())),
+            ManualCheck::Failed("offline".into())
+        );
+    }
 }
 
 /// After the user said yes: downloads, checks and installs the release

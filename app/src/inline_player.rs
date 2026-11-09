@@ -18,8 +18,8 @@
 //! up), `s width height` (resize without reloading), `q` (quit).
 //! Coordinates are the helper's pixels.
 
-use std::io::{self, Read, Write};
-use std::process::{Child, ChildStdin};
+use std::io::{self, BufRead, Read, Write};
+use std::process::{Child, ChildStderr, ChildStdin};
 use std::sync::mpsc::{self, Receiver};
 
 use std::rc::Rc;
@@ -30,6 +30,7 @@ use godwit_core::backend::Waker;
 
 /// Players alive at once: each is a WebKit process (Godwit's limit).
 pub const MAX_PLAYERS: usize = 3;
+static MEDIA_SUMMARY_SENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// The largest frame accepted from a helper: 1600 × 1000 pixels.
 const MAX_FRAME_BYTES: usize = FULL_WIDTH as usize * FULL_HEIGHT as usize * 4;
 /// Fullscreen frames' limit: a 1440p screen at its own pixels (1600 × 1000
@@ -194,7 +195,8 @@ impl InlinePlayers {
         let px = |v: u32, max: u32| (((v as f32 * scale) as u32).clamp(90, max)) & !1;
         let (width, height) = (px(spec.width, 1600), px(spec.height, 1000));
         let executable = player_executable()?;
-        let spawned = std::process::Command::new(executable)
+        let mut command = std::process::Command::new(executable);
+        command
             .args([
                 spec.kind.arg(),
                 &spec.url,
@@ -203,9 +205,18 @@ impl InlinePlayers {
                 &format!("{scale:.2}"),
             ])
             .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+            .stdout(std::process::Stdio::piped());
+        if let Some(path) = crate::media_log::path() {
+            command.env("GODWIT_MEDIA_LOG", path);
+            command.env("GST_DEBUG", "2,decodebin:5,playbin:5,GST_CAPS:5,GST_ELEMENT_FACTORY:5");
+            if !MEDIA_SUMMARY_SENT.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                command.env("GODWIT_MEDIA_SUMMARY", "1");
+            }
+            command.stderr(std::process::Stdio::piped());
+        } else {
+            command.stderr(std::process::Stdio::null());
+        }
+        let spawned = command.spawn();
         let mut child = match spawned {
             Ok(child) => child,
             Err(e) => {
@@ -213,6 +224,16 @@ impl InlinePlayers {
                 return Err(e);
             }
         };
+        crate::media_log::record(|| {
+            format!(
+                "player spawned kind={:?} url={}",
+                spec.kind,
+                crate::media_log::safe_url(&spec.url)
+            )
+        });
+        if let Some(stderr) = child.stderr.take() {
+            read_player_stderr(stderr);
+        }
         let Some(input) = child.stdin.take() else {
             stop_child(child);
             return Err(io::Error::other("player helper has no command pipe"));
@@ -413,6 +434,7 @@ impl InlinePlayers {
             let exited = player.child.as_mut().and_then(|child| child.try_wait().ok()).flatten();
             match exited {
                 Some(status) => {
+                    crate::media_log::record(|| format!("player exited kind={:?} status={status}", player.spec.kind));
                     // Crashed or refused: don't start it again by itself.
                     if !status.success() {
                         failed.insert(player.spec.url.clone());
@@ -430,6 +452,23 @@ impl InlinePlayers {
         }
         polled
     }
+}
+
+fn read_player_stderr(stderr: ChildStderr) {
+    let _ = std::thread::Builder::new()
+        .name("godwit-player-stderr".into())
+        .spawn(move || {
+            for line in io::BufReader::new(stderr).lines().map_while(Result::ok) {
+                if crate::media_log::enabled() {
+                    if let Some(event) = line.strip_prefix("GODWIT_MEDIA: ") {
+                        crate::media_log::line(&crate::media_log::safe_stderr(event));
+                    } else {
+                        let safe = crate::media_log::safe_stderr(&line);
+                        crate::media_log::record(|| format!("player stderr: {safe}"));
+                    }
+                }
+            }
+        });
 }
 
 /// Preserve aspect ratio inside the fullscreen frame limit.

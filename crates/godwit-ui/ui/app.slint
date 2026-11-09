@@ -375,6 +375,9 @@ export component AppWindow inherits Window {
     in property <string> update-status;
     in-out property <float> update-progress: -1;
     callback update-now();
+    in-out property <string> update-check-result;
+    in-out property <bool> reset-data-open;
+    callback reset-data-confirmed();
     in property <string> quiet-notice-account;
     callback quiet-notice(bool);
     // The server menu and its dialogs.
@@ -814,6 +817,17 @@ export component AppWindow inherits Window {
     in property <string> net-debug-log-path;
     in property <string> cache-size;
     in property <bool> cache-clearable;
+    in property <string> update-check-status;
+    callback check-for-updates();
+    callback open-project-link();
+    callback reset-data();
+    in-out property <bool> media-debug-log;
+    in property <string> media-debug-log-path;
+    in property <bool> media-debug-log-folder-exists;
+    callback open-debug-folder();
+    in property <[string]> data-folders;
+    in property <[bool]> data-folder-exists;
+    callback open-data-folder(int);
     in property <string> version;
     in property <[ProblemItem]> problems;
     in property <int> problems-unseen;
@@ -1901,6 +1915,17 @@ export component AppWindow inherits Window {
         clear-problems => { root.clear-problems(); }
         cache-clearable: root.cache-clearable;
         clear-cache => { root.clear-cache(); }
+        update-check-status: root.update-check-status;
+        check-for-updates => { root.check-for-updates(); }
+        open-project-link => { root.open-project-link(); }
+        reset-data => { root.reset-data(); }
+        media-debug-log <=> root.media-debug-log;
+        media-debug-log-path: root.media-debug-log-path;
+        media-debug-log-folder-exists: root.media-debug-log-folder-exists;
+        open-debug-folder => { root.open-debug-folder(); }
+        data-folders: root.data-folders;
+        data-folder-exists: root.data-folder-exists;
+        open-data-folder(i) => { root.open-data-folder(i); }
         version: root.version;
         install-supported: root.install-supported;
         app-installed: root.app-installed;
@@ -1977,6 +2002,9 @@ export component AppWindow inherits Window {
         update-status: root.update-status;
         update-progress <=> root.update-progress;
         update-now => { root.update-now(); }
+        update-check-result <=> root.update-check-result;
+        reset-data-open <=> root.reset-data-open;
+        reset-data-confirmed => { root.reset-data-confirmed(); }
     }
     // A call video filling the window: double-click or Esc comes back.
     if root.fullscreen-video >= 0 && root.fullscreen-video < root.call-videos.length && screen == Screen.main: FullscreenVideo {

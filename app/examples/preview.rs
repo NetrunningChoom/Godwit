@@ -1907,6 +1907,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_settings_section(4);
                 ui.set_memory("14.0 MB".into());
                 ui.set_version("0.1.0".into());
+                ui.set_cache_size("12.4 MB".into());
+                ui.set_cache_clearable(true);
+                ui.set_update_check_status("Last checked on request".into());
+                ui.set_media_debug_log(true);
+                ui.set_media_debug_log_path("~/.cache/godwit/media-debug.log".into());
+                ui.set_media_debug_log_folder_exists(true);
+                ui.set_data_folders(slint::ModelRc::new(slint::VecModel::from(vec![
+                    "Settings and configuration · ~/.config/godwit".into(),
+                    "Godwit data · ~/.local/share/godwit".into(),
+                    "Kept sessions · ~/.config/godwit/secrets".into(),
+                    "Message cache · ~/.config/godwit/message-cache".into(),
+                    "Media cache · ~/.config/godwit/picture-cache".into(),
+                    "Logs · ~/.cache/godwit".into(),
+                ])));
+                ui.set_data_folder_exists(slint::ModelRc::new(slint::VecModel::from(vec![
+                    true, true, true, true, false, true,
+                ])));
                 Screen::Main
             }),
         ),
@@ -2329,7 +2346,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_settings_section(10);
                 ui.set_settings_account(0);
                 ui.set_settings_account_profile(false);
-                ui.set_settings_account_tab(5);
+                ui.set_settings_account_tab(3);
                 ui.set_settings_data_policy_url("https://discord.com/privacy".into());
                 ui.set_settings_data_policy_label("Open Discord privacy information".into());
                 ui.set_settings_overview_title(section.title.as_str().into());

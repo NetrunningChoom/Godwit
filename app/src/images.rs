@@ -337,7 +337,16 @@ impl Worker {
             match fetch(&self.agent, url) {
                 Ok(bytes) => (Some(bytes), false),
                 Err(Failure::Again(hint)) if self.retries.schedule(key, attempt, hint) => return None,
-                Err(_) => (None, false),
+                Err(_) => {
+                    crate::media_log::record(|| {
+                        format!(
+                            "image fetch failed url={} fit={:?}",
+                            crate::media_log::safe_url(url),
+                            key.1
+                        )
+                    });
+                    (None, false)
+                }
             }
         };
         let Some(bytes) = bytes else {
@@ -397,6 +406,14 @@ fn decode_any(bytes: &[u8], key: &Key) -> Option<(Pixels, Moving)> {
         return Some(animated);
     }
     let Some((w, h, rgba)) = decode(bytes, key.1) else {
+        crate::media_log::record(|| {
+            format!(
+                "image decode failed url={} bytes={} fit={:?}",
+                crate::media_log::safe_url(&key.0),
+                bytes.len(),
+                key.1
+            )
+        });
         // An emoji's public asset id identifies failures without
         // printing credentials or signed URLs from other media.
         let emoji = key

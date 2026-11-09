@@ -196,6 +196,9 @@ impl LiveDecoder {
                 return None;
             }
         };
+        if crate::debug::enabled() {
+            crate::debug::debug_log(&format!("call decoder selected codec={codec:?} threads={threads}"));
+        }
         Some(Self {
             inner,
             scratch: Vec::new(),

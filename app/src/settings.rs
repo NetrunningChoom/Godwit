@@ -81,6 +81,8 @@ pub struct Settings {
     /// The version of Godwit the network debug log was switched on in
     /// (empty: off). Another version, after an update, switches it off.
     pub net_debug_log: String,
+    /// Media diagnostics are opt-in and are reset after each app update.
+    pub media_debug_log: String,
     /// Home's pinned and hidden chats (`network:user|room`).
     pub pinned_rooms: Vec<String>,
     pub hidden_rooms: Vec<String>,
@@ -180,6 +182,7 @@ impl Default for Settings {
             members_width: 0.0,
             message_tone: 0,
             net_debug_log: String::new(),
+            media_debug_log: String::new(),
             pinned_rooms: Vec::new(),
             pins_seeded: Vec::new(),
             hidden_rooms: Vec::new(),
@@ -359,6 +362,14 @@ impl Settings {
         true
     }
 
+    pub fn expire_media_debug_log(&mut self, version: &str) -> bool {
+        if self.media_debug_log.is_empty() || self.media_debug_log == version {
+            return false;
+        }
+        self.media_debug_log.clear();
+        true
+    }
+
     /// Starts or stops the network debug log as these settings say.
     pub fn apply_net_debug_log(&self) {
         let dir = if self.net_debug_log.is_empty() {
@@ -367,6 +378,11 @@ impl Settings {
             net_log_dir()
         };
         godwit_core::net::log::set(dir.as_deref());
+    }
+
+    pub fn apply_media_debug_log(&self) {
+        let dir = (!self.media_debug_log.is_empty()).then(net_log_dir).flatten();
+        crate::media_log::set(dir.as_deref());
     }
 }
 

@@ -157,6 +157,29 @@ impl Shell {
                 .unwrap_or_default()
                 .into(),
         );
+        ui.set_media_debug_log(!s.media_debug_log.is_empty());
+        let log_dir = crate::settings::net_log_dir();
+        ui.set_media_debug_log_path(
+            log_dir
+                .as_ref()
+                .map(|d| d.join(crate::media_log::FILE_NAME).display().to_string())
+                .unwrap_or_default()
+                .into(),
+        );
+        ui.set_media_debug_log_folder_exists(log_dir.as_ref().is_some_and(|d| crate::reset_data::is_directory(d)));
+        let folders = crate::reset_data::folders();
+        ui.set_data_folders(ModelRc::new(VecModel::from(
+            folders
+                .iter()
+                .map(|(label, path)| format!("{label} · {}", path.display()).into())
+                .collect::<Vec<slint::SharedString>>(),
+        )));
+        ui.set_data_folder_exists(ModelRc::new(VecModel::from(
+            folders
+                .iter()
+                .map(|(_, path)| crate::reset_data::is_directory(path))
+                .collect::<Vec<_>>(),
+        )));
         ui.set_accent_index(
             theme::ACCENTS
                 .iter()
@@ -589,6 +612,101 @@ impl Shell {
         self.show_cache_size(ui);
     }
 
+    pub fn check_for_updates(&self, ui: &AppWindow) {
+        ui.set_update_check_status("Checking for updates…".into());
+        let weak = ui.as_weak();
+        crate::update::check_now(move |result| {
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(ui) = weak.upgrade() else { return };
+                match crate::update::finish_manual_check(result) {
+                    crate::update::ManualCheck::Available(version) => {
+                        ui.set_update_check_status(format!("Godwit {version} is available.").into());
+                        ui.set_update_version(version.into());
+                    }
+                    crate::update::ManualCheck::UpToDate => {
+                        ui.set_update_check_status("Godwit is up to date.".into());
+                        ui.set_update_check_result("Godwit is up to date.".into());
+                    }
+                    crate::update::ManualCheck::Failed(error) => {
+                        ui.set_update_check_status("Update check could not run.".into());
+                        ui.set_update_check_result(error.into());
+                    }
+                    crate::update::ManualCheck::Checking => {}
+                }
+            });
+        });
+    }
+
+    pub fn open_project_link(&self) {
+        open_external("https://github.com/NetrunningChoom/Godwit");
+    }
+
+    pub fn request_reset_data(&self, ui: &AppWindow) {
+        ui.set_reset_data_open(true);
+    }
+
+    pub fn open_data_folder(&self, index: i32) {
+        let Some((_, path)) = usize::try_from(index)
+            .ok()
+            .and_then(|i| crate::reset_data::folders().get(i).cloned())
+        else {
+            return;
+        };
+        if crate::reset_data::is_directory(&path)
+            && let Err(error) = open::that_detached(path)
+        {
+            eprintln!("error: opening Godwit folder: {error}");
+        }
+    }
+
+    pub fn open_media_debug_folder(&self) {
+        if let Some(path) = crate::settings::net_log_dir()
+            && let Err(error) = open::that_detached(path)
+        {
+            eprintln!("error: opening media log folder: {error}");
+        }
+    }
+
+    pub fn reset_data(&mut self, ui: &AppWindow) {
+        let Some((config, data, cache)) = crate::reset_data::roots() else {
+            ui.set_update_check_result(
+                "Godwit could not locate its data folders, so it did not reset anything.".into(),
+            );
+            return;
+        };
+        // Every network's first slots too (the range sign-in discovery scans),
+        // so a kept sign-in missing from the settings' account list goes as well.
+        let mut accounts = self
+            .settings
+            .known_accounts
+            .iter()
+            .map(|a| (a.network.clone(), a.slot))
+            .collect::<Vec<_>>();
+        for network in godwit_core::network::Network::ALL {
+            for slot in 0..8 {
+                let entry = (network.key().to_owned(), slot);
+                if !accounts.contains(&entry) {
+                    accounts.push(entry);
+                }
+            }
+        }
+        let (store, _) = godwit_secrets::open(config.join("secrets"));
+        // Stop account workers before removing their local state.
+        for account in self.accounts() {
+            account.log_out();
+        }
+        if let Err(error) = crate::reset_data::reset(&config, &data, &cache, &accounts, store.as_ref()) {
+            ui.set_update_check_result(format!("Godwit could not reset all data: {error}").into());
+            return;
+        }
+        match crate::update::restart() {
+            Ok(()) => std::process::exit(0),
+            Err(error) => {
+                ui.set_update_check_result(format!("Godwit reset its data but could not restart: {error}").into())
+            }
+        }
+    }
+
     /// Something in Settings changed: apply it and save.
     pub fn settings_changed(&mut self, ui: &AppWindow) {
         let devices = self.audio_devices();
@@ -626,6 +744,24 @@ impl Shell {
                 String::new()
             };
             s.apply_net_debug_log();
+        }
+        let media_debug_log = ui.get_media_debug_log();
+        if media_debug_log != !s.media_debug_log.is_empty() {
+            s.media_debug_log = if media_debug_log {
+                env!("CARGO_PKG_VERSION").to_owned()
+            } else {
+                String::new()
+            };
+            s.apply_media_debug_log();
+            let log_dir = crate::settings::net_log_dir();
+            ui.set_media_debug_log_path(
+                log_dir
+                    .as_ref()
+                    .map(|d| d.join(crate::media_log::FILE_NAME).display().to_string())
+                    .unwrap_or_default()
+                    .into(),
+            );
+            ui.set_media_debug_log_folder_exists(log_dir.as_ref().is_some_and(|d| crate::reset_data::is_directory(d)));
         }
         if self.devices_shown
             && let Some(devices) = devices
