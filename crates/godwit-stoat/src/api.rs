@@ -509,6 +509,17 @@ pub struct UserProfile {
     pub background: Option<File>,
 }
 
+/// `GET /users/{id}/mutual`, as used by for-web's profile mutuals modals.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UserMutual {
+    #[serde(default)]
+    pub users: Vec<String>,
+    #[serde(default)]
+    pub servers: Vec<String>,
+    #[serde(default)]
+    pub channels: Vec<String>,
+}
+
 /// Response of `GET /channels/{id}/messages?include_users=true`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MessagesWithUsers {

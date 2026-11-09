@@ -412,6 +412,14 @@ impl StoatAccount {
                     out.push(Event::Profile(p));
                 }
             }
+            Ev::Mutual { user, result } => {
+                self.store.mutuals.insert(user.clone(), result.ok());
+                if self.profile_for.as_ref().is_some_and(|(u, _, _)| *u == user)
+                    && let Some(p) = self.profile()
+                {
+                    out.push(Event::Profile(p));
+                }
+            }
             Ev::MemberSaved(result) => {
                 let Some(action) = self.group_member_pending.take() else {
                     return;

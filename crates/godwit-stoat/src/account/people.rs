@@ -12,6 +12,7 @@ impl StoatAccount {
         let member = self.member(user, server);
         let u = self.store.users.get(user);
         let fetched = self.store.profiles.get(user).and_then(Option::as_ref);
+        let mutual = self.store.mutuals.get(user).and_then(Option::as_ref);
         let names = Names {
             store: &self.store,
             server,
@@ -109,9 +110,50 @@ impl StoatAccount {
             // Reports about other people, except the network's own staff
             // (official UserContextMenu: "Report user" needs !user.privileged).
             can_report: !u.is_some_and(|u| u.privileged) && self.store.me.as_deref() != Some(user),
-            // Stoat has no private notes; its mutuals need a request of their own (left off).
-            mutual_servers: Vec::new(),
-            mutual_friends: Vec::new(),
+            // for-web's UserProfileMutualFriends/Groups reads /users/{id}/mutual.
+            mutual_servers: mutual
+                .into_iter()
+                .flat_map(|m| &m.servers)
+                .filter_map(|id| {
+                    let account = self.account.as_ref()?.clone();
+                    self.store
+                        .servers
+                        .contains_key(id)
+                        .then(|| godwit_core::members::MutualServer {
+                            server: ServerId::new(account, id.as_str()),
+                            nick: None,
+                        })
+                })
+                .collect(),
+            mutual_friends: mutual
+                .into_iter()
+                .flat_map(|m| &m.users)
+                .filter_map(|id| {
+                    let u = self.store.users.get(id)?;
+                    let name = u
+                        .display_name
+                        .as_deref()
+                        .filter(|n| !n.is_empty())
+                        .unwrap_or(&u.username);
+                    Some(godwit_core::members::MutualFriend {
+                        user: UserId::new(self.account.as_ref()?.clone(), id.as_str()),
+                        name: name.into(),
+                        avatar_url: u.avatar.as_ref().and_then(|a| self.file_url(a)).map(Into::into),
+                    })
+                })
+                .collect(),
+            has_mutuals: true,
+            mutual_groups: mutual
+                .into_iter()
+                .flat_map(|m| &m.channels)
+                .filter_map(|id| {
+                    let c = self.store.channels.get(id).filter(|c| c.channel_type == "Group")?;
+                    Some(godwit_core::members::MutualGroup {
+                        room: RoomId::new(self.account.as_ref()?.clone(), id.as_str()),
+                        name: c.name.as_deref().unwrap_or("Group chat").into(),
+                    })
+                })
+                .collect(),
             note: None,
             can_note: false,
             note_limit: 0,

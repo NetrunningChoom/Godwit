@@ -158,6 +158,9 @@ pub enum PeopleCmd {
     FetchProfile {
         user: String,
     },
+    FetchMutual {
+        user: String,
+    },
     FetchOwnProfile {
         user: String,
         after_save: bool,
@@ -590,6 +593,10 @@ pub enum Ev {
     Profile {
         user: String,
         profile: UserProfile,
+    },
+    Mutual {
+        user: String,
+        result: Result<UserMutual, String>,
     },
     OwnProfile {
         after_save: bool,
@@ -1466,6 +1473,17 @@ impl Backend {
                         Ok(profile) => out.emit(Ev::Profile { user, profile }),
                         Err(e) => out.error("loading profile", e),
                     }
+                });
+            }
+            PeopleCmd::FetchMutual { user } => {
+                let rest = rest.clone();
+                let out = out.clone();
+                tokio::spawn(async move {
+                    let result = rest
+                        .send::<UserMutual>(rest.req(reqwest::Method::GET, &format!("/users/{user}/mutual")))
+                        .await
+                        .map_err(|e| e.to_string());
+                    out.emit(Ev::Mutual { user, result });
                 });
             }
             PeopleCmd::FetchOwnProfile { user, after_save } => {

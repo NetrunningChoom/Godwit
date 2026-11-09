@@ -129,6 +129,8 @@ pub struct Store {
     pub notification_prefs: NotificationPrefs,
     /// Profiles fetched this session (None while loading).
     pub profiles: HashMap<String, Option<UserProfile>>,
+    /// Mutual ids fetched only after opening that person's profile.
+    pub mutuals: HashMap<String, Option<crate::api::UserMutual>>,
     /// Synced server order (`ordering.serverSidebar`, else `ordering.servers`).
     pub sidebar_order: Vec<String>,
     /// The whole synced `server-folders` object, so edits keep fields we don't use.

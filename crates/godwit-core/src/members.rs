@@ -126,6 +126,12 @@ pub struct Profile {
     /// Friends we have in common (Mutual Friends tab).
     #[serde(default)]
     pub mutual_friends: Vec<MutualFriend>,
+    /// This network supplies mutual lists when a profile is opened.
+    #[serde(default)]
+    pub has_mutuals: bool,
+    /// Group chats we share with this profile's owner.
+    #[serde(default)]
+    pub mutual_groups: Vec<MutualGroup>,
     /// Our private note on them; None while it loads or if there is none.
     #[serde(default)]
     pub note: Option<Arc<str>>,
@@ -158,6 +164,13 @@ pub struct MutualFriend {
     pub user: UserId,
     pub name: Arc<str>,
     pub avatar_url: Option<Arc<str>>,
+}
+
+/// A group chat shared with a profile's owner.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MutualGroup {
+    pub room: crate::ids::RoomId,
+    pub name: Arc<str>,
 }
 
 /// What a profile card may do to a group member, and where.

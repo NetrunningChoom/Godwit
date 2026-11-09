@@ -260,10 +260,12 @@ export component AppWindow inherits Window {
     in-out property <string> card-note-source;
     in property <[MutualItem]> card-mutual-servers;
     in property <[MutualItem]> card-mutual-friends;
+    in property <[MutualItem]> card-mutual-groups;
     callback save-note(string);
     callback note-edited(string);
     callback open-mutual-server(int);
     callback open-mutual-friend(int);
+    callback open-mutual-group(int);
     // Kept on the window and exposed for generated off-screen scenes.
     in-out property <int> confirm-moderate: 0;
     in-out property <string> ban-reason;
@@ -1637,8 +1639,10 @@ export component AppWindow inherits Window {
         note-edited(t) => { root.note-edited(t); }
         mutual-servers: root.card-mutual-servers;
         mutual-friends: root.card-mutual-friends;
+        mutual-groups: root.card-mutual-groups;
         open-mutual-server(i) => { root.open-mutual-server(i); }
         open-mutual-friend(i) => { root.open-mutual-friend(i); }
+        open-mutual-group(i) => { root.open-mutual-group(i); }
         kick => { root.confirm-moderate = 1; }
         ban => { root.confirm-moderate = 2; root.ban-reason = ""; root.ban-delete-index = 0; }
         remove-group-member => { root.confirm-remove-group-member = true; }

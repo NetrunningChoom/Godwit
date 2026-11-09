@@ -663,6 +663,7 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
     let servers: Vec<MutualItem> = p
         .mutual_servers
         .iter()
+        .take(if p.has_mutuals { usize::MAX } else { 0 })
         .map(|m| {
             // A server we don't know (yet) is named by its id rather than hidden.
             let server = state.server(&m.server);
@@ -681,6 +682,7 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
     let friends: Vec<MutualItem> = p
         .mutual_friends
         .iter()
+        .take(if p.has_mutuals { usize::MAX } else { 0 })
         .map(|f| {
             let (picture, has_picture) = picture(images, f.avatar_url.as_deref());
             MutualItem {
@@ -693,6 +695,19 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
         })
         .collect();
     ui.set_card_mutual_friends(ModelRc::new(VecModel::from(friends)));
+    let groups: Vec<MutualItem> = p
+        .mutual_groups
+        .iter()
+        .take(if p.has_mutuals { usize::MAX } else { 0 })
+        .map(|g| MutualItem {
+            initials: initials(&g.name).into(),
+            name: g.name.as_ref().into(),
+            detail: Default::default(),
+            picture: no_image(),
+            has_picture: false,
+        })
+        .collect();
+    ui.set_card_mutual_groups(ModelRc::new(VecModel::from(groups)));
     // The official ProfileActions: what we can do depends on where we stand.
     ui.set_card_relationship(match (p.has_friends, p.relationship) {
         (false, _) => 1,

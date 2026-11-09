@@ -830,6 +830,8 @@ impl Application {
             can_report: false,
             mutual_servers: Vec::new(),
             mutual_friends: Vec::new(),
+            has_mutuals: false,
+            mutual_groups: Vec::new(),
             note: None,
             can_note: false,
             note_limit: 0,

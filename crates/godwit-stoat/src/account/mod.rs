@@ -2041,6 +2041,7 @@ mod tests {
         assert!(p.has_friends && !p.bot);
         let before = p.relationship;
         let _ = cmds.try_recv();
+        let _ = cmds.try_recv();
         a.run(Command::AddFriend { user: ann.clone() });
         let Ok(Cmd::People(PeopleCmd::FriendRequest { username, .. })) = cmds.try_recv() else {
             panic!("no friend request sent")
@@ -2072,7 +2073,7 @@ mod tests {
             user: ann.clone(),
             room: Some(room("C1")),
         });
-        let _ = cmds.try_recv();
+        let _ = (cmds.try_recv(), cmds.try_recv());
         a.run(Command::BlockUser { user: ann.clone() });
         assert!(matches!(
             cmds.try_recv(),
@@ -2113,6 +2114,7 @@ mod tests {
         };
         assert_eq!((&*p.name, p.bio.is_none(), p.me), ("Ann", true, false));
         assert!(matches!(cmds.try_recv(), Ok(Cmd::People(PeopleCmd::FetchProfile { user })) if user == "ANN"));
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::People(PeopleCmd::FetchMutual { user })) if user == "ANN"));
         let profile = serde_json::from_value(json!({ "content": "**hi** there" })).unwrap();
         tx.send(Ev::Profile {
             user: "ANN".into(),
@@ -2124,6 +2126,25 @@ mod tests {
             panic!("{events:?}")
         };
         assert_eq!(p.bio.as_deref(), Some("**hi** there"));
+        tx.send(Ev::Mutual {
+            user: "ANN".into(),
+            result: serde_json::from_value(json!({
+                "users": ["ME", "MISSING"], "servers": ["S", "MISSING"], "channels": ["G", "C2"]
+            }))
+            .map_err(|e| e.to_string()),
+        })
+        .unwrap();
+        let events = a.poll();
+        let [Event::Profile(p)] = &events[..] else {
+            panic!("{events:?}")
+        };
+        assert!(p.has_mutuals);
+        assert_eq!(p.mutual_servers.len(), 1);
+        assert_eq!(p.mutual_servers[0].server.raw.as_ref(), "S");
+        assert_eq!(p.mutual_friends.len(), 1);
+        assert_eq!(p.mutual_friends[0].name.as_ref(), "Me Myself");
+        assert_eq!(p.mutual_groups.len(), 1);
+        assert_eq!(p.mutual_groups[0].room.raw.as_ref(), "G");
         a.run(Command::LoadProfile { user: ann, room: None });
         assert!(cmds.try_recv().is_err(), "fetched once per person");
     }

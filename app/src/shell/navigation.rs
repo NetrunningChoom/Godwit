@@ -820,6 +820,15 @@ impl Shell {
         }
     }
 
+    pub fn open_mutual_group(&mut self, ui: &AppWindow, row: i32) {
+        let Some((_, Some(p))) = self.app.state().profile.as_ref() else {
+            return;
+        };
+        if let Some(group) = p.mutual_groups.get(usize::try_from(row).unwrap_or(usize::MAX)) {
+            self.act(ui, Action::SelectRoom(group.room.clone()));
+        }
+    }
+
     pub fn message_profile(&mut self, ui: &AppWindow) {
         if let Some((user, _)) = self.app.state().profile.clone() {
             self.act(ui, Action::CloseProfile);

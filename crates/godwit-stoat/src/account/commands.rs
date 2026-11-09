@@ -224,6 +224,10 @@ impl StoatAccount {
                     self.store.profiles.insert(user.clone(), None);
                     self.net.send(Cmd::People(PeopleCmd::FetchProfile { user: user.clone() }));
                 }
+                if !self.store.mutuals.contains_key(&user) {
+                    self.store.mutuals.insert(user.clone(), None);
+                    self.net.send(Cmd::People(PeopleCmd::FetchMutual { user: user.clone() }));
+                }
                 self.profile_for = Some((user, server, group));
                 self.profile().map(Event::Profile).into_iter().collect()
             }

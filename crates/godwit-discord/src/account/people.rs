@@ -318,6 +318,8 @@ impl DiscordAccount {
             can_report: false,
             mutual_servers: self.mutual_servers(fetched),
             mutual_friends: self.mutual_friends(fetched),
+            has_mutuals: true,
+            mutual_groups: Vec::new(),
             note: self
                 .notes
                 .get(user)

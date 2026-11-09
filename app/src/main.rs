@@ -409,6 +409,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_note_edited(text) => |sh, ui| sh.note_edited(ui, &text));
     callback!(ui.on_open_mutual_server(i) => |sh, ui| sh.open_mutual(ui, i, true));
     callback!(ui.on_open_mutual_friend(i) => |sh, ui| sh.open_mutual(ui, i, false));
+    callback!(ui.on_open_mutual_group(i) => |sh, ui| sh.open_mutual_group(ui, i));
     callback!(ui.on_unblock_user() => |sh, ui| sh.block_profile(ui, false));
     callback!(ui.on_ignore_user() => |sh, ui| sh.ignore_profile(ui, true));
     callback!(ui.on_unignore_user() => |sh, ui| sh.ignore_profile(ui, false));

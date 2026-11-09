@@ -68,8 +68,10 @@ export component UserCard inherits Rectangle {
     // Servers and friends we share with them; a click opens it.
     in property <[MutualItem]> mutual-servers;
     in property <[MutualItem]> mutual-friends;
+    in property <[MutualItem]> mutual-groups;
     callback open-mutual-server(int);
     callback open-mutual-friend(int);
+    callback open-mutual-group(int);
     callback kick();
     callback ban();
     callback remove-group-member();
@@ -259,6 +261,20 @@ export component UserCard inherits Rectangle {
                             padding-left: Theme.space-2; padding-right: Theme.space-2; spacing: Theme.space-3;
                             Avatar { y: (parent.height - self.height) / 2; size: 28px; source: f.picture; has-image: f.has-picture; initials: f.initials; }
                             Text { text: f.name; font-size: Theme.text-body; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                        }
+                    }
+                }
+                if root.mutual-groups.length > 0: VerticalLayout {
+                    spacing: Theme.space-2;
+                    Text { text: root.mutual-groups.length == 1 ? "1 mutual group" : root.mutual-groups.length + " mutual groups"; font-size: Theme.text-small; font-weight: 600; color: Theme.on-surface-variant; }
+                    for g[i] in root.mutual-groups: Rectangle {
+                        height: 36px;
+                        border-radius: Theme.radius-sm;
+                        background: ta-g.has-hover ? Theme.surface-highest : transparent;
+                        ta-g := TouchArea { clicked => { root.open-mutual-group(i); } }
+                        HorizontalLayout { padding-left: Theme.space-2; padding-right: Theme.space-2; spacing: Theme.space-3;
+                            Avatar { y: (parent.height - self.height) / 2; size: 28px; source: g.picture; has-image: g.has-picture; initials: g.initials; }
+                            Text { text: g.name; font-size: Theme.text-body; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
                         }
                     }
                 }
