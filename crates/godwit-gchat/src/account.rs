@@ -1142,6 +1142,7 @@ impl NetworkAccount for GChatAccount {
             godwit_core::autocomplete::TriggerKind::Person => format!("<@gchat:{id}>"),
             godwit_core::autocomplete::TriggerKind::Channel => format!("#{name}"),
             godwit_core::autocomplete::TriggerKind::Emoji => format!(":{name}:"),
+            godwit_core::autocomplete::TriggerKind::MentionSpecial => name.to_owned(),
         }
     }
 

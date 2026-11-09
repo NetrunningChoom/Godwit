@@ -1004,6 +1004,61 @@ impl godwit_discord::markdown::Names for Names<'_> {
 }
 
 impl NetworkAccount for FluxerAccount {
+    fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
+        match kind {
+            godwit_core::autocomplete::TriggerKind::Person => format!("<@{id}>"),
+            godwit_core::autocomplete::TriggerKind::Channel => format!("<#{id}>"),
+            godwit_core::autocomplete::TriggerKind::Emoji => format!("<:{name}:{id}>"),
+            godwit_core::autocomplete::TriggerKind::MentionSpecial => match id {
+                "everyone" => "@everyone".into(),
+                "here" => "@here".into(),
+                _ => format!("<@&{id}>"),
+            },
+        }
+    }
+
+    fn mention_specials(&self, room: &RoomId) -> Vec<godwit_core::autocomplete::MentionSpecial> {
+        let Some(channel) = self.store.channels.get(room.raw.as_ref()) else {
+            return Vec::new();
+        };
+        let Some(guild_id) = channel.guild.as_deref() else {
+            return Vec::new();
+        };
+        let Some(guild) = self.store.guilds.get(guild_id) else {
+            return Vec::new();
+        };
+        let allowed = self
+            .store
+            .can(&channel.id, godwit_discord::permissions::MENTION_EVERYONE);
+        let mut out = Vec::new();
+        if allowed {
+            out.extend(
+                [
+                    ("everyone", "@everyone", "Everyone"),
+                    ("here", "@here", "Online members"),
+                ]
+                .into_iter()
+                .map(|(id, label, detail)| godwit_core::autocomplete::MentionSpecial {
+                    id: id.into(),
+                    label: label.into(),
+                    detail: detail.into(),
+                }),
+            );
+        }
+        let mut roles: Vec<_> = guild
+            .roles
+            .values()
+            .filter(|role| role.id != guild_id && (role.mentionable || allowed))
+            .collect();
+        roles.sort_by_key(|role| std::cmp::Reverse(role.position));
+        out.extend(roles.into_iter().map(|role| godwit_core::autocomplete::MentionSpecial {
+            id: role.id.clone(),
+            label: format!("@{}", role.name),
+            detail: "Role".into(),
+        }));
+        out
+    }
+
     fn network(&self) -> Network {
         Network::Fluxer
     }
@@ -1052,6 +1107,20 @@ impl Drop for FluxerAccount {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn special_mention_wire_text_is_network_syntax() {
+        let (a, _, _) = account();
+        use godwit_core::autocomplete::TriggerKind;
+        assert_eq!(
+            a.autocomplete_text(TriggerKind::MentionSpecial, "here", "@here"),
+            "@here"
+        );
+        assert_eq!(
+            a.autocomplete_text(TriggerKind::MentionSpecial, "55", "@Team"),
+            "<@&55>"
+        );
+    }
 
     fn account() -> (
         FluxerAccount,

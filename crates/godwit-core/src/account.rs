@@ -28,7 +28,12 @@ pub trait NetworkAccount {
             crate::autocomplete::TriggerKind::Person => format!("@{name}"),
             crate::autocomplete::TriggerKind::Channel => format!("#{name}"),
             crate::autocomplete::TriggerKind::Emoji => format!(":{name}:"),
+            crate::autocomplete::TriggerKind::MentionSpecial => name.to_owned(),
         }
+    }
+    /// Extra `@` suggestions this account can derive without making a request.
+    fn mention_specials(&self, _room: &RoomId) -> Vec<crate::autocomplete::MentionSpecial> {
+        Vec::new()
     }
     /// Who we're signed in as, once we are.
     fn id(&self) -> Option<&AccountId>;

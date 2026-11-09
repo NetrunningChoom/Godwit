@@ -797,11 +797,58 @@ impl crate::markdown::Names for Names<'_> {
 }
 
 impl NetworkAccount for DiscordAccount {
+    // Discord wire spellings follow https://docs.discord.food/reference#message-formatting;
+    // cached role/permission selection adapts Yapfast's GPL-3.0 ready.rs methods.
+    fn mention_specials(&self, room: &RoomId) -> Vec<godwit_core::autocomplete::MentionSpecial> {
+        let Some(channel) = self.store.channels.get(room.raw.as_ref()) else {
+            return Vec::new();
+        };
+        let Some(guild_id) = channel.guild.as_deref() else {
+            return Vec::new();
+        };
+        let Some(guild) = self.store.guilds.get(guild_id) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        if self.store.can(&channel.id, p::MENTION_EVERYONE) {
+            out.extend(
+                [
+                    ("everyone", "@everyone", "Everyone"),
+                    ("here", "@here", "Online members"),
+                ]
+                .into_iter()
+                .map(|(id, label, detail)| godwit_core::autocomplete::MentionSpecial {
+                    id: id.into(),
+                    label: label.into(),
+                    detail: detail.into(),
+                }),
+            );
+        }
+        let everyone = self.store.can(&channel.id, p::MENTION_EVERYONE);
+        let mut roles: Vec<_> = guild
+            .roles
+            .values()
+            .filter(|role| role.id != guild_id && (role.mentionable || everyone))
+            .collect();
+        roles.sort_by_key(|role| std::cmp::Reverse(role.position));
+        out.extend(roles.into_iter().map(|role| godwit_core::autocomplete::MentionSpecial {
+            id: role.id.clone(),
+            label: format!("@{}", role.name),
+            detail: "Role".into(),
+        }));
+        out
+    }
+
     fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
         match kind {
             godwit_core::autocomplete::TriggerKind::Person => format!("<@{id}>"),
             godwit_core::autocomplete::TriggerKind::Channel => format!("<#{id}>"),
             godwit_core::autocomplete::TriggerKind::Emoji => format!("<:{name}:{id}>"),
+            godwit_core::autocomplete::TriggerKind::MentionSpecial => match id {
+                "everyone" => "@everyone".into(),
+                "here" => "@here".into(),
+                _ => format!("<@&{id}>"),
+            },
         }
     }
     fn network(&self) -> Network {
@@ -1960,6 +2007,35 @@ fn gifs(v: &Value) -> Vec<godwit_core::gifs::Gif> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mention_suggestions_follow_channel_permissions_and_cached_roles() {
+        let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
+        let room = RoomId::new(AccountId::new(Network::Discord, "demo"), "13");
+        let mut got = a.mention_specials(&room);
+        assert!(got.iter().any(|m| m.id == "11")); // mentionable role
+        assert!(!got.iter().any(|m| m.id == "everyone"));
+        if let Some(r) = a.store.guilds.get_mut("10").and_then(|g| g.roles.get_mut("10")) {
+            r.permissions |= p::MENTION_EVERYONE;
+        }
+        got = a.mention_specials(&room);
+        assert!(got.iter().any(|m| m.id == "everyone"));
+        assert!(got.iter().any(|m| m.id == "here"));
+    }
+
+    #[test]
+    fn special_mention_wire_text_is_network_syntax() {
+        let (a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
+        use godwit_core::autocomplete::TriggerKind;
+        assert_eq!(
+            a.autocomplete_text(TriggerKind::MentionSpecial, "everyone", "@everyone"),
+            "@everyone"
+        );
+        assert_eq!(
+            a.autocomplete_text(TriggerKind::MentionSpecial, "11", "@Mods"),
+            "<@&11>"
+        );
+    }
 
     #[test]
     fn folder_edits_keep_every_server_and_dissolve_small_folders() {

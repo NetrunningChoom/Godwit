@@ -11,6 +11,15 @@ pub enum TriggerKind {
     Person,
     Channel,
     Emoji,
+    MentionSpecial,
+}
+
+/// A network-specific mention offered from state already held in memory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MentionSpecial {
+    pub id: String,
+    pub label: String,
+    pub detail: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,6 +35,7 @@ pub enum CandidateId {
     Person(UserId),
     Channel(RoomId),
     Emoji(Arc<str>),
+    MentionSpecial(Arc<str>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,7 +101,10 @@ pub fn matches<'a>(candidates: &'a [Candidate], query: &str, limit: usize) -> Ve
         .iter()
         .enumerate()
         .filter_map(|(i, c)| {
-            let name = c.name.to_lowercase();
+            let name = match &c.id {
+                CandidateId::MentionSpecial(_) => c.name.strip_prefix('@').unwrap_or(&c.name).to_lowercase(),
+                _ => c.name.to_lowercase(),
+            };
             let rank = if name == q {
                 0
             } else if name.starts_with(&q) {

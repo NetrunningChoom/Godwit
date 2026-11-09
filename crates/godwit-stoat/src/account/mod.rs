@@ -629,11 +629,12 @@ impl StoatAccount {
 }
 
 impl NetworkAccount for StoatAccount {
-    fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, _name: &str) -> String {
+    fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
         match kind {
             godwit_core::autocomplete::TriggerKind::Person => format!("<@{id}>"),
             godwit_core::autocomplete::TriggerKind::Channel => format!("<#{id}>"),
             godwit_core::autocomplete::TriggerKind::Emoji => format!(":{id}:"),
+            godwit_core::autocomplete::TriggerKind::MentionSpecial => name.to_owned(),
         }
     }
     fn can_edit_profile(&self) -> bool {

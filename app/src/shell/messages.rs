@@ -8,6 +8,7 @@ fn autocomplete_candidates(
     state: &godwit_core::application::AppState,
     room: &RoomId,
     kind: godwit_core::autocomplete::TriggerKind,
+    specials: Vec<godwit_core::autocomplete::MentionSpecial>,
 ) -> Vec<godwit_core::autocomplete::Candidate> {
     use godwit_core::autocomplete::{Candidate, CandidateId, TriggerKind};
     use std::sync::Arc;
@@ -47,6 +48,15 @@ fn autocomplete_candidates(
             for person in people {
                 add_person_candidate(&mut out, &person.id, &person.name);
             }
+        }
+        // Network accounts keep protocol-specific specials beside their cached room state.
+        // The app only sees neutral labels and opaque ids.
+        {
+            out.extend(specials.into_iter().map(|special| Candidate {
+                id: CandidateId::MentionSpecial(special.id.into()),
+                name: special.label.into(),
+                detail: special.detail.into(),
+            }));
         }
     } else if kind == TriggerKind::Channel {
         if let Some(server_id) = state.room(room).and_then(|r| match &r.kind {
@@ -120,7 +130,11 @@ impl Shell {
             old.kind != trigger.kind || old.query != trigger.query || self.autocomplete_room.as_ref() != Some(&room)
         });
         if changed {
-            let candidates = autocomplete_candidates(self.app.state(), &room, trigger.kind);
+            let specials = self
+                .account(&room.account)
+                .map(|a| a.mention_specials(&room))
+                .unwrap_or_default();
+            let candidates = autocomplete_candidates(self.app.state(), &room, trigger.kind, specials);
             self.autocomplete = autocomplete::matches(&candidates, &trigger.query, 8)
                 .into_iter()
                 .cloned()
@@ -136,6 +150,7 @@ impl Shell {
                     CandidateId::Person(id) => (0, id.raw.to_string()),
                     CandidateId::Channel(id) => (1, id.raw.to_string()),
                     CandidateId::Emoji(id) => (2, id.to_string()),
+                    CandidateId::MentionSpecial(id) => (3, id.to_string()),
                 };
                 crate::ui::AutocompleteItem {
                     kind,
@@ -170,6 +185,11 @@ impl Shell {
             CandidateId::Channel(id) => (trigger.kind, id.raw.as_ref(), None),
             CandidateId::Emoji(id) if !id.is_ascii() => (trigger.kind, id.as_ref(), Some(id.as_ref())),
             CandidateId::Emoji(id) => (trigger.kind, id.as_ref(), None),
+            CandidateId::MentionSpecial(id) => (
+                godwit_core::autocomplete::TriggerKind::MentionSpecial,
+                id.as_ref(),
+                None,
+            ),
         };
         let rendered = replacement.map(str::to_owned).unwrap_or_else(|| {
             self.account(&room.account)
@@ -786,12 +806,50 @@ mod autocomplete_tests {
             avatar_url: None,
             online: false,
         });
-        let candidates = autocomplete_candidates(&state, &room_id, godwit_core::autocomplete::TriggerKind::Person);
+        let candidates = autocomplete_candidates(
+            &state,
+            &room_id,
+            godwit_core::autocomplete::TriggerKind::Person,
+            Vec::new(),
+        );
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].name.as_ref(), "Ada");
         assert_eq!(
             candidates[0].id,
             godwit_core::autocomplete::CandidateId::Person(person_id)
         );
+    }
+
+    #[test]
+    fn special_mentions_follow_people_in_candidate_order() {
+        let account = AccountId::new(godwit_core::network::Network::ALL[0], "me");
+        let room_id = RoomId::new(account.clone(), "room");
+        let person_id = UserId::new(account.clone(), "person");
+        let mut state = AppState::default();
+        state.friends.push(Person {
+            id: person_id,
+            name: Arc::from("Everyone"),
+            avatar_url: None,
+            online: false,
+        });
+        let candidates = autocomplete_candidates(
+            &state,
+            &room_id,
+            godwit_core::autocomplete::TriggerKind::Person,
+            vec![godwit_core::autocomplete::MentionSpecial {
+                id: "everyone".into(),
+                label: "@everyone".into(),
+                detail: "Special".into(),
+            }],
+        );
+        let matched = godwit_core::autocomplete::matches(&candidates, "everyone", 8);
+        assert!(matches!(
+            matched[0].id,
+            godwit_core::autocomplete::CandidateId::Person(_)
+        ));
+        assert!(matches!(
+            matched[1].id,
+            godwit_core::autocomplete::CandidateId::MentionSpecial(_)
+        ));
     }
 }

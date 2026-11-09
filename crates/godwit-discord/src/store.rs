@@ -72,6 +72,9 @@ pub struct Role {
     pub permissions: u64,
     pub hoist: bool,
     pub managed: bool,
+    /// Discord role `mentionable` from the Role resource; permission override
+    /// is separately checked against the channel. https://docs.discord.food/resources/guild#role-object
+    pub mentionable: bool,
 }
 
 impl Role {
@@ -87,6 +90,7 @@ impl Role {
             permissions: bits(&v["permissions"]),
             hoist: v["hoist"] == true,
             managed: v["managed"] == true,
+            mentionable: v["mentionable"] == true,
         })
     }
 }
@@ -1360,7 +1364,7 @@ pub(crate) fn test_ready() -> Value {
             "properties": {"name": "Qux Hall", "owner_id": "200", "icon": "ic"},
             "roles": [
                 {"id": "10", "name": "@everyone", "permissions": (permissions::VIEW_CHANNEL | permissions::SEND_MESSAGES).to_string(), "position": 0},
-                {"id": "11", "name": "Mods", "permissions": (permissions::KICK_MEMBERS).to_string(), "position": 3, "color": 0x00ff00}
+                {"id": "11", "name": "Mods", "permissions": (permissions::KICK_MEMBERS).to_string(), "position": 3, "color": 0x00ff00, "mentionable": true}
             ],
             "channels": [
                 {"id": "12", "type": 4, "name": "Talk", "position": 0},
@@ -1453,6 +1457,7 @@ mod tests {
         let mut s = Store::default();
         s.ready(&ready());
         assert_eq!(s.me.as_ref().map(User::name), Some("Bloop"));
+        assert!(s.guilds["10"].roles["11"].mentionable);
         assert_eq!(s.guilds["10"].name, "Qux Hall");
         assert_eq!(s.guilds["10"].channels.len(), 3);
         assert!(s.unread("13"));

@@ -301,6 +301,32 @@ impl mrkdwn::Names for Names<'_> {
 }
 
 impl NetworkAccount for SlackAccount {
+    // Slack's documented broadcast tokens and user-group token are described at
+    // https://api.slack.com/reference/surfaces/formatting#special-mentions.
+    fn mention_specials(&self, room: &RoomId) -> Vec<godwit_core::autocomplete::MentionSpecial> {
+        let Some((team, channel)) = room.raw.split_once(':') else {
+            return Vec::new();
+        };
+        let Some(ws) = self.workspaces.get(team) else {
+            return Vec::new();
+        };
+        let mut items = vec![
+            ("here", "@here", "Active members"),
+            ("channel", "@channel", "Channel members"),
+        ];
+        if ws.conversations.get(channel).is_some_and(|c| c.name == "general") {
+            items.push(("everyone", "@everyone", "Workspace members"));
+        }
+        items
+            .into_iter()
+            .map(|(id, label, detail)| godwit_core::autocomplete::MentionSpecial {
+                id: id.into(),
+                label: label.into(),
+                detail: detail.into(),
+            })
+            .collect()
+    }
+
     fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
         match kind {
             godwit_core::autocomplete::TriggerKind::Person => {
@@ -311,6 +337,13 @@ impl NetworkAccount for SlackAccount {
                 format!("<#{}>", id.rsplit(':').next().unwrap_or(id))
             }
             godwit_core::autocomplete::TriggerKind::Emoji => format!(":{name}:"),
+            godwit_core::autocomplete::TriggerKind::MentionSpecial => match id {
+                "here" => "<!here>".into(),
+                "channel" => "<!channel>".into(),
+                "everyone" => "<!everyone>".into(),
+                _ if id.starts_with("subteam^") => format!("<!{id}|@{}>", name.strip_prefix('@').unwrap_or(name)),
+                _ => name.to_owned(),
+            },
         }
     }
 
@@ -799,6 +832,36 @@ mod tests {
         assert_eq!(
             &*rooms.iter().find(|r| &*r.id.raw == "T1:G1").unwrap().name,
             "ada, bea, cy"
+        );
+    }
+
+    #[test]
+    fn mention_specials_offer_everyone_in_general() {
+        let (mut a, _) = account();
+        let mut ws = Workspace::default();
+        ws.conversations.insert(
+            "C1".into(),
+            Conversation {
+                kind: Kind::Channel,
+                name: "general".into(),
+                latest: String::new(),
+                last_read: String::new(),
+                mentions: 0,
+                has_unreads: false,
+            },
+        );
+        a.workspaces.insert("T1".into(), ws);
+        let room = RoomId::new(AccountId::new(Network::Slack, "T1"), "T1:C1");
+        let specials = a.mention_specials(&room);
+        assert!(specials.iter().any(|s| s.id == "everyone"));
+        use godwit_core::autocomplete::TriggerKind;
+        assert_eq!(
+            a.autocomplete_text(TriggerKind::MentionSpecial, "here", "@here"),
+            "<!here>"
+        );
+        assert_eq!(
+            a.autocomplete_text(TriggerKind::MentionSpecial, "subteam^S1", "@team"),
+            "<!subteam^S1|@team>"
         );
     }
 
