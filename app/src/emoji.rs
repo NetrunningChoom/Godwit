@@ -17,6 +17,28 @@ pub fn canonical(g: &str) -> Option<&'static emojis::Emoji> {
         .or_else(|| emojis::get(&g.replace('\u{fe0f}', "")))
 }
 
+/// `g` as one regional indicator standing alone, without the ZWNJ that keeps
+/// it from pairing into a flag (a grapheme carries it at either end). The
+/// `emojis` table has no lone letters, but the packs draw each one (the
+/// official client's shorthands show them: stoatchat/for-web a914137,
+/// c3c43a4).
+pub fn lone_indicator(g: &str) -> Option<&str> {
+    let bare = g.trim_matches('\u{200c}');
+    let mut chars = bare.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if (0x1f1e6..=0x1f1ff).contains(&u32::from(c)) => Some(bare),
+        _ => None,
+    }
+}
+
+/// Regional-indicator shorthand characters are consecutive Unicode codepoints.
+pub fn regional_indicator(letter: char) -> Option<char> {
+    letter
+        .is_ascii_lowercase()
+        .then(|| char::from_u32(0x1f1e6 + u32::from(letter) - u32::from('a')))
+        .flatten()
+}
+
 /// The pack every view draws from, as a row of `godwit_core::emoji_packs::PACKS`
 /// (Settings › Appearance › Emoji). Godwit's default is Twemoji, flat
 /// (Stoat's own default is Fluent 3D).
@@ -56,6 +78,9 @@ pub fn drawn(e: &emojis::Emoji) -> bool {
 
 /// The picture for `g`, if it's a Unicode emoji.
 pub fn url(g: &str) -> Option<String> {
+    if let Some(letter) = lone_indicator(g) {
+        return Some(godwit_core::emoji_packs::unicode_url(pack(), letter));
+    }
     canonical(g).map(url_of)
 }
 
@@ -80,7 +105,16 @@ mod tests {
     fn emoji_are_found_with_or_without_the_selector() {
         assert!(url("👍").is_some());
         assert_eq!(url("❤"), url("❤️"));
+        assert!(url("\u{200c}🇦").is_some());
         assert!(url("4").is_none() && url("a").is_none());
+    }
+
+    #[test]
+    fn regional_indicator_shortcodes_cover_ascii_letters_only() {
+        assert_eq!(regional_indicator('a'), Some('🇦'));
+        assert_eq!(regional_indicator('z'), Some('🇿'));
+        assert_eq!(regional_indicator('A'), None);
+        assert_eq!(regional_indicator('1'), None);
     }
 
     #[test]

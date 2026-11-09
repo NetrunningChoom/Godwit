@@ -106,6 +106,18 @@ fn autocomplete_candidates(
                 });
             }
         }
+        // Unicode's indicators are contiguous, so generate their 26 names instead of storing a table;
+        // the official client uses these regional-indicator shorthands (https://github.com/stoatchat/for-web/commit/a914137f8d0ea731b18cfc62b69cc58682e37325).
+        for letter in 'a'..='z' {
+            if let Some(glyph) = crate::emoji::regional_indicator(letter) {
+                let shortcode = format!("regional_indicator_{letter}");
+                out.push(Candidate {
+                    id: CandidateId::Emoji(Arc::from(glyph.to_string())),
+                    name: shortcode.into(),
+                    detail: Arc::from(glyph.to_string()),
+                });
+            }
+        }
     }
     out
 }
@@ -203,11 +215,25 @@ impl Shell {
                 None,
             ),
         };
-        let rendered = replacement.map(str::to_owned).unwrap_or_else(|| {
-            self.account(&room.account)
-                .map(|a| a.autocomplete_text(kind, id, &candidate.name))
-                .unwrap_or_else(|| candidate.name.to_string())
-        });
+        let rendered = replacement
+            .map(|text| {
+                if text
+                    .chars()
+                    .next()
+                    .is_some_and(|c| (0x1f1e6..=0x1f1ff).contains(&u32::from(c)))
+                {
+                    // The separator keeps separately inserted indicators from forming a flag pair,
+                    // matching the official client's autocomplete (https://github.com/stoatchat/for-web/commit/c3c43a4828d05b294242b84148c10b7eb1a2fb27).
+                    format!("\u{200c}{text}")
+                } else {
+                    text.to_owned()
+                }
+            })
+            .unwrap_or_else(|| {
+                self.account(&room.account)
+                    .map(|a| a.autocomplete_text(kind, id, &candidate.name))
+                    .unwrap_or_else(|| candidate.name.to_string())
+            });
         let (draft, caret) = autocomplete::insert(ui.get_draft().as_str(), trigger, &rendered);
         ui.set_draft(draft.as_str().into());
         self.act(ui, Action::SetDraft(draft));

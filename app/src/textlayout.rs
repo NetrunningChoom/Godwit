@@ -263,8 +263,13 @@ impl Paragraph {
         let mut plain = String::new();
         for g in text.graphemes(true) {
             // The shared lookup (crate::emoji), not inside code.
-            let canonical = (!style.brush.code).then(|| crate::emoji::canonical(g)).flatten();
-            let url = canonical.and_then(|e| emoji_url(e.as_str()).or_else(|| emoji_url(g)));
+            let url = if style.brush.code {
+                None
+            } else if let Some(letter) = crate::emoji::lone_indicator(g) {
+                emoji_url(letter)
+            } else {
+                crate::emoji::canonical(g).and_then(|e| emoji_url(e.as_str()).or_else(|| emoji_url(g)))
+            };
             match url {
                 Some(url) => {
                     self.push_span(&std::mem::take(&mut plain), style.clone());
@@ -822,6 +827,15 @@ mod tests {
             1,
             "a real keycap is an emoji"
         );
+    }
+
+    #[test]
+    fn separately_autocompleted_regional_indicators_stay_separate() {
+        let url = |e: &str| Some(format!("pack/{e}"));
+        let text = "\u{200c}🇦\u{200c}🇧";
+        let p = Paragraph::plain(text, &url);
+        assert_eq!(p.emoji.len(), 2, "{:#?}", p.emoji);
+        assert_eq!(p.copy(0..p.text.len()), text);
     }
 
     #[test]
