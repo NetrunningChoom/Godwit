@@ -260,6 +260,8 @@ impl DiscordAccount {
             presence: self.presence(user),
             status: None,
             bio,
+            profile_level: None,
+            member_since: None,
             roles,
             me: user == self.me(),
             relationship,

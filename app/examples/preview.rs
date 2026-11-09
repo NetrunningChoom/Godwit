@@ -94,6 +94,8 @@ fn open_profile(app: &mut Application, blocked: bool) -> Screen {
             )
             .into(),
         ),
+        profile_level: Some(42),
+        member_since: Some("2003".into()),
         roles: vec![
             ("Moderators".into(), Some([0xff, 0x7b, 0x72])),
             ("Members".into(), None),

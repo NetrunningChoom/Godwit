@@ -3,6 +3,30 @@
 //! Friends, personas and profiles.
 
 use super::*;
+use std::sync::Arc;
+
+#[derive(Clone, Default)]
+pub(super) struct ProfileDetails {
+    pub(super) summary: Option<Arc<str>>,
+    pub(super) level: Option<u32>,
+    pub(super) member_since: Option<Arc<str>>,
+}
+
+/// Steam sends a Unix timestamp; the profile card needs a concise, stable
+/// label, so show the creation year (as Steam's client does in its profile).
+fn creation_year(timestamp: u32) -> Arc<str> {
+    let days = i64::from(timestamp) / 86_400;
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = year + if month <= 2 { 1 } else { 0 };
+    year.to_string().into()
+}
 
 impl SteamAccount {
     /// After friends' personas changed: the friends list, member lists and
@@ -161,7 +185,9 @@ impl SteamAccount {
             }
             .unwrap_or(Presence::Unknown),
             status: persona.and_then(playing).map(Into::into),
-            bio: None,
+            bio: self.profile_details.get(&id).and_then(|d| d.summary.clone()),
+            profile_level: self.profile_details.get(&id).and_then(|d| d.level),
+            member_since: self.profile_details.get(&id).and_then(|d| d.member_since.clone()),
             roles: Vec::new(),
             me: own,
             relationship: relationship(friend.map(|f| f.relationship)),
@@ -189,6 +215,35 @@ impl SteamAccount {
             can_note: false,
             note_limit: 0,
         })
+    }
+
+    pub(super) fn profile_summary(
+        &mut self,
+        response: steam_vent_proto_steam::steammessages_clientserver_friends::CMsgClientFriendProfileInfoResponse,
+    ) -> Option<Profile> {
+        let id = response.steamid_friend?;
+        let details = self.profile_details.entry(id).or_default();
+        details.summary = response.summary.filter(|s| !s.trim().is_empty()).map(Into::into);
+        details.member_since = response.time_created.filter(|t| *t > 0).map(creation_year);
+        (self.profile_for == Some(id)).then(|| self.profile(id)).flatten()
+    }
+
+    pub(super) fn profile_levels(
+        &mut self,
+        response: steam_vent_proto_steam::steammessages_clientserver_2::CMsgClientFSGetFriendsSteamLevelsResponse,
+    ) -> Option<Profile> {
+        let mut current_updated = false;
+        for friend in response.friends {
+            let (Some(account_id), Some(level)) = (friend.accountid, friend.level) else {
+                continue;
+            };
+            let steam_id = backend::steam_id(account_id);
+            self.profile_details.entry(steam_id).or_default().level = Some(level);
+            current_updated |= self.profile_for == Some(steam_id);
+        }
+        current_updated
+            .then(|| self.profile_for.and_then(|id| self.profile(id)))
+            .flatten()
     }
 
     pub(super) fn name_of(&self, id: u64) -> String {

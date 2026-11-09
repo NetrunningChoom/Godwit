@@ -61,6 +61,8 @@ impl SteamAccount {
             }
             Ev::Connected { me } => {
                 self.me = Some(me);
+                self.profile_requested.clear();
+                self.profile_details.clear();
                 self.account = Some(AccountId::new(Network::Steam, me.to_string()));
                 self.ready = false;
                 if let Some(account) = self.account.clone() {
@@ -133,6 +135,8 @@ impl SteamAccount {
                     self.typing_sent.clear();
                     self.ready = false;
                     self.friends.clear();
+                    self.profile_requested.clear();
+                    self.profile_details.clear();
                     self.blocked.clear();
                     self.chats.clear();
                     let error = Some(reason).filter(|r| !r.is_empty());
@@ -177,6 +181,16 @@ impl SteamAccount {
                         })
                         .collect();
                     out.push(Event::Nicknames { account, nicknames });
+                }
+            }
+            Ev::ProfileSummary(response) => {
+                if let Some(profile) = self.profile_summary(response) {
+                    out.push(Event::Profile(profile));
+                }
+            }
+            Ev::ProfileLevels(response) => {
+                if let Some(profile) = self.profile_levels(response) {
+                    out.push(Event::Profile(profile));
                 }
             }
             Ev::Library { steam_id, library } => {

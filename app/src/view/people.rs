@@ -598,6 +598,14 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
         .collect();
     ui.set_card_roles(ModelRc::new(VecModel::from(roles)));
     ui.set_card_has_bio(p.bio.is_some());
+    let mut account_details = Vec::new();
+    if let Some(level) = p.profile_level {
+        account_details.push(format!("Level {level}"));
+    }
+    if let Some(since) = &p.member_since {
+        account_details.push(format!("Member since {since}"));
+    }
+    ui.set_card_account_details(account_details.join(" · ").into());
     ui.set_card_me(p.me);
     ui.set_card_can_kick(p.moderation.as_ref().is_some_and(|m| m.kick));
     ui.set_card_can_ban(p.moderation.as_ref().is_some_and(|m| m.ban));

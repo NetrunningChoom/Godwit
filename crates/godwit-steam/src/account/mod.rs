@@ -145,6 +145,8 @@ pub struct SteamAccount {
     /// The room on screen, if one of ours: its messages are read as they come.
     viewing: Option<u64>,
     profile_for: Option<u64>,
+    profile_requested: HashSet<u64>,
+    profile_details: HashMap<u64, people::ProfileDetails>,
     /// Latest typing notice per friend (stale stops are ignored).
     typing_seq: HashMap<u64, u64>,
     /// Throttles our own typing notices (Steam's client sends them seconds apart).
@@ -303,6 +305,8 @@ impl SteamAccount {
             reactions: HashMap::new(),
             viewing: None,
             profile_for: None,
+            profile_requested: HashSet::new(),
+            profile_details: HashMap::new(),
             typing_seq: HashMap::new(),
             typing_sent: HashMap::new(),
             voice_settings: VoiceSettings::default(),
@@ -532,6 +536,9 @@ impl NetworkAccount for SteamAccount {
                         out.push(Event::Profile(profile));
                     }
                     self.net.send(Cmd::RequestPersonas(vec![id]));
+                    if self.profile_requested.insert(id) {
+                        self.net.send(Cmd::ProfileDetails(id));
+                    }
                 }
             }
             Command::Focus { room } => {
@@ -1618,6 +1625,26 @@ mod tests {
         .unwrap();
         assert!(account.poll().iter().any(|e| matches!(e, Event::Profile(p)
             if &*p.name == "Updated friend" && p.avatar_url.is_some())));
+        tx.send(Ev::ProfileSummary(
+            steam_vent_proto_steam::steammessages_clientserver_friends::CMsgClientFriendProfileInfoResponse {
+                steamid_friend: Some(friend),
+                time_created: Some(1_000_000_000),
+                summary: Some("Profile summary".into()),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        tx.send(Ev::ProfileLevels(steam_vent_proto_steam::steammessages_clientserver_2::CMsgClientFSGetFriendsSteamLevelsResponse {
+            friends: vec![steam_vent_proto_steam::steammessages_clientserver_2::cmsg_client_fsget_friends_steam_levels_response::Friend {
+                accountid: Some(2), level: Some(42), ..Default::default()
+            }],
+            ..Default::default()
+        })).unwrap();
+        let enriched = account.poll();
+        assert!(enriched.iter().any(|e| matches!(e, Event::Profile(p)
+            if p.bio.as_deref() == Some("Profile summary")
+                && p.profile_level == Some(42)
+                && p.member_since.as_deref() == Some("2001"))));
     }
 
     #[test]

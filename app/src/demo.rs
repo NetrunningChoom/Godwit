@@ -99,6 +99,8 @@ pub fn profile(user: UserId, name: &str) -> godwit_core::members::Profile {
         presence: Presence::Online,
         status: None,
         bio: Some("Made up for the demo.".into()),
+        profile_level: None,
+        member_since: None,
         roles: Vec::new(),
         name: name.into(),
         user,

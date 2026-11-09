@@ -756,6 +756,8 @@ impl Application {
             presence: Presence::Unknown,
             status: None,
             bio: None,
+            profile_level: None,
+            member_since: None,
             roles: Vec::new(),
             me: *user.raw == *user.account.user,
             relationship: if friend && has_friends {

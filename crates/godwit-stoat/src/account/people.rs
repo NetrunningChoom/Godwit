@@ -66,6 +66,8 @@ impl StoatAccount {
                 .and_then(|p| p.content.as_deref())
                 .filter(|b| !b.trim().is_empty())
                 .map(|b| rich::to_rich(b, &names).into()),
+            profile_level: None,
+            member_since: None,
             roles,
             me: self.store.me.as_deref() == Some(user.as_str()),
             relationship: match u.and_then(|u| u.relationship.as_deref()) {

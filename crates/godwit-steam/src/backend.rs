@@ -16,9 +16,12 @@ use steam_vent_proto_steam::steammessages_chat_steamclient::{
     CChatRoom_IncomingChatMessage_Notification, CChatRoom_MemberStateChange_Notification,
     CChatRoom_MessageReaction_Notification, ChatRoomClient_NotifyChatGroupUserStateChanged_Notification,
 };
+use steam_vent_proto_steam::steammessages_clientserver_2::{
+    CMsgClientFSGetFriendsSteamLevels, CMsgClientFSGetFriendsSteamLevelsResponse,
+};
 use steam_vent_proto_steam::steammessages_clientserver_friends::{
-    CMsgClientChangeStatus, CMsgClientEmoticonList, CMsgClientFriendsList, CMsgClientGetEmoticonList,
-    CMsgClientPersonaState, CMsgClientRequestFriendData,
+    CMsgClientChangeStatus, CMsgClientEmoticonList, CMsgClientFriendProfileInfo, CMsgClientFriendProfileInfoResponse,
+    CMsgClientFriendsList, CMsgClientGetEmoticonList, CMsgClientPersonaState, CMsgClientRequestFriendData,
 };
 use steam_vent_proto_steam::steammessages_clientserver_login::CMsgClientLoggedOff;
 use steam_vent_proto_steam::steammessages_friendmessages_steamclient::EMessageReactionType;
@@ -114,6 +117,8 @@ pub enum Cmd {
     AppNames(Vec<u32>),
     /// Load this account's game library ([`Ev::Library`]).
     OwnedGames(u64),
+    /// Fetch the details shown on an opened profile card.
+    ProfileDetails(u64),
     /// Call `partner`, or answer Steam's call `incoming` from them; `call`
     /// tags its [`Ev::Call`]s. Ends any call under way first.
     Call {
@@ -281,6 +286,8 @@ pub enum Ev {
         steam_id: u64,
         library: godwit_core::games::Library,
     },
+    ProfileSummary(CMsgClientFriendProfileInfoResponse),
+    ProfileLevels(CMsgClientFSGetFriendsSteamLevelsResponse),
     /// A message with `friend` (`mine`: ours, from another of our devices).
     Incoming {
         friend: u64,
@@ -1183,6 +1190,26 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                 }),
             }
         }
+        Cmd::ProfileDetails(steam_id) => {
+            if let Some(conn) = st.conn.clone() {
+                tokio::spawn(async move {
+                    // SteamKit's steammessages_clientserver_friends.proto
+                    // defines the summary request; clientserver_2.proto defines levels.
+                    let summary = CMsgClientFriendProfileInfo {
+                        steamid_friend: Some(steam_id),
+                        ..Default::default()
+                    };
+                    if conn.send(summary).await.is_err() {
+                        return;
+                    }
+                    let levels = CMsgClientFSGetFriendsSteamLevels {
+                        accountids: vec![account_id(steam_id)],
+                        ..Default::default()
+                    };
+                    let _ = conn.send(levels).await;
+                });
+            }
+        }
         Cmd::SetPersona(state) => {
             if let Some(conn) = st.conn.clone() {
                 tokio::spawn(async move {
@@ -1376,6 +1403,8 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
     // came early and listening for the rest.
     let mut lists = conn.on::<CMsgClientFriendsList>();
     let mut states = conn.on::<CMsgClientPersonaState>();
+    let mut profile_summaries = conn.on::<CMsgClientFriendProfileInfoResponse>();
+    let mut profile_levels = conn.on::<CMsgClientFSGetFriendsSteamLevelsResponse>();
     let mut incoming = conn.on_notification::<CFriendMessages_IncomingMessage_Notification>();
     let mut friend_reactions = conn.on_notification::<CFriendMessages_MessageReaction_Notification>();
     let mut voice = signaling::events(&conn);
@@ -1410,6 +1439,27 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
         tokio::spawn(async move {
             if let Some(Ok(off)) = logged_off.next().await {
                 diag(&format!("Steam logged this session off (EResult {})", off.eresult()));
+            }
+        })
+        .abort_handle(),
+    );
+
+    let o = out.clone();
+    tasks.push(
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    item = profile_summaries.next() => match item {
+                        Some(Ok(response)) => { o.send(Ev::ProfileSummary(response)); }
+                        Some(Err(_)) => {}
+                        None => break,
+                    },
+                    item = profile_levels.next() => match item {
+                        Some(Ok(response)) => { o.send(Ev::ProfileLevels(response)); }
+                        Some(Err(_)) => {}
+                        None => break,
+                    }
+                }
             }
         })
         .abort_handle(),

@@ -73,6 +73,12 @@ pub struct Profile {
     pub status: Option<Arc<str>>,
     /// Rich text; None while it loads or if they have none.
     pub bio: Option<Arc<str>>,
+    /// The network's account level, when its profile exposes one.
+    #[serde(default)]
+    pub profile_level: Option<u32>,
+    /// Account creation date as a display-ready year, when exposed.
+    #[serde(default)]
+    pub member_since: Option<Arc<str>>,
     /// Their roles in the room's server, highest first, with colours.
     pub roles: Vec<(Arc<str>, Option<[u8; 3]>)>,
     /// It's us.

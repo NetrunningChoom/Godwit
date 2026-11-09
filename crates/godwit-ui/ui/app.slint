@@ -649,6 +649,7 @@ export component AppWindow inherits Window {
     in property <string> card-status;
     in property <[RoleItem]> card-roles;
     in property <bool> card-has-bio;
+    in property <string> card-account-details;
     in property <bool> card-me;
     in property <[RequestItem]> friend-requests;
     in property <string> friend-request-status;
@@ -1555,6 +1556,7 @@ export component AppWindow inherits Window {
         status: root.card-status;
         roles: root.card-roles;
         has-bio: root.card-has-bio;
+        account-details: root.card-account-details;
         me: root.card-me;
         relationship: root.card-relationship;
         add-friend => { root.add-friend-profile(); }

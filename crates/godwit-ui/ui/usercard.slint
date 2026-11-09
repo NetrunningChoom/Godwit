@@ -23,6 +23,7 @@ export component UserCard inherits Rectangle {
     in property <string> status;
     in property <[RoleItem]> roles;
     in property <bool> has-bio;
+    in property <string> account-details;
     in property <bool> me;
     // Where we stand (the official ProfileActions): 0 not friends, 1 friends
     // (or a network without friends), 2 they asked, 3 we asked, 4 blocked,
@@ -198,6 +199,11 @@ export component UserCard inherits Rectangle {
                     row-number: -2;
                     index: 3;
                     colour: Theme.on-surface;
+                }
+                if root.account-details != "": Text {
+                    text: root.account-details;
+                    font-size: Theme.text-small;
+                    color: Theme.on-surface-variant;
                 }
                 if root.can-note: VerticalLayout {
                     spacing: Theme.space-2;
