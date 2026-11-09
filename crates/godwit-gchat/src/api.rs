@@ -19,9 +19,11 @@ use crate::proto;
 use crate::session::Saved;
 
 const BASE: &str = "https://chat.google.com/u/0";
-/// The web client's API key (maugclib's `API_KEY`): without it Google
-/// answers 403 "Daily Limit for Unauthenticated Use Exceeded".
-const API_KEY: &str = "AIzaSyD7InnYR3VKdb4j2rMUEbTCIr2VyEazl6k"; // not-a-secret: published in the web client
+/// Google's API key from the Hangouts web client, as published in hangups
+/// (<https://github.com/tdryer/hangups/blob/master/hangups/client.py>) and
+/// copied into maugclib (<https://github.com/mautrix/googlechat/blob/master/maugclib/client.py>):
+/// without it Google answers 403 "Daily Limit for Unauthenticated Use Exceeded".
+const API_KEY: &str = "AIzaSyD7InnYR3VKdb4j2rMUEbTCIr2VyEazl6k"; // not-a-secret: Google's Hangouts web-client key, public in hangups and maugclib
 /// The web client's version, as maugclib sends it.
 const CLIENT_VERSION: i64 = 2_440_378_181_258;
 pub(crate) const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15";
