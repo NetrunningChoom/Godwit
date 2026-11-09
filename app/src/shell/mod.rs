@@ -101,6 +101,9 @@ pub struct Shell {
     autocomplete: Vec<godwit_core::autocomplete::Candidate>,
     autocomplete_trigger: Option<godwit_core::autocomplete::Trigger>,
     autocomplete_room: Option<RoomId>,
+    /// The text currently edited in the search box; core search state updates
+    /// only on submit, so presentation refreshes must use this draft instead.
+    search_draft: Option<String>,
     /// The tags picked in the new-post dialog, by id.
     post_tags: Vec<std::sync::Arc<str>>,
     /// The forum list as last shown, so a refresh that changed nothing
@@ -446,6 +449,7 @@ impl Shell {
             autocomplete: Vec::new(),
             autocomplete_trigger: None,
             autocomplete_room: None,
+            search_draft: None,
             post_tags: Vec::new(),
             forum_shown: std::cell::RefCell::new(None),
             mic_test: None,

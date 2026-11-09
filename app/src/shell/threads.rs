@@ -4,11 +4,20 @@
 
 use super::*;
 
+fn search_completion_query<'a>(draft: Option<&'a str>, committed: &'a str) -> &'a str {
+    draft.unwrap_or(committed)
+}
+
 impl Shell {
     /// Refresh the local search completions as the field changes. Member and
     /// channel candidates are state already loaded for this account; typing
     /// never triggers a network lookup.
-    pub fn search_suggestions(&self, ui: &AppWindow, input: &str) {
+    pub fn search_suggestions(&mut self, ui: &AppWindow, input: &str) {
+        self.search_draft = Some(input.to_owned());
+        self.update_search_suggestions(ui, input);
+    }
+
+    fn update_search_suggestions(&self, ui: &AppWindow, input: &str) {
         let Some(search) = self.app.state().search.as_ref() else {
             return;
         };
@@ -64,6 +73,10 @@ impl Shell {
             })
             .collect::<Vec<_>>();
         ui.set_search_suggestions(ModelRc::new(VecModel::from(suggestions)));
+    }
+
+    pub fn search_submitted(&mut self) {
+        self.search_draft = None;
     }
 
     /// A message as the pins and search lists show it.
@@ -130,7 +143,8 @@ impl Shell {
         ui.set_search_more(s.next_offset.is_some());
         ui.set_search_loading_more(s.loading_more);
         ui.set_search_open(true);
-        self.search_suggestions(ui, &s.query);
+        let query = search_completion_query(self.search_draft.as_deref(), &s.query);
+        self.update_search_suggestions(ui, query);
     }
 
     /// "Jump" on a search result: the dialog closes, the message shows.
@@ -401,5 +415,16 @@ impl Shell {
         if let Some(message) = self.message_at(row) {
             self.act(ui, Action::SetPinned { message, pinned });
         }
+    }
+}
+
+#[cfg(test)]
+mod search_completion_tests {
+    use super::search_completion_query;
+
+    #[test]
+    fn refresh_keeps_the_live_search_draft_until_submission() {
+        assert_eq!(search_completion_query(Some("from:ali"), "from:alice "), "from:ali");
+        assert_eq!(search_completion_query(None, "from:alice "), "from:alice ");
     }
 }
