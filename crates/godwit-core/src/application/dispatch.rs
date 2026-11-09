@@ -156,6 +156,19 @@ impl Application {
             Action::SaveServerOverview(edit) => self.dispatch_save_server_overview(edit),
             Action::LoadOwnProfile(account) => self.dispatch_load_own_profile(account),
             Action::SaveOwnProfile { account, edit } => self.dispatch_save_own_profile(account, edit),
+            Action::InviteToActivity(user) => {
+                let allowed = self.state.profile.as_ref().is_some_and(|(shown, profile)| {
+                    shown == &user && profile.as_ref().is_some_and(|p| p.can_invite_to_activity)
+                });
+                if allowed {
+                    vec![Effect::Backend {
+                        account: user.account.clone(),
+                        command: Command::InviteToActivity { user },
+                    }]
+                } else {
+                    Vec::new()
+                }
+            }
             Action::SelectServer(server) => self.dispatch_select_server(server),
             Action::OpenServerEvents(server) => {
                 let Some(info) = self.state.server(&server).filter(|s| s.scheduled_events) else {

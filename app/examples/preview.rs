@@ -128,6 +128,8 @@ fn open_profile(app: &mut Application, blocked: bool) -> Screen {
         // The Note field, and the Mutual servers and friends lists.
         can_note: true,
         note_limit: 256,
+        activity_join: None,
+        can_invite_to_activity: false,
         note: Some(filler(36, 3).into()),
         mutual_servers: vec![
             godwit_core::members::MutualServer {

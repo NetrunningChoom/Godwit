@@ -25,6 +25,8 @@ export component UserCard inherits Rectangle {
     in property <bool> has-bio;
     in property <string> account-details;
     in property <bool> me;
+    in property <string> activity-join;
+    in property <bool> can-invite-activity;
     // Where we stand (the official ProfileActions): 0 not friends, 1 friends
     // (or a network without friends), 2 they asked, 3 we asked, 4 blocked,
     // 5 unused, 6 a bot.
@@ -78,6 +80,8 @@ export component UserCard inherits Rectangle {
     callback unignore-user();
     callback close();
     callback message();
+    callback join-activity();
+    callback invite-to-activity();
     callback add-friend();
     callback remove-friend();
     callback link();
@@ -169,6 +173,11 @@ export component UserCard inherits Rectangle {
                     row-number: -2;
                     index: 2;
                     colour: Theme.on-surface;
+                }
+                if root.activity-join != "" || (!root.me && root.can-invite-activity): HorizontalLayout {
+                    spacing: Theme.space-2;
+                    if root.activity-join != "": Button { text: "Join game"; kind: "tonal"; clicked => { root.join-activity(); } }
+                    if !root.me && root.can-invite-activity: Button { text: "Invite to game"; kind: "text"; clicked => { root.invite-to-activity(); } }
                 }
                 if root.roles.length > 0: HorizontalLayout {
                     alignment: start;

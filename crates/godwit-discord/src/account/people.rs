@@ -285,6 +285,8 @@ impl DiscordAccount {
             // Only once the note arrived, so typing never races the fetch.
             can_note: user != self.me() && self.notes.contains_key(user),
             note_limit: crate::api::NOTE_LIMIT,
+            activity_join: None,
+            can_invite_to_activity: false,
         })
     }
 

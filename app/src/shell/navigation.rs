@@ -102,6 +102,24 @@ impl Shell {
         }
     }
 
+    /// Join only the target the open profile's network supplied for that person.
+    pub fn join_profile_activity(&mut self) {
+        let target = self.app.state().profile.as_ref().and_then(|(shown, profile)| {
+            profile
+                .as_ref()
+                .filter(|profile| &profile.user == shown)?
+                .activity_join
+                .as_ref()
+                .map(|join| join.url.to_string())
+        });
+        if let Some(url) = target
+            && !url.is_empty()
+            && !url.starts_with("file:")
+        {
+            open_external(&url);
+        }
+    }
+
     pub fn join_invite(&mut self, ui: &AppWindow, code: &str) {
         let account = self
             .presenter

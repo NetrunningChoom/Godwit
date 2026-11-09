@@ -1312,6 +1312,7 @@ impl NetworkAccount for DiscordAccount {
                     req(&self.net, Request::Profile { user: raw, guild });
                 }
             }
+            Command::InviteToActivity { .. } => {}
             Command::MemberRows { room, first, last } => {
                 if let Some(channel) = self.channel_of(&room)
                     && let Some(guild) = self.store.channels.get(&channel).and_then(|c| c.guild.clone())

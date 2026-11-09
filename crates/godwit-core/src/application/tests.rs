@@ -2886,6 +2886,8 @@ fn profiles_open_load_and_ignore_stale_answers() {
         note: None,
         can_note: false,
         note_limit: 0,
+        activity_join: None,
+        can_invite_to_activity: false,
     };
     app.apply(Event::Profile(profile(&UserId::new(account(Network::Stoat), "bo"))));
     assert_eq!(
@@ -2895,6 +2897,14 @@ fn profiles_open_load_and_ignore_stale_answers() {
     );
     app.apply(Event::Profile(profile(&ann)));
     assert!(app.state().profile.as_ref().is_some_and(|(_, p)| p.is_some()));
+    assert!(app.dispatch(Action::InviteToActivity(ann.clone())).is_empty());
+    let mut inviteable = profile(&ann);
+    inviteable.can_invite_to_activity = true;
+    app.apply(Event::Profile(inviteable));
+    assert_eq!(
+        commands(&app.dispatch(Action::InviteToActivity(ann.clone()))),
+        [&Command::InviteToActivity { user: ann.clone() }]
+    );
     let mut owner_profile = profile(&ann);
     owner_profile.group_moderation = Some(crate::members::GroupModeration {
         room: id.clone(),
@@ -4171,6 +4181,8 @@ fn member_changes_need_the_open_card_and_its_powers() {
         note: None,
         can_note: false,
         note_limit: 0,
+        activity_join: None,
+        can_invite_to_activity: false,
     };
     let mut powers = Moderation::new(server.clone());
     app.apply(Event::Profile(card(powers.clone())));

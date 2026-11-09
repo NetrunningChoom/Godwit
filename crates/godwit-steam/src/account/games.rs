@@ -8,6 +8,8 @@ use super::*;
 use crate::bbcode::{GameInvite, GameJoin};
 use godwit_core::message::{Embed, EmbedStyle};
 
+pub(crate) type ActivityInvite = (u32, Option<String>, Option<u64>);
+
 /// Messages whose cards wait for a game's name, at most this many (the
 /// oldest give up first; a name that never comes mustn't grow the list).
 const NAME_WAITS: usize = 64;
@@ -114,6 +116,109 @@ impl SteamAccount {
                 self.name_waits.push(w);
             }
         }
+    }
+}
+
+/// Steam's friends-list Join Game uses `connect` when supplied, otherwise a
+/// lobby id. `steam_player_group` is the game's rich-presence join key; Steam
+/// supplies the actual lobby id separately when one exists.
+pub(crate) fn presence_activity(
+    game_app: Option<u32>,
+    game_id: Option<u64>,
+    rich_presence: &[(String, String)],
+    game_lobby_id: Option<u64>,
+    friend: u64,
+) -> (Option<godwit_core::members::ActivityJoin>, Option<ActivityInvite>) {
+    let Some(app) = game_app
+        .filter(|app| *app != 0)
+        .or_else(|| game_id.map(|id| (id & 0x00ff_ffff) as u32).filter(|app| *app != 0))
+    else {
+        return (None, None);
+    };
+    let connect = rich_presence
+        .iter()
+        .find(|(key, value)| key == "connect" && !value.trim().is_empty())
+        .map(|(_, value)| value.clone());
+    let lobby = game_lobby_id.filter(|id| *id != 0).or_else(|| {
+        rich_presence
+            .iter()
+            .find(|(key, _)| key == "steam_player_group")
+            .and_then(|(_, value)| value.parse::<u64>().ok())
+    });
+    let url = if let Some(args) = &connect {
+        format!(
+            "steam://run/{app}//{}/",
+            godwit_core::encoding::percent_encode(args.trim())
+        )
+    } else if let Some(lobby) = lobby {
+        format!("steam://joinlobby/{app}/{lobby}/{friend}")
+    } else {
+        return (None, None);
+    };
+    let invite = Some((app, connect, lobby));
+    (Some(godwit_core::members::ActivityJoin { url: url.into() }), invite)
+}
+
+/// Steam's invite tags mirror the `GameInvite` parser in `bbcode.rs`, which
+/// reads the official client's `[gameinvite]` and `[lobbyinvite]` forms.
+pub(super) fn invite_message(app: u32, connect: Option<&str>, lobby: Option<u64>) -> Option<String> {
+    if let Some(args) = connect.filter(|value| !value.trim().is_empty()) {
+        let args = args.trim();
+        if args.contains(['\n', '\r', '"', '[', ']']) {
+            return None;
+        }
+        Some(format!("[gameinvite appid=\"{app}\" connect=\"{args}\"][/gameinvite]"))
+    } else {
+        Some(format!(
+            "[lobbyinvite appid=\"{app}\" lobbyid=\"{}\"][/lobbyinvite]",
+            lobby?
+        ))
+    }
+}
+
+#[cfg(test)]
+mod presence_tests {
+    use super::*;
+
+    fn activity(
+        app: Option<u32>,
+        pairs: &[(&str, &str)],
+        lobby: Option<u64>,
+        friend: u64,
+    ) -> (Option<String>, Option<ActivityInvite>) {
+        let pairs: Vec<_> = pairs.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect();
+        let (join, invite) = presence_activity(app, None, &pairs, lobby, friend);
+        (join.map(|join| join.url.to_string()), invite)
+    }
+
+    #[test]
+    fn presence_maps_connect_lobby_and_no_join_target() {
+        assert_eq!(
+            activity(Some(440), &[("connect", "127.0.0.1:2")], None, 9).0,
+            Some("steam://run/440//127.0.0.1%3A2/".into())
+        );
+        assert_eq!(
+            activity(Some(730), &[], Some(123), 9).0,
+            Some("steam://joinlobby/730/123/9".into())
+        );
+        assert_eq!(
+            activity(Some(730), &[("steam_player_group", "123")], None, 9).0,
+            Some("steam://joinlobby/730/123/9".into())
+        );
+        assert_eq!(activity(Some(730), &[], None, 9), (None, None));
+    }
+
+    #[test]
+    fn invite_message_matches_steam_bbcode_tags() {
+        assert_eq!(
+            invite_message(440, Some("host:4"), None).as_deref(),
+            Some("[gameinvite appid=\"440\" connect=\"host:4\"][/gameinvite]")
+        );
+        assert_eq!(
+            invite_message(730, None, Some(123)).as_deref(),
+            Some("[lobbyinvite appid=\"730\" lobbyid=\"123\"][/lobbyinvite]")
+        );
+        assert_eq!(invite_message(1, None, None), None);
     }
 }
 

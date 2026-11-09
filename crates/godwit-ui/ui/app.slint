@@ -659,6 +659,8 @@ export component AppWindow inherits Window {
     in property <bool> card-has-bio;
     in property <string> card-account-details;
     in property <bool> card-me;
+    in property <string> card-activity-join;
+    in property <bool> card-can-invite-activity;
     in property <[RequestItem]> friend-requests;
     in property <string> friend-request-status;
     in property <bool> friend-request-failed;
@@ -973,6 +975,8 @@ export component AppWindow inherits Window {
     callback copy-link(int);
     callback activate-message-button(int, string);
     callback message-profile();
+    callback join-profile-activity();
+    callback invite-to-activity();
     callback link-profile();
     callback set-nudges(int, bool);
     callback leave-call();
@@ -1584,6 +1588,10 @@ export component AppWindow inherits Window {
         has-bio: root.card-has-bio;
         account-details: root.card-account-details;
         me: root.card-me;
+        activity-join: root.card-activity-join;
+        can-invite-activity: root.card-can-invite-activity;
+        join-activity => { root.join-profile-activity(); }
+        invite-to-activity => { root.invite-to-activity(); }
         relationship: root.card-relationship;
         add-friend => { root.add-friend-profile(); }
         remove-friend => { root.remove-friend-profile(); }

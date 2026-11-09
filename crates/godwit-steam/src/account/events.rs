@@ -237,6 +237,7 @@ impl SteamAccount {
                         }
                         if p.state.is_some() {
                             self.my_state = p.state;
+                            self.my_activity = p.activity_invite.clone();
                             if let (Some(account), Some(presence)) = (self.account.clone(), p.state.map(presence)) {
                                 out.push(Event::OwnPresence {
                                     account,
@@ -257,9 +258,7 @@ impl SteamAccount {
                         } else {
                             self.make_ready(out);
                         }
-                        if self.profile_for == self.me
-                            && let Some(profile) = self.me.and_then(|id| self.profile(id))
-                        {
+                        if let Some(profile) = self.profile_for.and_then(|id| self.profile(id)) {
                             out.push(Event::Profile(profile));
                         }
                         continue;

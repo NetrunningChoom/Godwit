@@ -607,6 +607,13 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
     }
     ui.set_card_account_details(account_details.join(" · ").into());
     ui.set_card_me(p.me);
+    ui.set_card_activity_join(
+        p.activity_join
+            .as_ref()
+            .map_or_else(String::new, |join| join.url.to_string())
+            .into(),
+    );
+    ui.set_card_can_invite_activity(p.can_invite_to_activity);
     ui.set_card_can_kick(p.moderation.as_ref().is_some_and(|m| m.kick));
     ui.set_card_can_ban(p.moderation.as_ref().is_some_and(|m| m.ban));
     ui.set_card_ban_history(p.moderation.as_ref().is_some_and(|m| m.ban_history));

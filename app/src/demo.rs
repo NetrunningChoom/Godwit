@@ -118,6 +118,8 @@ pub fn profile(user: UserId, name: &str) -> godwit_core::members::Profile {
         note: None,
         can_note: false,
         note_limit: 0,
+        activity_join: None,
+        can_invite_to_activity: false,
     }
 }
 
@@ -2708,6 +2710,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     .map(|(server, _)| server.clone());
                 vec![self.card(user, server.as_deref())]
             }
+            Command::InviteToActivity { .. } => Vec::new(),
             _ => Vec::new(),
         }
     }

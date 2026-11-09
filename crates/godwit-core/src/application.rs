@@ -805,6 +805,8 @@ impl Application {
             note: None,
             can_note: false,
             note_limit: 0,
+            activity_join: None,
+            can_invite_to_activity: false,
         })
     }
 

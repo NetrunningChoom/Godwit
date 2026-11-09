@@ -98,6 +98,11 @@ pub enum Cmd {
         files: Vec<godwit_core::application::Outgoing>,
         nonce: String,
     },
+    /// Steam's own BBCode game invite tag (user text is escaped in `Send`).
+    SendInvite {
+        friend: u64,
+        text: String,
+    },
     Typing {
         friend: u64,
     },
@@ -222,6 +227,9 @@ pub struct Persona {
     /// The game being played: its name (non-Steam ones), or app id.
     pub game_name: Option<String>,
     pub game_app: Option<u32>,
+    /// The join target and invite details derived from the latest persona push.
+    pub activity_join: Option<godwit_core::members::ActivityJoin>,
+    pub activity_invite: Option<crate::account::games::ActivityInvite>,
 }
 
 /// A chat line.
@@ -1177,6 +1185,21 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                 }
             });
         }
+        Cmd::SendInvite { friend, text } => {
+            let Some(conn) = st.conn.clone() else { return };
+            tokio::spawn(async move {
+                let req = CFriendMessages_SendMessage_Request {
+                    steamid: Some(friend),
+                    chat_entry_type: Some(ENTRY_MESSAGE),
+                    message: Some(text),
+                    contains_bbcode: Some(true),
+                    ..Default::default()
+                };
+                if let Err(error) = conn.service_method(req).await {
+                    diag(&format!("Steam didn't take a game invite: {error}"));
+                }
+            });
+        }
         Cmd::Typing { friend } => {
             if let Some(conn) = st.conn.clone() {
                 tokio::spawn(async move {
@@ -1525,7 +1548,7 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
         } else if let Ok(list) = raw.clone().into_message::<CMsgClientEmoticonList>() {
             out.send(emoticons(&list));
         } else if let Ok(state) = raw.into_message::<CMsgClientPersonaState>() {
-            out.send(Ev::Personas(personas(&state)));
+            out.send(Ev::Personas(personas(&state, me)));
         }
     }
 
@@ -1706,7 +1729,7 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
             while let Some(item) = states.next().await {
                 match item {
                     Ok(state) => {
-                        let list = personas(&state);
+                        let list = personas(&state, me);
                         diag(&format!(
                             "persona message: {} entries, {} with a name, {} with an avatar",
                             list.len(),
@@ -2011,17 +2034,35 @@ async fn app_names(conn: &Connection, apps: Vec<u32>) -> Vec<(u32, String)> {
     names
 }
 
-fn personas(state: &CMsgClientPersonaState) -> Vec<Persona> {
+/// The field names here follow steam-vent-proto-steam 0.5.2's
+/// `steammessages_clientserver_friends.proto` CMsgClientPersonaState.Friend.
+fn personas(state: &CMsgClientPersonaState, own_id: u64) -> Vec<Persona> {
     state
         .friends
         .iter()
-        .map(|f| Persona {
-            steam_id: f.friendid.unwrap_or_default(),
-            name: f.player_name.clone(),
-            state: f.persona_state,
-            avatar_hash: f.avatar_hash.clone(),
-            game_name: f.game_name.clone().filter(|g| !g.is_empty()),
-            game_app: f.game_played_app_id.filter(|a| *a != 0),
+        .map(|f| {
+            let rich_presence: Vec<_> = f
+                .rich_presence
+                .iter()
+                .filter_map(|kv| Some((kv.key.clone()?, kv.value.clone()?)))
+                .collect();
+            let (activity_join, activity_invite) = crate::account::games::presence_activity(
+                f.game_played_app_id,
+                f.gameid,
+                &rich_presence,
+                f.game_lobby_id.filter(|id| *id != 0),
+                f.friendid.unwrap_or_default(),
+            );
+            Persona {
+                steam_id: f.friendid.unwrap_or_default(),
+                name: f.player_name.clone(),
+                state: f.persona_state,
+                avatar_hash: f.avatar_hash.clone(),
+                game_name: f.game_name.clone().filter(|g| !g.is_empty()),
+                game_app: f.game_played_app_id.filter(|a| *a != 0),
+                activity_join,
+                activity_invite: (f.friendid == Some(own_id)).then_some(activity_invite).flatten(),
+            }
         })
         .collect()
 }

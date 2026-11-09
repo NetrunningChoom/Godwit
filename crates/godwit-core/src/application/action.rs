@@ -78,6 +78,8 @@ pub enum Action {
         account: AccountId,
         edit: ProfileEdit,
     },
+    /// Invite a profile to this account's current activity, where its profile allows it.
+    InviteToActivity(UserId),
     /// Show a server's rooms, or (None) the direct messages.
     SelectServer(Option<ServerId>),
     /// Open a server's scheduled events (loads them on the first open).

@@ -217,6 +217,10 @@ pub enum Command {
         user: UserId,
         room: Option<RoomId>,
     },
+    /// Send this person an invite to the account's current activity.
+    InviteToActivity {
+        user: UserId,
+    },
     /// The member list for `room`, answered with [`Event::Members`] (and
     /// again whenever it changes, while it's the room asked about).
     LoadMembers {

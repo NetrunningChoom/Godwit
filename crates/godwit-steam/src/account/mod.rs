@@ -8,7 +8,7 @@
 mod calls;
 mod chats;
 mod events;
-mod games;
+pub(crate) mod games;
 mod group_chats;
 mod login;
 mod people;
@@ -124,6 +124,8 @@ pub struct SteamAccount {
     my_name: Option<String>,
     my_avatar: Option<String>,
     my_state: Option<u32>,
+    /// Current activity from our own persona push, when another friend can join it.
+    my_activity: Option<games::ActivityInvite>,
     /// Sent AccountReady already (for this connection).
     ready: bool,
     friends: HashMap<u64, Friend>,
@@ -292,6 +294,7 @@ impl SteamAccount {
             my_name: None,
             my_avatar: None,
             my_state: None,
+            my_activity: None,
             ready: false,
             friends: HashMap::new(),
             blocked: Vec::new(),
@@ -541,6 +544,15 @@ impl NetworkAccount for SteamAccount {
                     if self.profile_requested.insert(id) {
                         self.net.send(Cmd::ProfileDetails(id));
                     }
+                }
+            }
+            Command::InviteToActivity { user } => {
+                if self.account.as_ref() == Some(&user.account)
+                    && let Ok(friend) = user.raw.parse::<u64>()
+                    && let Some((app, connect, lobby)) = &self.my_activity
+                    && let Some(text) = games::invite_message(*app, connect.as_deref(), *lobby)
+                {
+                    self.net.send(Cmd::SendInvite { friend, text });
                 }
             }
             Command::Focus { room } => {
@@ -926,6 +938,8 @@ fn merge(into: &mut Persona, new: Persona) {
         // A state without a game means the game ended.
         into.game_name = new.game_name;
         into.game_app = new.game_app;
+        into.activity_join = new.activity_join;
+        into.activity_invite = new.activity_invite;
     }
     if new.avatar_hash.is_some() {
         into.avatar_hash = new.avatar_hash;

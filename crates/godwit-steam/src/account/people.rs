@@ -214,6 +214,10 @@ impl SteamAccount {
             note: None,
             can_note: false,
             note_limit: 0,
+            activity_join: persona.and_then(|p| p.activity_join.clone()),
+            can_invite_to_activity: !own
+                && friend.is_some_and(|friend| friend.relationship == FRIEND)
+                && self.my_activity.is_some(),
         })
     }
 

@@ -1025,6 +1025,10 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_add_friend_profile() => |sh, ui| sh.befriend_profile(ui, true));
     callback!(ui.on_remove_friend_profile() => |sh, ui| sh.befriend_profile(ui, false));
     callback!(ui.on_message_profile() => |sh, ui| sh.message_profile(ui));
+    callback!(ui.on_join_profile_activity() => |sh, _ui| sh.join_profile_activity());
+    callback!(ui.on_invite_to_activity() => |sh, ui| {
+        if let Some(user) = sh.profile_user() { sh.act(ui, Action::InviteToActivity(user)); }
+    });
     callback!(ui.on_leave_call() => |sh, ui| sh.act(ui, Action::LeaveCall));
     callback!(ui.on_toggle_mute() => |sh, ui| sh.act(ui, Action::ToggleMute));
     callback!(ui.on_set_camera(active) => |sh, ui| sh.act(ui, Action::SetCamera(active)));

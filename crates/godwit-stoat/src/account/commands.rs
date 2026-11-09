@@ -226,6 +226,7 @@ impl StoatAccount {
                 self.profile_for = Some((user, server, group));
                 self.profile().map(Event::Profile).into_iter().collect()
             }
+            Command::InviteToActivity { .. } => Vec::new(),
             Command::RemoveGroupMember { room, user } => {
                 let channel = room.raw.to_string();
                 let target = user.raw.to_string();

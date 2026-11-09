@@ -59,6 +59,12 @@ pub enum Relationship {
     BlockedOther,
 }
 
+/// A network-provided link that joins a person's current activity.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityJoin {
+    pub url: Arc<str>,
+}
+
 /// Someone's profile card, as seen from a room (nickname and roles are
 /// per server).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +133,12 @@ pub struct Profile {
     /// The most characters a note may hold (the card's field stops there).
     #[serde(default)]
     pub note_limit: usize,
+    /// A link the network explicitly supplied for joining this person's activity.
+    #[serde(default)]
+    pub activity_join: Option<ActivityJoin>,
+    /// This account can invite the person to the activity it is currently playing.
+    #[serde(default)]
+    pub can_invite_to_activity: bool,
 }
 
 /// A server both we and a profile's owner are in.
