@@ -125,14 +125,18 @@ pub fn uploaded(upload: &proto::UploadMetadata, preview: bool) -> Option<String>
         return None;
     }
     let mut url = https("https://chat.google.com/api/get_attachment_url")?;
-    let image = preview && upload.content_type().starts_with("image/");
+    let image = upload.content_type().starts_with("image/");
     url.query_pairs_mut()
         .append_pair("url_type", if image { "FIFE_URL" } else { "DOWNLOAD_URL" })
         .append_pair("attachment_token", upload.attachment_token());
     if image {
-        // Bound the timeline preview; the original stays available separately.
+        // Images, preview and full view alike, are FIFE addresses bounded by
+        // `sz`, as Chat's web client asks for them (its viewer passes its own
+        // size, e.g. `w2519-h925`; one redirect to googleusercontent.com).
+        // `DOWNLOAD_URL` redirects through several hosts and never yielded
+        // the image. The full view is bounded too, to keep its decode lean.
         url.query_pairs_mut()
-            .append_pair("sz", "w1600-h1600")
+            .append_pair("sz", if preview { "w1600-h1600" } else { "w2560-h2560" })
             .append_pair("content_type", upload.content_type());
     }
     Some(url.into())
@@ -409,6 +413,25 @@ mod tests {
         assert_eq!(files[0].kind, AttachmentKind::Image);
         assert!(files[0].original_url.is_some());
         assert!(files[0].url.starts_with("gchat-media://"));
+    }
+
+    #[test]
+    fn full_images_are_larger_fife_images_and_files_downloads() {
+        let query = |mime: &str| {
+            let mut upload = proto::UploadMetadata::new();
+            upload.set_attachment_token("tok".into());
+            upload.set_content_type(mime.into());
+            let url = https(&uploaded(&upload, false).unwrap()).unwrap();
+            url.query_pairs()
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect::<std::collections::HashMap<_, _>>()
+        };
+        let image = query("image/png");
+        assert_eq!(image["url_type"], "FIFE_URL");
+        assert_eq!(image["sz"], "w2560-h2560");
+        let file = query("application/pdf");
+        assert_eq!(file["url_type"], "DOWNLOAD_URL");
+        assert!(!file.contains_key("sz"));
     }
 
     fn upload_message(name: &str, mime: &str) -> proto::Message {

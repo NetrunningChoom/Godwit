@@ -1320,7 +1320,10 @@ message ListTopicsRequest {
 	optional int32 page_size_for_unread_replies = 6;
 	optional int32 page_size_for_read_replies = 7;
 	optional int32 page_size_for_replies = 3;
-	//optional DYNProtoListTopicsRequest_Filter filter = 4;
+	// The older-page boundary: Chat's web client sends the oldest topic's
+	// sort time already shown here, together with sort_option 2, as it
+	// scrolls back.
+	optional ListTopicsBoundary boundary = 4;
 
 	enum FetchOptions {
 		USER = 1;
@@ -1330,7 +1333,11 @@ message ListTopicsRequest {
 	repeated FetchOptions fetch_options = 5;
 	optional ReferenceRevision user_not_older_than = 9;
 	optional ReferenceRevision group_not_older_than = 10;
-	//optional DYNProtoListTopicsRequest_SortOption sort_option = 11;
+	optional int32 sort_option = 11;
+}
+
+message ListTopicsBoundary {
+	optional int64 sort_time = 1;
 }
 
 message ListMessagesRequest {

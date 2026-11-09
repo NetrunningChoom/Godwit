@@ -265,21 +265,28 @@ impl Api {
     /// A conversation's newest topics (each with its first replies),
     /// oldest first.
     pub async fn topics(&mut self, group: &str, page: i32, before: Option<i64>) -> Result<proto::ListTopicsResponse> {
+        let req = Self::topics_request(group, page, before)?;
+        let mut resp: proto::ListTopicsResponse = self.call("list_topics", &req).await?;
+        resp.topics.sort_by_key(|t| t.sort_time());
+        Ok(resp)
+    }
+
+    fn topics_request(group: &str, page: i32, before: Option<i64>) -> Result<proto::ListTopicsRequest> {
         let mut req = proto::ListTopicsRequest::new();
         req.request_header = Some(Self::header()).into();
         req.group_id = Some(group_id(group).ok_or_else(|| anyhow!("not a Chat conversation"))?).into();
         req.set_page_size_for_topics(page);
         req.set_page_size_for_replies(page);
         if let Some(timestamp) = before {
-            let mut anchor = proto::ReferenceRevision::new();
-            anchor.set_timestamp(timestamp);
-            // maugclib's list_topics uses a message timestamp revision as the older-page boundary.
-            req.group_not_older_than = Some(anchor.clone()).into();
-            req.user_not_older_than = Some(anchor).into();
+            // As Chat's web client scrolling back: the oldest sort time shown
+            // goes in the boundary, with sort option 2. The `*_not_older_than`
+            // revisions are not a page cursor; they stay unset, as maugclib.
+            let mut boundary = proto::ListTopicsBoundary::new();
+            boundary.set_sort_time(timestamp);
+            req.boundary = Some(boundary).into();
+            req.set_sort_option(2);
         }
-        let mut resp: proto::ListTopicsResponse = self.call("list_topics", &req).await?;
-        resp.topics.sort_by_key(|t| t.sort_time());
-        Ok(resp)
+        Ok(req)
     }
 
     /// A topic's root and replies, as maugclib's proto_list_messages.
@@ -686,14 +693,14 @@ mod tests {
     }
 
     #[test]
-    fn older_topic_anchor_uses_both_revision_fields() {
-        let mut req = proto::ListTopicsRequest::new();
-        let mut anchor = proto::ReferenceRevision::new();
-        anchor.set_timestamp(123_456);
-        req.group_not_older_than = Some(anchor.clone()).into();
-        req.user_not_older_than = Some(anchor).into();
-        assert_eq!(req.group_not_older_than.timestamp(), 123_456);
-        assert_eq!(req.user_not_older_than.timestamp(), 123_456);
+    fn older_topic_pages_carry_the_boundary_not_revisions() {
+        let newest = Api::topics_request("space:AAQA", 30, None).unwrap();
+        assert!(newest.boundary.is_none());
+        assert!(!newest.has_sort_option());
+        let older = Api::topics_request("space:AAQA", 30, Some(123_456)).unwrap();
+        assert_eq!(older.boundary.sort_time(), 123_456);
+        assert_eq!(older.sort_option(), 2);
+        assert!(older.group_not_older_than.is_none() && older.user_not_older_than.is_none());
     }
 
     #[test]

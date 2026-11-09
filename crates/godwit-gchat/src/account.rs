@@ -512,6 +512,11 @@ impl GChatAccount {
         }
     }
 
+    fn is_seen(&self, group: &str, message: &str) -> bool {
+        self.seen
+            .contains(&(api::room_parts(group).0.to_owned(), message.to_owned()))
+    }
+
     fn note_seen(&mut self, group: &str, message: &str) -> bool {
         let key = (api::room_parts(group).0.to_owned(), message.to_owned());
         if !self.seen.insert(key.clone()) {
@@ -806,8 +811,26 @@ impl GChatAccount {
                 let Some(account) = self.account.clone() else { return };
                 let room = RoomId::new(account, group.as_str());
                 match result {
-                    Ok((messages, cursor, reached_start)) => {
-                        if let Some(cursor) = cursor {
+                    Ok((messages, cursor, mut reached_start)) => {
+                        // An older page that brings nothing new (Chat answered
+                        // with a page already shown) ends paging: asking again
+                        // would return the same page, and the view would keep
+                        // asking while it stays scrolled to the top.
+                        // An older page leaves out what is already shown (the
+                        // boundary topic may come back), so nothing doubles.
+                        let shown: std::collections::HashSet<String> = if older.is_some() {
+                            messages
+                                .iter()
+                                .map(|m| m.id.message_id().to_owned())
+                                .filter(|id| self.is_seen(&group, id))
+                                .collect()
+                        } else {
+                            Default::default()
+                        };
+                        if older.is_some() && shown.len() == messages.len() {
+                            reached_start = true;
+                        }
+                        if let Some(cursor) = cursor.filter(|_| !(older.is_some() && reached_start)) {
                             self.history_cursors.insert(group.clone(), cursor);
                         } else {
                             self.history_cursors.remove(&group);
@@ -851,7 +874,11 @@ impl GChatAccount {
                         out.push(Event::History {
                             room,
                             before: older,
-                            messages: messages.iter().filter_map(|m| self.message_in(&group, m)).collect(),
+                            messages: messages
+                                .iter()
+                                .filter(|m| !shown.contains(m.id.message_id()))
+                                .filter_map(|m| self.message_in(&group, m))
+                                .collect(),
                             reached_start,
                         });
                     }
@@ -1193,6 +1220,11 @@ mod tests {
 
     /// Like `stream_message`, but with a chosen create time.
     fn stream_message_at(id: &str, text: &str, created: i64) -> proto::Event {
+        stream_message_from(chat_message_at(id, text, created))
+    }
+
+    /// A message in `space:2`'s topic, as history or the stream carries it.
+    fn chat_message_at(id: &str, text: &str, created: i64) -> proto::Message {
         let mut m = proto::Message::new();
         m.id = Some(
             api::Target {
@@ -1212,6 +1244,10 @@ mod tests {
             .set_id("ann".into());
         m.set_text_body(text.into());
         m.set_create_time(created);
+        m
+    }
+
+    fn stream_message_from(m: proto::Message) -> proto::Event {
         let mut post = proto::MessageEvent::new();
         post.message = Some(m).into();
         let mut body = proto::event::EventBody::new();
@@ -1446,9 +1482,9 @@ mod tests {
         );
         while cmds.try_recv().is_ok() {}
         let room = RoomId::new(a.account.clone().unwrap(), "space:2");
-        let page = |cursor| Ev::History {
+        let page = |messages, cursor| Ev::History {
             group: "space:2".into(),
-            result: Ok((Vec::new(), cursor, false)),
+            result: Ok((messages, cursor, false)),
         };
 
         a.run(Command::LoadHistory {
@@ -1457,12 +1493,13 @@ mod tests {
         });
         assert!(matches!(cmds.try_recv(), Ok(Cmd::History { before: None, .. })));
         let mut out = Vec::new();
-        a.handle(page(Some(500)), &mut out);
+        a.handle(page(vec![chat_message_at("m1", "new", 600)], Some(500)), &mut out);
         assert!(
             matches!(out.last(), Some(Event::History { before: None, .. })),
             "{out:?}"
         );
 
+        while cmds.try_recv().is_ok() {}
         let anchor = MessageId("m1".into());
         a.run(Command::LoadHistory {
             room: room.clone(),
@@ -1470,10 +1507,31 @@ mod tests {
         });
         assert!(matches!(cmds.try_recv(), Ok(Cmd::History { before: Some(500), .. })));
         let mut out = Vec::new();
-        a.handle(page(None), &mut out);
+        a.handle(page(vec![chat_message_at("m0", "old", 400)], Some(300)), &mut out);
         assert!(
             matches!(out.last(), Some(Event::History { before: Some(b), reached_start: false, .. }) if *b == anchor),
             "an older page must carry its anchor so it is prepended: {out:?}"
+        );
+
+        // An older page with nothing new (the same page again) ends paging
+        // rather than being asked for over and over.
+        while cmds.try_recv().is_ok() {}
+        a.run(Command::LoadHistory {
+            room: room.clone(),
+            before: Some(anchor.clone()),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::History { before: Some(300), .. })));
+        let mut out = Vec::new();
+        a.handle(page(vec![chat_message_at("m0", "old", 400)], Some(300)), &mut out);
+        assert!(
+            matches!(
+                out.last(),
+                Some(Event::History {
+                    reached_start: true,
+                    ..
+                })
+            ),
+            "{out:?}"
         );
 
         // Without a cursor there is nothing older to ask for.
