@@ -221,6 +221,21 @@ pub enum Cmd {
         group: u64,
         name: String,
     },
+    /// Add a room to a group (voice too when `voice`).
+    GroupRoomCreate {
+        group: u64,
+        name: String,
+        voice: bool,
+    },
+    /// List the account's authorized devices.
+    Devices,
+    /// Set a group room's own notification level and/or its mute.
+    GroupPreferences {
+        group: u64,
+        chat: u64,
+        level: Option<Option<u8>>,
+        muted: Option<bool>,
+    },
     GroupModerate {
         group: u64,
         action: GroupModeration,
@@ -448,6 +463,8 @@ pub enum Ev {
     },
     /// Something to log for the user (Settings → Problems).
     Notice(String),
+    /// The account's authorized devices, or why they couldn't be listed.
+    Devices(Result<Vec<godwit_core::privacy::Session>, String>),
     /// Persona states were missed: ask for these friends' again
     /// ([`Cmd::RequestPersonas`]).
     NeedPersonas,
@@ -987,6 +1004,45 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                     match crate::groups::rename(&conn, group, &name).await {
                         Ok(()) => fetch_groups(conn, out).await,
                         Err(error) => out.send(Ev::Notice(format!("Couldn't rename Steam group chat: {error}"))),
+                    }
+                });
+            }
+        }
+        Cmd::GroupRoomCreate { group, name, voice } => {
+            if let Some(conn) = st.conn.clone() {
+                let out = out.clone();
+                tokio::spawn(async move {
+                    match crate::groups::create_room(&conn, group, &name, voice).await {
+                        Ok(()) => fetch_groups(conn, out).await,
+                        Err(error) => out.send(Ev::Notice(format!("Couldn't create Steam group chat room: {error}"))),
+                    }
+                });
+            }
+        }
+        Cmd::Devices => {
+            if let Some(conn) = st.conn.clone() {
+                let out = out.clone();
+                tokio::spawn(async move {
+                    out.send(Ev::Devices(crate::devices::list(&conn).await));
+                });
+            } else {
+                out.send(Ev::Devices(Err("Not connected to Steam.".into())));
+            }
+        }
+        Cmd::GroupPreferences {
+            group,
+            chat,
+            level,
+            muted,
+        } => {
+            if let Some(conn) = st.conn.clone() {
+                let out = out.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = crate::groups::set_preferences(&conn, group, chat, level, muted).await {
+                        out.send(Ev::Notice(format!(
+                            "Couldn't change Steam group chat notifications: {error}"
+                        )));
+                        fetch_groups(conn, out).await;
                     }
                 });
             }

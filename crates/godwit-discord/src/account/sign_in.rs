@@ -544,6 +544,12 @@ impl DiscordAccount {
                     &mut out,
                 );
             }
+            Command::SetNickname { user, nickname }
+                if self.store.relationships.get(user.raw.as_ref()) == Some(&store::FRIEND) =>
+            {
+                let d = json!({"id": user.raw.as_ref(), "nickname": nickname});
+                self.dispatch("RELATIONSHIP_UPDATE", &d, &mut out);
+            }
             // Member changes answer with the GUILD_MEMBER_UPDATE Discord would send.
             Command::ServerAdmin { server, op } if op.member_target().is_some() => {
                 use godwit_core::server_settings::ServerAdmin as A;

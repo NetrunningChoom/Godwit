@@ -315,6 +315,8 @@ impl Shell {
         ui.set_settings_account_sessions(sessions);
         ui.set_settings_account_rename_sessions(pages.contains(&godwit_core::network::AccountPage::RenameSessions));
         ui.set_settings_account_log_out_others(pages.contains(&godwit_core::network::AccountPage::LogOutOtherSessions));
+        ui.set_settings_account_log_out_session(pages.contains(&godwit_core::network::AccountPage::LogOutSession));
+        ui.set_settings_account_sessions_mfa(pages.contains(&godwit_core::network::AccountPage::SessionsNeedMfa));
         self.account_pages.account = (discord || sessions || security).then(|| id.clone());
         ui.set_settings_account_tab(if row.is_some() { 0 } else { 1 });
         if let Some(row) = row {

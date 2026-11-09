@@ -47,6 +47,15 @@ export component UserCard inherits Rectangle {
     callback timeout();
     callback remove-timeout();
     callback edit-nickname();
+    // Call controls while they're in one of this server's voice channels
+    // (the official voice user menu): server mute, server deafen, disconnect.
+    in property <bool> can-server-mute;
+    in property <bool> server-muted;
+    in property <bool> can-server-deafen;
+    in property <bool> server-deafened;
+    in property <bool> can-disconnect-voice;
+    // 0 toggles server mute, 1 server deafen, 2 disconnects.
+    callback voice-member(int);
     in property <bool> can-remove-group-member;
     in property <bool> can-add-group-member;
     in property <bool> can-transfer-group-ownership;
@@ -309,6 +318,12 @@ export component UserCard inherits Rectangle {
                     if !root.me && root.can-timeout && !root.timed-out: Button { text: "Timeout"; kind: "tonal"; clicked => { root.timeout(); } }
                     if !root.me && root.can-timeout && root.timed-out: Button { text: "Remove timeout"; kind: "tonal"; clicked => { root.remove-timeout(); } }
                     if root.can-nickname: Button { text: "Change nickname"; kind: "tonal"; clicked => { root.edit-nickname(); } }
+                }
+                if !root.me && (root.can-server-mute || root.can-server-deafen || root.can-disconnect-voice): HorizontalLayout {
+                    spacing: Theme.space-3; alignment: start;
+                    if root.can-server-mute: Button { text: root.server-muted ? "Server unmute" : "Server mute"; kind: "tonal"; clicked => { root.voice-member(0); } }
+                    if root.can-server-deafen: Button { text: root.server-deafened ? "Server undeafen" : "Server deafen"; kind: "tonal"; clicked => { root.voice-member(1); } }
+                    if root.can-disconnect-voice: Button { text: "Disconnect"; kind: "text"; danger: true; clicked => { root.voice-member(2); } }
                 }
                 if !root.me && (root.can-kick || root.can-ban): HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;

@@ -595,6 +595,18 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
                     .is_some_and(|(players, url)| players.slot(url).is_some()),
                 inline_playing: playing,
                 site_name: embed.site_name.as_deref().unwrap_or_default().into(),
+                more_label: embed
+                    .more_link
+                    .as_ref()
+                    .map(|(label, _)| &**label)
+                    .unwrap_or_default()
+                    .into(),
+                more_url: embed
+                    .more_link
+                    .as_ref()
+                    .map(|(_, url)| &**url)
+                    .unwrap_or_default()
+                    .into(),
                 icon,
                 has_icon,
                 image,

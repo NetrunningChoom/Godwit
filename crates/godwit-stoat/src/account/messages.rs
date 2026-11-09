@@ -214,6 +214,7 @@ impl StoatAccount {
                         EmbedStyle::Card
                     },
                     description_markup: Markup::Plain,
+                    more_link: None,
                 }
             }
             StoatEmbed::Image(i) => CoreEmbed {

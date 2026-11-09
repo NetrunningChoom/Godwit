@@ -116,6 +116,8 @@ impl StoatAccount {
             ServerAdmin::Timeout { .. } => Some((p::TIMEOUT_MEMBERS, "Timeout Members")),
             // Checked below: our own needs Change Nickname, others' Manage Nicknames.
             ServerAdmin::SetServerNickname { .. } => None,
+            // Stoat member cards don't offer call controls (moderation leaves `voice` empty).
+            ServerAdmin::VoiceMember { .. } => return fail(server, "You can't change this member."),
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -485,6 +487,8 @@ impl StoatAccount {
                 self.sync_rooms(&mut out);
                 return out;
             }
+            // Refused before the permission check above.
+            ServerAdmin::VoiceMember { .. } => return fail(server, "You can't change this member."),
             ServerAdmin::Leave => {
                 if owner == *server.account.user {
                     return fail(server, "The owner can't leave; delete the server instead.");

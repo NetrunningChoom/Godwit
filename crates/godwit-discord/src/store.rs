@@ -353,6 +353,9 @@ pub struct Store {
     pub relationships: HashMap<String, u64>,
     /// Discord's relationship objects (User Relationships docs) carry this flag.
     pub ignored: HashSet<String>,
+    /// user → the nickname this account gives them as a friend (the
+    /// relationship's `nickname`, docs.discord.food User Relationships).
+    pub friend_nicknames: HashMap<String, String>,
     /// user → status ("online", "idle", "dnd", "offline").
     pub presences: HashMap<String, String>,
     /// user → what they're doing ("Playing …"), from their presence's
@@ -519,6 +522,9 @@ impl Store {
             if let (Some(id), Some(kind)) = (r["id"].as_str(), r["type"].as_u64()) {
                 self.relationships.insert(id.to_owned(), kind);
             }
+            if let Some(id) = r["id"].as_str() {
+                self.set_friend_nickname(id, &r["nickname"]);
+            }
             if let Some(u) = r.get("user") {
                 self.put_user(u);
             }
@@ -675,6 +681,19 @@ impl Store {
                 Some(text) => self.activities.insert(user.to_owned(), text),
                 None => self.activities.remove(user),
             };
+        }
+    }
+
+    /// Keeps or clears a friend's nickname from a relationship object's
+    /// `nickname` (null or empty: none).
+    pub fn set_friend_nickname(&mut self, user: &str, nickname: &Value) {
+        match nickname.as_str().map(str::trim).filter(|n| !n.is_empty()) {
+            Some(n) => {
+                self.friend_nicknames.insert(user.to_owned(), n.to_owned());
+            }
+            None => {
+                self.friend_nicknames.remove(user);
+            }
         }
     }
 

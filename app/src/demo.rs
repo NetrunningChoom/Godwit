@@ -1938,9 +1938,12 @@ impl DemoAccount {
                 admin.roles.default_allow = allow;
                 R::Roles(admin.roles.clone())
             }
-            A::Kick(_) | A::Ban { .. } | A::SetMemberRole { .. } | A::Timeout { .. } | A::SetServerNickname { .. } => {
-                R::Done("Done.".into())
-            }
+            A::Kick(_)
+            | A::Ban { .. }
+            | A::SetMemberRole { .. }
+            | A::Timeout { .. }
+            | A::SetServerNickname { .. }
+            | A::VoiceMember { .. } => R::Done("Done.".into()),
             A::CreateInvite => R::InviteCreated(format!("https://stt.gg/{}", Bogus::new(77).word()).into()),
             A::MarkRead => R::Done("Marked as read.".into()),
             A::SetNotify(_) => R::Done("Notifications changed.".into()),
@@ -3016,6 +3019,8 @@ impl DemoAccount {
         let ok = match &op {
             A::SetMemberRole { role, .. } => allowed.roles.iter().any(|r| r.id == *role),
             A::Timeout { .. } => allowed.timeout,
+            // Demo members are never in a call.
+            A::VoiceMember { .. } => false,
             _ => allowed.nickname,
         };
         if !ok {

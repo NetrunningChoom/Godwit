@@ -147,6 +147,12 @@ pub fn note_body(note: &str) -> Value {
     json!({"note": note.chars().take(NOTE_LIMIT).collect::<String>()})
 }
 
+/// A friend nickname change: empty clears it (null), as Yapfast sends.
+pub fn friend_nickname_body(nickname: &str) -> Value {
+    let nickname = nickname.trim();
+    json!({"nickname": (!nickname.is_empty()).then_some(nickname)})
+}
+
 /// The status Discord refused a request with, if it did.
 pub fn status(error: &anyhow::Error) -> Option<StatusCode> {
     error.downcast_ref::<DiscordError>().map(|e| e.status)
@@ -824,6 +830,18 @@ impl Api {
         let path = format!("/users/@me/relationships/{user}");
         let request = with_json(self.request(Method::PUT, &path), &json!({"type": 2}));
         self.empty(request.header("X-Context-Properties", context(place))).await
+    }
+
+    /// Sets the nickname this account gives a friend; empty clears it
+    /// (Modify Relationship, docs.discord.food resources/relationships;
+    /// Yapfast's `set_friend_nickname` sends the same body).
+    pub async fn set_friend_nickname(&self, user: &str, nickname: &str) -> Result<()> {
+        let path = format!("/users/@me/relationships/{user}");
+        self.empty(with_json(
+            self.request(Method::PATCH, &path),
+            &friend_nickname_body(nickname),
+        ))
+        .await
     }
 
     /// Uses Discord's relationship `/ignore` endpoint (docs.discord.food, User Relationships).

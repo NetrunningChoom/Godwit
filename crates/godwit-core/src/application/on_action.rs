@@ -200,7 +200,7 @@ impl Application {
     /// card is open, with the powers the network gave that card, and within
     /// the length limits (so a stale or forged action never reaches a network).
     fn member_change_allowed(&self, server: &ServerId, op: &crate::server_settings::ServerAdmin) -> bool {
-        use crate::server_settings::{NICKNAME_MAX, ServerAdmin as A, TIMEOUT_MAX_SECS};
+        use crate::server_settings::{NICKNAME_MAX, ServerAdmin as A, TIMEOUT_MAX_SECS, VoiceMemberOp};
         let Some(target) = op.member_target() else {
             return true;
         };
@@ -222,6 +222,11 @@ impl Application {
             A::SetServerNickname { nick, .. } => {
                 m.nickname && nick.as_ref().is_none_or(|n| n.trim().chars().count() <= NICKNAME_MAX)
             }
+            A::VoiceMember { op, .. } => m.voice.is_some_and(|v| match op {
+                VoiceMemberOp::Mute(_) => v.mute,
+                VoiceMemberOp::Deafen(_) => v.deafen,
+                VoiceMemberOp::Disconnect => v.disconnect,
+            }),
             _ => true,
         }
     }

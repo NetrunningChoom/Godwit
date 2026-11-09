@@ -173,6 +173,10 @@ pub enum Request {
     RemoveFriend {
         user: String,
     },
+    SetFriendNickname {
+        user: String,
+        nickname: String,
+    },
     BlockUser {
         user: String,
     },
@@ -1279,6 +1283,13 @@ async fn answer(api: &Api, request: Request) -> Answer {
             what: "removing a friend",
             result: api
                 .remove_relationship(&user, "User Profile")
+                .await
+                .map_err(RequestError::from),
+        },
+        Request::SetFriendNickname { user, nickname } => Answer::Done {
+            what: "setting a friend nickname",
+            result: api
+                .set_friend_nickname(&user, &nickname)
                 .await
                 .map_err(RequestError::from),
         },

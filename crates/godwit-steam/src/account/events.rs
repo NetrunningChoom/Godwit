@@ -595,6 +595,21 @@ impl SteamAccount {
                 });
             }
             Ev::Notice(text) => out.push(Event::Error(text.into())),
+            Ev::Devices(result) => {
+                if let Some(account) = self.account.clone() {
+                    let view = match result {
+                        Ok(sessions) => godwit_core::privacy::SessionsView {
+                            sessions,
+                            ..Default::default()
+                        },
+                        Err(error) => godwit_core::privacy::SessionsView {
+                            error: Some(format!("Couldn't list Steam devices: {error}").into()),
+                            ..Default::default()
+                        },
+                    };
+                    out.push(Event::Sessions { account, view });
+                }
+            }
             Ev::NeedPersonas => {
                 // Name and avatar arrive in separate persona updates. Recover
                 // either missing field after the stream falls behind.

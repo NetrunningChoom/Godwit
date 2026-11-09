@@ -27,6 +27,11 @@ fn capsule_url(app: u32) -> String {
     format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{app}/capsule_184x69.jpg")
 }
 
+/// The game's page in the Steam store.
+fn store_url(app: u32) -> String {
+    format!("https://store.steampowered.com/app/{app}/")
+}
+
 /// Steam's link that accepts the invite, as its client's Accept does:
 /// `steam://run/<app>//<args>/` starts the game with its connect string
 /// (Steam asks before passing arguments on), `steam://joinlobby/<app>/<lobby>/<inviter>`
@@ -96,6 +101,10 @@ impl SteamAccount {
             image_url: Some(capsule_url(invite.app).into()),
             // Our own invites have nothing to join from here.
             url: (Some(inviter) != self.me).then(|| join_url(invite, inviter).into()),
+            // Steam's card offers the game's store page beside Join, for
+            // friends who don't have it; which games we own isn't known
+            // here, so it's always offered on others' invites.
+            more_link: (Some(inviter) != self.me).then(|| ("Store page".into(), store_url(invite.app).into())),
             style: EmbedStyle::Activity,
             ..Embed::default()
         }
@@ -238,5 +247,9 @@ mod tests {
             join_url(&game(GameJoin::Lobby(99)), 7656),
             "steam://joinlobby/730/99/7656"
         );
+    }
+    #[test]
+    fn the_store_link_is_the_games_store_page() {
+        assert_eq!(store_url(730), "https://store.steampowered.com/app/730/");
     }
 }

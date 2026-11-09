@@ -71,7 +71,7 @@ impl Network {
 
     /// The network stores contact nicknames itself, so edits sync to its clients.
     pub fn keeps_nicknames(self) -> bool {
-        matches!(self, Self::Steam)
+        matches!(self, Self::Steam | Self::Discord)
     }
 
     /// Rooms' member lists come from the network; on the others they're
@@ -186,12 +186,18 @@ impl Network {
             Self::Stoat => &[
                 AccountPage::AutoDelete,
                 AccountPage::Sessions,
+                AccountPage::LogOutSession,
+                AccountPage::SessionsNeedMfa,
                 // Stoat's official Settings → Sessions page supports renaming each session.
                 AccountPage::RenameSessions,
                 AccountPage::LogOutOtherSessions,
                 AccountPage::Security,
             ],
             Self::Discord => &[AccountPage::PrivacyAndSessions],
+            // Steam's authorized devices are listed (`Authentication.EnumerateTokens`);
+            // revoking another device's token needs a signature no public
+            // source explains, so the list is read-only.
+            Self::Steam => &[AccountPage::Sessions],
             _ => &[],
         }
     }
@@ -509,8 +515,12 @@ pub enum ThreadStyle {
 pub enum AccountPage {
     AutoDelete,
     PrivacyAndSessions,
-    /// Signed-in devices (Stoat requires MFA before revoking one).
+    /// Signed-in devices are listed.
     Sessions,
+    /// Each listed device can be signed out.
+    LogOutSession,
+    /// Signing a device out first asks for a second factor (Stoat).
+    SessionsNeedMfa,
     /// Session display names can be changed in the official client.
     RenameSessions,
     /// The official sessions page can revoke every other device at once.
@@ -571,13 +581,15 @@ mod tests {
             [
                 AccountPage::AutoDelete,
                 AccountPage::Sessions,
+                AccountPage::LogOutSession,
+                AccountPage::SessionsNeedMfa,
                 AccountPage::RenameSessions,
                 AccountPage::LogOutOtherSessions,
                 AccountPage::Security,
             ]
         );
         assert_eq!(Discord.account_pages(), [AccountPage::PrivacyAndSessions]);
-        assert!(Steam.account_pages().is_empty());
+        assert_eq!(Steam.account_pages(), [AccountPage::Sessions]);
         assert_eq!(GoogleChat.readers(), Some("Google and Workspace admins"));
         assert!(Stoat.readers().is_none());
         let wip: Vec<_> = Network::ALL.into_iter().filter(|n| n.work_in_progress()).collect();

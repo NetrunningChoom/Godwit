@@ -248,6 +248,7 @@ export component EmbedCard inherits Rectangle {
 export component ActivityCard inherits Rectangle {
     in property <EmbedItem> embed;
     callback join();
+    callback link-clicked(string);
     width: Theme.activity-card-width;
     border-radius: Theme.radius-md;
     background: Theme.secondary-container;
@@ -286,12 +287,18 @@ export component ActivityCard inherits Rectangle {
                     wrap: word-wrap;
                     color: Theme.on-secondary-container;
                 }
-                if embed.url != "": HorizontalLayout {
+                if embed.url != "" || embed.more-url != "": HorizontalLayout {
                     alignment: start;
-                    Button {
+                    spacing: Theme.space-3;
+                    if embed.url != "": Button {
                         text: "Join";
                         kind: "filled";
                         clicked => { root.join(); }
+                    }
+                    if embed.more-url != "": Button {
+                        text: embed.more-label;
+                        kind: "text";
+                        clicked => { root.link-clicked(embed.more-url); }
                     }
                 }
             }

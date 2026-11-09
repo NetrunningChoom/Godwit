@@ -404,6 +404,7 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_remove_member_timeout() => |sh, ui| sh.lift_member_timeout(ui));
+    callback!(ui.on_voice_member(op) => |sh, ui| sh.voice_member(ui, op));
     callback!(ui.on_set_member_nickname(nick) => |sh, ui| sh.set_member_nickname(ui, &nick));
     {
         use godwit_core::server_settings::{BAN_DELETE_CHOICES, TIMEOUT_CHOICES};

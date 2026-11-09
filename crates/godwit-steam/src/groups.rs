@@ -7,13 +7,15 @@
 
 use steam_vent::{Connection, ConnectionTrait};
 use steam_vent_proto_steam::steammessages_chat_steamclient::{
-    CChatRoom_AckChatMessage_Notification, CChatRoom_AddRoleToUser_Request, CChatRoom_CreateChatRoomGroup_Request,
-    CChatRoom_DeleteRoleFromUser_Request, CChatRoom_GetChatRoomGroupSummary_Request,
-    CChatRoom_GetChatRoomGroupSummary_Response, CChatRoom_GetMessageHistory_Request,
-    CChatRoom_GetMyChatRoomGroups_Request, CChatRoom_InviteFriendToChatRoomGroup_Request,
-    CChatRoom_JoinChatRoomGroup_Request, CChatRoom_KickUser_Request, CChatRoom_LeaveChatRoomGroup_Request,
-    CChatRoom_RenameChatRoomGroup_Request, CChatRoom_SendChatMessage_Request,
-    CChatRoom_SetSessionActiveChatRoomGroups_Request, CChatRoom_SetUserBanState_Request, CChatRoomState,
+    CChatRoom_AckChatMessage_Notification, CChatRoom_AddRoleToUser_Request, CChatRoom_CreateChatRoom_Request,
+    CChatRoom_CreateChatRoomGroup_Request, CChatRoom_DeleteRoleFromUser_Request,
+    CChatRoom_GetChatRoomGroupSummary_Request, CChatRoom_GetChatRoomGroupSummary_Response,
+    CChatRoom_GetMessageHistory_Request, CChatRoom_GetMyChatRoomGroups_Request,
+    CChatRoom_InviteFriendToChatRoomGroup_Request, CChatRoom_JoinChatRoomGroup_Request, CChatRoom_KickUser_Request,
+    CChatRoom_LeaveChatRoomGroup_Request, CChatRoom_RenameChatRoomGroup_Request, CChatRoom_SendChatMessage_Request,
+    CChatRoom_SetSessionActiveChatRoomGroups_Request, CChatRoom_SetUserBanState_Request,
+    CChatRoom_SetUserChatGroupPreferences_Request, CChatRoomState, EChatRoomNotificationLevel,
+    cchat_room_set_user_chat_group_preferences_request::ChatRoomPreferences,
 };
 
 /// The subset of a group's role actions Godwit can express without exposing
@@ -23,6 +25,8 @@ pub struct ModerationActions {
     pub kick: bool,
     pub ban: bool,
     pub change_user_roles: bool,
+    /// Rooms can be created, renamed and deleted.
+    pub channels: bool,
 }
 
 impl ModerationActions {
@@ -34,6 +38,7 @@ impl ModerationActions {
             kick: action.can_kick(),
             ban: action.can_ban(),
             change_user_roles: action.can_change_user_roles(),
+            channels: action.can_create_rename_delete_channel(),
         }
     }
 }
@@ -78,6 +83,12 @@ pub struct GroupRoom {
     /// Its newest message's time, and the last we've read (0: unknown).
     pub last_message: u32,
     pub last_read: u32,
+    /// Our own desktop notification level here ([`notify_level`]); None
+    /// follows the group.
+    pub notify: Option<u8>,
+    /// Our mute of its unread indicator (`unread_indicator_muted`), shown as
+    /// Godwit's room mute.
+    pub muted: bool,
 }
 
 impl GroupInfo {
@@ -101,6 +112,7 @@ impl GroupInfo {
                     all.kick |= action.kick;
                     all.ban |= action.ban;
                     all.change_user_roles |= action.change_user_roles;
+                    all.channels |= action.channels;
                 }
                 all
             })
@@ -119,6 +131,8 @@ fn room(state: &CChatRoomState) -> GroupRoom {
         sort_order: state.sort_order(),
         last_message: state.time_last_message(),
         last_read: 0,
+        notify: None,
+        muted: false,
     }
 }
 
@@ -134,19 +148,30 @@ pub async fn fetch(conn: &Connection) -> Result<Vec<GroupInfo>, String> {
         .iter()
         .filter_map(|pair| {
             let s = pair.group_summary.as_ref()?;
-            let read: Vec<(u64, u32)> = pair
+            let read: Vec<(u64, u32, Option<u8>, bool)> = pair
                 .user_chat_group_state
                 .as_ref()
                 .map(|u| {
                     u.user_chat_room_state
                         .iter()
-                        .map(|r| (r.chat_id(), r.time_last_ack()))
+                        .map(|r| {
+                            (
+                                r.chat_id(),
+                                r.time_last_ack(),
+                                notify_level(r.desktop_notification_level()),
+                                r.unread_indicator_muted(),
+                            )
+                        })
                         .collect()
                 })
                 .unwrap_or_default();
             let mut rooms: Vec<GroupRoom> = s.chat_rooms.iter().map(room).collect();
             for r in &mut rooms {
-                r.last_read = read.iter().find(|(c, _)| *c == r.chat).map_or(0, |(_, t)| *t);
+                if let Some((_, read, notify, muted)) = read.iter().find(|(c, ..)| *c == r.chat) {
+                    r.last_read = *read;
+                    r.notify = *notify;
+                    r.muted = *muted;
+                }
             }
             Some(summary_info(s, rooms))
         })
@@ -192,8 +217,13 @@ pub async fn fetch(conn: &Connection) -> Result<Vec<GroupInfo>, String> {
             for full in &state.chat_rooms {
                 let fresh = room(full);
                 if let Some(r) = group.rooms.iter_mut().find(|r| r.chat == fresh.chat) {
-                    let last_read = r.last_read;
-                    *r = GroupRoom { last_read, ..fresh };
+                    let (last_read, notify, muted) = (r.last_read, r.notify, r.muted);
+                    *r = GroupRoom {
+                        last_read,
+                        notify,
+                        muted,
+                        ..fresh
+                    };
                 }
             }
         }
@@ -457,9 +487,127 @@ pub async fn ack(conn: &Connection, group: u64, chat: u64, time: u32) {
     }
 }
 
+/// A new room in a group (`CChatRoom_CreateChatRoom_Request`,
+/// SteamDatabase/Protobufs steammessages_chat.steamclient.proto): text
+/// always, voice too when `voice`.
+pub fn create_room_request(group: u64, name: &str, voice: bool) -> CChatRoom_CreateChatRoom_Request {
+    CChatRoom_CreateChatRoom_Request {
+        chat_group_id: Some(group),
+        name: Some(name.trim().to_owned()),
+        allow_voice: Some(voice),
+        ..Default::default()
+    }
+}
+
+pub async fn create_room(conn: &Connection, group: u64, name: &str, voice: bool) -> Result<(), String> {
+    conn.service_method(create_room_request(group, name, voice))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// One room's own notification preferences, as
+/// `CChatRoom_SetUserChatGroupPreferences_Request` carries them
+/// (SteamDatabase/Protobufs steammessages_chat.steamclient.proto): the
+/// desktop level when `level` is given, the unread-indicator mute when
+/// `muted` is.
+pub fn preferences_request(
+    group: u64,
+    chat: u64,
+    level: Option<Option<u8>>,
+    muted: Option<bool>,
+) -> CChatRoom_SetUserChatGroupPreferences_Request {
+    let room = ChatRoomPreferences {
+        chat_id: Some(chat),
+        desktop_notification_level: level.map(|l| steam_notify_level(l).into()),
+        unread_indicator_muted: muted,
+        ..Default::default()
+    };
+    CChatRoom_SetUserChatGroupPreferences_Request {
+        chat_group_id: Some(group),
+        chat_room_preferences: vec![room],
+        ..Default::default()
+    }
+}
+
+pub async fn set_preferences(
+    conn: &Connection,
+    group: u64,
+    chat: u64,
+    level: Option<Option<u8>>,
+    muted: Option<bool>,
+) -> Result<(), String> {
+    conn.service_method(preferences_request(group, chat, level, muted))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// A room's desktop notification level (`EChatRoomNotificationLevel`,
+/// SteamDatabase/Protobufs steammessages_chat.steamclient.proto) as
+/// Godwit's `RoomNotify::level`: 0 all, 1 mentions, 2 nothing; Invalid
+/// means the room follows its group. @all counts as a mention.
+pub fn notify_level(level: EChatRoomNotificationLevel) -> Option<u8> {
+    use EChatRoomNotificationLevel as L;
+    match level {
+        L::k_EChatroomNotificationLevel_Invalid => None,
+        L::k_EChatroomNotificationLevel_AllMessages => Some(0),
+        L::k_EChatroomNotificationLevel_MentionMe | L::k_EChatroomNotificationLevel_MentionAll => Some(1),
+        L::k_EChatroomNotificationLevel_None => Some(2),
+    }
+}
+
+/// The other way, for `CChatRoom_SetUserChatGroupPreferences_Request`.
+/// Mentions maps to MentionAll, so @all still notifies as it does for a
+/// mention of us.
+pub fn steam_notify_level(level: Option<u8>) -> EChatRoomNotificationLevel {
+    use EChatRoomNotificationLevel as L;
+    match level {
+        None => L::k_EChatroomNotificationLevel_Invalid,
+        Some(0) => L::k_EChatroomNotificationLevel_AllMessages,
+        Some(1) => L::k_EChatroomNotificationLevel_MentionAll,
+        Some(_) => L::k_EChatroomNotificationLevel_None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn create_room_request_names_the_group_and_voice() {
+        let req = create_room_request(7, "  Raid  ", true);
+        assert_eq!(req.chat_group_id, Some(7));
+        assert_eq!(req.name.as_deref(), Some("Raid"));
+        assert_eq!(req.allow_voice, Some(true));
+    }
+
+    #[test]
+    fn preferences_request_sets_only_what_changed() {
+        let req = preferences_request(7, 9, Some(Some(2)), None);
+        assert_eq!(req.chat_group_id, Some(7));
+        let room = &req.chat_room_preferences[0];
+        assert_eq!(room.chat_id, Some(9));
+        assert_eq!(
+            room.desktop_notification_level(),
+            EChatRoomNotificationLevel::k_EChatroomNotificationLevel_None
+        );
+        assert_eq!(room.unread_indicator_muted, None);
+        let req = preferences_request(7, 9, None, Some(true));
+        assert!(req.chat_room_preferences[0].desktop_notification_level.is_none());
+        assert_eq!(req.chat_room_preferences[0].unread_indicator_muted, Some(true));
+    }
+
+    #[test]
+    fn notify_levels_round_trip_through_steams_enum() {
+        for level in [None, Some(0), Some(1), Some(2)] {
+            assert_eq!(notify_level(steam_notify_level(level)), level);
+        }
+        assert_eq!(
+            notify_level(EChatRoomNotificationLevel::k_EChatroomNotificationLevel_MentionMe),
+            Some(1)
+        );
+    }
 
     #[test]
     fn role_action_mapping_uses_only_published_moderation_flags() {

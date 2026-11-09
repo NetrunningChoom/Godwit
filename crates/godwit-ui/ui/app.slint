@@ -245,6 +245,11 @@ export component AppWindow inherits Window {
     in property <bool> card-can-roles;
     in property <bool> card-can-timeout;
     in property <bool> card-timed-out;
+    in property <bool> card-can-server-mute;
+    in property <bool> card-server-muted;
+    in property <bool> card-can-server-deafen;
+    in property <bool> card-server-deafened;
+    in property <bool> card-can-disconnect-voice;
     in property <bool> card-can-nickname;
     in property <string> card-nickname;
     in property <[MemberRoleItem]> card-member-roles;
@@ -259,6 +264,7 @@ export component AppWindow inherits Window {
     callback toggle-member-role(int, bool);
     callback timeout-member(int);
     callback remove-member-timeout();
+    callback voice-member(int);
     callback set-member-nickname(string);
     in property <bool> card-can-remove-group-member;
     in property <bool> card-can-add-group-member;
@@ -739,6 +745,8 @@ export component AppWindow inherits Window {
     in property <bool> settings-account-security;
     in property <bool> settings-account-rename-sessions;
     in property <bool> settings-account-log-out-others;
+    in property <bool> settings-account-log-out-session;
+    in property <bool> settings-account-sessions-mfa;
     in property <string> settings-data-policy-url;
     in property <string> settings-data-policy-label;
     in property <string> settings-overview-title;
@@ -1678,6 +1686,12 @@ export component AppWindow inherits Window {
         edit-roles => { root.roles-open = true; }
         timeout => { root.timeout-open = true; }
         remove-timeout => { root.remove-member-timeout(); }
+        can-server-mute: root.card-can-server-mute;
+        server-muted: root.card-server-muted;
+        can-server-deafen: root.card-can-server-deafen;
+        server-deafened: root.card-server-deafened;
+        can-disconnect-voice: root.card-can-disconnect-voice;
+        voice-member(op) => { root.voice-member(op); }
         edit-nickname => { root.nickname-text = root.card-nickname; root.nickname-open = true; }
         can-remove-group-member: root.card-can-remove-group-member;
         can-add-group-member: root.card-can-add-group-member;
@@ -1827,6 +1841,8 @@ export component AppWindow inherits Window {
         account-security: root.settings-account-security;
         account-rename-sessions: root.settings-account-rename-sessions;
         account-log-out-others: root.settings-account-log-out-others;
+        account-log-out-session: root.settings-account-log-out-session;
+        account-sessions-mfa: root.settings-account-sessions-mfa;
         account-data: true;
         data-policy-url: root.settings-data-policy-url;
         data-policy-label: root.settings-data-policy-label;

@@ -36,6 +36,11 @@ pub const MENTION_EVERYONE: u64 = 1 << 17;
 /// "Video": cameras and Go Live in voice channels (Discord's STREAM).
 pub const STREAM: u64 = 1 << 9;
 pub const CONNECT: u64 = 1 << 20;
+/// Server mute, server deafen and moving or disconnecting people in voice
+/// (docs.discord.food/topics/permissions).
+pub const MUTE_MEMBERS: u64 = 1 << 22;
+pub const DEAFEN_MEMBERS: u64 = 1 << 23;
+pub const MOVE_MEMBERS: u64 = 1 << 24;
 pub const SPEAK: u64 = 1 << 21;
 /// Use Soundboard, from Discord's permission bitset.
 pub const USE_SOUNDBOARD: u64 = 1 << 42;

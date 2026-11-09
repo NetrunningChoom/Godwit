@@ -5,6 +5,48 @@
 use super::*;
 
 impl SteamAccount {
+    /// A group room's own notification level or mute: kept here at once (the
+    /// room shows it) and sent to Steam, which refetches on failure. Steam's
+    /// mute (`unread_indicator_muted`) has no end time, so a timed mute
+    /// stays on until it is turned off.
+    pub(super) fn set_room_notify(&mut self, raw: &str, change: godwit_core::room::RoomNotifyChange) -> Vec<Event> {
+        use godwit_core::room::RoomNotifyChange as C;
+        let Some((group, chat)) = parse_group_room(raw) else {
+            return Vec::new();
+        };
+        let Some(r) = self
+            .groups
+            .get_mut(&group)
+            .and_then(|g| g.rooms.iter_mut().find(|r| r.chat == chat))
+        else {
+            return Vec::new();
+        };
+        let (level, muted) = match change {
+            C::Level(level) => {
+                r.notify = level;
+                (Some(level), None)
+            }
+            C::Mute { .. } => {
+                r.muted = true;
+                (None, Some(true))
+            }
+            C::Unmute => {
+                r.muted = false;
+                (None, Some(false))
+            }
+        };
+        self.net.send(Cmd::GroupPreferences {
+            group,
+            chat,
+            level,
+            muted,
+        });
+        self.group_room(group, chat)
+            .map(Event::RoomUpdated)
+            .into_iter()
+            .collect()
+    }
+
     pub(super) fn group_room_id(&self, group: u64, chat: u64) -> Option<RoomId> {
         Some(RoomId::new(self.account.clone()?, group_room_raw(group, chat)))
     }
@@ -41,7 +83,10 @@ impl SteamAccount {
         let c = self.group_chats.get(&(group, chat));
         let server = g.is_server();
         Some(Room {
-            notify: Default::default(),
+            notify: godwit_core::room::RoomNotify {
+                level: r.notify,
+                muted: r.muted,
+            },
             id: RoomId::new(account.clone(), group_room_raw(group, chat)),
             name: if server {
                 r.name.clone()
@@ -69,6 +114,7 @@ impl SteamAccount {
                 voice_unavailable: false,
                 // Steam's group typing notices aren't wired.
                 typing: false,
+                notify_settings: true,
                 ..Capabilities::of(Network::Steam)
             },
             encryption: RoomEncryption::Unencrypted,
@@ -144,6 +190,7 @@ impl SteamAccount {
                         .copied()
                         .unwrap_or_default()
                         == 50,
+                    create_channels: g.actions_for(backend::account_id(self.me.unwrap_or_default())).channels,
                     ..Default::default()
                 },
             })

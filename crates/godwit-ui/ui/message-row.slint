@@ -348,6 +348,7 @@ export component MessageRow inherits Rectangle {
                         if embed.style == 3: ActivityCard {
                             embed: embed;
                             join => { root.join-activity(embed.url); }
+                            link-clicked(u) => { root.link-clicked(u); }
                         }
                         if embed.style == 0: EmbedCard {
                             embed: embed;

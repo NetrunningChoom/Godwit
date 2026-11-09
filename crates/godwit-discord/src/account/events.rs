@@ -703,6 +703,11 @@ impl DiscordAccount {
                 if let (Some(id), Some(kind)) = (d["id"].as_str(), d["type"].as_u64()) {
                     self.store.relationships.insert(id.to_owned(), kind);
                 }
+                // RELATIONSHIP_UPDATE can be partial; only a present key
+                // changes the nickname.
+                if let (Some(id), Some(nickname)) = (d["id"].as_str(), d.get("nickname")) {
+                    self.store.set_friend_nickname(id, nickname);
+                }
                 if let (Some(id), Some(ignored)) = (d["id"].as_str(), d["user_ignored"].as_bool()) {
                     if ignored {
                         self.store.ignored.insert(id.to_owned());
@@ -724,6 +729,7 @@ impl DiscordAccount {
                 if let Some(id) = d["id"].as_str() {
                     self.store.relationships.remove(id);
                     self.store.ignored.remove(id);
+                    self.store.friend_nicknames.remove(id);
                 }
                 self.sync_friends(out);
                 self.sync_profile(out);

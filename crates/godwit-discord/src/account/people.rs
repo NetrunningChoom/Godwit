@@ -72,6 +72,18 @@ impl DiscordAccount {
                 users: ignored,
             });
         }
+        // Friend nicknames, which Discord keeps and syncs across clients.
+        let mut nicknames: Vec<(UserId, String)> = self
+            .store
+            .friend_nicknames
+            .iter()
+            .filter_map(|(u, n)| Some((self.user_id(u)?, n.clone())))
+            .collect();
+        nicknames.sort_by(|a, b| a.0.raw.cmp(&b.0.raw));
+        if nicknames != self.nicknames {
+            self.nicknames = nicknames.clone();
+            out.push(Event::Nicknames { account, nicknames });
+        }
     }
 
     pub(super) fn sync_all(&mut self, out: &mut Vec<Event>) {
@@ -374,6 +386,20 @@ impl DiscordAccount {
                     assigned: member.is_some_and(|m| m.roles.contains(&r.id)),
                 })
                 .collect();
+        }
+        // The web client's voice menu: Server Mute, Server Deafen and
+        // Disconnect while they're in one of this server's voice channels,
+        // judged by that channel's permissions (overwrites can grant them).
+        if let Some(state) = self.voice.of(Some(guild), user) {
+            let perms = self.store.channel_permissions(&state.channel);
+            m.voice = Some(godwit_core::members::VoiceModeration {
+                mute: perms & p::MUTE_MEMBERS != 0,
+                deafen: perms & p::DEAFEN_MEMBERS != 0,
+                disconnect: perms & p::MOVE_MEMBERS != 0,
+                muted: state.mute,
+                deafened: state.deaf,
+            })
+            .filter(|v| v.any());
         }
         m.any().then_some(m)
     }

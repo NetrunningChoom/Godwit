@@ -5,6 +5,7 @@
 //! A server's settings: overview, roles and admin commands.
 
 use super::*;
+use godwit_core::server_settings::VoiceMemberOp;
 
 impl DiscordAccount {
     pub(super) fn overview(&self, guild: &str) -> Option<ServerOverview> {
@@ -182,7 +183,8 @@ impl DiscordAccount {
     pub(super) fn member_change(&self, guild: &str, op: &ServerAdmin) -> Result<Option<String>, &'static str> {
         let (ServerAdmin::SetMemberRole { user, .. }
         | ServerAdmin::Timeout { user, .. }
-        | ServerAdmin::SetServerNickname { user, .. }) = op
+        | ServerAdmin::SetServerNickname { user, .. }
+        | ServerAdmin::VoiceMember { user, .. }) = op
         else {
             return Ok(None);
         };
@@ -190,6 +192,11 @@ impl DiscordAccount {
         let allowed = self.moderation(guild, &user).is_some_and(|m| match op {
             ServerAdmin::SetMemberRole { role, .. } => m.roles.iter().any(|r| r.id == *role),
             ServerAdmin::Timeout { .. } => m.timeout,
+            ServerAdmin::VoiceMember { op, .. } => m.voice.is_some_and(|v| match op {
+                VoiceMemberOp::Mute(_) => v.mute,
+                VoiceMemberOp::Deafen(_) => v.deafen,
+                VoiceMemberOp::Disconnect => v.disconnect,
+            }),
             _ => m.nickname,
         });
         if allowed {
@@ -244,9 +251,10 @@ impl DiscordAccount {
                 None
             }
             // Checked against the member's own powers below (hierarchy included).
-            ServerAdmin::SetMemberRole { .. } | ServerAdmin::Timeout { .. } | ServerAdmin::SetServerNickname { .. } => {
-                None
-            }
+            ServerAdmin::SetMemberRole { .. }
+            | ServerAdmin::Timeout { .. }
+            | ServerAdmin::SetServerNickname { .. }
+            | ServerAdmin::VoiceMember { .. } => None,
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -366,6 +374,16 @@ impl DiscordAccount {
                     body: json!({"communication_disabled_until": duration.map(|d| {
                         (chrono::Utc::now() + d).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
                     })}),
+                },
+                // Modify Guild Member's mute, deaf and channel_id (null takes
+                // them out of voice), docs.discord.food/resources/guild.
+                ServerAdmin::VoiceMember { op, .. } => Admin::ModifyMember {
+                    user: target.unwrap_or_default(),
+                    body: match op {
+                        VoiceMemberOp::Mute(on) => json!({"mute": on}),
+                        VoiceMemberOp::Deafen(on) => json!({"deaf": on}),
+                        VoiceMemberOp::Disconnect => json!({"channel_id": null}),
+                    },
                 },
                 ServerAdmin::SetServerNickname { user, nick } => Admin::ModifyMember {
                     // Our own nickname has its own route.

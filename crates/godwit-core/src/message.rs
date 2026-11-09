@@ -159,6 +159,10 @@ pub struct Embed {
     /// previews plain text.
     #[serde(default)]
     pub description_markup: Markup,
+    /// Activity cards: a second link beside Join, as (label, URL), such as
+    /// a game's store page.
+    #[serde(default)]
+    pub more_link: Option<(Arc<str>, Arc<str>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

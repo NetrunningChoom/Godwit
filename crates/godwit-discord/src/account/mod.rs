@@ -128,6 +128,8 @@ pub struct DiscordAccount {
     /// Friends, requests and blocked users as last sent to the core.
     relationships: godwit_core::relationships::RelationshipLists,
     ignored: Vec<UserId>,
+    /// Friend nicknames as last sent (Event::Nicknames).
+    nicknames: Vec<(UserId, String)>,
     /// Friends' activities as last sent (Event::Activities), to send changes only.
     activities: Vec<(UserId, Arc<str>)>,
     /// The custom emoji groups as last sent (Event::CustomEmoji).
@@ -234,6 +236,7 @@ impl DiscordAccount {
             scheduled_event_membership: HashMap::new(),
             relationships: Default::default(),
             ignored: Vec::new(),
+            nicknames: Vec::new(),
             activities: Vec::new(),
             emoji_sent: None,
             stickers_sent: None,
@@ -385,6 +388,7 @@ pub fn embed(e: &Value) -> Option<Embed> {
         icon_url: e["author"]["icon_url"].as_str().map(Into::into),
         style,
         description_markup: if kind == "rich" { Markup::Rich } else { Markup::Plain },
+        more_link: None,
     };
     (embed.title.is_some() || embed.description.is_some() || embed.image_url.is_some()).then_some(embed)
 }
@@ -957,7 +961,19 @@ impl NetworkAccount for DiscordAccount {
                     );
                 }
             }
-            // Discord contact nicknames stay in Godwit's local contact model.
+            // A friend nickname, kept by Discord; RELATIONSHIP_UPDATE echoes it.
+            // Only friends have one (Yapfast offers it on friends only).
+            Command::SetNickname { user, nickname }
+                if self.store.relationships.get(user.raw.as_ref()) == Some(&store::FRIEND) =>
+            {
+                req(
+                    &self.net,
+                    Request::SetFriendNickname {
+                        user: user.raw.to_string(),
+                        nickname,
+                    },
+                )
+            }
             Command::SetNickname { .. } => {}
             Command::Focus { room } => {
                 self.viewing = room.as_ref().and_then(|r| self.channel_of(r));
@@ -2868,6 +2884,47 @@ mod tests {
     }
 
     #[test]
+    fn friend_nicknames_come_from_relationships_and_go_back_as_requests() {
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        let zarg = a.user_id("200").unwrap();
+        let nicknames_in = |out: &[Event]| {
+            out.iter().find_map(|e| match e {
+                Event::Nicknames { nicknames, .. } => Some(nicknames.clone()),
+                _ => None,
+            })
+        };
+        let mut out = Vec::new();
+        a.dispatch("RELATIONSHIP_UPDATE", &json!({"id": "200", "nickname": "Z"}), &mut out);
+        assert_eq!(nicknames_in(&out), Some(vec![(zarg.clone(), "Z".to_owned())]));
+        // A partial update without the key leaves the nickname alone.
+        let mut out = Vec::new();
+        a.dispatch(
+            "RELATIONSHIP_UPDATE",
+            &json!({"id": "200", "user_ignored": false}),
+            &mut out,
+        );
+        assert_eq!(nicknames_in(&out), None);
+        let mut out = Vec::new();
+        a.dispatch("RELATIONSHIP_UPDATE", &json!({"id": "200", "nickname": null}), &mut out);
+        assert_eq!(nicknames_in(&out), Some(Vec::new()));
+        a.run(Command::SetNickname {
+            user: zarg,
+            nickname: "Zed".into(),
+        });
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::Request(Request::SetFriendNickname { user, nickname })) if user == "200" && nickname == "Zed"
+        ));
+        assert_eq!(
+            crate::api::friend_nickname_body(" "),
+            json!({"nickname": null}),
+            "empty clears it"
+        );
+    }
+
+    #[test]
     fn demo_blocks_and_unblocks_with_the_events_discord_would_send() {
         let (mut a, _) = DiscordAccount::demo(crate::store::test_ready(), HashMap::new());
         let zarg = a.user_id("200").unwrap();
@@ -3915,6 +3972,55 @@ mod member_admin_tests {
             },
         );
         assert!(refused.is_none());
+    }
+
+    #[test]
+    fn voice_moderation_shows_while_in_voice_and_sends_the_documented_fields() {
+        use godwit_core::server_settings::VoiceMemberOp;
+        let (mut a, mut cmds) = staffed();
+        a.store
+            .guilds
+            .get_mut("10")
+            .unwrap()
+            .roles
+            .get_mut("11")
+            .unwrap()
+            .permissions |= p::MUTE_MEMBERS | p::DEAFEN_MEMBERS | p::MOVE_MEMBERS;
+        let user = a.user_id("300").unwrap();
+        let voice = |user: &UserId| ServerAdmin::VoiceMember {
+            user: user.clone(),
+            op: VoiceMemberOp::Mute(true),
+        };
+        // Not in a voice channel: nothing offered, nothing sent.
+        assert!(a.moderation("10", "300").unwrap().voice.is_none());
+        assert!(send(&mut a, &mut cmds, voice(&user)).is_none());
+        let mut out = Vec::new();
+        let state = json!({"guild_id": "10", "user_id": "300", "channel_id": "13", "mute": true});
+        a.dispatch("VOICE_STATE_UPDATE", &state, &mut out);
+        while cmds.try_recv().is_ok() {}
+        let v = a.moderation("10", "300").unwrap().voice.unwrap();
+        assert!(v.mute && v.deafen && v.disconnect && v.muted && !v.deafened);
+        let bodies: Vec<Value> = [
+            VoiceMemberOp::Mute(false),
+            VoiceMemberOp::Deafen(true),
+            VoiceMemberOp::Disconnect,
+        ]
+        .into_iter()
+        .map(
+            |op| match send(&mut a, &mut cmds, ServerAdmin::VoiceMember { user: user.clone(), op }) {
+                Some(Admin::ModifyMember { user, body }) if user == "300" => body,
+                other => panic!("{other:?}"),
+            },
+        )
+        .collect();
+        assert_eq!(
+            bodies,
+            [
+                json!({"mute": false}),
+                json!({"deaf": true}),
+                json!({"channel_id": null})
+            ]
+        );
     }
 
     #[test]

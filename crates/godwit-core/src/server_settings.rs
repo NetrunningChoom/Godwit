@@ -289,6 +289,11 @@ pub enum ServerAdmin {
         user: UserId,
         nick: Option<Arc<str>>,
     },
+    /// Server mute, server deafen or disconnect for a member in a call.
+    VoiceMember {
+        user: UserId,
+        op: VoiceMemberOp,
+    },
     DeleteServer,
     /// The server menu's entries.
     CreateInvite,
@@ -311,6 +316,15 @@ pub enum ServerAdmin {
         category: bool,
         up: bool,
     },
+}
+
+/// A member card's call control.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VoiceMemberOp {
+    Mute(bool),
+    Deafen(bool),
+    /// Takes them out of the call.
+    Disconnect,
 }
 
 /// What the Create channel dialog makes.
@@ -355,9 +369,10 @@ impl ServerAdmin {
     /// The member a change on the profile card is aimed at.
     pub fn member_target(&self) -> Option<&UserId> {
         match self {
-            Self::SetMemberRole { user, .. } | Self::Timeout { user, .. } | Self::SetServerNickname { user, .. } => {
-                Some(user)
-            }
+            Self::SetMemberRole { user, .. }
+            | Self::Timeout { user, .. }
+            | Self::SetServerNickname { user, .. }
+            | Self::VoiceMember { user, .. } => Some(user),
             _ => None,
         }
     }

@@ -432,6 +432,19 @@ impl NetworkAccount for SteamAccount {
                     self.net.send(Cmd::GroupInvite { group, friend });
                 }
             }
+            Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(&room.raw, change)),
+            Command::LoadSessions => {
+                self.net.send(Cmd::Devices);
+                if let Some(account) = self.account.clone() {
+                    out.push(Event::Sessions {
+                        account,
+                        view: godwit_core::privacy::SessionsView {
+                            loading: true,
+                            ..Default::default()
+                        },
+                    });
+                }
+            }
             Command::SaveServerOverview { server, edit, .. } => {
                 if let (Some(name), Some(group)) =
                     (edit.name, server.raw.strip_prefix('g').and_then(|v| v.parse().ok()))
@@ -488,6 +501,27 @@ impl NetworkAccount for SteamAccount {
                     return out;
                 };
                 let actions = info.actions_for(backend::account_id(self.me.unwrap_or_default()));
+                if let A::CreateChannel { name, kind, .. } = &op {
+                    use godwit_core::server_settings::NewChannelKind as K;
+                    // Steam rooms have no categories; every room has text.
+                    let voice = match kind {
+                        K::Text => Some(false),
+                        K::Voice => Some(true),
+                        K::Category => None,
+                    };
+                    if let Some(voice) = voice
+                        && actions.channels
+                        && info.is_server()
+                        && !name.trim().is_empty()
+                    {
+                        self.net.send(Cmd::GroupRoomCreate {
+                            group,
+                            name: name.to_string(),
+                            voice,
+                        });
+                    }
+                    return out;
+                }
                 let action = match op {
                     A::Kick(user) if actions.kick => {
                         user.raw.parse::<u64>().ok().map(crate::backend::GroupModeration::Kick)
@@ -1183,6 +1217,86 @@ mod tests {
     }
 
     #[test]
+    fn devices_are_asked_for_and_shown_as_sessions() {
+        let (mut a, tx, mut commands) = ready_with_commands();
+        while commands.try_recv().is_ok() {}
+        let out = a.run(Command::LoadSessions);
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Sessions { view, .. } if view.loading))
+        );
+        assert!(matches!(commands.try_recv(), Ok(Cmd::Devices)));
+
+        let device = godwit_core::privacy::Session {
+            id: "1".into(),
+            device: "Steam client".into(),
+            location: "".into(),
+            created_ms: None,
+            last_used_ms: Some(1),
+        };
+        tx.send(Ev::Devices(Ok(vec![device]))).unwrap();
+        let events = a.poll();
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::Sessions { view, .. } if !view.loading && view.sessions.len() == 1 && view.error.is_none()
+        )));
+        tx.send(Ev::Devices(Err("offline".into()))).unwrap();
+        let events = a.poll();
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::Sessions { view, .. } if view.error.as_deref().is_some_and(|m| m.contains("offline"))
+        )));
+    }
+
+    #[test]
+    fn group_room_notifications_show_on_the_room_and_go_to_steam() {
+        use godwit_core::room::RoomNotifyChange as C;
+        let (mut a, tx, mut commands) = ready_with_commands();
+        let mut g = group(20, None, &[(200, "General", false)]);
+        g.rooms[0].notify = Some(1);
+        tx.send(Ev::Groups(vec![g])).unwrap();
+        let events = a.poll();
+        let room = events
+            .iter()
+            .find_map(|e| match e {
+                Event::RoomUpdated(r) if &*r.id.raw == "g20-200" => Some(r.clone()),
+                _ => None,
+            })
+            .expect("group room");
+        assert!(room.capabilities.notify_settings);
+        assert_eq!(room.notify.level, Some(1));
+        assert!(!room.notify.muted);
+
+        while commands.try_recv().is_ok() {}
+        let out = a.run(Command::SetRoomNotify {
+            room: room.id.clone(),
+            change: C::Mute { seconds: Some(60) },
+        });
+        assert!(out.iter().any(|e| matches!(e, Event::RoomUpdated(r) if r.notify.muted)));
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(Cmd::GroupPreferences {
+                group: 20,
+                chat: 200,
+                level: None,
+                muted: Some(true),
+            })
+        ));
+        a.run(Command::SetRoomNotify {
+            room: room.id,
+            change: C::Level(None),
+        });
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(Cmd::GroupPreferences {
+                level: Some(None),
+                muted: None,
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn groups_become_servers_or_group_dms_and_route_commands() {
         let (mut a, tx, mut commands) = ready_with_commands();
         tx.send(Ev::Groups(vec![
@@ -1271,6 +1385,69 @@ mod tests {
     }
 
     #[test]
+    fn rooms_are_created_only_with_the_channel_right() {
+        use godwit_core::server_settings::{NewChannelKind, ServerAdmin};
+        let (mut account, tx, mut commands) = ready_with_commands();
+        let create = |kind| Command::ServerAdmin {
+            server: ServerId::new(account.account.clone().unwrap(), "g10"),
+            op: ServerAdmin::CreateChannel {
+                name: "Raid".into(),
+                kind,
+                category: None,
+            },
+        };
+        let (text, voice, category) = (
+            create(NewChannelKind::Text),
+            create(NewChannelKind::Voice),
+            create(NewChannelKind::Category),
+        );
+        let without = create(NewChannelKind::Text);
+        tx.send(Ev::Groups(vec![group(10, Some(5), &[(100, "General", false)])]))
+            .unwrap();
+        let events = account.poll();
+        assert!(events.iter().any(|e| matches!(e, Event::ServersChanged { servers, .. }
+            if !servers[0].rights.create_channels)));
+        while commands.try_recv().is_ok() {}
+        account.run(without);
+        assert!(commands.try_recv().is_err());
+
+        let mut info = group(10, Some(5), &[(100, "General", false)]);
+        info.role_actions.insert(
+            4,
+            crate::groups::ModerationActions {
+                channels: true,
+                ..Default::default()
+            },
+        );
+        info.member_roles.insert(1, vec![4]);
+        tx.send(Ev::Groups(vec![info])).unwrap();
+        let events = account.poll();
+        assert!(events.iter().any(|e| matches!(e, Event::ServersChanged { servers, .. }
+            if servers[0].rights.create_channels)));
+        while commands.try_recv().is_ok() {}
+        account.run(text);
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(Cmd::GroupRoomCreate {
+                group: 10,
+                voice: false,
+                ..
+            })
+        ));
+        account.run(voice);
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(Cmd::GroupRoomCreate {
+                group: 10,
+                voice: true,
+                ..
+            })
+        ));
+        account.run(category);
+        assert!(commands.try_recv().is_err());
+    }
+
+    #[test]
     fn member_moderation_commands_dispatch_only_with_group_action_flags() {
         use godwit_core::server_settings::ServerAdmin;
         let (mut account, tx, mut commands) = ready_with_commands();
@@ -1281,6 +1458,7 @@ mod tests {
                 kick: true,
                 ban: true,
                 change_user_roles: true,
+                channels: false,
             },
         );
         info.member_roles.insert(1, vec![4]);

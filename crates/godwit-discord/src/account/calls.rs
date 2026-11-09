@@ -370,6 +370,14 @@ impl DiscordAccount {
                 if d["user_id"].as_str() == Some(self.me()) {
                     self.own_voice_state(d, out);
                 }
+                // An open card on them shows their call controls as they now stand.
+                if self
+                    .profile_for
+                    .as_ref()
+                    .is_some_and(|(user, _)| d["user_id"].as_str() == Some(user.as_str()))
+                {
+                    self.sync_profile(out);
+                }
                 changed
             }
             "VOICE_SERVER_UPDATE" => {

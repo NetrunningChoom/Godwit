@@ -610,6 +610,12 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
     ui.set_card_can_roles(p.moderation.as_ref().is_some_and(|m| !m.roles.is_empty()));
     ui.set_card_can_timeout(p.moderation.as_ref().is_some_and(|m| m.timeout));
     ui.set_card_timed_out(p.moderation.as_ref().is_some_and(|m| m.timed_out));
+    let voice = p.moderation.as_ref().and_then(|m| m.voice).unwrap_or_default();
+    ui.set_card_can_server_mute(voice.mute);
+    ui.set_card_server_muted(voice.muted);
+    ui.set_card_can_server_deafen(voice.deafen);
+    ui.set_card_server_deafened(voice.deafened);
+    ui.set_card_can_disconnect_voice(voice.disconnect);
     ui.set_card_can_nickname(p.moderation.as_ref().is_some_and(|m| m.nickname));
     ui.set_card_nickname(
         p.moderation

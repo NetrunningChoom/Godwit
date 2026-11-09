@@ -208,6 +208,27 @@ pub struct Moderation {
     /// Their current nickname in this server.
     #[serde(default)]
     pub nick: Option<std::sync::Arc<str>>,
+    /// What we may do to them in this server's call; None while they aren't in one.
+    #[serde(default)]
+    pub voice: Option<VoiceModeration>,
+}
+
+/// A member's call controls on their card: server mute, server deafen and
+/// disconnect, each with its own permission, and how they stand now.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceModeration {
+    pub mute: bool,
+    pub deafen: bool,
+    pub disconnect: bool,
+    /// Muted or deafened by the server right now (their own mute doesn't count).
+    pub muted: bool,
+    pub deafened: bool,
+}
+
+impl VoiceModeration {
+    pub fn any(&self) -> bool {
+        self.mute || self.deafen || self.disconnect
+    }
 }
 
 impl Moderation {
@@ -223,12 +244,18 @@ impl Moderation {
             timed_out: false,
             nickname: false,
             nick: None,
+            voice: None,
         }
     }
 
     /// Whether the card has anything to offer at all.
     pub fn any(&self) -> bool {
-        self.kick || self.ban || !self.roles.is_empty() || self.timeout || self.nickname
+        self.kick
+            || self.ban
+            || !self.roles.is_empty()
+            || self.timeout
+            || self.nickname
+            || self.voice.is_some_and(|v| v.any())
     }
 }
 
