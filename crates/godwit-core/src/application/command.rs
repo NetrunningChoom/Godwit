@@ -347,6 +347,14 @@ pub enum Command {
         room: RoomId,
     },
     LeaveCall,
+    /// Play a sound in the current call.
+    PlaySound {
+        room: RoomId,
+        sound: Arc<str>,
+    },
+    LoadCallSounds {
+        room: RoomId,
+    },
     /// The call's video is on screen (see `Action::SetCallShown`): fetch and
     /// decode it only while true.
     SetCallShown(bool),

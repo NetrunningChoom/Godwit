@@ -592,6 +592,13 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::CallSounds { room, sounds } => {
+                if let Some(call) = self.state.call.as_mut().filter(|c| c.room == room) {
+                    call.sounds = sounds;
+                }
+                Vec::new()
+            }
+            Event::SoundPlayed { .. } => Vec::new(),
             Event::Profile(p) => {
                 self.state.profiles.insert(p.user.clone(), p.clone());
                 if let Some((user, slot)) = self.state.profile.as_mut()

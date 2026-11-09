@@ -3293,6 +3293,39 @@ fn streams_in_a_call_can_be_watched() {
 }
 
 #[test]
+fn soundboard_play_requires_a_connected_call_and_a_listed_sound() {
+    let mut app = Application::default();
+    let mut room = dm(Network::Discord, "a", "x");
+    room.capabilities.soundboard = true;
+    let id = room.id.clone();
+    ready(&mut app, Network::Discord, vec![room]);
+    app.dispatch(Action::JoinCall(id.clone()));
+    let sound: Arc<str> = "tone".into();
+    assert!(app.dispatch(Action::PlaySound { sound: sound.clone() }).is_empty());
+    app.apply(Event::CallConnected { room: id.clone() });
+    assert!(app.dispatch(Action::PlaySound { sound: sound.clone() }).is_empty());
+    app.apply(Event::CallSounds {
+        room: id.clone(),
+        sounds: vec![crate::call::Sound {
+            id: sound.clone(),
+            name: "Tone".into(),
+            emoji: None,
+            source: None,
+        }],
+    });
+    assert!(
+        matches!(app.dispatch(Action::PlaySound { sound: sound.clone() }).as_slice(),
+        [Effect::Backend { command: Command::PlaySound { room, sound: played }, .. }] if room == &id && played == &sound)
+    );
+    assert!(
+        app.dispatch(Action::PlaySound {
+            sound: "unknown".into()
+        })
+        .is_empty()
+    );
+}
+
+#[test]
 fn joining_leaving_and_switching_calls() {
     let mut app = Application::default();
     let a = dm(Network::Stoat, "a", "x");

@@ -452,6 +452,12 @@ pub enum Action {
     /// Turn down the call ringing us in a room (it stops ringing for us).
     DeclineCall(RoomId),
     LeaveCall,
+    /// Play a sound in the current call, if its room permits soundboard.
+    PlaySound {
+        sound: Arc<str>,
+    },
+    /// Load or refresh the sound list for our current call.
+    LoadCallSounds,
     /// Whether the call's video is on screen: its room is open, or the
     /// pop-out shows it over another room. Video is fetched only then.
     SetCallShown(bool),

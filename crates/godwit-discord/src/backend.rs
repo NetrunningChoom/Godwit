@@ -25,6 +25,17 @@ pub use godwit_core::backend::Waker;
 /// A request to Discord's HTTP API.
 #[derive(Debug, Clone)]
 pub enum Request {
+    DefaultSoundboard {
+        channel: String,
+    },
+    GuildSoundboard {
+        channel: String,
+        guild: String,
+    },
+    PlaySoundboard {
+        channel: String,
+        sound: Value,
+    },
     History {
         channel: String,
         before: Option<String>,
@@ -417,6 +428,14 @@ pub enum Cmd {
 /// What a request came back with.
 #[derive(Debug)]
 pub enum Answer {
+    Soundboard {
+        channel: String,
+        result: Result<Vec<Value>, RequestError>,
+    },
+    GuildSoundboard {
+        channel: String,
+        result: Result<Vec<Value>, RequestError>,
+    },
     History {
         channel: String,
         before: Option<String>,
@@ -976,6 +995,21 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::EditFolders { proto, folders } => {
             Answer::Folders(api.set_folders(&proto, &folders).await.map_err(RequestError::from))
         }
+        Request::DefaultSoundboard { channel } => Answer::Soundboard {
+            channel,
+            result: api.default_soundboard_sounds().await.map_err(RequestError::from),
+        },
+        Request::GuildSoundboard { channel, guild } => Answer::GuildSoundboard {
+            channel,
+            result: api.guild_soundboard_sounds(&guild).await.map_err(RequestError::from),
+        },
+        Request::PlaySoundboard { channel, sound } => Answer::Done {
+            what: "playing a soundboard sound",
+            result: api
+                .send_soundboard_sound(&channel, &sound)
+                .await
+                .map_err(RequestError::from),
+        },
         Request::History {
             channel,
             before,

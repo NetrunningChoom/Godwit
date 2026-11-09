@@ -4,6 +4,10 @@
 
 use super::*;
 
+/// Decoded call sounds kept for replays, bounded in count and in bytes.
+pub(super) const SOUND_CACHE_ENTRIES: usize = 8;
+pub(super) const SOUND_CACHE_BYTES: usize = 16 * 1024 * 1024;
+
 impl Shell {
     /// Settings' row `row` picked alert choice `index`.
     pub fn set_alert_mode(&mut self, ui: &AppWindow, row: i32, index: i32) {
@@ -98,6 +102,15 @@ impl Shell {
         }
         let call = self.app.state().call.as_ref();
         match event {
+            Event::SoundPlayed {
+                room,
+                sound,
+                url,
+                volume,
+                ..
+            } if self.app.state().call.as_ref().is_some_and(|call| call.room == *room) => {
+                self.play_remote_sound(room, sound, url.as_deref(), *volume);
+            }
             Event::Alert {
                 room,
                 kind,
@@ -250,7 +263,77 @@ impl Shell {
         }
     }
 
-    /// A message alert for the Notifications page.
+    fn play_remote_sound(&mut self, room: &RoomId, sound: &str, url: Option<&str>, volume: f32) {
+        self.collect_sound_cache(SOUND_CACHE_ENTRIES, SOUND_CACHE_BYTES);
+        if let Some(index) = self.sound_cache.iter().position(|(key, _)| key == sound)
+            && let Some(entry) = self.sound_cache.remove(index)
+        {
+            let samples = entry.1.clone();
+            self.sound_cache.push_front(entry);
+            self.alerts.call_sound(&self.settings, samples, volume);
+            return;
+        }
+        // The network says where the audio is; none means nothing to play.
+        let Some(url) = url.filter(|url| url.starts_with("https://")).map(str::to_owned) else {
+            return;
+        };
+        // Soundboard spam must not pile up threads: drop plays while a few are fetching.
+        if self.sound_fetching.load(std::sync::atomic::Ordering::Relaxed) >= 3 {
+            return;
+        }
+        self.sound_fetching.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let fetching = self.sound_fetching.clone();
+        let wake = self.inline_wake.clone();
+        let events = self.sound_play_done_tx.clone();
+        let sound_id = sound.to_owned();
+        let room_id = room.clone();
+        let cache = self.sound_cache_tx.clone();
+        let spawned = std::thread::Builder::new()
+            .name("call-sound-fetch".into())
+            .spawn(move || {
+                let decoded = crate::images::fetch_public_media(&url)
+                    .and_then(|bytes| godwit_voice::sounds::decode_sound(&bytes, 48_000).map_err(|e| format!("{e:#}")));
+                match decoded {
+                    Ok(samples) => {
+                        let _ = cache.send((sound_id, samples.clone()));
+                        let _ = events.send((room_id, samples, volume));
+                        wake();
+                    }
+                    Err(error) => {
+                        // Ogg Opus sounds aren't decodable yet; say so once, not per play.
+                        static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                        if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            godwit_core::verbose!("note: a call sound couldn't be played ({error})");
+                        }
+                    }
+                }
+                fetching.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            });
+        if let Err(error) = spawned {
+            self.sound_fetching.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            godwit_core::verbose!("note: call sound worker unavailable ({error})");
+        }
+    }
+
+    pub(super) fn finish_call_sound(&mut self, room: &RoomId, samples: Vec<f32>, volume: f32) {
+        if self.app.state().call.as_ref().is_some_and(|call| call.room == *room) {
+            self.alerts.call_sound(&self.settings, samples, volume);
+        }
+    }
+
+    pub(super) fn collect_sound_cache(&mut self, max_entries: usize, max_bytes: usize) {
+        while let Ok((id, samples)) = self.sound_cache_done.try_recv() {
+            insert_sound(
+                &mut self.sound_cache,
+                &mut self.sound_cache_bytes,
+                id,
+                samples,
+                max_entries,
+                max_bytes,
+            );
+        }
+    }
+
     fn note_message(&mut self, room: &RoomId, message: &godwit_core::message::Message, body: &str) {
         self.notifications.push(crate::notifications::Notification {
             room: room.clone(),
@@ -358,4 +441,59 @@ fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// Adds a decoded sound at the front, evicting from the back until both the
+/// count and the byte bound hold; a sound over the byte bound is not kept.
+fn insert_sound(
+    cache: &mut std::collections::VecDeque<(String, Vec<f32>)>,
+    cache_bytes: &mut usize,
+    id: String,
+    samples: Vec<f32>,
+    max_entries: usize,
+    max_bytes: usize,
+) {
+    let size = |samples: &[f32]| samples.len().saturating_mul(std::mem::size_of::<f32>());
+    let bytes = size(&samples);
+    if bytes > max_bytes {
+        return;
+    }
+    if let Some(index) = cache.iter().position(|(key, _)| *key == id)
+        && let Some((_, old)) = cache.remove(index)
+    {
+        *cache_bytes = cache_bytes.saturating_sub(size(&old));
+    }
+    cache.push_front((id, samples));
+    *cache_bytes += bytes;
+    while cache.len() > max_entries || *cache_bytes > max_bytes {
+        let Some((_, evicted)) = cache.pop_back() else { break };
+        *cache_bytes = cache_bytes.saturating_sub(size(&evicted));
+    }
+}
+
+#[cfg(test)]
+mod sound_cache_tests {
+    use super::insert_sound;
+    use std::collections::VecDeque;
+
+    #[test]
+    fn cache_is_bounded_in_count_and_bytes() {
+        let (mut cache, mut bytes) = (VecDeque::new(), 0);
+        for n in 0..5 {
+            insert_sound(&mut cache, &mut bytes, n.to_string(), vec![0.0; 10], 3, 1000);
+        }
+        assert_eq!(cache.len(), 3);
+        assert_eq!(cache.front().map(|e| e.0.as_str()), Some("4"));
+        assert_eq!(bytes, 3 * 40);
+        // Bytes: 100 bytes allows two 40-byte entries.
+        let (mut cache, mut bytes) = (VecDeque::new(), 0);
+        for n in 0..4 {
+            insert_sound(&mut cache, &mut bytes, n.to_string(), vec![0.0; 10], 8, 100);
+        }
+        assert_eq!((cache.len(), bytes), (2, 80));
+        // Oversized and repeated sounds.
+        insert_sound(&mut cache, &mut bytes, "big".into(), vec![0.0; 100], 8, 100);
+        insert_sound(&mut cache, &mut bytes, "3".into(), vec![0.0; 10], 8, 100);
+        assert_eq!((cache.len(), bytes), (2, 80));
+    }
 }

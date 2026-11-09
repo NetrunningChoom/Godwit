@@ -137,6 +137,7 @@ impl DiscordAccount {
             // DMs. Stage channels (speakers and an audience) aren't built:
             // they show, disabled, with a note.
             voice: c.private() || (c.kind == store::GUILD_VOICE && can(p::CONNECT)),
+            soundboard: c.kind == store::GUILD_VOICE && can(p::CONNECT | p::SPEAK | p::USE_SOUNDBOARD),
             // READY leaves defaults out, so a voice channel without a
             // user_limit has none (0, unlimited); a missing one isn't unknown.
             voice_user_limit: c.voice().then(|| c.user_limit.unwrap_or(0)),

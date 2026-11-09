@@ -1231,6 +1231,7 @@ impl Application {
             screen_share: false,
             videos: Vec::new(),
             streams: Vec::new(),
+            sounds: Vec::new(),
         });
         effects.push(Effect::Backend {
             account: room.account.clone(),

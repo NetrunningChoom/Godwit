@@ -856,6 +856,7 @@ impl NetworkAccount for SteamAccount {
                 }
             }
             Command::LeaveCall => self.net.send(Cmd::CallCmd(SessionCmd::Leave)),
+            Command::PlaySound { .. } | Command::LoadCallSounds { .. } => {}
             Command::RemoveGroupMember { .. }
             | Command::CloseRoom { .. }
             | Command::JoinThread { .. }

@@ -34,6 +34,42 @@ impl DiscordAccount {
                     out.push(Event::Error(format!("Discord, saving server folders: {error}").into()));
                 }
             }
+            Answer::Soundboard { channel, result } => {
+                let Some(call) = self.call.as_ref().filter(|call| call.channel == channel) else {
+                    return;
+                };
+                let room = call.room.clone();
+                match result {
+                    Ok(values) => {
+                        let sounds = crate::soundboard::parse_all(&serde_json::Value::Array(values));
+                        self.soundboard_defaults = sounds.clone();
+                        self.soundboard_known = sounds.clone();
+                        out.push(Event::CallSounds { room, sounds });
+                    }
+                    Err(error) => {
+                        self.soundboard_requested = false;
+                        out.push(Event::Error(format!("Discord soundboard: {error}").into()));
+                    }
+                }
+            }
+            Answer::GuildSoundboard { channel, result } => {
+                let Some(call) = self.call.as_ref().filter(|call| call.channel == channel) else {
+                    return;
+                };
+                let room = call.room.clone();
+                match result {
+                    Ok(values) => {
+                        let mut sounds = self.soundboard_defaults.clone();
+                        sounds.extend(crate::soundboard::parse_all(&serde_json::Value::Array(values)));
+                        self.soundboard_known = sounds.clone();
+                        out.push(Event::CallSounds { room, sounds });
+                    }
+                    Err(error) => {
+                        self.soundboard_requested = false;
+                        out.push(Event::Error(format!("Discord soundboard: {error}").into()));
+                    }
+                }
+            }
             Answer::AuditLog { guild, before, result } => {
                 let Some(account) = self.account.clone() else { return };
                 let server = ServerId::new(account, guild.as_str());

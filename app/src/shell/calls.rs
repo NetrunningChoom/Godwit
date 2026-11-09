@@ -5,6 +5,35 @@
 use super::*;
 
 impl Shell {
+    pub fn play_call_sound(&mut self, ui: &AppWindow, index: i32) {
+        let Some(call) = self.app.state().call.as_ref() else {
+            return;
+        };
+        if call.status != godwit_core::call::CallStatus::Connected {
+            return;
+        }
+        let Some(sound) = usize::try_from(index)
+            .ok()
+            .and_then(|i| call.sounds.get(i))
+            .map(|s| s.id.clone())
+        else {
+            return;
+        };
+        self.act(ui, Action::PlaySound { sound });
+    }
+
+    pub fn load_call_sounds(&mut self, ui: &AppWindow) {
+        if self
+            .app
+            .state()
+            .call
+            .as_ref()
+            .is_some_and(|call| call.status == godwit_core::call::CallStatus::Connected)
+        {
+            self.act(ui, Action::LoadCallSounds);
+        }
+    }
+
     /// Starts or stops the test call (Settings → Voice), with the saved
     /// devices and processing; its level shows 20 times a second.
     pub fn mic_test(&mut self, ui: &AppWindow, on: bool) {

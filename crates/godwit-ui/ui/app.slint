@@ -14,7 +14,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem, ModerationLogItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem, ModerationLogItem, SoundItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -539,6 +539,8 @@ export component AppWindow inherits Window {
     }
     in property <bool> call-speaking;
     in property <string> call-room;
+    in property <bool> call-soundboard;
+    in property <[SoundItem]> call-sounds;
     in property <bool> call-muted;
     in property <bool> call-deafened;
     in property <bool> call-camera;
@@ -1010,6 +1012,8 @@ export component AppWindow inherits Window {
     callback link-profile();
     callback set-nudges(int, bool);
     callback leave-call();
+    callback load-call-sounds();
+    callback play-call-sound(int);
     callback toggle-mute();
     callback toggle-deafen();
     callback open-call-room();
@@ -1250,6 +1254,10 @@ export component AppWindow inherits Window {
                             call-quality: root.call-quality;
                             call-latency: root.call-latency;
                             call-time: root.call-time;
+                            call-soundboard: root.call-soundboard;
+                            call-sounds: root.call-sounds;
+                            load-call-sounds => { root.load-call-sounds(); }
+                            play-call-sound(i) => { root.play-call-sound(i); }
                             call-can-video: root.call-can-video;
                             call-video-network: root.call-video-network;
                             call-screen-share: root.call-screen-share;

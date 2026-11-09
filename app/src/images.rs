@@ -852,6 +852,16 @@ pub(crate) fn download(url: &str) -> Option<Vec<u8>> {
     fetch(&agent, url).ok()
 }
 
+pub(crate) fn fetch_public_media(url: &str) -> Result<Vec<u8>, String> {
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(20)))
+        .max_redirects(0)
+        .http_status_as_error(false)
+        .build();
+    let agent = godwit_core::public_address::PublicResolver::agent(config, |_| false);
+    fetch(&agent, url).map_err(|_| "media fetch failed".to_owned())
+}
+
 fn fetch(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, Failure> {
     let mut url = match reqwest::Url::parse(url) {
         Ok(url) if matches!(url.scheme(), "https" | "http") => url,
@@ -906,8 +916,14 @@ fn fetch(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, Failure> {
             });
         }
         let mut bytes = Vec::new();
-        return match response.body_mut().as_reader().take(MAX_BYTES).read_to_end(&mut bytes) {
-            Ok(_) => Ok(bytes),
+        return match response
+            .body_mut()
+            .as_reader()
+            .take(MAX_BYTES + 1)
+            .read_to_end(&mut bytes)
+        {
+            Ok(_) if bytes.len() as u64 <= MAX_BYTES => Ok(bytes),
+            Ok(_) => Err(Failure::Final),
             Err(e) => {
                 godwit_core::verbose!("error: reading image: {e}");
                 Err(Failure::Again(None))

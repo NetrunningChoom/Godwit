@@ -62,6 +62,8 @@ pub const STREAM_DELETE: u64 = 19;
 pub const STREAM_WATCH: u64 = 20;
 /// Pause or resume our own stream (the official client unpauses it once created).
 pub const STREAM_SET_PAUSED: u64 = 22;
+/// Fetch soundboard sounds for voice channels (Soundboard resource).
+pub const REQUEST_SOUNDBOARD_SOUNDS: u64 = 31;
 /// Subscribing to a server's typing, activities and a channel's member list.
 pub const GUILD_SUBSCRIPTIONS_BULK: u64 = 37;
 /// Extra voice channel fields for a server (`fields`: "status",

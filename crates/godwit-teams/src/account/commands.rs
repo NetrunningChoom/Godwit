@@ -230,6 +230,7 @@ impl TeamsAccount {
             Command::EditFolders(_) => {}
             // Teams message components are not available through this account.
             Command::ActivateMessageButton { .. } => {}
+            Command::PlaySound { .. } | Command::LoadCallSounds { .. } => {}
             // Teams contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Teams rooms do not currently expose group leave or recipient editing.

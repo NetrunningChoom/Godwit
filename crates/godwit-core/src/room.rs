@@ -70,6 +70,9 @@ pub struct Capabilities {
     #[serde(default)]
     pub forum: bool,
     pub voice: bool,
+    /// Soundboard sounds can be played in this call.
+    #[serde(default)]
+    pub soundboard: bool,
     /// A voice channel's capacity: 0 means unlimited, None means unknown.
     #[serde(default)]
     pub voice_user_limit: Option<u32>,
@@ -151,6 +154,7 @@ impl Capabilities {
             threads: false,
             join_thread: false,
             voice: true,
+            soundboard: false,
             voice_user_limit: None,
             video: false,
             video_resolution: [1280, 720],

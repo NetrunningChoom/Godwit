@@ -175,6 +175,32 @@ pub struct Api {
 }
 
 impl Api {
+    /// Discord's default call sounds (Soundboard resource).
+    pub async fn default_soundboard_sounds(&self) -> Result<Vec<Value>> {
+        let response = self
+            .json(self.request(Method::GET, "/soundboard-default-sounds"))
+            .await?;
+        Ok(response.as_array().cloned().unwrap_or_default())
+    }
+
+    /// Guild soundboard entries, as described by the Soundboard resource.
+    pub async fn guild_soundboard_sounds(&self, guild: &str) -> Result<Vec<Value>> {
+        let response = self
+            .json(self.request(Method::GET, &format!("/guilds/{guild}/soundboard-sounds")))
+            .await?;
+        Ok(response["soundboard_sounds"].as_array().cloned().unwrap_or_default())
+    }
+
+    /// Play a server sound in a voice channel. Other-server sounds are omitted
+    /// because Discord reserves them for Nitro.
+    pub async fn send_soundboard_sound(&self, channel: &str, sound: &Value) -> Result<()> {
+        self.empty(with_json(
+            self.request(Method::POST, &format!("/channels/{channel}/send-soundboard-sound")),
+            sound,
+        ))
+        .await
+    }
+
     pub fn new(token: String) -> Result<Self> {
         let _ = rustls::crypto::ring::default_provider().install_default();
         // Headers are set per request (see `request` and `chromium_order`),

@@ -123,6 +123,14 @@ pub struct Shell {
     /// Networks' own media schemes and fetchers (for attachments to save).
     media: Vec<(String, MediaFetch)>,
     media_networks: Vec<(String, String)>,
+    /// Recent decoded call sounds, bounded by count and decoded bytes.
+    sound_cache: std::collections::VecDeque<(String, Vec<f32>)>,
+    sound_cache_bytes: usize,
+    sound_fetching: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    sound_cache_done: std::sync::mpsc::Receiver<(String, Vec<f32>)>,
+    sound_cache_tx: std::sync::mpsc::Sender<(String, Vec<f32>)>,
+    sound_play_done: std::sync::mpsc::Receiver<(RoomId, Vec<f32>, f32)>,
+    sound_play_done_tx: std::sync::mpsc::Sender<(RoomId, Vec<f32>, f32)>,
     images: Images,
     inline_players: InlinePlayers,
     fullscreen_player: Option<crate::player_window::FullscreenPlayer>,
@@ -408,6 +416,8 @@ impl Shell {
             muted: settings.self_muted,
             deafened: settings.self_deafened,
         });
+        let (sound_cache_tx, sound_cache_done) = std::sync::mpsc::channel();
+        let (sound_play_done_tx, sound_play_done) = std::sync::mpsc::channel();
         let shell = Self {
             app,
             navigation_back: Vec::new(),
@@ -443,6 +453,13 @@ impl Shell {
             typing_timer: slint::Timer::default(),
             send_error: String::new(),
             media_awake: keep_awake::MediaAwake::new(),
+            sound_cache: std::collections::VecDeque::new(),
+            sound_cache_bytes: 0,
+            sound_fetching: Default::default(),
+            sound_cache_done,
+            sound_cache_tx,
+            sound_play_done,
+            sound_play_done_tx,
             demo_steam: demo_account.as_ref().map(|_| crate::demo::DemoSteam::default()),
             demo: demo_account,
             images,
@@ -578,6 +595,11 @@ impl Shell {
         // Background profiles: only their alerts (and the menu's dot) show.
         had_events |= self.pump_background();
         self.apply_all(events);
+        while let Ok((room, samples, volume)) = self.sound_play_done.try_recv() {
+            self.finish_call_sound(&room, samples, volume);
+            had_events = true;
+        }
+        self.collect_sound_cache(alerting::SOUND_CACHE_ENTRIES, alerting::SOUND_CACHE_BYTES);
         had_events |= self.app.expire_typing(std::time::Instant::now());
         // Nothing else may wake us when a notice runs out (no stop event, a
         // quiet network), so a notice left on screen gets its own wake-up.
@@ -971,6 +993,8 @@ impl Shell {
                                 room,
                                 reason: Some(offline()),
                             }),
+                            Command::PlaySound { .. } => None,
+                            Command::LoadCallSounds { .. } => None,
                             _ => None,
                         };
                         if let Some(event) = event {

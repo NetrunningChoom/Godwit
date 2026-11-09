@@ -37,6 +37,10 @@ pub const MENTION_EVERYONE: u64 = 1 << 17;
 pub const STREAM: u64 = 1 << 9;
 pub const CONNECT: u64 = 1 << 20;
 pub const SPEAK: u64 = 1 << 21;
+/// Use Soundboard, from Discord's permission bitset.
+pub const USE_SOUNDBOARD: u64 = 1 << 42;
+/// Play another server's sound (Discord Soundboard resource).
+pub const USE_EXTERNAL_SOUNDS: u64 = 1 << 45;
 pub const MANAGE_ROLES: u64 = 1 << 28;
 pub const CHANGE_NICKNAME: u64 = 1 << 26;
 pub const MANAGE_NICKNAMES: u64 = 1 << 27;

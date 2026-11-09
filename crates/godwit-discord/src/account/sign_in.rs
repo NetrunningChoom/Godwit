@@ -636,6 +636,8 @@ impl DiscordAccount {
                 room: room.clone(),
                 reason: Some("Calls don't connect in demo mode.".into()),
             }),
+            Command::PlaySound { .. } => {}
+            Command::LoadCallSounds { .. } => {}
             // The change is applied as the gateway's settings update would.
             Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(room, *change)),
             Command::Typing { .. } | Command::MarkRead { .. } | Command::MarkUnread { .. } | Command::Focus { .. } => {

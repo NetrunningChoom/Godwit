@@ -195,6 +195,16 @@ impl Alerts {
         }
     }
 
+    /// Plays decoded call audio at its gateway-provided volume.
+    pub fn call_sound(&mut self, settings: &Settings, samples: Vec<f32>, volume: f32) {
+        let now = Instant::now();
+        self.playing.retain(|(until, _)| *until > now);
+        match sounds::play_pcm(samples, settings.voice.output_device.clone(), volume) {
+            Ok(playing) => self.playing.push((now + Duration::from_secs(30), playing)),
+            Err(e) => eprintln!("error: playing a call sound: {e:#}"),
+        }
+    }
+
     /// Whether `room`'s account may alert now.
     fn allowed(&mut self, settings: &Settings, room: &RoomId) -> Allowed {
         if settings.dnd {

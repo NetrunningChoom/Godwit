@@ -1915,6 +1915,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         Scene::new("call-many", Box::new(call_many)),
         Scene::new("call", Box::new(|app, _, _, _| call_with_camera(app))),
+        Scene::new(
+            "call-soundboard",
+            Box::new(|app, ui, _, _| {
+                let lounge = RoomId::new(account(), "voice");
+                if let Some(existing) = app.state().rooms.iter().find(|room| room.id == lounge) {
+                    let mut room = (**existing).clone();
+                    room.capabilities.soundboard = true;
+                    app.apply(Event::RoomUpdated(room));
+                }
+                app.dispatch(Action::SelectRoom(lounge.clone()));
+                app.dispatch(Action::JoinCall(lounge.clone()));
+                app.apply(Event::CallConnected { room: lounge.clone() });
+                app.apply(Event::CallSounds {
+                    room: lounge,
+                    sounds: vec![
+                        godwit_core::call::Sound {
+                            id: "bell".into(),
+                            name: "Bell".into(),
+                            emoji: Some("🔔".into()),
+                            source: None,
+                        },
+                        godwit_core::call::Sound {
+                            id: "airhorn".into(),
+                            name: "Airhorn".into(),
+                            emoji: Some("📯".into()),
+                            source: None,
+                        },
+                    ],
+                });
+                ui.set_call_here(true);
+                Screen::Main
+            }),
+        ),
         Scene {
             // Right-click the third person's tile (their sound menu).
             right_click: Some((876.0, 370.0)),

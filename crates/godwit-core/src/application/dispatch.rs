@@ -986,6 +986,35 @@ impl Application {
                 Vec::new()
             }
             Action::JoinCall(room) => self.dispatch_join_call(room),
+            Action::PlaySound { sound } => {
+                let Some(call) = self.state.call.as_ref() else {
+                    return Vec::new();
+                };
+                let room = call.room.clone();
+                if call.status != crate::call::CallStatus::Connected
+                    || !self.state.room(&room).is_some_and(|r| r.capabilities.soundboard)
+                    || !call.sounds.iter().any(|s| s.id == sound)
+                {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::PlaySound { room, sound },
+                }]
+            }
+            Action::LoadCallSounds => {
+                let Some(call) = self.state.call.as_ref() else {
+                    return Vec::new();
+                };
+                let room = call.room.clone();
+                if !self.state.room(&room).is_some_and(|r| r.capabilities.soundboard) {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::LoadCallSounds { room },
+                }]
+            }
             Action::DeclineCall(room) => vec![Effect::Backend {
                 account: room.account.clone(),
                 command: Command::DeclineCall { room },

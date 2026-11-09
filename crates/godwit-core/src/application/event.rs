@@ -385,6 +385,21 @@ pub enum Event {
         room: RoomId,
         members: Vec<CallMember>,
     },
+    /// The sounds offered by the call's soundboard.
+    CallSounds {
+        room: RoomId,
+        sounds: Vec<crate::call::Sound>,
+    },
+    /// A soundboard sound was played in a call by a participant. `url` is
+    /// where the audio is served (None: nothing to play locally); the UI
+    /// fetches it, so no network's host is named outside its crate.
+    SoundPlayed {
+        room: RoomId,
+        user: UserId,
+        sound: Arc<str>,
+        url: Option<Arc<str>>,
+        volume: f32,
+    },
     /// A profile asked for with [`Command::LoadProfile`] (sent again as
     /// more of it arrives).
     Profile(Profile),

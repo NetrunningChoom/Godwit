@@ -31,9 +31,9 @@ use crate::voice::{CallCmd, CallEvent, VoiceServer};
 pub(super) struct OurCall {
     /// Tags the call's [`crate::backend::Ev::Call`]s.
     tag: u64,
-    room: RoomId,
+    pub(super) room: RoomId,
     guild: Option<String>,
-    channel: String,
+    pub(super) channel: String,
     /// Our voice session (from our voice state), and the voice server's
     /// token and endpoint: the call connects once both are known.
     session: Option<String>,
@@ -84,6 +84,57 @@ struct Watched {
 }
 
 impl DiscordAccount {
+    pub(super) fn load_call_sounds(&mut self, room: RoomId, _out: &mut Vec<Event>) {
+        // Once per call: the picker asks on every open, Discord's lists rarely change
+        // (guild edits arrive as gateway events).
+        if self.soundboard_requested {
+            return;
+        }
+        let Some(call) = self.call.as_ref().filter(|c| c.room == room && c.connected) else {
+            return;
+        };
+        self.soundboard_requested = true;
+        self.net.send(Cmd::Request(Request::DefaultSoundboard {
+            channel: call.channel.clone(),
+        }));
+        let guild = call.guild.clone();
+        let channel = call.channel.clone();
+        if let Some(guild) = guild {
+            self.net.send(Cmd::Request(Request::GuildSoundboard { channel, guild }));
+        }
+    }
+
+    pub(super) fn play_sound(&mut self, room: RoomId, sound: Arc<str>, _out: &mut Vec<Event>) {
+        let Some(call) = self.call.as_ref().filter(|c| c.room == room && c.connected) else {
+            return;
+        };
+        let channel = call.channel.clone();
+        if call.guild.is_some() {
+            if !self
+                .store
+                .can(&channel, crate::permissions::SPEAK | crate::permissions::USE_SOUNDBOARD)
+            {
+                return;
+            }
+        } else {
+            return;
+        }
+        let Some(metadata) = self.soundboard_known.iter().find(|s| s.id == sound).cloned() else {
+            return;
+        };
+        if metadata
+            .source
+            .as_deref()
+            .is_some_and(|source| self.call.as_ref().and_then(|c| c.guild.as_deref()) != Some(source))
+        {
+            return;
+        }
+        self.net.send(Cmd::Request(Request::PlaySoundboard {
+            channel,
+            sound: crate::soundboard::play_body(&metadata),
+        }));
+    }
+
     /// Op 4: into `channel`, or out of voice with None. Sending it again in
     /// the same channel changes only how others see us muted or deafened.
     fn voice_state_update(&self, guild: Option<&str>, channel: Option<&str>, muted: bool, deafened: bool, video: bool) {
@@ -160,6 +211,8 @@ impl DiscordAccount {
             stream_notes: BTreeMap::new(),
             _rtc: crate::client::InCall::start(),
         });
+        self.soundboard_known.clear();
+        self.soundboard_requested = false;
         self.call_visibility();
     }
 
@@ -262,6 +315,35 @@ impl DiscordAccount {
 
     /// The voice parts of a gateway event; the rest of `dispatch` still runs.
     pub(super) fn voice_dispatch(&mut self, event: &str, d: &Value, out: &mut Vec<Event>) {
+        if matches!(event, "VOICE_CHANNEL_EFFECT_SEND") {
+            if let Some((channel, user, sound, volume)) = crate::soundboard::played(d)
+                && let Some(call) = self.call.as_ref().filter(|call| call.channel == channel)
+                && let Some(account) = self.account.clone()
+            {
+                out.push(Event::SoundPlayed {
+                    room: call.room.clone(),
+                    user: UserId::new(account, user),
+                    url: crate::soundboard::audio_url(&sound).map(Into::into),
+                    sound: sound.into(),
+                    volume,
+                });
+            }
+            return;
+        }
+        if matches!(event, "SOUNDBOARD_SOUNDS" | "GUILD_SOUNDBOARD_SOUNDS_UPDATE") {
+            if let Some(call) = self
+                .call
+                .as_ref()
+                .filter(|call| call.guild.as_deref() == d["guild_id"].as_str())
+            {
+                let room = call.room.clone();
+                let mut sounds = self.soundboard_defaults.clone();
+                sounds.extend(crate::soundboard::parse_all(&d["soundboard_sounds"]));
+                self.soundboard_known = sounds.clone();
+                out.push(Event::CallSounds { room, sounds });
+            }
+            return;
+        }
         if matches!(event, "PASSIVE_UPDATE_V1" | "PASSIVE_UPDATE_V2")
             && let Some(guild) = d["guild_id"].as_str()
         {
@@ -974,6 +1056,43 @@ mod tests {
             Cmd::Gateway { op: 4, data } => Some(data),
             _ => None,
         }
+    }
+
+    #[test]
+    fn soundboard_lists_load_once_and_effects_map_to_core_events() {
+        let (mut a, mut cmds, _) = account();
+        let lounge = room(&a, "15");
+        a.run(Command::JoinCall { room: lounge.clone() });
+        a.call.as_mut().unwrap().connected = true;
+        sent(&mut cmds);
+        a.run(Command::LoadCallSounds { room: lounge.clone() });
+        a.run(Command::LoadCallSounds { room: lounge.clone() });
+        let requests = sent(&mut cmds)
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    Cmd::Request(Request::DefaultSoundboard { .. } | Request::GuildSoundboard { .. })
+                )
+            })
+            .count();
+        assert_eq!(requests, 2, "defaults and the server's, once per call");
+
+        let effect = json!({"channel_id":"15","user_id":"200","sound_id":"77","sound_volume":3.0});
+        let out = dispatch(&mut a, "VOICE_CHANNEL_EFFECT_SEND", effect);
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::SoundPlayed { room, sound, url, volume, .. }
+            if *room == lounge && &**sound == "77" && *volume == 1.0
+                && url.as_deref() == Some("https://cdn.discordapp.com/soundboard-sounds/77")))
+        );
+        // Another channel's effect is not ours to play.
+        let other = json!({"channel_id":"99","user_id":"200","sound_id":"77"});
+        assert!(
+            !dispatch(&mut a, "VOICE_CHANNEL_EFFECT_SEND", other)
+                .iter()
+                .any(|e| matches!(e, Event::SoundPlayed { .. }))
+        );
     }
 
     #[test]

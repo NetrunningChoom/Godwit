@@ -30,6 +30,7 @@ pub mod remote_auth;
 pub mod search;
 pub mod session;
 pub mod settings;
+pub(crate) mod soundboard;
 pub mod store;
 pub mod voice;
 

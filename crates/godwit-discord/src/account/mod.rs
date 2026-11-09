@@ -194,6 +194,10 @@ pub struct DiscordAccount {
     session_id: Option<String>,
     /// Our call, and the tag the next one gets.
     call: Option<calls::OurCall>,
+    soundboard_defaults: Vec<godwit_core::call::Sound>,
+    /// Everything the picker shows (defaults plus the call's server), for validating plays.
+    soundboard_known: Vec<godwit_core::call::Sound>,
+    soundboard_requested: bool,
     next_call: u64,
     /// DM calls ringing: channel → who's being rung.
     ringing: HashMap<String, Vec<String>>,
@@ -264,6 +268,9 @@ impl DiscordAccount {
             voice: VoiceStates::default(),
             session_id: None,
             call: None,
+            soundboard_defaults: Vec::new(),
+            soundboard_known: Vec::new(),
+            soundboard_requested: false,
             next_call: 0,
             ringing: HashMap::new(),
             demo: None,
@@ -1848,6 +1855,8 @@ impl NetworkAccount for DiscordAccount {
                 }
             }
             Command::JoinCall { room } => self.join_call(room, &mut out),
+            Command::PlaySound { room, sound } => self.play_sound(room, sound, &mut out),
+            Command::LoadCallSounds { room } => self.load_call_sounds(room, &mut out),
             Command::LeaveCall => self.leave_call(&mut out),
             Command::SetCallShown(shown) => {
                 self.call_shown = shown;

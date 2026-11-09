@@ -293,6 +293,7 @@ impl Presenter {
         ui.set_people(ModelRc::from(p.people.clone()));
         ui.set_merges(ModelRc::from(p.merges.clone()));
         ui.set_call_members(ModelRc::from(p.call_members.clone()));
+        ui.set_call_sounds(ModelRc::new(VecModel::default()));
         ui.set_call_videos(ModelRc::from(p.call_videos.clone()));
         ui.set_call_extra_videos(p.call_videos.iter().any(|v| !v.primary || v.participant < 0));
         ui.set_call_quality(-1);
@@ -510,6 +511,29 @@ impl Presenter {
         self.room_rows = room_rows;
 
         ui.set_in_call(state.call.is_some());
+        let sounds = state
+            .call
+            .as_ref()
+            .map(|call| {
+                call.sounds
+                    .iter()
+                    .map(|sound| crate::ui::SoundItem {
+                        id: sound.id.to_string().into(),
+                        name: sound.name.to_string().into(),
+                        emoji: sound.emoji.as_deref().unwrap_or("").into(),
+                        cooldown: false,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        ui.set_call_sounds(ModelRc::new(VecModel::from(sounds)));
+        ui.set_call_soundboard(
+            state
+                .call
+                .as_ref()
+                .and_then(|call| state.room(&call.room))
+                .is_some_and(|room| room.capabilities.soundboard),
+        );
         // Networks whose calls can carry our video: the share button shows
         // there, greyed out where this call doesn't allow it.
         ui.set_call_video_network(state.call.as_ref().is_some_and(|call| call.room.network().call_video()));

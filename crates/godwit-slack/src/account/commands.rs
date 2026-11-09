@@ -355,6 +355,7 @@ impl SlackAccount {
             Command::EditFolders(_) => {}
             // Slack message components are not mapped by this account.
             Command::ActivateMessageButton { .. } => {}
+            Command::PlaySound { .. } | Command::LoadCallSounds { .. } => {}
             // Slack contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Slack rooms do not currently expose group leave or recipient editing.

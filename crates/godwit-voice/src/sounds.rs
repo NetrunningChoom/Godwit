@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
 //! Godwit's sounds, made from formulas instead of audio files: each is a few
-//! sine tones with soft envelopes, computed at the speakers' own sample rate
-//! (so nothing is resampled and nothing ships as an asset).
+//! sine tones with soft envelopes, computed at the speakers' own sample rate;
+//! call soundboard audio is decoded separately when requested.
 //!
 //! A note is `a · env(t) · (sin 2πft + h · sin 4πft)`: the fundamental plus a
 //! quieter octave for a bell-like colour. `env` rises over 6 ms (no click) and
@@ -15,6 +15,13 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use cpal::traits::{DeviceTrait, StreamTrait};
+use symphonia::core::audio::SampleBuffer;
+use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+use symphonia::core::errors::Error as SymphoniaError;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
 
 use crate::call::find_device;
 
@@ -222,18 +229,167 @@ pub fn play(sound: Sound, device: Option<String>, volume: f32) -> Result<Playing
     Ok(Playing { stop })
 }
 
+/// Decodes a small MP3 or Vorbis sound and converts it to mono PCM at the
+/// requested output rate. Discord's soundboard sends these encoded formats;
+/// the account adapter supplies bytes off the UI thread.
+pub fn decode_sound(bytes: &[u8], output_rate: u32) -> Result<Vec<f32>> {
+    use std::io::Cursor;
+    let source = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());
+    let probed = symphonia::default::get_probe().format(
+        &Hint::new(),
+        source,
+        &FormatOptions::default(),
+        &MetadataOptions::default(),
+    )?;
+    let mut format = probed.format;
+    let track = format
+        .default_track()
+        .ok_or_else(|| anyhow!("sound has no audio track"))?;
+    let id = track.id;
+    let codec = track.codec_params.clone();
+    if codec.codec == CODEC_TYPE_NULL {
+        return Err(anyhow!("sound codec is unavailable"));
+    }
+    let source_rate = codec.sample_rate.ok_or_else(|| anyhow!("sound has no sample rate"))?;
+    let mut decoder = symphonia::default::get_codecs().make(&codec, &DecoderOptions::default())?;
+    let mut mono = Vec::new();
+    let mut decoded_bytes = 0usize;
+    const MAX_DECODED: usize = 8 * 1024 * 1024;
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) if packet.track_id() == id => packet,
+            Ok(_) => continue,
+            Err(SymphoniaError::IoError(_)) => break,
+            Err(error) => return Err(error.into()),
+        };
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(SymphoniaError::DecodeError(_)) => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let spec = *decoded.spec();
+        let mut samples = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+        samples.copy_interleaved_ref(decoded);
+        decoded_bytes =
+            decoded_bytes.saturating_add(samples.samples().len().saturating_mul(std::mem::size_of::<f32>()));
+        if decoded_bytes > MAX_DECODED {
+            return Err(anyhow!("sound is too large"));
+        }
+        let channels = spec.channels.count().max(1);
+        mono.extend(
+            samples
+                .samples()
+                .chunks(channels)
+                .map(|frame| frame.iter().sum::<f32>() / channels as f32),
+        );
+    }
+    Ok(resample_mono(&mono, source_rate, output_rate))
+}
+
+fn resample_mono(samples: &[f32], source_rate: u32, output_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || source_rate == 0 || output_rate == 0 {
+        return Vec::new();
+    }
+    let len = (samples.len() as u64 * u64::from(output_rate) / u64::from(source_rate)) as usize;
+    (0..len)
+        .map(|i| {
+            let position = i as f64 * f64::from(source_rate) / f64::from(output_rate);
+            let left = (position as usize).min(samples.len() - 1);
+            let right = (left + 1).min(samples.len() - 1);
+            let fraction = (position - left as f64) as f32;
+            samples[left] + (samples[right] - samples[left]) * fraction
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod soundboard_tests {
+    use super::resample_mono;
+
+    #[test]
+    fn resamples_mono_and_handles_empty_input() {
+        assert_eq!(resample_mono(&[0.0, 1.0], 2, 4), vec![0.0, 0.5, 1.0, 1.0]);
+        assert!(resample_mono(&[], 48_000, 44_100).is_empty());
+    }
+}
+
+/// Plays decoded mono PCM once through the configured output device.
+pub fn play_pcm(samples: Vec<f32>, device: Option<String>, volume: f32) -> Result<Playing> {
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    std::thread::Builder::new()
+        .name("call-sound".into())
+        .spawn(move || {
+            if let Err(error) = run_pcm(samples, device.as_deref(), volume, &flag) {
+                eprintln!("error: playing a call sound: {error:#}");
+            }
+        })
+        .map_err(|e| anyhow!("starting the call sound thread: {e}"))?;
+    Ok(Playing { stop })
+}
+
+fn run_pcm(samples: Vec<f32>, device: Option<&str>, volume: f32, stop: &Arc<AtomicBool>) -> Result<()> {
+    let device = find_device(device, false).ok_or_else(|| anyhow!("no speakers"))?;
+    let config = device.default_output_config()?;
+    let channels = usize::from(config.channels()).max(1);
+    let rate = config.sample_rate();
+    let volume = if volume.is_finite() {
+        volume.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let sample_count = (samples.len() as u64 * u64::from(rate) / 48_000) as usize;
+    let samples = Arc::new(
+        resample_mono(&samples, 48_000, rate)
+            .into_iter()
+            .map(|s| s * volume)
+            .collect::<Vec<_>>(),
+    );
+    let pos = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let pos_cb = pos.clone();
+    let stop_cb = stop.clone();
+    let next = move || {
+        if stop_cb.load(Ordering::Acquire) {
+            return 0.0;
+        }
+        let index = pos_cb.fetch_add(1, Ordering::Relaxed);
+        samples.get(index).copied().unwrap_or(0.0)
+    };
+    let error = |e: cpal::Error| eprintln!("error: call sound stream: {e}");
+    let cfg: cpal::StreamConfig = config.into();
+    macro_rules! build {
+        ($ty:ty, $convert:expr) => {
+            device.build_output_stream(
+                cfg,
+                move |data: &mut [$ty], _| {
+                    for frame in data.chunks_mut(channels) {
+                        frame.fill($convert(next()));
+                    }
+                },
+                error,
+                None,
+            )
+        };
+    }
+    let stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => build!(f32, |s: f32| s),
+        cpal::SampleFormat::I16 => build!(i16, |s: f32| (s * 32767.0) as i16),
+        cpal::SampleFormat::U16 => build!(u16, |s: f32| (s * 32767.0 + 32768.0) as u16),
+        other => return Err(anyhow!("unsupported speaker format {other:?}")),
+    }?;
+    stream.play()?;
+    while !stop.load(Ordering::Acquire) && pos.load(Ordering::Relaxed) < sample_count {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    Ok(())
+}
+
 fn run(sound: Sound, device: Option<&str>, volume: f32, stop: &Arc<AtomicBool>) -> Result<()> {
     let device = find_device(device, false).ok_or_else(|| anyhow!("no speakers"))?;
     let config = device.default_output_config()?;
     let rate = config.sample_rate();
     let channels = usize::from(config.channels()).max(1);
-    let samples: Arc<Vec<f32>> = Arc::new(
-        sound
-            .samples(rate)
-            .into_iter()
-            .map(|s| s * volume.clamp(0.0, 1.0))
-            .collect(),
-    );
+    let samples: Arc<Vec<f32>> = Arc::new(sound.samples(rate).into_iter().map(|s| s * volume).collect());
     let looping = sound == Sound::Ring;
     let mut pos = 0usize;
     // Set once the device has taken the last sample: the stream can start

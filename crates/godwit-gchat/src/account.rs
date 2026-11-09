@@ -1010,6 +1010,7 @@ impl NetworkAccount for GChatAccount {
             Command::EditFolders(_) => {}
             // Google Chat interactive cards aren't mapped to message buttons.
             Command::ActivateMessageButton { .. } => {}
+            Command::PlaySound { .. } | Command::LoadCallSounds { .. } => {}
             // Google Chat contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Google Chat rooms do not currently expose group leave or recipient editing.

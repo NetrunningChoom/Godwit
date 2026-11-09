@@ -41,6 +41,17 @@ pub struct Call {
     /// Go Live), and whether we do. Networks that send every screen share
     /// to everyone (LiveKit) leave this empty and list them in `videos`.
     pub streams: Vec<CallStream>,
+    /// The soundboard currently available in this call.
+    pub sounds: Vec<Sound>,
+}
+
+/// A network-neutral sound that can be played in a call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Sound {
+    pub id: Arc<str>,
+    pub name: Arc<str>,
+    pub emoji: Option<Arc<str>>,
+    pub source: Option<Arc<str>>,
 }
 
 /// Someone sharing their screen in our call, which we may watch.

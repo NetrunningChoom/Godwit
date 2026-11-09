@@ -19,6 +19,7 @@ http = "1"
 nnnoiseless.workspace = true
 nokhwa.workspace = true
 serde.workspace = true
+symphonia.workspace = true
 tokio = { workspace = true, features = ["net"] }
 tokio-tungstenite.workspace = true
 url = "2"

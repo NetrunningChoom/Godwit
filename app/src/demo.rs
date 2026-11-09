@@ -368,6 +368,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             mentions,
         );
         r.capabilities.voice = raw == "voice";
+        r.capabilities.soundboard = raw == "voice";
         // Server S is the one we manage (see `demo_overview`).
         r.capabilities.manage_channel = true;
         r.capabilities.notify_settings = true;
@@ -1696,6 +1697,23 @@ impl DemoAccount {
     fn call_news(&self, room: &RoomId) -> Vec<Event> {
         let members = self.call_members(true);
         vec![
+            Event::CallSounds {
+                room: room.clone(),
+                sounds: vec![
+                    godwit_core::call::Sound {
+                        id: "demo-honk".into(),
+                        name: "Honk".into(),
+                        emoji: Some("📯".into()),
+                        source: None,
+                    },
+                    godwit_core::call::Sound {
+                        id: "demo-ding".into(),
+                        name: "Ding".into(),
+                        emoji: Some("🔔".into()),
+                        source: None,
+                    },
+                ],
+            },
             Event::CallMembers {
                 room: room.clone(),
                 members: members.clone(),
@@ -2695,6 +2713,25 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 out.extend(self.call_news(&room));
                 out
             }
+            Command::PlaySound { room, sound } => {
+                if self.call.as_ref() == Some(&room) && matches!(sound.as_ref(), "demo-honk" | "demo-ding") {
+                    vec![Event::SoundPlayed {
+                        room,
+                        user: UserId::new(self.id.clone(), "me"),
+                        sound,
+                        url: None,
+                        volume: 1.0,
+                    }]
+                } else {
+                    Vec::new()
+                }
+            }
+            Command::LoadCallSounds { room } => self
+                .call
+                .as_ref()
+                .filter(|current| **current == room)
+                .map(|_| self.call_news(&room))
+                .unwrap_or_default(),
             Command::LeaveCall => {
                 let Some(room) = self.call.take() else {
                     return Vec::new();

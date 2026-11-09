@@ -1056,6 +1056,8 @@ fn connect_callbacks(ui: &AppWindow) {
             sh.act(ui, Action::SelectRoom(room));
         }
     });
+    callback!(ui.on_load_call_sounds() => |sh, ui| sh.load_call_sounds(ui));
+    callback!(ui.on_play_call_sound(index) => |sh, ui| sh.play_call_sound(ui, index));
     callback!(ui.on_show_friends() => |sh, ui| sh.act(ui, Action::ShowFriends));
     callback!(ui.on_toggle_group_person(row) => |sh, ui| sh.toggle_group_person(ui, row));
     callback!(ui.on_select_group_account(key) => |sh, ui| {
