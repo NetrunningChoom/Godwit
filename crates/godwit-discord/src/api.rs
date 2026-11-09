@@ -21,6 +21,8 @@ use crate::client;
 use crate::limits::{self, Limits, Refusals, Stopped};
 
 pub const API: &str = "https://discord.com/api/v9";
+/// The name requests carry in the network layer's log.
+const NET: &str = "discord";
 const WEB_APP: &str = "https://discord.com/app";
 const UNAUTHORIZED: &str = "Discord no longer accepts this sign-in. Sign in again.";
 /// Messages per history page, as the web client asks.
@@ -249,11 +251,11 @@ impl Api {
     pub async fn learn_build_number(&self) {
         const READ: usize = 256 << 10;
         let asked = async {
-            let answer: Value = self
+            let request = self
                 .http
                 .get(client::update_url())
-                .header(header::ACCEPT, "application/json")
-                .send()
+                .header(header::ACCEPT, "application/json");
+            let answer: Value = godwit_core::net::stream(NET, godwit_core::net::Class::Read, request)
                 .await?
                 .error_for_status()?
                 .json()
@@ -270,11 +272,8 @@ impl Api {
             return;
         }
         let read = async {
-            let mut response = self
-                .http
-                .get(WEB_APP)
-                .header(header::ACCEPT, "text/html")
-                .send()
+            let request = self.http.get(WEB_APP).header(header::ACCEPT, "text/html");
+            let mut response = godwit_core::net::stream(NET, godwit_core::net::Class::Read, request)
                 .await?
                 .error_for_status()?;
             let mut page = Vec::new();
@@ -376,7 +375,8 @@ impl Api {
             }
             *next = Some(Instant::now() + REQUEST_SPACING);
         }
-        let response = match client.execute(request).await {
+        let class = godwit_core::net::Class::of(request.method());
+        let response = match godwit_core::net::stream_built(NET, class, &client, request).await {
             Ok(response) => response,
             Err(error) => {
                 self.limits.failed(&route, StatusCode::SERVICE_UNAVAILABLE);
@@ -557,11 +557,7 @@ impl Api {
             bail!("could not understand Discord's answer");
         };
         // The address is signed: no sign-in goes with it.
-        let response = self
-            .http
-            .put(url)
-            .body(data)
-            .send()
+        let response = godwit_core::net::stream(NET, godwit_core::net::Class::Live, self.http.put(url).body(data))
             .await
             .context("Can't reach Discord's file storage.")?;
         if !response.status().is_success() {

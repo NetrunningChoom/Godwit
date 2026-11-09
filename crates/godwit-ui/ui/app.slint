@@ -810,6 +810,8 @@ export component AppWindow inherits Window {
     // 2: 100%, until Settings opens and says otherwise.
     in-out property <int> scale-index: 2;
     in property <string> memory;
+    in-out property <bool> net-debug-log;
+    in property <string> net-debug-log-path;
     in property <string> cache-size;
     in property <bool> cache-clearable;
     in property <string> version;
@@ -1885,6 +1887,8 @@ export component AppWindow inherits Window {
         scales: root.scales;
         scale-index <=> root.scale-index;
         memory: root.memory;
+        net-debug-log <=> root.net-debug-log;
+        net-debug-log-path: root.net-debug-log-path;
         cache-size: root.cache-size;
         problems: root.problems;
         problems-unseen: root.problems-unseen;

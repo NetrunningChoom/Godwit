@@ -27,6 +27,8 @@ use steam_vent_proto_steam::steammessages_auth_steamclient::{
     CAuthentication_UpdateAuthSessionWithSteamGuardCode_Request, EAuthSessionGuardType, EAuthTokenPlatformType,
 };
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "steam";
 const API: &str = "https://api.steampowered.com/IAuthenticationService";
 /// Characters of a generated device name (as Windows names new computers).
 const NAME_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -350,8 +352,13 @@ async fn call<Req: Message, Res: Message>(
     } else {
         http.post(&url).form(&params)
     };
-    let response = request
-        .send()
+    // Status polls repeat by design (sign-in by QR); the rest sign in.
+    let class = if method.starts_with("Poll") {
+        godwit_core::net::Class::Poll(std::time::Duration::from_secs(1))
+    } else {
+        godwit_core::net::Class::Auth
+    };
+    let response = godwit_core::net::stream(NET, class, request)
         .await
         .map_err(|_| AuthError("Couldn't reach Steam. Check your connection.".into()))?;
     let result = response

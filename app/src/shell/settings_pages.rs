@@ -150,6 +150,13 @@ impl Shell {
         ui.set_dnd(s.dnd);
         ui.set_dark(s.dark);
         ui.set_convert_emoticons(s.convert_emoticons);
+        ui.set_net_debug_log(!s.net_debug_log.is_empty());
+        ui.set_net_debug_log_path(
+            crate::settings::net_log_dir()
+                .map(|d| d.join(godwit_core::net::log::FILE_NAME).display().to_string())
+                .unwrap_or_default()
+                .into(),
+        );
         ui.set_accent_index(
             theme::ACCENTS
                 .iter()
@@ -611,6 +618,15 @@ impl Shell {
         s.dnd = ui.get_dnd();
         s.dark = ui.get_dark();
         s.convert_emoticons = ui.get_convert_emoticons();
+        let net_debug_log = ui.get_net_debug_log();
+        if net_debug_log != !s.net_debug_log.is_empty() {
+            s.net_debug_log = if net_debug_log {
+                env!("CARGO_PKG_VERSION").to_owned()
+            } else {
+                String::new()
+            };
+            s.apply_net_debug_log();
+        }
         if self.devices_shown
             && let Some(devices) = devices
         {

@@ -538,8 +538,10 @@ impl Connection {
                 return Err(lost.context("could not resume the session"));
             }
             let wait = RESUME_WAIT * 2u32.pow(self.resumes) + rand::random_range(Duration::ZERO..RESUME_WAIT);
-            tokio::time::sleep(wait).await;
-            self.resumes += 1;
+            // Time without a network isn't a failed try.
+            if !godwit_core::net::watch::reconnect_pause("discord", "gateway resume", wait).await {
+                self.resumes += 1;
+            }
             if self.reconnect(&url, &session_id).await.is_ok() {
                 return Ok(());
             }

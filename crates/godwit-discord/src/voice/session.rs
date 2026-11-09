@@ -239,7 +239,11 @@ async fn run(
                 note(&format!("the voice connection dropped ({error:#}); resuming"));
                 // The first try goes at once, so a blip passes unheard; the
                 // rest wait longer each time.
-                tokio::time::sleep(RESUME_WAIT * (drops - 1)).await;
+                // A drop while the device had no network doesn't use up
+                // the retries: it resumes as the first try once it's back.
+                if godwit_core::net::watch::reconnect_pause("discord", "voice", RESUME_WAIT * (drops - 1)).await {
+                    drops = 1;
+                }
                 if let Err(resume) = connection.resume(&identity).await {
                     note(&format!("couldn't resume ({resume:#}); connecting again"));
                     match Connection::open(&identity, &[]).await {

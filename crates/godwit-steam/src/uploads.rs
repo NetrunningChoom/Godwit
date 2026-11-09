@@ -5,6 +5,9 @@
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "steam";
+
 // Response shape of `beginfileupload` as in node-steamcommunity's
 // `sendImageToUser` (components/users.js).
 #[derive(Debug, Deserialize)]
@@ -156,12 +159,12 @@ pub(crate) async fn upload_image(
         mime,
     };
     let cookie = format!("sessionid={sessionid}; steamLoginSecure={steamid}||{access_token}");
-    let begin: BeginResponse = http
+    let request = http
         .post("https://steamcommunity.com/chat/beginfileupload/?l=english")
         .header(reqwest::header::COOKIE, &cookie)
         .header(reqwest::header::REFERER, "https://steamcommunity.com/chat/")
-        .multipart(multipart(begin_form(sessionid, bytes.len(), &meta)))
-        .send()
+        .multipart(multipart(begin_form(sessionid, bytes.len(), &meta)));
+    let begin: BeginResponse = godwit_core::net::send(NET, request)
         .await
         .map_err(|_| "Couldn't start the Steam image upload.".to_owned())?
         .error_for_status()
@@ -179,17 +182,17 @@ pub(crate) async fn upload_image(
     for header in &result.request_headers {
         put = put.header(header.name.to_lowercase(), &header.value);
     }
-    put.send()
+    godwit_core::net::stream(NET, godwit_core::net::Class::Live, put)
         .await
         .map_err(|_| "Couldn't transfer the image to Steam.".to_owned())?
         .error_for_status()
         .map_err(|_| "Steam couldn't store the image.".to_owned())?;
-    let done: serde_json::Value = http
+    let request = http
         .post("https://steamcommunity.com/chat/commitfileupload/")
         .header(reqwest::header::COOKIE, cookie)
         .header(reqwest::header::REFERER, "https://steamcommunity.com/chat/")
-        .multipart(multipart(commit_form(&begin, result, &meta, sessionid, target, false)))
-        .send()
+        .multipart(multipart(commit_form(&begin, result, &meta, sessionid, target, false)));
+    let done: serde_json::Value = godwit_core::net::send(NET, request)
         .await
         .map_err(|_| "Couldn't finish the Steam image upload.".to_owned())?
         .error_for_status()

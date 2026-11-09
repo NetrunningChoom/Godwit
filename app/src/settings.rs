@@ -78,6 +78,9 @@ pub struct Settings {
     pub members_width: f32,
     /// The new-message sound: its row in `godwit_voice::sounds::Tone::ALL`.
     pub message_tone: usize,
+    /// The version of Godwit the network debug log was switched on in
+    /// (empty: off). Another version, after an update, switches it off.
+    pub net_debug_log: String,
     /// Home's pinned and hidden chats (`network:user|room`).
     pub pinned_rooms: Vec<String>,
     pub hidden_rooms: Vec<String>,
@@ -176,6 +179,7 @@ impl Default for Settings {
             sidebar_width: 0.0,
             members_width: 0.0,
             message_tone: 0,
+            net_debug_log: String::new(),
             pinned_rooms: Vec::new(),
             pins_seeded: Vec::new(),
             hidden_rooms: Vec::new(),
@@ -344,6 +348,33 @@ impl Settings {
 }
 
 /// An account as kept in the settings file: `network:user`.
+impl Settings {
+    /// Switches the network debug log off when it was switched on in
+    /// another version than `version`; returns whether it did.
+    pub fn expire_net_debug_log(&mut self, version: &str) -> bool {
+        if self.net_debug_log.is_empty() || self.net_debug_log == version {
+            return false;
+        }
+        self.net_debug_log.clear();
+        true
+    }
+
+    /// Starts or stops the network debug log as these settings say.
+    pub fn apply_net_debug_log(&self) {
+        let dir = if self.net_debug_log.is_empty() {
+            None
+        } else {
+            net_log_dir()
+        };
+        godwit_core::net::log::set(dir.as_deref());
+    }
+}
+
+/// Where the network debug log is written: Godwit's cache folder.
+pub fn net_log_dir() -> Option<PathBuf> {
+    directories::ProjectDirs::from("", "", "godwit").map(|d| d.cache_dir().to_path_buf())
+}
+
 pub fn account_key(id: &AccountId) -> String {
     format!("{}:{}", id.network.key(), id.user)
 }

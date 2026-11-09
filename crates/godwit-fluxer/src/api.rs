@@ -22,6 +22,9 @@ use tokio::time::Instant;
 
 use crate::discovery::Instance;
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "fluxer";
+
 /// Between any two requests, across accounts.
 const SPACING: Duration = Duration::from_millis(250);
 /// The pace and the pause a 429 sets (shared: the global bucket is per user,
@@ -88,9 +91,8 @@ impl Api {
     /// Finds the instance's addresses (`GET /.well-known/fluxer`, no token).
     pub async fn discover(origin: &str) -> Result<Instance> {
         let http = client()?;
-        let answer: Value = http
-            .get(format!("{}/.well-known/fluxer", origin.trim_end_matches('/')))
-            .send()
+        let request = http.get(format!("{}/.well-known/fluxer", origin.trim_end_matches('/')));
+        let answer: Value = godwit_core::net::send(NET, request)
             .await
             .context("Can't reach Fluxer.")?
             .error_for_status()
@@ -142,7 +144,9 @@ impl Api {
             }
             *next = Some(Instant::now() + SPACING);
         }
-        let response = request.send().await.context("Can't reach Fluxer.")?;
+        let response = godwit_core::net::send(NET, request)
+            .await
+            .context("Can't reach Fluxer.")?;
         let status = response.status();
         let header_wait = godwit_core::backend::retry_after(
             response

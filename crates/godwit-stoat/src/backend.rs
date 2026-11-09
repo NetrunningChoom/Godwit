@@ -917,7 +917,7 @@ impl Rest {
     }
 
     async fn send<T: serde::de::DeserializeOwned>(&self, rb: reqwest::RequestBuilder) -> Result<T> {
-        let res = rb.send().await?;
+        let res = godwit_core::net::send(NET, rb).await?;
         let status = res.status();
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
@@ -927,7 +927,7 @@ impl Rest {
     }
 
     async fn send_empty(&self, rb: reqwest::RequestBuilder) -> Result<()> {
-        let res = rb.send().await?;
+        let res = godwit_core::net::send(NET, rb).await?;
         let status = res.status();
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
@@ -950,7 +950,7 @@ async fn fetch_root(http: &reqwest::Client, base: &str) -> Result<(String, RootC
         } else {
             format!("{}/", candidate.trim_end_matches('/'))
         };
-        if let Ok(response) = http.get(url).send().await
+        if let Ok(response) = godwit_core::net::send(NET, http.get(url)).await
             && response.status().is_success()
             && let Ok(config) = response.json::<RootConfig>().await
         {
@@ -1008,6 +1008,9 @@ fn validate_instance_url(input: &str) -> Result<String, String> {
 /// Percent-encodes a query parameter (as `encodeURIComponent`).
 use crate::api::encode_uri_component as encode_query;
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "stoat";
+
 /// The official client joins calls on whichever voice node answers first:
 /// one request to each node, first reply wins. None if there are no nodes or
 /// none answered within a few seconds.
@@ -1021,7 +1024,13 @@ async fn pick_voice_node(http: &reqwest::Client, nodes: &[VoiceNode]) -> Option<
         let http = http.clone();
         Box::pin(async move {
             // Any HTTP response counts: we only want the round trip.
-            http.get(url).timeout(Duration::from_secs(5)).send().await.map(|_| name)
+            godwit_core::net::stream(
+                NET,
+                godwit_core::net::Class::Live,
+                http.get(url).timeout(Duration::from_secs(5)),
+            )
+            .await
+            .map(|_| name)
         })
     });
     futures_util::future::select_ok(probes).await.ok().map(|(name, _)| name)
@@ -2496,7 +2505,12 @@ impl Backend {
                             MfaAction::DisableAccount => (reqwest::Method::POST, "/auth/account/disable"),
                             MfaAction::DeleteAccount => (reqwest::Method::POST, "/auth/account/delete"),
                         };
-                        let res = rest.req(method, path).header("X-MFA-Ticket", ticket).send().await?;
+                        let res = godwit_core::net::stream(
+                            NET,
+                            godwit_core::net::Class::Auth,
+                            rest.req(method, path).header("X-MFA-Ticket", ticket),
+                        )
+                        .await?;
                         let status = res.status();
                         let body = res.text().await.unwrap_or_default();
                         if !status.is_success() {
@@ -2756,7 +2770,7 @@ impl Backend {
                         .get(crate::api::CHANGELOG_URL)
                         .header(reqwest::header::ACCEPT, "application/json");
                     let result = async {
-                        rb.send()
+                        godwit_core::net::send(NET, rb)
                             .await?
                             .error_for_status()?
                             .json::<crate::api::Changelog>()
@@ -2922,7 +2936,7 @@ async fn autodelete_request(
         if *next > now && !ctl.wait(*next - now).await {
             return Ok(None);
         }
-        match make().send().await {
+        match godwit_core::net::send(NET, make()).await {
             Err(e) => {
                 let d = pacer.failed();
                 if pacer.exhausted() {
@@ -3194,9 +3208,7 @@ async fn refetch_bans(rest: &Rest, out: &Emitter, server: String) {
 /// A discover request; a 404 means there is none yet (the official
 /// Discoverable treats NotFound as "you can request").
 async fn fetch_discover(rest: &Rest, target: &str) -> Result<Option<Value>, String> {
-    let res = rest
-        .req(reqwest::Method::GET, &format!("/{target}/discover"))
-        .send()
+    let res = godwit_core::net::send(NET, rest.req(reqwest::Method::GET, &format!("/{target}/discover")))
         .await
         .map_err(|e| e.to_string())?;
     match res.status() {
@@ -3273,7 +3285,9 @@ async fn websocket_loop(url: String, token: String, mut outgoing: tmpsc::Unbound
         } else {
             (5u64 << (failures - 1).min(5)).min(120)
         };
-        tokio::time::sleep(Duration::from_secs(delay)).await;
+        if godwit_core::net::watch::reconnect_pause(NET, "websocket", Duration::from_secs(delay)).await {
+            failures = 0;
+        }
     }
 }
 

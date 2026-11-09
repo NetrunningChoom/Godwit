@@ -508,8 +508,11 @@ async fn start(mut saved: Saved, out: Out, ready: tmpsc::UnboundedSender<Started
                     wait = Duration::from_secs(5);
                 }
                 let jitter = Duration::from_millis(rand::random_range(0..3000));
-                tokio::time::sleep(wait + jitter).await;
-                wait = (wait * 2).min(Duration::from_secs(300));
+                wait = if godwit_core::net::watch::reconnect_pause("teams", "push", wait + jitter).await {
+                    Duration::from_secs(5)
+                } else {
+                    (wait * 2).min(Duration::from_secs(300))
+                };
                 // News missed while down: the list says what's new (one request).
                 if let Ok(v) = api.conversations().await {
                     out.send(Ev::Conversations(v));

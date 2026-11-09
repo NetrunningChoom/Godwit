@@ -17,6 +17,8 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "godwit";
 // GitHub's API requires a user agent (set below) and rate-limits anonymous
 // requests at 60 an hour per IP: fine at this cadence.
 const LATEST: &str = "https://api.github.com/repos/NetrunningChoom/Godwit/releases/latest";
@@ -160,9 +162,7 @@ fn client() -> Result<reqwest::Client, String> {
 
 /// The latest release, when it's newer than this build.
 async fn latest(asset: &str) -> Result<Option<Release>, String> {
-    let release: serde_json::Value = client()?
-        .get(LATEST)
-        .send()
+    let release: serde_json::Value = godwit_core::net::send(NET, client()?.get(LATEST))
         .await
         .and_then(reqwest::Response::error_for_status)
         .map_err(|e| e.to_string())?
@@ -296,9 +296,7 @@ async fn download(
     start: f32,
     span: f32,
 ) -> Result<Vec<u8>, String> {
-    let mut response = client
-        .get(url)
-        .send()
+    let mut response = godwit_core::net::stream(NET, godwit_core::net::Class::Live, client.get(url))
         .await
         .and_then(reqwest::Response::error_for_status)
         .map_err(|e| e.to_string())?;

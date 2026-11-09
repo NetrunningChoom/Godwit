@@ -944,7 +944,7 @@ async fn session(
             "discord: connection lost ({error}); trying again in {}s",
             wait.as_secs()
         );
-        tokio::time::sleep(wait).await;
+        godwit_core::net::watch::reconnect_pause("discord", "gateway", wait).await;
     }
 }
 

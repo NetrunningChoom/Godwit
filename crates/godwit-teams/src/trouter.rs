@@ -36,6 +36,8 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use crate::api::{self, Api};
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "teams";
 const GO: &str = "https://go.trouter.teams.microsoft.com";
 const REGISTRAR: &str = "https://teams.microsoft.com/registrar/prod/V2/registrations";
 /// The `tc` parameter (purple-teams' `TEAMS_TROUTER_TCCV` and client version).
@@ -263,8 +265,8 @@ async fn register(api: &Api, endpoint: &str, surl: &str) -> Result<(), Ended> {
         .post(REGISTRAR)
         .header("x-skypetoken", t.skype)
         .bearer_auth(t.access)
-        .json(&registration(endpoint, surl))
-        .send()
+        .json(&registration(endpoint, surl));
+    let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Auth, answer)
         .await
         .map_err(|_| Ended::lost("Can't reach Teams' push registrar"))?;
     let status = answer.status().as_u16();
@@ -280,8 +282,8 @@ async fn open(api: &Api, endpoint: &str) -> Result<(Socket, Info), Ended> {
         .http()
         .post(format!("{GO}/v4/a?epid={}", api::seg(endpoint)))
         .header("x-skypetoken", &skype)
-        .header(header::CONTENT_LENGTH, "0")
-        .send()
+        .header(header::CONTENT_LENGTH, "0");
+    let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Auth, answer)
         .await
         .map_err(|_| Ended::lost("Can't reach Teams' push service"))?;
     let status = answer.status().as_u16();
@@ -317,8 +319,8 @@ async fn open(api: &Api, endpoint: &str) -> Result<(Socket, Info), Ended> {
     let answer = api
         .http()
         .get(format!("{}socket.io/1/?{}", info.socketio, info.query))
-        .header("x-skypetoken", &skype)
-        .send()
+        .header("x-skypetoken", &skype);
+    let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Auth, answer)
         .await
         .map_err(|_| Ended::lost("Can't reach Teams' push service"))?;
     let status = answer.status().as_u16();

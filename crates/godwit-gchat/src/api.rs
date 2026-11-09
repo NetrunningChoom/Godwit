@@ -18,6 +18,20 @@ use reqwest::header::{self, HeaderValue};
 use crate::proto;
 use crate::session::Saved;
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "gchat";
+
+/// How the network layer treats an API endpoint: listing, getting and
+/// catching up only read (guarded against repeating), the rest write.
+fn class(endpoint: &str) -> godwit_core::net::Class {
+    const READS: [&str; 5] = ["list_", "get_", "paginated_", "catch_up", "search"];
+    if READS.iter().any(|r| endpoint.starts_with(r)) {
+        godwit_core::net::Class::Read
+    } else {
+        godwit_core::net::Class::Write
+    }
+}
+
 const BASE: &str = "https://chat.google.com/u/0";
 /// Google's API key from the Hangouts web client, as published in hangups
 /// (<https://github.com/tdryer/hangups/blob/master/hangups/client.py>) and
@@ -87,12 +101,12 @@ impl Api {
             "{BASE}/mole/world?origin=https%3A%2F%2Fmail.google.com&shell=9&hl=en&wfi=gtn-roster-iframe-id&hs={}",
             godwit_core::encoding::percent_encode(hs)
         );
-        let body = self
+        let request = self
             .http
             .get(url)
             .header(header::COOKIE, self.cookies.clone())
-            .header(header::REFERER, "https://mail.google.com/")
-            .send()
+            .header(header::REFERER, "https://mail.google.com/");
+        let body = godwit_core::net::stream(NET, godwit_core::net::Class::Auth, request)
             .await
             .context("loading Chat")?
             .error_for_status()
@@ -141,17 +155,17 @@ impl Api {
         if let Some(xsrf) = &self.xsrf {
             req = req.header("x-framework-xsrf-token", xsrf);
         }
-        let answer = req.send().await.with_context(|| endpoint.to_string())?;
-        let status = answer.status();
+        // `c` counts requests: it doesn't make a repeated call a new one.
+        let answer = godwit_core::net::fetch_with(NET, class(endpoint), req, &["c"])
+            .await
+            .with_context(|| endpoint.to_string())?;
+        let status = answer.status;
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            let wait = godwit_core::backend::retry_after(
-                answer.headers().get(header::RETRY_AFTER).and_then(|v| v.to_str().ok()),
-                Duration::from_secs(60),
-            );
+            let wait = godwit_core::backend::retry_after(answer.header(header::RETRY_AFTER), Duration::from_secs(60));
             self.next_request = godwit_core::backend::checked_deadline(wait);
             bail!("{endpoint}: rate limited; try again later");
         }
-        let body = answer.bytes().await.with_context(|| endpoint.to_string())?;
+        let body = answer.body;
         if matches!(status.as_u16(), 401 | 403) {
             return Err(anyhow::Error::new(Unauthorized).context(format!("{endpoint}: HTTP {status}")));
         }
@@ -425,8 +439,7 @@ impl Api {
         if let Some(xsrf) = &self.xsrf {
             request = request.header("x-framework-xsrf-token", xsrf);
         }
-        let answer = request
-            .send()
+        let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Write, request)
             .await
             .map_err(|_| anyhow!("Could not start the upload."))?;
         if !answer.status().is_success() {
@@ -447,8 +460,8 @@ impl Api {
             .header("x-goog-upload-command", "upload, finalize")
             .header("x-goog-upload-protocol", "resumable")
             .header("x-goog-upload-offset", "0")
-            .body(bytes)
-            .send()
+            .body(bytes);
+        let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Live, answer)
             .await
             .map_err(|_| anyhow!("Could not upload the attachment."))?;
         if !answer.status().is_success() {

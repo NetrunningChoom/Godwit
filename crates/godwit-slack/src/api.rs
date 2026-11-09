@@ -20,6 +20,24 @@ use tokio::time::Instant;
 
 use crate::session::{Team, valid_team_url};
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "slack";
+
+/// How the network layer treats a Web API method: the ones that only read
+/// (`conversations.history`, `users.info`, `search.messages`…) are guarded
+/// against repeating, the rest are writes.
+fn class(method: &str) -> godwit_core::net::Class {
+    const READS: [&str; 9] = [
+        "history", "replies", "list", "info", "members", "get", "counts", "lookup", "boot",
+    ];
+    let tail = method.rsplit('.').next().unwrap_or(method);
+    if method.starts_with("search.") || READS.iter().any(|r| tail.starts_with(r)) {
+        godwit_core::net::Class::Read
+    } else {
+        godwit_core::net::Class::Write
+    }
+}
+
 const SPACING: Duration = Duration::from_millis(300);
 /// History pages are this long.
 pub const PAGE: usize = 50;
@@ -168,13 +186,13 @@ impl Api {
         let mut cookie = HeaderValue::from_str(&format!("d={}", self.d)).context("the cookie isn't valid")?;
         cookie.set_sensitive(true);
         let url = format!("{}/api/{method}", self.team.url.trim_end_matches('/'));
-        let answer = self
+        let request = self
             .http
             .post(url)
             .header(header::COOKIE, cookie)
             .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .body(form(&pairs))
-            .send()
+            .body(form(&pairs));
+        let answer = godwit_core::net::stream(NET, class(method), request)
             .await
             .context("Can't reach Slack.")?;
         if answer.status() == StatusCode::TOO_MANY_REQUESTS {
@@ -325,11 +343,11 @@ impl Api {
                 bail!("Slack gave an unexpected upload host.");
             }
             let id = plan["file_id"].as_str().context("Slack gave no file id")?.to_owned();
-            let answer = upload_http
+            let request = upload_http
                 .post(url)
                 .header(header::CONTENT_TYPE, "application/octet-stream")
-                .body(bytes)
-                .send()
+                .body(bytes);
+            let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Live, request)
                 .await
                 .map_err(|_| anyhow::anyhow!("Could not upload the attachment."))?;
             if !answer.status().is_success() {

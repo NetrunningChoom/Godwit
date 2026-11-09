@@ -246,19 +246,21 @@ pub enum Start {
 
 /// Starts a kept sign-in, trying again while the network is unreachable
 /// (offline, its servers down): after 10 s, doubling to 5 min, with a little
-/// jitter so accounts don't retry in step. A sign-in that ended for good
-/// isn't retried, and nothing here runs once it's up.
+/// jitter so accounts don't retry in step. Without a network it waits for
+/// one instead (and tries as soon as it's back); a network change ends a
+/// wait early. A sign-in that ended for good isn't retried, and nothing here
+/// runs once it's up.
 pub async fn keep_starting<F, Fut>(mut attempt: F)
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Start>,
 {
-    let mut wait = std::time::Duration::from_secs(10);
+    let mut backoff = crate::net::Backoff::new(
+        std::time::Duration::from_secs(10),
+        std::time::Duration::from_secs(300),
+        std::time::Duration::MAX,
+    );
     while attempt().await == Start::Unreachable {
-        let jitter = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_millis() % 3000);
-        tokio::time::sleep(wait + std::time::Duration::from_millis(u64::from(jitter))).await;
-        wait = (wait * 2).min(std::time::Duration::from_secs(300));
+        backoff.wait("account", "start").await;
     }
 }

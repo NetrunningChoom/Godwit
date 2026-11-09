@@ -14,6 +14,9 @@ use anyhow::{Context, Result, bail};
 use reqwest::Client;
 use serde_json::Value;
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "teams";
+
 /// The Teams work client's public client id (purple-teams' `TEAMS_WORK_OAUTH_CLIENT_ID`).
 pub const CLIENT_ID: &str = "1fec8e78-bce4-4aaf-ab1b-5451cc387264";
 /// The resource the device code is asked for; `authz` takes its token.
@@ -105,11 +108,11 @@ impl std::error::Error for Reauth {}
 pub(crate) use godwit_core::encoding::form;
 
 async fn post_form(http: &Client, url: &str, pairs: &[(&str, &str)]) -> Result<(u16, Value)> {
-    let answer = http
+    let request = http
         .post(url)
         .header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(form(pairs))
-        .send()
+        .body(form(pairs));
+    let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Auth, request)
         .await
         .context("Can't reach Microsoft's sign-in service.")?;
     let status = answer.status().as_u16();
@@ -236,13 +239,13 @@ pub async fn refresh(http: &Client, tenant: &str, refresh_token: &str, scope: &s
 /// Trades an `api.spaces.skype.com` access token for a Skype token and the
 /// chat service's address: `POST teams.microsoft.com/api/authsvc/v1.0/authz`.
 pub async fn authz(http: &Client, access_token: &str) -> Result<Skype> {
-    let answer = http
+    let request = http
         .post(AUTHZ)
         .bearer_auth(access_token)
         .header(reqwest::header::ACCEPT, "application/json; ver=1.0")
         // Front ends may refuse a body-less POST without a length.
-        .header(reqwest::header::CONTENT_LENGTH, "0")
-        .send()
+        .header(reqwest::header::CONTENT_LENGTH, "0");
+    let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Auth, request)
         .await
         .context("Can't reach Teams.")?;
     let status = answer.status().as_u16();

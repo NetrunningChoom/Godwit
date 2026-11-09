@@ -25,6 +25,8 @@ use crate::auth;
 pub const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0 Teams/24165.1410.2974.6689/49";
 /// The client version Trouter and the registrar are told (purple-teams' `TEAMS_CLIENTINFO_VERSION`).
 pub const CLIENT_VERSION: &str = "49/25113001312";
+/// The name requests carry in the network layer's log.
+const NET: &str = "teams";
 const TEAMS: &str = "https://teams.microsoft.com";
 /// Between any two requests of an account.
 const SPACING: Duration = Duration::from_millis(200);
@@ -220,7 +222,9 @@ impl Api {
             tokio::time::sleep_until(*next).await;
             *next = Instant::now() + SPACING;
         }
-        let answer = request.send().await.context("Can't reach Teams.")?;
+        let answer = godwit_core::net::send(NET, request)
+            .await
+            .context("Can't reach Teams.")?;
         let status = answer.status().as_u16();
         if status == 429 {
             let wait = godwit_core::backend::retry_after(

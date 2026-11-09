@@ -9,6 +9,9 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+/// The name requests carry in the network layer's log.
+const NET: &str = "gchat";
+
 const FAILURE_NOTE_AFTER: u32 = 3;
 const FAILURE_NOTE_WINDOW: Duration = Duration::from_secs(5 * 60);
 
@@ -135,9 +138,12 @@ impl Channel {
             .context("could not prepare Chat stream")?;
         let response = tokio::time::timeout(
             IO,
-            http.get(format!("{base}register?ignore_compass_cookie=1"))
-                .header(header::CONTENT_TYPE, "application/x-protobuf")
-                .send(),
+            godwit_core::net::stream(
+                NET,
+                godwit_core::net::Class::Auth,
+                http.get(format!("{base}register?ignore_compass_cookie=1"))
+                    .header(header::CONTENT_TYPE, "application/x-protobuf"),
+            ),
         )
         .await
         .context("Chat stream registration timed out")?
@@ -200,21 +206,24 @@ impl Channel {
         .to_string();
         let response = tokio::time::timeout(
             IO,
-            self.http
-                .post(format!("{}events", self.base))
-                .query(&[
-                    ("VER", "8".to_owned()),
-                    ("RID", self.rid.to_string()),
-                    ("t", "1".into()),
-                    ("SID", self.sid.clone()),
-                    ("AID", self.aid.to_string()),
-                ])
-                .form(&[
-                    ("count", "1".to_owned()),
-                    ("ofs", self.offset.to_string()),
-                    ("req0_data", body),
-                ])
-                .send(),
+            godwit_core::net::stream(
+                NET,
+                godwit_core::net::Class::Poll(Duration::from_secs(1)),
+                self.http
+                    .post(format!("{}events", self.base))
+                    .query(&[
+                        ("VER", "8".to_owned()),
+                        ("RID", self.rid.to_string()),
+                        ("t", "1".into()),
+                        ("SID", self.sid.clone()),
+                        ("AID", self.aid.to_string()),
+                    ])
+                    .form(&[
+                        ("count", "1".to_owned()),
+                        ("ofs", self.offset.to_string()),
+                        ("req0_data", body),
+                    ]),
+            ),
         )
         .await
         .context("Chat stream ping timed out")?
@@ -244,10 +253,17 @@ impl Channel {
                 ("AID", self.aid.to_string()),
             ]);
         }
-        let mut response = tokio::time::timeout(IO, self.http.get(format!("{}events", self.base)).query(&query).send())
-            .await
-            .context("Chat stream connection timed out")?
-            .map_err(|_| anyhow::anyhow!("Chat stream connection failed"))?;
+        let mut response = tokio::time::timeout(
+            IO,
+            godwit_core::net::stream(
+                NET,
+                godwit_core::net::Class::Poll(Duration::from_secs(1)),
+                self.http.get(format!("{}events", self.base)).query(&query),
+            ),
+        )
+        .await
+        .context("Chat stream connection timed out")?
+        .map_err(|_| anyhow::anyhow!("Chat stream connection failed"))?;
         check(&response)?;
         if initial {
             let header = response
@@ -264,9 +280,11 @@ impl Channel {
             // Acknowledge the SID before the initial ping, as maugclib does.
             let ack = tokio::time::timeout(
                 IO,
-                self.http
-                    .get(format!("{}events", self.base))
-                    .query(&[
+                godwit_core::net::stream(
+                    NET,
+                    // Sent right after the stream opens, on the same endpoint.
+                    godwit_core::net::Class::Live,
+                    self.http.get(format!("{}events", self.base)).query(&[
                         ("VER", "8"),
                         ("RID", "rpc"),
                         ("SID", self.sid.as_str()),
@@ -274,8 +292,8 @@ impl Channel {
                         ("CI", "0"),
                         ("TYPE", "xmlhttp"),
                         ("t", "1"),
-                    ])
-                    .send(),
+                    ]),
+                ),
             )
             .await
             .context("Chat stream acknowledgement timed out")?
@@ -398,8 +416,18 @@ pub async fn run(saved: Saved, news: mpsc::UnboundedSender<News>, active: tokio:
         if start.elapsed() > Duration::from_secs(120) {
             wait = Duration::from_secs(5);
         }
-        tokio::time::sleep_until(godwit_core::backend::checked_deadline(wait.max(retry_after))).await;
-        wait = (wait * 2).min(Duration::from_secs(300));
+        // A rate limit is waited out in full; otherwise the wait follows the network.
+        let network_back = if retry_after > wait {
+            tokio::time::sleep_until(godwit_core::backend::checked_deadline(retry_after)).await;
+            false
+        } else {
+            godwit_core::net::watch::reconnect_pause(NET, "stream", wait).await
+        };
+        wait = if network_back {
+            Duration::from_secs(5)
+        } else {
+            (wait * 2).min(Duration::from_secs(300))
+        };
     }
 }
 

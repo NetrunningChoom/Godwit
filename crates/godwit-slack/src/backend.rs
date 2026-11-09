@@ -439,8 +439,11 @@ async fn start(saved: Saved, out: Out, ready: Ready, generation: u64, fail: tmps
                     wait = Duration::from_secs(5);
                 }
                 let jitter = Duration::from_millis(rand::random_range(0..3000));
-                tokio::time::sleep(wait + jitter).await;
-                wait = (wait * 2).min(Duration::from_secs(300));
+                wait = if godwit_core::net::watch::reconnect_pause("slack", "rtm", wait + jitter).await {
+                    Duration::from_secs(5)
+                } else {
+                    (wait * 2).min(Duration::from_secs(300))
+                };
                 // What was missed while down: the list says what's new.
                 if let Ok(c) = api.conversations().await {
                     out.send(Ev::Answer {
