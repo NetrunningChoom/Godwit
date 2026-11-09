@@ -11,11 +11,13 @@ godwit-secrets.workspace = true
 godwit-voice.workspace = true
 base64 = "0.22"
 futures-util.workspace = true
+image.workspace = true
 getrandom = "0.3"
 rsa = "0.9"
 reqwest = { workspace = true, features = ["form"] }
 serde.workspace = true
 serde_json.workspace = true
+sha1 = "0.10"
 steam-vent = "0.5"
 steam-vent-proto-common = "0.5"
 steam-vent-proto-steam = "0.5"

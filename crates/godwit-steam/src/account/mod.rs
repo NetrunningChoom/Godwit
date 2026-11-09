@@ -575,10 +575,14 @@ impl NetworkAccount for SteamAccount {
                     }
                 }
             }
-            Command::SendMessage { room, text, nonce, .. } => {
-                // Files never reach Steam (no uploads yet): an empty text
-                // would arrive as a blank message.
-                if text.trim().is_empty() {
+            Command::SendMessage {
+                room,
+                text,
+                nonce,
+                files,
+                ..
+            } => {
+                if text.trim().is_empty() && files.is_empty() {
                     return out;
                 }
                 if let Some((group, chat)) = group_of(&room) {
@@ -586,12 +590,14 @@ impl NetworkAccount for SteamAccount {
                         group,
                         chat,
                         text,
+                        files,
                         nonce: nonce.to_string(),
                     });
                 } else if let Some(friend) = Self::friend_of(&room) {
                     self.net.send(Cmd::Send {
                         friend,
                         text,
+                        files,
                         nonce: nonce.to_string(),
                     });
                 }
@@ -1568,6 +1574,20 @@ mod tests {
             files: Vec::new(),
         });
         assert!(matches!(commands.try_recv(), Ok(Cmd::Send { text, .. }) if text == "hi"));
+        a.run(Command::SendMessage {
+            room: a.room_id(backend::steam_id(2)).unwrap(),
+            text: "".into(),
+            nonce: "n3".into(),
+            reply_to: None,
+            files: vec![godwit_core::application::Outgoing {
+                path: std::path::PathBuf::from("image.png"),
+                name: "image.png".into(),
+                size: 4,
+            }],
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::Send { text, files, .. }) if text.is_empty() && files.len() == 1)
+        );
     }
 
     #[test]

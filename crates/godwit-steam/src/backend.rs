@@ -37,6 +37,7 @@ use godwit_voice::call::VoiceSettings;
 
 use crate::auth::{self, Guard, Poll};
 use crate::session::Saved;
+use crate::uploads::{self, Target};
 use crate::voice::session::{self, SessionCmd, SessionEvent};
 use crate::voice::signaling::{self, VoiceEvent};
 
@@ -94,6 +95,7 @@ pub enum Cmd {
     Send {
         friend: u64,
         text: String,
+        files: Vec<godwit_core::application::Outgoing>,
         nonce: String,
     },
     Typing {
@@ -154,6 +156,7 @@ pub enum Cmd {
         group: u64,
         chat: u64,
         text: String,
+        files: Vec<godwit_core::application::Outgoing>,
         nonce: String,
     },
     /// A page of a group room's history before `(time, ordinal)` (None: newest).
@@ -590,6 +593,65 @@ fn stop_connection(st: &mut State) {
     st.conn = None;
 }
 
+/// Uploads each selected image on the network thread. Steam's commit endpoint
+/// posts the image message itself, so its BBCode must not be sent a second time.
+async fn upload_files(
+    conn: &Connection,
+    target: Target,
+    files: Vec<godwit_core::application::Outgoing>,
+) -> Result<(), String> {
+    if files.is_empty() {
+        return Ok(());
+    }
+    let access_token = conn.access_token().ok_or("Steam's web sign-in is unavailable.")?;
+    let http = auth::client().map_err(|_| "Couldn't start the Steam image upload.".to_owned())?;
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|_| "Couldn't prepare the Steam image upload.".to_owned())?;
+    let sessionid: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    for file in files {
+        let bytes = uploads::read_image(&file).await?;
+        uploads::upload_image(
+            &http,
+            access_token,
+            &sessionid,
+            conn.steam_id().steam64(),
+            target,
+            &file.name,
+            &bytes,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Reads back the image message Steam posted during commit so a file-only
+/// send can confirm the composer's pending row with Steam's real message id.
+async fn newest_friend_line(conn: &Connection, friend: u64) -> Result<Line, String> {
+    let request = CFriendMessages_GetRecentMessages_Request {
+        steamid1: Some(conn.steam_id().steam64()),
+        steamid2: Some(friend),
+        count: Some(1),
+        most_recent_conversation: Some(false),
+        bbcode_format: Some(true),
+        ..Default::default()
+    };
+    let response = conn
+        .service_method(request)
+        .await
+        .map_err(|_| "Steam accepted the image but its message couldn't be confirmed.".to_owned())?;
+    let message = response
+        .messages
+        .first()
+        .ok_or_else(|| "Steam accepted the image but didn't return its message.".to_owned())?;
+    Ok(Line {
+        from: message.accountid.unwrap_or_default(),
+        time: message.timestamp.unwrap_or_default(),
+        ordinal: message.ordinal.unwrap_or_default(),
+        text: message.message.clone().unwrap_or_default(),
+        reactions: Vec::new(),
+    })
+}
+
 /// Hangs up the call under way (it tells Steam and reports its end itself).
 fn end_call(st: &mut State) {
     if let Some(call) = st.call.take() {
@@ -873,6 +935,7 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
             group,
             chat,
             text,
+            files,
             nonce,
         } => {
             let Some(conn) = st.conn.clone() else {
@@ -885,7 +948,28 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
             };
             let out = out.clone();
             tokio::spawn(async move {
-                match crate::groups::send(&conn, group, chat, &text).await {
+                let had_files = !files.is_empty();
+                if let Err(error) = upload_files(&conn, Target::Group { group, chat }, files).await {
+                    return out.send(Ev::GroupSendFailed {
+                        nonce,
+                        group,
+                        chat,
+                        error,
+                    });
+                }
+                let result = if text.trim().is_empty() && had_files {
+                    // Commit posts the image. Read back its Steam message so
+                    // the pending composer row is confirmed without sending it twice.
+                    crate::groups::history(&conn, group, chat, None)
+                        .await
+                        .map(|(lines, _)| lines.into_iter().next())
+                        .and_then(|line| {
+                            line.ok_or_else(|| "Steam accepted the image but didn't return its message.".into())
+                        })
+                } else {
+                    crate::groups::send(&conn, group, chat, &text).await
+                };
+                match result {
                     Ok(line) => out.send(Ev::GroupSent {
                         nonce,
                         group,
@@ -1037,7 +1121,12 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                 }
             });
         }
-        Cmd::Send { friend, text, nonce } => {
+        Cmd::Send {
+            friend,
+            text,
+            files,
+            nonce,
+        } => {
             let Some(conn) = st.conn.clone() else {
                 return out.send(Ev::SendFailed {
                     nonce,
@@ -1047,13 +1136,24 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
             };
             let out = out.clone();
             tokio::spawn(async move {
+                let had_files = !files.is_empty();
+                if let Err(error) = upload_files(&conn, Target::Friend(friend), files).await {
+                    return out.send(Ev::SendFailed { nonce, friend, error });
+                }
+                if text.trim().is_empty() && had_files {
+                    return match newest_friend_line(&conn, friend).await {
+                        Ok(line) => out.send(Ev::Sent { nonce, friend, line }),
+                        Err(error) => out.send(Ev::SendFailed { nonce, friend, error }),
+                    };
+                }
+                let text = text.replace('[', "\\[");
                 let req = CFriendMessages_SendMessage_Request {
                     steamid: Some(friend),
                     chat_entry_type: Some(ENTRY_MESSAGE),
                     // As Steam's clients send it (vaporchat's `sendMessage`): BBCode,
                     // with our own brackets escaped, so Steam turns `:name:` into
                     // our emoticons and `/sticker <name>` into the sticker.
-                    message: Some(text.replace('[', "\\[")),
+                    message: Some(text.clone()),
                     contains_bbcode: Some(true),
                     ..Default::default()
                 };
@@ -1065,11 +1165,7 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                             ordinal: res.ordinal.unwrap_or_default(),
                             reactions: Vec::new(),
                             // As Steam keeps it: its markup, our brackets escaped.
-                            text: res
-                                .modified_message
-                                .clone()
-                                .filter(|t| !t.is_empty())
-                                .unwrap_or_else(|| text.replace('[', "\\[")),
+                            text: res.modified_message.clone().filter(|t| !t.is_empty()).unwrap_or(text),
                         };
                         out.send(Ev::Sent { nonce, friend, line });
                     }

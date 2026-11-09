@@ -16,5 +16,6 @@ pub mod library;
 pub mod media;
 pub mod nicknames;
 pub mod session;
+mod uploads;
 mod vdf;
 pub mod voice;

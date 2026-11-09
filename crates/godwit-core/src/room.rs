@@ -241,9 +241,8 @@ impl Capabilities {
                 react: false,
                 // Neither FriendMessages.SendMessage nor ChatRoom.SendChatMessage has a reply field (steam-vent protos).
                 reply: false,
-                // Steam's chat uploads images through its web file-upload
-                // flow, which isn't built: attaching would send nothing.
-                attachments: false,
+                attachments: true,
+                max_upload: crate::media::MAX_UPLOAD,
                 spoilers: false,
                 pins: false,
                 search: false,
@@ -357,6 +356,8 @@ mod tests {
     fn steam_chats_disable_unavailable_actions() {
         let c = Capabilities::of(Network::Steam);
         assert!(c.send && !c.edit && !c.delete && !c.react && !c.reply);
+        assert!(c.attachments);
+        assert_eq!(c.max_upload, crate::media::MAX_UPLOAD);
     }
 
     #[test]
