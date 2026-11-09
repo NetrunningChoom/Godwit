@@ -214,6 +214,58 @@ fn decode(jpeg: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     Some((w, h, rgba.into_raw()))
 }
 
+/// The media log (Settings → About → Debugging) on Windows, where there is no
+/// GStreamer to ask: the page's own media events and, once per run, which
+/// codecs this WebView2 says it plays. Lines go to stderr as `GODWIT_MEDIA: …`,
+/// as the Linux helper's do; the app adds them to the log after stripping
+/// anything secret. Addresses lose their query and fragment (signed media
+/// addresses carry tokens there).
+const MEDIA_EVENTS_JS: &str = r#"(() => {
+  const post = (s) => { try { window.ipc.postMessage(s); } catch (_) {} };
+  const src = (v) => String(v.currentSrc || '').split(/[?#]/)[0];
+  for (const type of ['loadedmetadata', 'canplay', 'playing', 'waiting', 'stalled', 'error', 'abort', 'emptied', 'ended']) {
+    document.addEventListener(type, (e) => {
+      const v = e.target;
+      if (!(v instanceof HTMLMediaElement)) return;
+      const err = v.error ? ` error=${v.error.code} ${v.error.message || ''}` : '';
+      post(`media ${type}: ${src(v)} ${v.videoWidth || 0}x${v.videoHeight || 0} ready=${v.readyState} network=${v.networkState}${err}`);
+    }, true);
+  }
+})();"#;
+
+// MediaSource/canPlayType strings as MDN's codec parameter examples give them.
+const MEDIA_CODECS_JS: &str = r#"(() => {
+  const v = document.createElement('video');
+  const ask = (name, type) => `${name}=${v.canPlayType(type) || 'no'}`;
+  try {
+    window.ipc.postMessage('codecs: ' + [
+      ask('h264', 'video/mp4; codecs="avc1.42E01E"'),
+      ask('hevc', 'video/mp4; codecs="hvc1.1.6.L93.B0"'),
+      ask('vp8', 'video/webm; codecs="vp8"'),
+      ask('vp9', 'video/webm; codecs="vp09.00.10.08"'),
+      ask('av1', 'video/mp4; codecs="av01.0.05M.08"'),
+    ].join(' '));
+  } catch (_) {}
+})();"#;
+
+fn with_media_log(builder: wry::WebViewBuilder<'_>) -> wry::WebViewBuilder<'_> {
+    if std::env::var_os("GODWIT_MEDIA_LOG").is_none() {
+        return builder;
+    }
+    let mut builder =
+        builder
+            .with_initialization_script(MEDIA_EVENTS_JS)
+            .with_ipc_handler(|request: wry::http::Request<String>| {
+                eprintln!("GODWIT_MEDIA: {}", request.body().replace(['\r', '\n'], " "));
+            });
+    if std::env::var_os("GODWIT_MEDIA_SUMMARY").is_some() {
+        let version = wry::webview_version().unwrap_or_else(|_| "unknown".to_owned());
+        eprintln!("GODWIT_MEDIA: environment: Windows, WebView2 {version}");
+        builder = builder.with_initialization_script(MEDIA_CODECS_JS);
+    }
+    builder
+}
+
 fn page_for(kind: Kind, url: &str, window: bool) -> String {
     match (kind, window) {
         (Kind::Embed, false) => iframe_page(url),
@@ -293,7 +345,7 @@ pub fn run_helper(args: &[String]) -> ! {
                 std::process::exit(4)
             };
             let links = self.proxy.clone();
-            let built = wry::WebViewBuilder::new()
+            let built = with_media_log(wry::WebViewBuilder::new())
                 .with_incognito(true)
                 .with_additional_browser_args(INLINE_ARGS)
                 .with_autoplay(true)
@@ -477,7 +529,7 @@ pub fn run_window(args: &[String]) -> ! {
             let Ok(window) = event_loop.create_window(attributes) else {
                 std::process::exit(4)
             };
-            let built = wry::WebViewBuilder::new()
+            let built = with_media_log(wry::WebViewBuilder::new())
                 .with_incognito(true)
                 .with_additional_browser_args(WINDOW_ARGS)
                 .with_autoplay(true)
