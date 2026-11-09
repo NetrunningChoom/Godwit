@@ -63,6 +63,13 @@ pub enum Command {
         target: crate::channel_settings::OverrideTarget,
         change: Option<(u64, u64)>,
     },
+    LoadWebhooks {
+        room: RoomId,
+    },
+    ChangeWebhook {
+        room: RoomId,
+        change: crate::webhooks::WebhookChange,
+    },
     LoadServerOverview {
         server: ServerId,
         request: u64,

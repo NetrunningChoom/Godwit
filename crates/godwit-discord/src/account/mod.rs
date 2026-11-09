@@ -1446,6 +1446,8 @@ impl NetworkAccount for DiscordAccount {
             | Command::SaveChannelOverview { .. }
             | Command::SetChannelOverride { .. }
             | Command::DeleteChannel { .. } => out.extend(self.channel_command(command)),
+            // Discord's webhook manager is not wired in this account yet.
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::LoadServerOverview { server, request } => {
                 let result = self
                     .overview(&server.raw)

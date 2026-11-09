@@ -4,6 +4,8 @@
 
 export enum Screen { login, mfa, connecting, main, empty }
 
+export struct WebhookItem { id: string, name: string, avatar: image, has-avatar: bool }
+
 // One of someone's networks with their status there (transparent: unknown),
 // so it's plain where they're online.
 export struct NetPresence {

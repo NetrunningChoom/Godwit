@@ -46,10 +46,30 @@ impl Application {
             room.clone(),
             request,
         ));
-        vec![Effect::Backend {
+        self.state.webhooks = None;
+        let mut effects = vec![Effect::Backend {
             account: room.account.clone(),
-            command: Command::LoadChannelOverview { room, request },
-        }]
+            command: Command::LoadChannelOverview {
+                room: room.clone(),
+                request,
+            },
+        }];
+        if self.state.room(&room).is_some_and(|r| r.capabilities.manage_webhooks) {
+            self.state.webhooks = Some(crate::webhooks::WebhooksState {
+                room: room.clone(),
+                entries: Vec::new(),
+                loading: true,
+                busy: false,
+                error: None,
+            });
+            effects.push(Effect::Backend {
+                account: room.account.clone(),
+                command: Command::LoadWebhooks { room },
+            });
+        } else {
+            self.state.webhooks = None;
+        }
+        effects
     }
 
     /// A category's settings: the channel page, aimed at the category.
@@ -73,6 +93,7 @@ impl Application {
             room.clone(),
             request,
         ));
+        self.state.webhooks = None;
         vec![Effect::Backend {
             account: room.account.clone(),
             command: Command::LoadChannelOverview { room, request },

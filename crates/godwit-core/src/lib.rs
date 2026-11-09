@@ -39,6 +39,7 @@ pub mod search;
 pub mod server;
 pub mod server_settings;
 pub mod stickers;
+pub mod webhooks;
 
 pub mod backend;
 

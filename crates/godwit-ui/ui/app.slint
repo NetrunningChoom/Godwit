@@ -14,7 +14,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -125,6 +125,14 @@ export component AppWindow inherits Window {
     in property <bool> channel-edit-has-icons;
     in property <bool> channel-edit-is-category;
     in property <bool> channel-edit-is-group;
+    in property <bool> channel-edit-has-webhooks;
+    in property <[WebhookItem]> channel-edit-webhooks;
+    in property <bool> channel-edit-webhooks-loading;
+    in property <bool> channel-edit-webhooks-busy;
+    in property <string> channel-edit-webhook-status;
+    in-out property <string> channel-edit-webhook-create-name;
+    in-out property <string> channel-edit-webhook-edit-name;
+    in-out property <int> channel-edit-webhook-edit-index: -1;
     in property <bool> channel-edit-has-slowmode;
     in property <[string]> channel-edit-slowmode-choices;
     in-out property <int> channel-edit-slowmode-index;
@@ -142,6 +150,9 @@ export component AppWindow inherits Window {
     callback show-channel-edit-page(int); callback select-channel-override(int);
     callback set-channel-override-permission(int, int); callback save-channel-override();
     callback remove-channel-override(); callback add-channel-override(int);
+    callback create-channel-webhook(string); callback rename-channel-webhook(string, string); callback delete-channel-webhook(string);
+    callback confirm-delete-channel();
+    callback refresh-channel-webhooks();
     callback close-channel-settings(); callback save-channel-overview(); callback reset-channel-overview(); callback channel-overview-edited();
     callback pick-channel-image(); callback remove-channel-image(); callback delete-channel();
     in property <bool> server-edit-loaded;
@@ -1634,12 +1645,17 @@ export component AppWindow inherits Window {
         name <=> root.channel-edit-name; description <=> root.channel-edit-description; mature <=> root.channel-edit-mature;
         icon: root.channel-edit-icon; has-icon: root.channel-edit-has-icon; icon-label: root.channel-edit-icon-label;
         has-icons: root.channel-edit-has-icons; is-category: root.channel-edit-is-category; is-group: root.channel-edit-is-group;
+        has-webhooks: root.channel-edit-has-webhooks; webhook-entries: root.channel-edit-webhooks;
+        webhooks-loading: root.channel-edit-webhooks-loading; webhooks-busy: root.channel-edit-webhooks-busy;
+        webhook-status: root.channel-edit-webhook-status; webhook-create-name <=> root.channel-edit-webhook-create-name;
+        webhook-edit-name <=> root.channel-edit-webhook-edit-name; webhook-edit-index <=> root.channel-edit-webhook-edit-index;
         has-slowmode: root.channel-edit-has-slowmode; slowmode-choices: root.channel-edit-slowmode-choices;
         slowmode-index <=> root.channel-edit-slowmode-index; description-hint: root.channel-edit-description-hint;
         close => { root.close-channel-settings(); } save => { root.save-channel-overview(); }
         reset => { root.reset-channel-overview(); } changed => { root.channel-overview-edited(); }
         pick-image => { root.pick-channel-image(); } remove-image => { root.remove-channel-image(); }
-        delete-channel => { root.delete-channel(); }
+        delete-channel => { root.delete-channel(); } confirm-channel-delete => { root.confirm-delete-channel(); }
+        refresh-webhooks => { root.refresh-channel-webhooks(); }
         page: root.channel-edit-page; has-overrides: root.channel-edit-has-overrides;
         override-entries: root.channel-edit-override-entries; override-index: root.channel-edit-override-index;
         override-perms: root.channel-edit-override-perms; override-can-edit: root.channel-edit-override-can-edit;
@@ -1649,6 +1665,9 @@ export component AppWindow inherits Window {
         set-override-permission(i, s) => { root.set-channel-override-permission(i, s); }
         save-override => { root.save-channel-override(); } remove-override => { root.remove-channel-override(); }
         add-override(i) => { root.add-channel-override(i); }
+        create-webhook(n) => { root.create-channel-webhook(n); }
+        rename-webhook(i, n) => { root.rename-channel-webhook(i, n); }
+        delete-webhook(i) => { root.delete-channel-webhook(i); }
     }
     if root.profile-menu-preview: ProfileMenu {
         x: Theme.rail-width - 4px;

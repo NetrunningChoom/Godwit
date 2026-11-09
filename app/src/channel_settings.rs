@@ -42,6 +42,26 @@ pub struct ChannelEditor {
 }
 
 impl ChannelEditor {
+    pub fn load_webhooks(&self) -> Action {
+        Action::LoadWebhooks
+    }
+    pub fn create_webhook(&self, name: &str) -> Option<Action> {
+        let name = name.trim();
+        (!name.is_empty() && name.chars().count() <= 32)
+            .then(|| Action::ChangeWebhook(godwit_core::webhooks::WebhookChange::Create { name: name.into() }))
+    }
+    pub fn rename_webhook(&self, id: String, name: &str) -> Option<Action> {
+        let name = name.trim();
+        (!name.is_empty() && name.chars().count() <= 32).then(|| {
+            Action::ChangeWebhook(godwit_core::webhooks::WebhookChange::Rename {
+                id: id.into(),
+                name: name.into(),
+            })
+        })
+    }
+    pub fn delete_webhook(&self, id: String) -> Action {
+        Action::ChangeWebhook(godwit_core::webhooks::WebhookChange::Delete { id: id.into() })
+    }
     pub fn token(&self) -> Option<(RoomId, u64)> {
         self.token.clone()
     }
@@ -117,7 +137,7 @@ impl ChannelEditor {
     }
 
     pub fn show_page(&mut self, page: i32) {
-        self.page = page.clamp(0, 1);
+        self.page = page.clamp(0, 2);
         self.draft = None;
     }
     pub fn select_override(&mut self, state: &AppState, row: i32) {
@@ -324,6 +344,10 @@ impl ChannelEditor {
             .is_none_or(|(id, request)| *id != s.room || (*request != s.request && !self.saving && !self.acting));
         if identity_changed || (s.overview.is_none() && self.original.is_some()) {
             *self = Self::default();
+            // The webhook page's typed text is Slint state: clear it with the draft.
+            ui.set_channel_edit_webhook_create_name("".into());
+            ui.set_channel_edit_webhook_edit_name("".into());
+            ui.set_channel_edit_webhook_edit_index(-1);
         }
         self.token = Some((s.room.clone(), s.request));
         if let Some(o) = &s.overview
@@ -378,7 +402,36 @@ impl ChannelEditor {
         } else if is_group {
             self.page = 1;
         }
+        if self.page == 2 && !state.room(&s.room).is_some_and(|r| r.capabilities.manage_webhooks) {
+            self.page = 0;
+        }
         ui.set_channel_edit_page(self.page);
+        let hooks = state.webhooks.as_ref().filter(|w| w.room == s.room);
+        ui.set_channel_edit_has_webhooks(state.room(&s.room).is_some_and(|r| r.capabilities.manage_webhooks));
+        ui.set_channel_edit_webhooks_loading(hooks.is_none_or(|w| w.loading));
+        ui.set_channel_edit_webhooks_busy(hooks.is_some_and(|w| w.busy));
+        ui.set_channel_edit_webhook_status(
+            hooks
+                .and_then(|w| w.error.as_ref())
+                .map_or_else(|| "".into(), |e| e.to_string().into()),
+        );
+        let items = hooks
+            .map(|w| {
+                w.entries
+                    .iter()
+                    .map(|e| {
+                        let avatar = e.avatar_url.as_deref().and_then(|url| images.get(url, Fit::Circle(72)));
+                        crate::ui::WebhookItem {
+                            id: e.id.to_string().into(),
+                            name: e.name.to_string().into(),
+                            avatar: avatar.clone().unwrap_or_default(),
+                            has_avatar: avatar.is_some(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        ui.set_channel_edit_webhooks(slint::ModelRc::new(slint::VecModel::from(items)));
         match overrides {
             // Rows only exist while the page is open.
             Some(o) if self.page == 1 => self.show_overrides(ui, o),

@@ -2167,6 +2167,54 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     Event::ServerCreated(id),
                 ]
             }
+            Command::LoadWebhooks { room } => vec![Event::Webhooks {
+                room,
+                result: Ok(vec![
+                    godwit_core::webhooks::Webhook {
+                        id: "demo-hook-1".into(),
+                        name: "Announcements".into(),
+                        avatar_url: None,
+                    },
+                    godwit_core::webhooks::Webhook {
+                        id: "demo-hook-2".into(),
+                        name: "Builds".into(),
+                        avatar_url: None,
+                    },
+                ]),
+            }],
+            Command::ChangeWebhook { room, change } => {
+                let mut entries = vec![
+                    godwit_core::webhooks::Webhook {
+                        id: "demo-hook-1".into(),
+                        name: "Announcements".into(),
+                        avatar_url: None,
+                    },
+                    godwit_core::webhooks::Webhook {
+                        id: "demo-hook-2".into(),
+                        name: "Builds".into(),
+                        avatar_url: None,
+                    },
+                ];
+                match change {
+                    godwit_core::webhooks::WebhookChange::Create { name } => {
+                        entries.push(godwit_core::webhooks::Webhook {
+                            id: "demo-hook-new".into(),
+                            name,
+                            avatar_url: None,
+                        })
+                    }
+                    godwit_core::webhooks::WebhookChange::Rename { id, name } => {
+                        if let Some(e) = entries.iter_mut().find(|e| e.id == id) {
+                            e.name = name;
+                        }
+                    }
+                    godwit_core::webhooks::WebhookChange::Delete { id } => entries.retain(|e| e.id != id),
+                }
+                vec![Event::WebhookChanged {
+                    room,
+                    result: Ok(entries),
+                }]
+            }
             Command::ServerAdmin { server, op } if op.member_target().is_some() => self.member_change(&server, op),
             Command::ServerAdmin { server, op }
                 if matches!(

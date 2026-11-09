@@ -52,6 +52,14 @@ pub enum Event {
         room: RoomId,
         overrides: crate::channel_settings::ChannelOverrides,
     },
+    Webhooks {
+        room: RoomId,
+        result: Result<Vec<crate::webhooks::Webhook>, Arc<str>>,
+    },
+    WebhookChanged {
+        room: RoomId,
+        result: Result<Vec<crate::webhooks::Webhook>, Arc<str>>,
+    },
     ServerOverview {
         server: ServerId,
         request: u64,

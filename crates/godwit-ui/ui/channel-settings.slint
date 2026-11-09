@@ -5,13 +5,13 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Section } from "settings.slint";
 import { Avatar, Button, ConfirmDialog, Select, TextArea, TextField, Toggle, TriState } from "widgets.slint";
-import { AdminRoleItem, OverridePermItem } from "types.slint";
+import { AdminRoleItem, OverridePermItem, WebhookItem } from "types.slint";
 
 // A server channel's settings, as the official ChannelSettings: a sidebar
 // with Overview and (with Manage Channel) Delete Channel, and the Overview's
 // icon, name, description and mature switch, and (where the network has
 // per-role overrides) Permissions. Groups can expose only their default
-// permission set. Webhooks come later.
+// permission set; server channels may also expose webhooks.
 export component ChannelSettings inherits Rectangle {
     in property <string> title;
     in property <bool> loaded;
@@ -31,6 +31,18 @@ export component ChannelSettings inherits Rectangle {
     in property <bool> has-icons;
     in property <bool> is-category;
     in property <bool> is-group;
+    in property <bool> has-webhooks;
+    in property <[WebhookItem]> webhook-entries;
+    in property <bool> webhooks-loading;
+    in property <bool> webhooks-busy;
+    in property <string> webhook-status;
+    in-out property <string> webhook-create-name;
+    in-out property <string> webhook-edit-name;
+    in-out property <int> webhook-edit-index: -1;
+    property <int> delete-index: -1;
+    callback create-webhook(string); callback rename-webhook(string, string); callback delete-webhook(string);
+    callback confirm-channel-delete();
+    callback refresh-webhooks();
     in property <bool> has-slowmode;
     in property <[string]> slowmode-choices;
     in-out property <int> slowmode-index;
@@ -70,6 +82,7 @@ export component ChannelSettings inherits Rectangle {
                     Text { text: root.title; font-size: Theme.text-small; font-weight: 600; color: Theme.outline; height: 28px; overflow: elide; }
                     if !root.is-group: Section { label: "Overview"; selected: root.page == 0; clicked => { root.show-page(0); } }
                     if root.has-overrides: Section { label: "Permissions"; selected: root.page == 1; clicked => { root.show-page(1); } }
+                    if root.has-webhooks: Section { label: "Webhooks"; selected: root.page == 2; clicked => { root.show-page(2); } }
                     if root.allowed: Rectangle { height: 12px; }
                     if root.allowed: Section { label: root.is-category ? "Delete Category" : "Delete Channel"; danger: true; clicked => { root.confirm-delete = true; } }
                 }
@@ -78,7 +91,7 @@ export component ChannelSettings inherits Rectangle {
                 horizontal-stretch: 1;
                 HorizontalLayout {
                     padding: Theme.space-5; spacing: Theme.space-4;
-                    Text { text: root.page == 1 ? "Permissions" : "Overview"; font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                    Text { text: root.page == 1 ? "Permissions" : root.page == 2 ? "Webhooks" : "Overview"; font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
                     Button { text: "Close"; kind: "text"; clicked => { root.close(); } }
                 }
                 if root.page == 0 && !root.is-group: overview := ScrollView {
@@ -184,17 +197,44 @@ export component ChannelSettings inherits Rectangle {
                     Button { text: "Reset"; enabled: root.loaded && !root.busy; clicked => { root.reset(); } }
                     Button { text: "Save"; kind: "filled"; enabled: root.loaded && root.allowed && !root.busy && root.dirty; clicked => { root.save(); } }
                 }
+                if root.page == 2 && root.has-webhooks: webhook-page := ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        width: min(webhook-page.visible-width, 680px);
+                        padding: Theme.space-7; spacing: Theme.space-4; alignment: start;
+                        if root.webhook-status != "": Text { text: root.webhook-status; wrap: word-wrap; color: Theme.on-surface-variant; }
+                        HorizontalLayout { spacing: Theme.space-3;
+                            TextField { text <=> root.webhook-create-name; enabled: !root.webhooks-busy; }
+                            Button { text: "Create webhook"; kind: "filled"; enabled: !root.webhooks-busy && root.webhook-create-name != ""; clicked => { root.create-webhook(root.webhook-create-name); } }
+                            Button { text: "Refresh"; kind: "text"; enabled: !root.webhooks-busy; clicked => { root.refresh-webhooks(); } }
+                        }
+                        if root.webhooks-loading: Text { text: "Loading webhooks…"; color: Theme.on-surface-variant; }
+                        for hook[i] in root.webhook-entries: VerticalLayout {
+                            spacing: Theme.space-2;
+                            HorizontalLayout { spacing: Theme.space-3;
+                                if hook.has-avatar: Avatar { size: 36px; source: hook.avatar; has-image: true; initials: ""; }
+                                Text { text: hook.name; vertical-alignment: center; horizontal-stretch: 1; color: Theme.on-surface; }
+                                Button { text: "Rename"; kind: "text"; enabled: !root.webhooks-busy; clicked => { root.webhook-edit-index = i; root.webhook-edit-name = hook.name; } }
+                                Button { text: "Delete"; kind: "text"; enabled: !root.webhooks-busy; clicked => { root.delete-index = i; root.confirm-delete = true; } }
+                            }
+                            if root.webhook-edit-index == i: HorizontalLayout { spacing: Theme.space-3;
+                                TextField { text <=> root.webhook-edit-name; enabled: !root.webhooks-busy; }
+                                Button { text: "Save name"; kind: "filled"; enabled: !root.webhooks-busy && root.webhook-edit-name != ""; clicked => { root.rename-webhook(hook.id, root.webhook-edit-name); root.webhook-edit-index = -1; } }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
     // The official DeleteChannel confirmation.
     if root.confirm-delete: ConfirmDialog {
-        title: "Delete " + root.title + "?";
-        message: "Once it's deleted, there's no going back.";
+        title: root.delete-index >= 0 ? "Delete webhook?" : "Delete " + root.title + "?";
+        message: root.delete-index >= 0 ? "This webhook will stop sending messages." : "Once it's deleted, there's no going back.";
         confirm-text: "Delete";
         confirm-kind: "filled";
         danger: true;
-        cancelled => { root.confirm-delete = false; }
-        confirmed => { root.confirm-delete = false; root.delete-channel(); }
+        cancelled => { root.confirm-delete = false; root.delete-index = -1; }
+        confirmed => { root.confirm-delete = false; if root.delete-index >= 0 && root.delete-index < root.webhook-entries.length { root.delete-webhook(root.webhook-entries[root.delete-index].id); } else { root.confirm-channel-delete(); } root.delete-index = -1; }
     }
 }

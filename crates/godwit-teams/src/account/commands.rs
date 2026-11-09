@@ -228,6 +228,8 @@ impl TeamsAccount {
         match command {
             // Teams rooms do not currently expose group leave or recipient editing.
             Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            // Teams has no channel webhook manager.
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::SetPresence(presence) => req(
                 &self.net,
                 Request::SetPresence {

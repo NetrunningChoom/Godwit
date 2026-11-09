@@ -719,6 +719,8 @@ impl FluxerAccount {
         match command {
             // Fluxer rooms do not currently expose group leave or recipient editing.
             Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            // Fluxer has no channel webhook manager in this account.
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             // A server channel opened: subscribed, as Fluxer's client does.
             Command::Focus { room } => {
                 let opened = room

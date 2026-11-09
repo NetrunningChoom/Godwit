@@ -58,6 +58,25 @@ impl Application {
                 Vec::new()
             }
             Event::ChannelOverrides { room, overrides } => self.receive_channel_overrides(room, overrides),
+            Event::Webhooks { room, result } | Event::WebhookChanged { room, result } => {
+                let is_open = self
+                    .state
+                    .channel_settings
+                    .as_ref()
+                    .is_some_and(|settings| settings.room == room);
+                if is_open && let Some(state) = self.state.webhooks.as_mut().filter(|s| s.room == room) {
+                    state.loading = false;
+                    state.busy = false;
+                    match result {
+                        Ok(entries) => {
+                            state.entries = entries;
+                            state.error = None;
+                        }
+                        Err(error) => state.error = Some(error),
+                    }
+                }
+                Vec::new()
+            }
             Event::ChannelOverview { room, request, result } => self.receive_channel_overview(room, request, result),
             Event::ServerOverview {
                 server,

@@ -364,6 +364,27 @@ impl Shell {
     pub(super) fn show_channel_settings(&mut self, ui: &AppWindow) {
         self.channel_editor.show(ui, self.app.state(), &mut self.images);
     }
+    pub fn channel_webhooks_load(&mut self, ui: &AppWindow) {
+        self.act(ui, self.channel_editor.load_webhooks());
+    }
+    // The typed names live in the Slint properties; Rust only clears them once sent.
+    pub fn channel_webhooks_create(&mut self, ui: &AppWindow, name: String) {
+        if let Some(action) = self.channel_editor.create_webhook(&name) {
+            ui.set_channel_edit_webhook_create_name("".into());
+            self.act(ui, action);
+        }
+    }
+    pub fn channel_webhooks_rename(&mut self, ui: &AppWindow, id: String, name: String) {
+        if let Some(action) = self.channel_editor.rename_webhook(id, &name) {
+            ui.set_channel_edit_webhook_edit_index(-1);
+            self.act(ui, action);
+        }
+    }
+    pub fn channel_webhooks_delete(&mut self, ui: &AppWindow, id: String) {
+        ui.set_channel_edit_webhook_edit_index(-1);
+        let action = self.channel_editor.delete_webhook(id);
+        self.act(ui, action);
+    }
     pub(super) fn show_server_settings(&mut self, ui: &AppWindow) {
         self.server_editor.show(ui, self.app.state(), &mut self.images);
     }

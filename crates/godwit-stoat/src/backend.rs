@@ -690,6 +690,11 @@ pub enum Ev {
         channel: String,
         list: Vec<Value>,
     },
+    /// Loading a channel's webhooks failed (so the settings page stops waiting).
+    WebhooksFailed {
+        channel: String,
+        error: String,
+    },
     /// A webhook was created or edited (the webhook) or deleted (`id` only).
     WebhookSaved {
         result: Result<Value, String>,
@@ -1628,7 +1633,13 @@ impl Backend {
                         .await
                     {
                         Ok(list) => out.emit(Ev::Webhooks { channel, list }),
-                        Err(e) => out.error("loading webhooks", e),
+                        Err(e) => {
+                            eprintln!("error: Stoat, loading webhooks: {}", crate::errors::describe(&e));
+                            out.emit(Ev::WebhooksFailed {
+                                channel,
+                                error: crate::errors::describe(&e),
+                            });
+                        }
                     }
                 });
             }

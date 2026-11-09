@@ -54,7 +54,10 @@ impl Application {
                 s.error = None;
             }
             // Deleted: nothing left to edit.
-            Ok(None) => self.state.channel_settings = None,
+            Ok(None) => {
+                self.state.channel_settings = None;
+                self.state.webhooks = None;
+            }
             Err(error) => {
                 s.error = Some(error);
                 s.saved = false;
@@ -233,6 +236,7 @@ impl Application {
             .is_some_and(|s| s.room.account == account)
         {
             self.state.channel_settings = None;
+            self.state.webhooks = None;
         }
         self.state.own_profiles.remove(&account);
         // Its friends and requests go with it (contacts stay, with any
@@ -371,6 +375,7 @@ impl Application {
         // Settings pages and dialogs of a shared account stay otherwise.
         st.server_settings = None;
         st.channel_settings = None;
+        st.webhooks = None;
         st.invite_link = None;
         // A contact id belongs to the contacts that were swapped out.
         st.link_request = None;
@@ -385,6 +390,7 @@ impl Application {
         self.state.rooms.retain(|r| r.id != id);
         if self.state.channel_settings.as_ref().is_some_and(|s| s.room == id) {
             self.state.channel_settings = None;
+            self.state.webhooks = None;
         }
         self.state.timelines.remove(&id);
         self.state.drafts.remove(&id);

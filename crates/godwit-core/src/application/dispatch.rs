@@ -62,6 +62,7 @@ impl Application {
             Action::OpenCategorySettings { server, category } => self.dispatch_open_category_settings(server, category),
             Action::CloseChannelSettings => {
                 self.state.channel_settings = None;
+                self.state.webhooks = None;
                 Vec::new()
             }
             Action::SaveChannelOverview(edit) => self.dispatch_save_channel_overview(edit),
@@ -70,6 +71,67 @@ impl Application {
                 self.dispatch_channel_override(target, Some((allow, deny)))
             }
             Action::DeleteChannelOverride(target) => self.dispatch_channel_override(target, None),
+            Action::LoadWebhooks => {
+                let Some(s) = self.state.channel_settings.as_ref() else {
+                    return Vec::new();
+                };
+                let room = s.room.clone();
+                if !self.state.room(&room).is_some_and(|r| r.capabilities.manage_webhooks) {
+                    return Vec::new();
+                }
+                if self
+                    .state
+                    .webhooks
+                    .as_ref()
+                    .is_some_and(|w| w.room == room && w.loading)
+                {
+                    return Vec::new();
+                }
+                self.state.webhooks = Some(crate::webhooks::WebhooksState {
+                    room: room.clone(),
+                    entries: Vec::new(),
+                    loading: true,
+                    busy: false,
+                    error: None,
+                });
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::LoadWebhooks { room },
+                }]
+            }
+            Action::ChangeWebhook(change) => {
+                let Some(room) = self.state.webhooks.as_ref().map(|s| s.room.clone()) else {
+                    return Vec::new();
+                };
+                if self
+                    .state
+                    .channel_settings
+                    .as_ref()
+                    .is_none_or(|settings| settings.room != room)
+                {
+                    return Vec::new();
+                }
+                if !self.state.room(&room).is_some_and(|r| r.capabilities.manage_webhooks) {
+                    return Vec::new();
+                }
+                let Some(s) = self.state.webhooks.as_mut() else {
+                    return Vec::new();
+                };
+                if s.busy {
+                    return Vec::new();
+                }
+                if matches!(&change, crate::webhooks::WebhookChange::Create { name } if name.trim().is_empty() || name.trim().chars().count() > 32)
+                    || matches!(&change, crate::webhooks::WebhookChange::Rename { id, name } if name.trim().is_empty() || name.trim().chars().count() > 32 || id.trim().is_empty())
+                    || matches!(&change, crate::webhooks::WebhookChange::Delete { id } if id.trim().is_empty())
+                {
+                    return Vec::new();
+                }
+                s.busy = true;
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::ChangeWebhook { room, change },
+                }]
+            }
             Action::OpenServerSettings(server) => self.dispatch_open_server_settings(server),
             Action::ServerSettingsPage(page) => {
                 let Some(s) = &mut self.state.server_settings else {

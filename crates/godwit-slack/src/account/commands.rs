@@ -354,6 +354,8 @@ impl SlackAccount {
         match command {
             // Slack rooms do not currently expose group leave or recipient editing.
             Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            // Slack has no channel webhook manager in this account.
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::LoadThreads { server, more } => self.refresh_threads(&server.raw, more),
             Command::SetPresence(presence) => {
                 if matches!(presence, Presence::Online | Presence::Idle) {

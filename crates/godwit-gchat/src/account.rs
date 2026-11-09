@@ -1007,6 +1007,8 @@ impl NetworkAccount for GChatAccount {
         match command {
             // Google Chat rooms do not currently expose group leave or recipient editing.
             Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            // Google Chat has no channel webhook manager.
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::MarkRead { room, .. } | Command::MarkRoomRead { room } => self.mark_read(&room.raw),
             Command::CreateThread {
                 room,

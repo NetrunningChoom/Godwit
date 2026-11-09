@@ -91,6 +91,7 @@ impl StoatAccount {
                 c.server.is_some()
                     && (can(crate::permissions::MANAGE_CHANNEL) || can(crate::permissions::MANAGE_PERMISSIONS))
             },
+            manage_webhooks: c.server.is_some() && can(MANAGE_WEBHOOKS),
             react: can(REACT),
             attachments: can(UPLOAD_FILES),
             // Saved Notes is a chat with yourself: the official client offers

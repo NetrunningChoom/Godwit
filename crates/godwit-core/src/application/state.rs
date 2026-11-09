@@ -161,6 +161,7 @@ pub struct AppState {
     pub autodelete: HashMap<AccountId, crate::autodelete::AutoDeleteView>,
     pub server_settings: Option<crate::server_settings::ServerSettingsState>,
     pub channel_settings: Option<crate::channel_settings::ChannelSettingsState>,
+    pub webhooks: Option<crate::webhooks::WebhooksState>,
     /// Home's pinned chats (at the top, in pin order) and hidden ones (in
     /// a collapsible section at the bottom; a new message brings one back).
     pub pinned_rooms: Vec<RoomId>,

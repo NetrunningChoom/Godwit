@@ -68,6 +68,7 @@ impl DiscordAccount {
         let history = self.demo.as_ref()?;
         let mut out = Vec::new();
         match command {
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => return Some(Vec::new()),
             Command::LoadHistory { room, before } => {
                 let channel = room.raw.to_string();
                 let page: Vec<Value> = history

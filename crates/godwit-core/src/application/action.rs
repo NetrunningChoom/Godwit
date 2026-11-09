@@ -60,6 +60,8 @@ pub enum Action {
     },
     /// Removes an override from the open channel.
     DeleteChannelOverride(crate::channel_settings::OverrideTarget),
+    LoadWebhooks,
+    ChangeWebhook(crate::webhooks::WebhookChange),
     OpenServerSettings(ServerId),
     CloseServerSettings,
     CloseInviteLink,

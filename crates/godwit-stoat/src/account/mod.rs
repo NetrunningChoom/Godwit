@@ -19,7 +19,7 @@ mod sign_in;
 
 use crate::backend::{
     ChannelCmd, EmojiCmd, MediaCmd, MemberCmd, MessageCmd, PeopleCmd, RoleCmd, RoleEditCmd, ServerCmd, SessionCmd,
-    SettingsCmd, VoiceCmd as VoiceCommand,
+    SettingsCmd, VoiceCmd as VoiceCommand, WebhookCmd, WebhookEditCmd,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, mpsc};
@@ -44,7 +44,8 @@ use serde_json::Value;
 use crate::api::{Channel, DEFAULT_API, File, MemberId, Message, ReplyIntent, RootConfig, ulid_timestamp_ms};
 use crate::backend::{self, Cmd, Ev, Handle, RelationshipAction, Upload, UploadSource, Waker};
 use crate::permissions::{
-    CONNECT, MANAGE_MESSAGES, REACT, SEND_EMBEDS, SEND_MESSAGE, UPLOAD_FILES, USE_EXTERNAL_EMOJIS, VIEW_CHANNEL,
+    CONNECT, MANAGE_MESSAGES, MANAGE_WEBHOOKS, REACT, SEND_EMBEDS, SEND_MESSAGE, UPLOAD_FILES, USE_EXTERNAL_EMOJIS,
+    VIEW_CHANNEL,
 };
 use crate::rich::{self, Resolve};
 use crate::session_file;
@@ -95,6 +96,8 @@ pub struct StoatAccount {
     servers: Vec<CoreServer>,
     /// The channel on screen (core `Focus`).
     viewing: Option<String>,
+    webhook_room: Option<RoomId>,
+    webhook_refreshing: bool,
     /// The call's video is on screen (its room, or the app's pop-out).
     call_shown: bool,
     /// Keep the session in `session.json` (off in tests).
@@ -512,6 +515,8 @@ impl StoatAccount {
             rooms: Default::default(),
             servers: Vec::new(),
             viewing: None,
+            webhook_room: None,
+            webhook_refreshing: false,
             call_shown: false,
             persist_session: true,
             autodelete: Default::default(),
@@ -566,6 +571,8 @@ impl StoatAccount {
             rooms: Default::default(),
             servers: Vec::new(),
             viewing: None,
+            webhook_room: None,
+            webhook_refreshing: false,
             call_shown: false,
             persist_session: false,
             autodelete: Default::default(),
@@ -724,6 +731,8 @@ mod tests {
             rooms: Default::default(),
             servers: Vec::new(),
             viewing: None,
+            webhook_room: None,
+            webhook_refreshing: false,
             call_shown: false,
             persist_session: false,
             autodelete: Default::default(),
@@ -881,6 +890,46 @@ mod tests {
         };
         assert_eq!(id, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
         assert_eq!(name, "Work laptop");
+    }
+
+    #[test]
+    fn stoat_webhook_commands_are_permission_gated_and_token_free() {
+        let (mut a, tx, mut cmds, _) = connected();
+        while cmds.try_recv().is_ok() {}
+        a.store.apply_ready(serde_json::from_value(json!({
+            "users":[{"_id":"ME", "username":"me", "relationship":"User"}],
+            "servers":[{"_id":"S", "name":"Server", "owner":"OTHER", "channels":["WH1"], "default_permissions":crate::permissions::MANAGE_WEBHOOKS}],
+            "channels":[{"_id":"WH1", "channel_type":"TextChannel", "server":"S", "name":"general"}],
+            "members":[{"_id":{"server":"S", "user":"ME"}, "roles":[]}]
+        })).unwrap());
+        while cmds.try_recv().is_ok() {}
+        let channel_room = room("WH1");
+        a.run(Command::LoadWebhooks {
+            room: channel_room.clone(),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Webhook(WebhookCmd::FetchWebhooks { channel })) if channel == "WH1"));
+        a.run(Command::ChangeWebhook {
+            room: channel_room,
+            change: godwit_core::webhooks::WebhookChange::Rename {
+                id: "HOOK".into(),
+                name: "New name".into(),
+            },
+        });
+        assert!(
+            matches!(cmds.try_recv(), Ok(Cmd::Webhook(WebhookCmd::Edit(WebhookEditCmd::EditWebhook { id, body, avatar: None }))) if id == "HOOK" && body["name"] == "New name")
+        );
+        let denied = room("D1");
+        a.run(Command::LoadWebhooks { room: denied });
+        assert!(cmds.try_recv().is_err());
+        tx.send(Ev::Webhooks {
+            channel: "WH1".into(),
+            list: vec![json!({"id":"HOOK", "name":"Example", "token":"secret-value"})],
+        })
+        .unwrap();
+        let events = a.poll();
+        assert!(
+            matches!(events.as_slice(), [Event::Webhooks { result: Ok(list), .. }] if list[0].name.as_ref() == "Example" && !format!("{:?}", list).contains("secret-value"))
+        );
     }
 
     #[test]

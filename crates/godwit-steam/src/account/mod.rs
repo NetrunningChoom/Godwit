@@ -411,6 +411,8 @@ impl NetworkAccount for SteamAccount {
                     self.net.send(Cmd::GroupCreate { name, friends });
                 }
             }
+            // Steam has no channel webhook manager.
+            Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::SendFriendRequest { request, name } => self.net.send(Cmd::AddFriend {
                 request: Some(request),
                 name,

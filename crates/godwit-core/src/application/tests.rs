@@ -3521,6 +3521,7 @@ fn channel_settings_app() -> Application {
     };
     let mut managed = room(n, "C", kind());
     managed.capabilities.manage_channel = true;
+    managed.capabilities.manage_webhooks = true;
     let locked = room(n, "L", kind());
     ready(&mut app, n, vec![managed, locked]);
     app
@@ -3562,6 +3563,10 @@ fn open_channel_settings(app: &mut Application, can_manage: bool) -> RoomId {
             command: Command::LoadChannelOverview { request, .. },
             ..
         },
+        Effect::Backend {
+            command: Command::LoadWebhooks { .. },
+            ..
+        },
     ] = effects.as_slice()
     else {
         panic!("expected a load, got {effects:?}");
@@ -3591,10 +3596,16 @@ fn channel_settings_open_only_for_managed_channels_and_load_once() {
     let effects = app.dispatch(Action::OpenChannelSettings(RoomId::new(account(n), "C")));
     assert!(matches!(
         effects.as_slice(),
-        [Effect::Backend {
-            command: Command::LoadChannelOverview { .. },
-            ..
-        }]
+        [
+            Effect::Backend {
+                command: Command::LoadChannelOverview { .. },
+                ..
+            },
+            Effect::Backend {
+                command: Command::LoadWebhooks { .. },
+                ..
+            }
+        ]
     ));
     // Loading: another open waits for it.
     assert!(
@@ -3603,6 +3614,47 @@ fn channel_settings_open_only_for_managed_channels_and_load_once() {
     );
     app.dispatch(Action::CloseChannelSettings);
     assert!(app.state().channel_settings.is_none());
+}
+
+#[test]
+fn webhook_actions_are_capability_gated_and_secrets_have_no_core_debug_field() {
+    use crate::webhooks::{Webhook, WebhookChange};
+    let mut app = channel_settings_app();
+    let room = RoomId::new(account(Network::Stoat), "C");
+    app.dispatch(Action::OpenChannelSettings(room.clone()));
+    app.apply(Event::Webhooks {
+        room: room.clone(),
+        result: Ok(Vec::new()),
+    });
+    assert!(matches!(
+        app.dispatch(Action::ChangeWebhook(WebhookChange::Create { name: "Deploy".into() }))
+            .as_slice(),
+        [Effect::Backend {
+            command: Command::ChangeWebhook { .. },
+            ..
+        }]
+    ));
+    let denied = RoomId::new(account(Network::Stoat), "L");
+    app.state.webhooks = Some(crate::webhooks::WebhooksState {
+        room: denied,
+        entries: Vec::new(),
+        loading: false,
+        busy: false,
+        error: None,
+    });
+    assert!(
+        app.dispatch(Action::ChangeWebhook(WebhookChange::Create { name: "x".into() }))
+            .is_empty()
+    );
+    let text = format!(
+        "{:?}",
+        Webhook {
+            id: "id".into(),
+            name: "hook".into(),
+            avatar_url: None
+        }
+    );
+    assert!(!text.contains("token"));
 }
 
 #[test]
@@ -4109,6 +4161,7 @@ fn slowmode_and_icons_only_go_out_where_the_network_has_them() {
             command: Command::LoadChannelOverview { request, .. },
             ..
         },
+        ..,
     ] = effects.as_slice()
     else {
         panic!("expected a load, got {effects:?}");
@@ -4136,6 +4189,7 @@ fn overrides_page(app: &mut Application, can_edit: bool, grantable: u64) -> Room
             command: Command::LoadChannelOverview { request, .. },
             ..
         },
+        ..,
     ] = effects.as_slice()
     else {
         panic!("expected a load, got {effects:?}");

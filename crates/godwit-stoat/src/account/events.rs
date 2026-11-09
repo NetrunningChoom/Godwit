@@ -58,6 +58,72 @@ impl StoatAccount {
                 });
             }
             Ev::ChannelSaved { .. } | Ev::ChannelDeleted { .. } => self.channel_answer(ev, out),
+            Ev::Webhooks { channel, list } => {
+                if let Some(account) = self.account.clone() {
+                    let room = RoomId::new(account, channel);
+                    if self.webhook_room.as_ref().is_some_and(|pending| pending == &room)
+                        && self.store.can(&room.raw, MANAGE_WEBHOOKS)
+                    {
+                        let mut result = parse_webhooks(list).map_err(Into::into);
+                        if let Ok(webhooks) = &mut result {
+                            let autumn = self.config.as_ref().map(|config| config.features.autumn.url.clone());
+                            for webhook in webhooks {
+                                webhook.avatar_url = webhook
+                                    .avatar_url
+                                    .as_ref()
+                                    .zip(autumn.as_ref())
+                                    .map(|(avatar, base)| format!("{base}/{avatar}").into());
+                            }
+                        }
+                        if self.webhook_room.as_ref() == Some(&room) {
+                            if self.webhook_refreshing {
+                                self.webhook_refreshing = false;
+                            } else {
+                                self.webhook_room = None;
+                            }
+                        }
+                        out.push(Event::Webhooks { room, result });
+                    }
+                }
+            }
+            Ev::WebhooksFailed { channel, error } => {
+                if let Some(account) = self.account.clone() {
+                    let room = RoomId::new(account, channel);
+                    if self.webhook_room.as_ref() == Some(&room) {
+                        self.webhook_room = None;
+                        self.webhook_refreshing = false;
+                        out.push(Event::Webhooks {
+                            room,
+                            result: Err(Arc::from(error)),
+                        });
+                    }
+                }
+            }
+            Ev::WebhookSaved { .. } if self.webhook_refreshing => {
+                // The mutation answer was already handled; only the follow-up list remains.
+            }
+            Ev::WebhookSaved { result, deleted: _ } => {
+                if !self.webhook_refreshing
+                    && let Some(room) = self.webhook_room.clone()
+                {
+                    match result {
+                        Ok(_) => {
+                            self.webhook_refreshing = true;
+                            self.webhook_room = Some(room.clone());
+                            self.net.send(Cmd::Webhook(WebhookCmd::FetchWebhooks {
+                                channel: room.raw.to_string(),
+                            }));
+                        }
+                        Err(e) => {
+                            self.webhook_room = None;
+                            out.push(Event::WebhookChanged {
+                                room,
+                                result: Err(Arc::from(e)),
+                            });
+                        }
+                    }
+                }
+            }
             Ev::UserSaved(user) => {
                 self.store.users.insert(user.id.clone(), user);
                 self.sync_rooms(out);
@@ -788,5 +854,53 @@ impl StoatAccount {
             title: title.into(),
             body: body.into(),
         })
+    }
+}
+
+fn parse_webhooks(values: Vec<Value>) -> Result<Vec<godwit_core::webhooks::Webhook>, String> {
+    values
+        .into_iter()
+        .map(|value| {
+            let id = value
+                .get("id")
+                .or_else(|| value.get("_id"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| "A webhook had no id.".to_owned())?;
+            let name = value.get("name").and_then(Value::as_str).unwrap_or("Webhook");
+            let avatar_url = value
+                .get("avatar")
+                .and_then(Value::as_str)
+                .map(|avatar| format!("avatars/{avatar}").into());
+            let avatar_url = value
+                .get("avatar")
+                .and_then(Value::as_object)
+                .and_then(|avatar| avatar.get("_id").or_else(|| avatar.get("id")))
+                .and_then(Value::as_str)
+                .map(|id| format!("avatars/{id}").into())
+                .or(avatar_url);
+            // Backend's Ev::Webhooks docs say these objects carry a secret token; drop it here.
+            Ok(godwit_core::webhooks::Webhook {
+                id: id.into(),
+                name: name.into(),
+                avatar_url,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod webhook_tests {
+    use super::parse_webhooks;
+    use serde_json::json;
+
+    #[test]
+    fn webhook_list_drops_token_and_maps_name_and_avatar() {
+        let values = vec![json!({"id":"hook-1", "name":"Builds", "token":"DO_NOT_KEEP", "avatar":null})];
+        let parsed = parse_webhooks(values).expect("valid webhook payload");
+        assert_eq!(parsed[0].id.as_ref(), "hook-1");
+        assert_eq!(parsed[0].name.as_ref(), "Builds");
+        let debug = format!("{:?}", parsed[0]);
+        assert!(!debug.contains("DO_NOT_KEEP"));
+        assert!(!debug.contains("token"));
     }
 }

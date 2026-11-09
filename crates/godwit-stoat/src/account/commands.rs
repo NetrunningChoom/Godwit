@@ -79,6 +79,31 @@ impl StoatAccount {
             | Command::SetChannelOverride { .. } => {
                 self.channel_command(command)
             }
+            Command::LoadWebhooks { room } => {
+                if self.account.as_ref() == Some(&room.account) && self.store.channels.get(&*room.raw).is_some_and(|c| c.server.is_some()) && self.store.can(&room.raw, MANAGE_WEBHOOKS) {
+                    self.webhook_room = Some(room.clone());
+                    self.webhook_refreshing = false;
+                    self.net.send(Cmd::Webhook(WebhookCmd::FetchWebhooks { channel: room.raw.to_string() }));
+                }
+                Vec::new()
+            }
+            Command::ChangeWebhook { room, change } => {
+                let valid = self.account.as_ref() == Some(&room.account) && self.store.can(&room.raw, MANAGE_WEBHOOKS)
+                    && match &change {
+                        godwit_core::webhooks::WebhookChange::Create { name } => !name.trim().is_empty(),
+                        godwit_core::webhooks::WebhookChange::Rename { id, name } => !name.trim().is_empty() && self.store.channels.get(&*room.raw).is_some_and(|c| c.server.is_some()) && !id.trim().is_empty(),
+                        godwit_core::webhooks::WebhookChange::Delete { id } => !id.trim().is_empty() && self.store.channels.get(&*room.raw).is_some_and(|c| c.server.is_some()),
+                    };
+                if !valid { return Vec::new(); }
+                let cmd = match change {
+                    godwit_core::webhooks::WebhookChange::Create { name } => WebhookEditCmd::CreateWebhook { channel: room.raw.to_string(), name: name.to_string() },
+                    godwit_core::webhooks::WebhookChange::Rename { id, name } => WebhookEditCmd::EditWebhook { id: id.to_string(), body: serde_json::json!({ "name": name }), avatar: None },
+                    godwit_core::webhooks::WebhookChange::Delete { id } => WebhookEditCmd::DeleteWebhook { id: id.to_string() },
+                };
+                self.webhook_room = Some(room);
+                self.net.send(Cmd::Webhook(WebhookCmd::Edit(cmd)));
+                Vec::new()
+            }
             Command::LoadServerOverview { server, request } => {
                 let result = self.server_overview(&server).ok_or_else(|| "This server is no longer available.".into());
                 vec![Event::ServerOverview { server, request, result }]

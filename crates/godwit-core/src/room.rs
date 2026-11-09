@@ -101,6 +101,9 @@ pub struct Capabilities {
     /// require narrower permissions than this page-level capability.
     #[serde(default)]
     pub manage_channel: bool,
+    /// Webhooks for this channel can be managed (Stoat: Manage Webhooks).
+    #[serde(default)]
+    pub manage_webhooks: bool,
     /// We can set how loudly this room notifies (a mute, or a level of its
     /// own): the menu offers it, [`Room::notify`] shows the state (Discord:
     /// channel overrides in the user's guild settings).
@@ -143,6 +146,7 @@ impl Capabilities {
             max_upload: 0,
             pin_messages: false,
             manage_channel: false,
+            manage_webhooks: false,
             notify_settings: false,
             forum: false,
             report: false,
