@@ -1098,6 +1098,16 @@ impl GChatAccount {
 }
 
 impl NetworkAccount for GChatAccount {
+    fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
+        // People become a token that `annotations::outgoing` turns into
+        // `@Name` plus a USER_MENTION annotation when sent.
+        match kind {
+            godwit_core::autocomplete::TriggerKind::Person => format!("<@gchat:{id}>"),
+            godwit_core::autocomplete::TriggerKind::Channel => format!("#{name}"),
+            godwit_core::autocomplete::TriggerKind::Emoji => format!(":{name}:"),
+        }
+    }
+
     fn network(&self) -> Network {
         Network::GoogleChat
     }
@@ -1162,6 +1172,7 @@ impl NetworkAccount for GChatAccount {
                                 ),
                                 files: Vec::new(),
                                 reply_to: None,
+                                annotations: Vec::new(),
                             });
                         }
                         return out;
@@ -1195,12 +1206,14 @@ impl NetworkAccount for GChatAccount {
                 reply_to,
             } => {
                 let reply_to = reply_to.and_then(|m| self.target(&room, &m));
+                let (text, annotations) = crate::annotations::outgoing(&text, &self.users);
                 self.net.send(Cmd::Send {
                     group: room.raw.to_string(),
                     text,
                     nonce: nonce.to_string(),
                     files,
                     reply_to,
+                    annotations,
                 });
             }
             Command::Typing { room } => {

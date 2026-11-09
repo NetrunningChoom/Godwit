@@ -40,6 +40,7 @@ pub enum Cmd {
         text: String,
         nonce: String,
         files: Vec<godwit_core::application::Outgoing>,
+        annotations: Vec<proto::Annotation>,
         /// The message this quotes, if a reply.
         reply_to: Option<crate::api::Target>,
     },
@@ -231,11 +232,11 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                             });
                         }
                     }
-                    Cmd::Send { group, text: body, nonce, files, reply_to } => {
+                    Cmd::Send { group, text: body, nonce, files, reply_to, annotations } => {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                let result = api.lock().await.send(&group, &body, &local_id(), &files, reply_to.as_ref()).await;
+                                let result = api.lock().await.send(&group, &body, &local_id(), &files, reply_to.as_ref(), annotations).await;
                                 let result = result
                                     .map(Box::new).map_err(|e| text(&e));
                                 out.send(Ev::Sent { group, nonce, result });

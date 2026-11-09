@@ -377,6 +377,7 @@ impl Api {
         local_id: &str,
         files: &[godwit_core::application::Outgoing],
         reply_to: Option<&Target>,
+        annotations: Vec<proto::Annotation>,
     ) -> Result<proto::Message> {
         let (group, thread) = room_parts(group);
         let mut req = proto::CreateTopicRequest::new();
@@ -394,6 +395,7 @@ impl Api {
         req.request_header = Some(Self::header()).into();
         req.group_id = Some(group_id(group).ok_or_else(|| anyhow!("not a Chat conversation"))?).into();
         req.set_text_body(text.to_owned());
+        req.annotations = annotations.clone();
         req.set_local_id(local_id.to_owned());
         // As maugclib: the current history mode, and plain text only.
         req.set_history_v2(true);

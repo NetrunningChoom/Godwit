@@ -7,6 +7,71 @@
 use crate::proto;
 use godwit_core::{media::https, rich};
 
+/// Google Chat accepts annotation metadata on both create methods, with
+/// `start_index` and `length` measured in UTF-16 code units. The send shape
+/// follows mautrix-googlechat's `maugclib.Client.send_message`:
+/// https://github.com/mautrix/googlechat/blob/master/maugclib/client.py
+pub fn outgoing(
+    text: &str,
+    users: &std::collections::HashMap<String, (String, Option<String>)>,
+) -> (String, Vec<proto::Annotation>) {
+    let mut body = String::new();
+    let mut annotations = Vec::new();
+    let mut cursor = 0;
+    let mut units = 0i32;
+    while cursor < text.len() {
+        let rest = &text[cursor..];
+        let Some(after_at) = rest.strip_prefix("<@gchat:") else {
+            let Some(c) = rest.chars().next() else { break };
+            body.push(c);
+            units = units.saturating_add(i32::try_from(c.len_utf16()).unwrap_or(1));
+            cursor += c.len_utf8();
+            continue;
+        };
+        let Some(end) = after_at.find('>') else {
+            body.push('<');
+            cursor += 1;
+            units = units.saturating_add(1);
+            continue;
+        };
+        let id = &after_at[..end];
+        let Some((name, _)) = users.get(id) else {
+            body.push('<');
+            cursor += 1;
+            units = units.saturating_add(1);
+            continue;
+        };
+        let visible = format!("@{name}");
+        let start = units;
+        body.push_str(&visible);
+        units = units.saturating_add(i32::try_from(visible.encode_utf16().count()).unwrap_or(i32::MAX));
+        let mut annotation = proto::Annotation::new();
+        annotation.set_type(proto::AnnotationType::USER_MENTION);
+        annotation.set_start_index(start);
+        annotation.set_length(units.saturating_sub(start));
+        let mut mention = proto::UserMentionMetadata::new();
+        let mut user_id = proto::UserId::new();
+        user_id.set_id(id.to_owned());
+        mention.id = Some(user_id).into();
+        mention.set_type(proto::user_mention_metadata::Type::MENTION);
+        mention.set_display_name(name.clone());
+        annotation.set_user_mention_metadata(mention);
+        annotations.push(annotation);
+        cursor += "<@gchat:".len() + end + 1;
+    }
+    (body, annotations)
+}
+
+#[cfg(test)]
+pub fn mentions_user(message: &proto::Message, user_id: &str) -> bool {
+    !user_id.is_empty()
+        && message.annotations.iter().any(|annotation| {
+            annotation.has_user_mention_metadata()
+                && annotation.user_mention_metadata().id.id() == user_id
+                && annotation.user_mention_metadata().type_() == proto::user_mention_metadata::Type::MENTION
+        })
+}
+
 fn byte_offset(text: &str, at: i32) -> Option<usize> {
     let at = usize::try_from(at).ok()?;
     let mut units = 0;
@@ -124,5 +189,29 @@ mod tests {
         a.set_start_index(1);
         m.annotations = vec![a];
         assert_eq!(text(&m), r"😀 \@Ann\!");
+    }
+
+    #[test]
+    fn token_becomes_display_text_and_utf16_annotation() {
+        let users = std::collections::HashMap::from([("u1".into(), ("Ann😀".into(), None))]);
+        let (body, annotations) = outgoing("😀 hi <@gchat:u1>!", &users);
+        assert_eq!(body, "😀 hi @Ann😀!");
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].start_index(), 6);
+        assert_eq!(annotations[0].length(), 6);
+        assert_eq!(annotations[0].user_mention_metadata().id.id(), "u1");
+        assert_eq!(outgoing(&body, &users).0, body);
+    }
+
+    #[test]
+    fn detects_a_received_mention_of_self() {
+        let mut message = proto::Message::new();
+        let (_, mut annotations) = outgoing(
+            "<@gchat:me>",
+            &std::collections::HashMap::from([("me".into(), ("Me".into(), None))]),
+        );
+        message.annotations.append(&mut annotations);
+        assert!(mentions_user(&message, "me"));
+        assert!(!mentions_user(&message, "other"));
     }
 }
