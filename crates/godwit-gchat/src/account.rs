@@ -1089,6 +1089,8 @@ impl NetworkAccount for GChatAccount {
                     add,
                 },
             ),
+            // Google Chat has no separate ignore operation.
+            Command::IgnoreUser { .. } | Command::UnignoreUser { .. } => {}
             _ => {}
         }
         Vec::new()

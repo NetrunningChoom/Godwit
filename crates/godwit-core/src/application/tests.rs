@@ -2731,6 +2731,8 @@ fn profiles_open_load_and_ignore_stale_answers() {
         moderation: None,
         group_moderation: None,
         can_block: false,
+        can_ignore: false,
+        ignored: false,
         can_report: false,
         mutual_servers: Vec::new(),
         mutual_friends: Vec::new(),
@@ -2773,8 +2775,13 @@ fn profiles_open_load_and_ignore_stale_answers() {
     );
     // Blocking needs the shown profile's capability.
     assert!(app.dispatch(Action::BlockUser(ann.clone())).is_empty());
+    assert!(
+        app.dispatch(Action::IgnoreUser(ann.clone())).is_empty(),
+        "ignore needs the shown profile capability"
+    );
     let mut blockable = profile(&ann);
     blockable.can_block = true;
+    blockable.can_ignore = true;
     app.apply(Event::Profile(blockable));
     assert_eq!(
         commands(&app.dispatch(Action::BlockUser(ann.clone()))),
@@ -2783,6 +2790,14 @@ fn profiles_open_load_and_ignore_stale_answers() {
     assert_eq!(
         commands(&app.dispatch(Action::UnblockUser(ann.clone()))),
         [&Command::UnblockUser { user: ann.clone() }]
+    );
+    assert_eq!(
+        commands(&app.dispatch(Action::IgnoreUser(ann.clone()))),
+        [&Command::IgnoreUser { user: ann.clone() }]
+    );
+    assert_eq!(
+        commands(&app.dispatch(Action::UnignoreUser(ann.clone()))),
+        [&Command::UnignoreUser { user: ann.clone() }]
     );
     // A note needs the shown profile's capability too.
     let note = |text: &str| Action::SetNote {
@@ -3938,6 +3953,8 @@ fn member_changes_need_the_open_card_and_its_powers() {
         moderation: Some(moderation),
         group_moderation: None,
         can_block: false,
+        can_ignore: false,
+        ignored: false,
         can_report: false,
         mutual_servers: Vec::new(),
         mutual_friends: Vec::new(),

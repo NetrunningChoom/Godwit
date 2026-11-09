@@ -404,6 +404,20 @@ impl DiscordAccount {
             Command::UnblockUser { user } if user.raw.as_ref() != self.me() => {
                 self.dispatch("RELATIONSHIP_REMOVE", &json!({"id": user.raw.as_ref()}), &mut out);
             }
+            Command::IgnoreUser { user } if user.raw.as_ref() != self.me() => {
+                self.dispatch(
+                    "RELATIONSHIP_UPDATE",
+                    &json!({"id": user.raw.as_ref(), "user_ignored": true}),
+                    &mut out,
+                );
+            }
+            Command::UnignoreUser { user } if user.raw.as_ref() != self.me() => {
+                self.dispatch(
+                    "RELATIONSHIP_UPDATE",
+                    &json!({"id": user.raw.as_ref(), "user_ignored": false}),
+                    &mut out,
+                );
+            }
             // Member changes answer with the GUILD_MEMBER_UPDATE Discord would send.
             Command::ServerAdmin { server, op } if op.member_target().is_some() => {
                 use godwit_core::server_settings::ServerAdmin as A;

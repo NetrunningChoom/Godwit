@@ -148,6 +148,12 @@ pub enum Request {
     UnblockUser {
         user: String,
     },
+    IgnoreUser {
+        user: String,
+    },
+    UnignoreUser {
+        user: String,
+    },
     CustomStatus(Option<String>),
     /// The first-run privacy choice: data-use consents revoked, activity hidden.
     TightenPrivacy,
@@ -992,6 +998,14 @@ async fn answer(api: &Api, request: Request) -> Answer {
                 .remove_relationship(&user, "User Profile")
                 .await
                 .map_err(RequestError::from),
+        },
+        Request::IgnoreUser { user } => Answer::Done {
+            what: "ignoring someone",
+            result: api.ignore_user(&user, true).await.map_err(RequestError::from),
+        },
+        Request::UnignoreUser { user } => Answer::Done {
+            what: "unignoring someone",
+            result: api.ignore_user(&user, false).await.map_err(RequestError::from),
         },
         Request::AddFriendByName { request, name } => Answer::FriendRequest {
             request,

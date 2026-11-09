@@ -170,6 +170,8 @@ impl SteamAccount {
             moderation: None,
             group_moderation: None,
             can_block: !own,
+            can_ignore: false,
+            ignored: false,
             // Steam reports are handled through the Steam Community website.
             can_report: false,
             mutual_servers: Vec::new(),

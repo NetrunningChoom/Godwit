@@ -695,6 +695,19 @@ impl Api {
         self.empty(request.header("X-Context-Properties", context(place))).await
     }
 
+    /// Uses Discord's relationship `/ignore` endpoint (docs.discord.food, User Relationships).
+    pub async fn ignore_user(&self, user: &str, ignore: bool) -> Result<()> {
+        let (method, path) = Self::ignore_user_request(user, ignore);
+        self.empty(self.request(method, &path)).await
+    }
+
+    fn ignore_user_request(user: &str, ignore: bool) -> (Method, String) {
+        (
+            if ignore { Method::PUT } else { Method::DELETE },
+            format!("/users/@me/relationships/{user}/ignore"),
+        )
+    }
+
     /// Sends a friend request to whoever has `username`.
     pub async fn add_friend_by_username(&self, username: &str) -> Result<()> {
         let body = json!({"username": username, "discriminator": null});
@@ -1325,6 +1338,18 @@ pub fn encode(segment: &str) -> String {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn ignore_uses_discords_ignore_relationship_route() {
+        assert_eq!(
+            Api::ignore_user_request("123", true),
+            (Method::PUT, "/users/@me/relationships/123/ignore".into())
+        );
+        assert_eq!(
+            Api::ignore_user_request("123", false),
+            (Method::DELETE, "/users/@me/relationships/123/ignore".into())
+        );
+    }
 
     #[test]
     fn a_note_is_read_from_the_answer_and_sent_cut_to_the_limit() {

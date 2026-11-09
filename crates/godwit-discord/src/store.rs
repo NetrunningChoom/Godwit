@@ -322,6 +322,8 @@ pub struct Store {
     pub mention_ids: HashMap<String, std::collections::BTreeSet<(usize, String)>>,
     /// user → relationship type.
     pub relationships: HashMap<String, u64>,
+    /// Discord's relationship objects (User Relationships docs) carry this flag.
+    pub ignored: HashSet<String>,
     /// user → status ("online", "idle", "dnd", "offline").
     pub presences: HashMap<String, String>,
     /// user → what they're doing ("Playing …"), from their presence's
@@ -458,6 +460,13 @@ impl Store {
             }
         }
         for r in d["relationships"].as_array().into_iter().flatten() {
+            if r["user_ignored"] == true {
+                if let Some(id) = r["id"].as_str() {
+                    self.ignored.insert(id.to_owned());
+                }
+            } else if let Some(id) = r["id"].as_str() {
+                self.ignored.remove(id);
+            }
             if let (Some(id), Some(kind)) = (r["id"].as_str(), r["type"].as_u64()) {
                 self.relationships.insert(id.to_owned(), kind);
             }
@@ -1300,7 +1309,7 @@ pub(crate) fn test_ready() -> Value {
         }],
         "merged_members": [[{"user_id": "100", "roles": ["11"], "nick": "Bloopy"}]],
         "private_channels": [{"id": "20", "type": 1, "recipient_ids": ["200"], "last_message_id": "600"}],
-        "relationships": [{"id": "200", "type": 1}],
+        "relationships": [{"id": "200", "type": 1, "user_ignored": true}],
         "read_state": {"entries": [{"id": "13", "last_message_id": "499", "mention_count": 2}], "version": 1},
         "user_guild_settings": {"entries": [{"guild_id": "10", "muted": false, "channel_overrides": [{"channel_id": "13", "muted": true}]}]},
         "sessions": [{"status": "idle"}]
@@ -1376,6 +1385,10 @@ mod tests {
         assert!(s.unread("20"), "a never-read DM with messages");
         assert!(s.channel_muted("13"));
         assert_eq!(s.relationships["200"], FRIEND);
+        assert!(
+            s.ignored.contains("200"),
+            "ignore is a flag on the ordinary relationship"
+        );
         assert_eq!(s.display_name("100", Some("10")), "Bloopy");
         assert_eq!(s.display_name("200", None), "zarg");
         assert!(s.can("13", permissions::SEND_MESSAGES));

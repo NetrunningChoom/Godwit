@@ -633,6 +633,30 @@ impl Application {
                     command: Command::UnblockUser { user },
                 }]
             }
+            Action::IgnoreUser(user) => {
+                let allowed = self.state.profile.as_ref().is_some_and(|(shown, profile)| {
+                    shown == &user && profile.as_ref().is_some_and(|p| p.can_ignore && !p.me)
+                });
+                if !allowed {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: user.account.clone(),
+                    command: Command::IgnoreUser { user },
+                }]
+            }
+            Action::UnignoreUser(user) => {
+                let allowed = self.state.profile.as_ref().is_some_and(|(shown, profile)| {
+                    shown == &user && profile.as_ref().is_some_and(|p| p.can_ignore && !p.me)
+                });
+                if !allowed {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: user.account.clone(),
+                    command: Command::UnignoreUser { user },
+                }]
+            }
             Action::RemoveGroupMember { room, user } => {
                 let permitted = room.account == user.account
                     && self.state.profile.as_ref().is_some_and(|(shown, profile)| {

@@ -50,6 +50,8 @@ export component UserCard inherits Rectangle {
     // and we have: Unblock instead.
     in property <bool> can-block;
     in property <bool> blocked;
+    in property <bool> can-ignore;
+    in property <bool> ignored;
     // The network takes reports about them (never about us or its staff).
     in property <bool> can-report;
     callback report();
@@ -71,6 +73,8 @@ export component UserCard inherits Rectangle {
     callback transfer-group-ownership();
     callback block-user();
     callback unblock-user();
+    callback ignore-user();
+    callback unignore-user();
     callback close();
     callback message();
     callback add-friend();
@@ -282,10 +286,12 @@ export component UserCard inherits Rectangle {
                     spacing: Theme.space-3; alignment: start;
                     Button { text: "Remove member"; kind: "text"; danger: true; clicked => { root.remove-group-member(); } }
                 }
-                if !root.me && root.can-block: HorizontalLayout {
+                if !root.me && (root.can-block || root.can-ignore): HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;
-                    if !root.blocked: Button { text: "Block user"; kind: "text"; danger: true; clicked => { root.block-user(); } }
-                    if root.blocked: Button { text: "Unblock user"; kind: "text"; clicked => { root.unblock-user(); } }
+                    if root.can-block && !root.blocked: Button { text: "Block user"; kind: "text"; danger: true; clicked => { root.block-user(); } }
+                    if root.can-block && root.blocked: Button { text: "Unblock user"; kind: "text"; clicked => { root.unblock-user(); } }
+                    if root.can-ignore && !root.ignored: Button { text: "Ignore user"; kind: "text"; clicked => { root.ignore-user(); } }
+                    if root.can-ignore && root.ignored: Button { text: "Unignore user"; kind: "text"; clicked => { root.unignore-user(); } }
                 }
                 if !root.me && root.can-transfer-group-ownership: HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;

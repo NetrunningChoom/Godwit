@@ -349,6 +349,10 @@ pub enum Action {
     BlockUser(UserId),
     /// Lift our block on `user`.
     UnblockUser(UserId),
+    /// Ignore `user` on the network, when the shown profile allows it.
+    IgnoreUser(UserId),
+    /// Stop ignoring `user` on the network.
+    UnignoreUser(UserId),
     /// Save our private note on the shown profile's owner (when its card
     /// offers one; empty removes it).
     SetNote {

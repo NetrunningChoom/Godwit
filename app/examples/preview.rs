@@ -121,6 +121,8 @@ fn open_profile(app: &mut Application, blocked: bool) -> Screen {
         }),
         // Block user (or Unblock, for `blocked`).
         can_block: true,
+        can_ignore: true,
+        ignored: false,
         // The Note field, and the Mutual servers and friends lists.
         can_note: true,
         note_limit: 256,

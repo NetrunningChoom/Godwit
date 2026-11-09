@@ -517,6 +517,8 @@ impl SlackAccount {
                 }
             }
             Command::CreateServer { .. } => {}
+            // Slack has no separate ignore operation.
+            Command::IgnoreUser { .. } | Command::UnignoreUser { .. } => {}
             _ => {}
         }
         out

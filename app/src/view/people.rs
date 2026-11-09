@@ -631,6 +631,8 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
     ui.set_card_can_remove_group_member(p.group_moderation.as_ref().is_some_and(|m| m.remove_member));
     ui.set_card_can_block(p.can_block);
     ui.set_card_blocked(p.relationship == Relationship::Blocked);
+    ui.set_card_can_ignore(p.can_ignore);
+    ui.set_card_ignored(p.ignored);
     ui.set_card_can_transfer_group_ownership(p.group_moderation.as_ref().is_some_and(|m| m.transfer_ownership));
     ui.set_card_can_report(p.can_report);
     ui.set_card_can_note(p.can_note);

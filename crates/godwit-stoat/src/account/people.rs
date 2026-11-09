@@ -80,6 +80,8 @@ impl StoatAccount {
             has_friends: true,
             // The official UserContextMenu offers Block for anyone but us.
             can_block: self.store.me.as_deref().is_some_and(|me| me != user.as_str()),
+            can_ignore: false,
+            ignored: false,
             moderation: server.and_then(|s| self.moderation(s, user)),
             group_moderation: group.as_ref().and_then(|channel| {
                 let c = self.store.channels.get(channel)?;

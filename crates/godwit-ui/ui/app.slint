@@ -243,6 +243,8 @@ export component AppWindow inherits Window {
     in property <bool> card-can-transfer-group-ownership;
     in property <bool> card-can-block;
     in property <bool> card-blocked;
+    in property <bool> card-can-ignore;
+    in property <bool> card-ignored;
     in property <bool> card-can-report;
     in property <bool> card-can-note;
     in-out property <string> card-note;
@@ -266,6 +268,8 @@ export component AppWindow inherits Window {
     in-out property <bool> confirm-block-user: false;
     callback block-user();
     callback unblock-user();
+    callback ignore-user();
+    callback unignore-user();
     // A new Discord account's one-time privacy question on first run: turn
     // off its data use and activity sharing, or keep them.
     in property <bool> discord-privacy-open;
@@ -1566,8 +1570,12 @@ export component AppWindow inherits Window {
         can-transfer-group-ownership: root.card-can-transfer-group-ownership;
         can-block: root.card-can-block;
         blocked: root.card-blocked;
+        can-ignore: root.card-can-ignore;
+        ignored: root.card-ignored;
         block-user => { root.confirm-block-user = true; }
         unblock-user => { root.unblock-user(); }
+        ignore-user => { root.ignore-user(); }
+        unignore-user => { root.unignore-user(); }
         can-report: root.card-can-report;
         report => { root.report-profile(); }
         can-note: root.card-can-note;

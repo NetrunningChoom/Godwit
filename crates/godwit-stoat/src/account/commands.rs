@@ -444,6 +444,8 @@ impl StoatAccount {
             }
             Command::BlockUser { user } => self.relationship_command(&user, RelationshipAction::Block),
             Command::UnblockUser { user } => self.relationship_command(&user, RelationshipAction::Unblock),
+            // Stoat has no separate ignore operation.
+            Command::IgnoreUser { .. } | Command::UnignoreUser { .. } => Vec::new(),
             // Stoat has no private notes (can_note is never set).
             Command::SetNote { .. } => Vec::new(),
             Command::OpenDirect { user } => {

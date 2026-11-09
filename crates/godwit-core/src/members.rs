@@ -95,6 +95,12 @@ pub struct Profile {
     /// The card may block and unblock this person (never ourselves).
     #[serde(default)]
     pub can_block: bool,
+    /// The profile supports ignoring this person (never ourselves).
+    #[serde(default)]
+    pub can_ignore: bool,
+    /// Their messages are ignored on this network.
+    #[serde(default)]
+    pub ignored: bool,
     /// The network takes reports about this person (never about us, nor
     /// about the network's own staff).
     #[serde(default)]

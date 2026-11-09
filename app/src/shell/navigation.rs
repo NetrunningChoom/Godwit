@@ -742,6 +742,20 @@ impl Shell {
         }
     }
 
+    /// The profile card's Ignore / Unignore action.
+    pub fn ignore_profile(&mut self, ui: &AppWindow, ignore: bool) {
+        if let Some((user, _)) = self.app.state().profile.clone() {
+            self.act(
+                ui,
+                if ignore {
+                    Action::IgnoreUser(user)
+                } else {
+                    Action::UnignoreUser(user)
+                },
+            );
+        }
+    }
+
     /// The card's note field committed (Enter or leaving it): one request
     /// per edit, none when it's what the network already has.
     pub fn save_note(&mut self, ui: &AppWindow, note: String) {

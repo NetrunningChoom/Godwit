@@ -107,6 +107,8 @@ pub fn profile(user: UserId, name: &str) -> godwit_core::members::Profile {
         moderation: None,
         group_moderation: None,
         can_block: false,
+        can_ignore: false,
+        ignored: false,
         mutual_servers: Vec::new(),
         mutual_friends: Vec::new(),
         note: None,
@@ -1304,6 +1306,7 @@ pub struct DemoAccount {
     status: Option<std::sync::Arc<str>>,
     /// Relationships changed from profile cards (others follow `relationship`).
     relationships: std::collections::HashMap<String, godwit_core::members::Relationship>,
+    ignored: std::collections::HashSet<String>,
     /// The servers as the rail shows them, and each one's editable overview,
     /// so a saved rename or icon comes back like a server's update would.
     servers: Vec<Server>,
@@ -1561,6 +1564,7 @@ impl DemoAccount {
             relationships: [(BLOCKED.to_owned(), godwit_core::members::Relationship::Blocked)]
                 .into_iter()
                 .collect(),
+            ignored: Default::default(),
             presence: Presence::Online,
             status: Some(filler(41, 3).to_lowercase().into()),
         }
@@ -2565,6 +2569,8 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
             Command::RemoveFriend { user } => self.befriend(user, false),
             Command::BlockUser { user } => self.block(user, true),
             Command::UnblockUser { user } => self.block(user, false),
+            Command::IgnoreUser { user } => self.set_ignored(user, true),
+            Command::UnignoreUser { user } => self.set_ignored(user, false),
             Command::LoadProfile { user, room } => {
                 // Seen in a channel of a server we manage: the card offers Kick and Ban.
                 let server = room
@@ -2588,6 +2594,17 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
 }
 
 impl DemoAccount {
+    fn set_ignored(&mut self, user: UserId, ignored: bool) -> Vec<Event> {
+        use godwit_core::account::NetworkAccount;
+        let raw = user.raw.to_string();
+        if ignored {
+            self.ignored.insert(raw.clone());
+        } else {
+            self.ignored.remove(&raw);
+        }
+        self.run(godwit_core::application::Command::LoadProfile { user, room: None })
+    }
+
     /// What the card of `raw` offers us in a server we manage (everything, as
     /// the demo's owner; only a nickname for ourselves).
     fn demo_moderation(&self, server: &str, raw: &str) -> godwit_core::members::Moderation {
@@ -2634,6 +2651,8 @@ impl DemoAccount {
         Event::Profile(godwit_core::members::Profile {
             relationship,
             can_block: raw != "me",
+            can_ignore: raw != "me",
+            ignored: self.ignored.contains(&raw),
             moderation: server.map(|s| self.demo_moderation(s, &raw)),
             ..profile(user, &name)
         })
@@ -3167,6 +3186,20 @@ mod tests {
         feed(&mut app, &mut demo, Command::UnblockUser { user: stranger.clone() });
         assert!(app.state().blocked.is_empty());
         app.dispatch(Action::OpenProfile(friend.clone()));
+        feed(&mut app, &mut demo, Command::IgnoreUser { user: friend.clone() });
+        assert!(
+            app.state()
+                .profile
+                .as_ref()
+                .is_some_and(|(_, p)| p.as_ref().is_some_and(|p| p.ignored))
+        );
+        feed(&mut app, &mut demo, Command::UnignoreUser { user: friend.clone() });
+        assert!(
+            app.state()
+                .profile
+                .as_ref()
+                .is_some_and(|(_, p)| p.as_ref().is_some_and(|p| !p.ignored))
+        );
         feed(&mut app, &mut demo, Command::BlockUser { user: friend.clone() });
         assert!(app.state().blocked.contains(&friend));
         assert!(

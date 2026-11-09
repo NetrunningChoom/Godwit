@@ -764,6 +764,8 @@ impl Application {
             moderation: None,
             group_moderation: None,
             can_block: false,
+            can_ignore: false,
+            ignored: false,
             can_report: false,
             mutual_servers: Vec::new(),
             mutual_friends: Vec::new(),

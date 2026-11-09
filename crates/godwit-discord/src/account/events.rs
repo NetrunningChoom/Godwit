@@ -411,6 +411,13 @@ impl DiscordAccount {
                 if let (Some(id), Some(kind)) = (d["id"].as_str(), d["type"].as_u64()) {
                     self.store.relationships.insert(id.to_owned(), kind);
                 }
+                if let (Some(id), Some(ignored)) = (d["id"].as_str(), d["user_ignored"].as_bool()) {
+                    if ignored {
+                        self.store.ignored.insert(id.to_owned());
+                    } else {
+                        self.store.ignored.remove(id);
+                    }
+                }
                 self.sync_friends(out);
                 self.sync_profile(out);
             }
@@ -424,6 +431,7 @@ impl DiscordAccount {
             "RELATIONSHIP_REMOVE" => {
                 if let Some(id) = d["id"].as_str() {
                     self.store.relationships.remove(id);
+                    self.store.ignored.remove(id);
                 }
                 self.sync_friends(out);
                 self.sync_profile(out);

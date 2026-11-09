@@ -145,6 +145,14 @@ pub enum Command {
     UnblockUser {
         user: UserId,
     },
+    /// Collapse this user's messages where the network supports Ignore.
+    IgnoreUser {
+        user: UserId,
+    },
+    /// Show this user's messages again.
+    UnignoreUser {
+        user: UserId,
+    },
     /// Set our private note on `user` (empty removes it); the network's
     /// own update follows as a new [`Event::Profile`].
     SetNote {

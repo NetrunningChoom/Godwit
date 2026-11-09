@@ -260,6 +260,8 @@ impl DiscordAccount {
             group_moderation: None,
             // The web client's user context menu offers Block for anyone but us.
             can_block: user != self.me(),
+            can_ignore: user != self.me(),
+            ignored: self.store.ignored.contains(user),
             // Discord's report menu is server-driven (/reporting/menu, breadcrumbs), which the neutral fixed reason lists can't express.
             can_report: false,
             mutual_servers: self.mutual_servers(fetched),

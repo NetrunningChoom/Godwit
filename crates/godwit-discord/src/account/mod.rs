@@ -1118,6 +1118,18 @@ impl NetworkAccount for DiscordAccount {
                     user: user.raw.to_string(),
                 },
             ),
+            Command::IgnoreUser { user } if user.raw.as_ref() != self.me() => req(
+                &self.net,
+                Request::IgnoreUser {
+                    user: user.raw.to_string(),
+                },
+            ),
+            Command::UnignoreUser { user } if user.raw.as_ref() != self.me() => req(
+                &self.net,
+                Request::UnignoreUser {
+                    user: user.raw.to_string(),
+                },
+            ),
             // Our note on someone else (the card offers it for no one else).
             Command::SetNote { user, note } if user.raw.as_ref() != self.me() => {
                 let (user, note) = (user.raw.to_string(), note.clone());
@@ -2047,6 +2059,10 @@ mod tests {
             cmds.try_recv(),
             Ok(Cmd::Request(Request::UnblockUser { user })) if user == "200"
         ));
+        a.run(Command::IgnoreUser { user: zarg.clone() });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Request(Request::IgnoreUser { user })) if user == "200"));
+        a.run(Command::UnignoreUser { user: zarg.clone() });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Request(Request::UnignoreUser { user })) if user == "200"));
         let me = a.user_id(a.me()).unwrap();
         a.run(Command::BlockUser { user: me });
         assert!(cmds.try_recv().is_err(), "no blocking ourselves");

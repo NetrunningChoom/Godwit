@@ -364,6 +364,8 @@ impl TeamsAccount {
                 }
             }
             Command::CreateServer { .. } => {}
+            // Teams has no separate ignore operation.
+            Command::IgnoreUser { .. } | Command::UnignoreUser { .. } => {}
             _ => {}
         }
         out
