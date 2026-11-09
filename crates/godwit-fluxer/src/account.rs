@@ -402,7 +402,14 @@ impl FluxerAccount {
             jumbo: Vec::new(),
             attachments,
             components: None,
-            embeds: Vec::new(),
+            // Fluxer's embeds are Discord-shaped, as its gateway events show them
+            // (https://docs.fluxer.com/gateway/events, MESSAGE_UPDATE).
+            embeds: m["embeds"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(godwit_discord::account::embed)
+                .collect(),
             invites: Vec::new(),
             reactions,
             pending: false,
@@ -561,11 +568,41 @@ impl FluxerAccount {
             }
             "MESSAGE_UPDATE" => {
                 let channel = d["channel_id"].as_str().unwrap_or_default();
-                // Partial updates (an embed arriving) have no author: skip them.
-                if d.get("author").is_some()
-                    && let (Some(room), Some(message)) = (self.room_id(channel), self.message(d))
-                {
-                    out.push(Event::MessageUpdated { room, message });
+                if let (Some(room), Some(id)) = (self.room_id(channel), d["id"].as_str()) {
+                    if d.get("author").is_some() {
+                        if let Some(message) = self.message(d) {
+                            out.push(Event::MessageUpdated { room, message });
+                        }
+                    } else {
+                        // Fluxer documents partial MESSAGE_UPDATE payloads in its
+                        // Gateway events reference; preserve fields the event supplies
+                        // because late link previews omit the author and message body.
+                        let id = MessageId(id.into());
+                        if let Some(content) = d["content"].as_str() {
+                            let guild = d["guild_id"]
+                                .as_str()
+                                .map(str::to_owned)
+                                .or_else(|| self.store.channels.get(channel).and_then(|c| c.guild.clone()));
+                            let names = Names {
+                                account: self,
+                                guild: guild.as_deref(),
+                            };
+                            out.push(Event::MessageEdited {
+                                room: room.clone(),
+                                id: id.clone(),
+                                text: godwit_discord::markdown::to_rich(content, &names).into(),
+                                markup: Markup::Rich,
+                                source: content.into(),
+                            });
+                        }
+                        if let Some(embeds) = d["embeds"].as_array() {
+                            out.push(Event::EmbedsUpdated {
+                                room,
+                                id,
+                                embeds: embeds.iter().filter_map(godwit_discord::account::embed).collect(),
+                            });
+                        }
+                    }
                 }
             }
             "MESSAGE_DELETE" => {
@@ -577,6 +614,16 @@ impl FluxerAccount {
                         room,
                         id: MessageId(id.into()),
                     });
+                }
+            }
+            "MESSAGE_DELETE_BULK" => {
+                if let Some(room) = self.room_id(d["channel_id"].as_str().unwrap_or_default()) {
+                    for id in d["ids"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                        out.push(Event::MessageDeleted {
+                            room: room.clone(),
+                            id: MessageId(id.into()),
+                        });
+                    }
                 }
             }
             "CHANNEL_CREATE" | "CHANNEL_UPDATE" | "THREAD_CREATE" | "THREAD_UPDATE" => {
@@ -1128,6 +1175,68 @@ mod tests {
         assert!(message.text.contains("Ada"), "{}", message.text);
         assert_eq!(message.attachments[0].dimensions, Some((4, 3)));
         assert_eq!(message.attachments[0].kind, AttachmentKind::Image);
+    }
+
+    #[test]
+    fn partial_message_update_applies_content_and_embeds_without_author() {
+        let (mut a, _cmds, _tx) = account();
+        a.dispatch("READY", &ready(), &mut Vec::new());
+        let mut out = Vec::new();
+        a.dispatch(
+            "MESSAGE_UPDATE",
+            &json!({
+                "id": "m1", "channel_id": "20", "content": "edited",
+                "edited_timestamp": "2026-11-10T10:00:00.000Z",
+                "embeds": [{"type": "rich", "title": "Preview", "url": "https://example.test"}]
+            }),
+            &mut out,
+        );
+        assert!(matches!(&out[0], Event::MessageEdited { id, source, .. } if &*id.0 == "m1" && &**source == "edited"));
+        assert!(
+            matches!(&out[1], Event::EmbedsUpdated { id, embeds, .. } if &*id.0 == "m1" && embeds[0].title.as_deref() == Some("Preview"))
+        );
+    }
+
+    #[test]
+    fn single_and_bulk_deletes_emit_each_id() {
+        let (mut a, _cmds, _tx) = account();
+        a.dispatch("READY", &ready(), &mut Vec::new());
+        let mut out = Vec::new();
+        a.dispatch("MESSAGE_DELETE", &json!({"channel_id":"20", "id":"one"}), &mut out);
+        a.dispatch(
+            "MESSAGE_DELETE_BULK",
+            &json!({"channel_id":"20", "ids":["two", "three"]}),
+            &mut out,
+        );
+        let ids: Vec<&str> = out
+            .iter()
+            .filter_map(|event| match event {
+                Event::MessageDeleted { id, .. } => Some(id.0.as_ref()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, ["one", "two", "three"]);
+    }
+
+    #[test]
+    fn history_messages_are_parsed_oldest_first() {
+        let (mut a, _cmds, _tx) = account();
+        a.dispatch("READY", &ready(), &mut Vec::new());
+        let mut out = Vec::new();
+        a.answer(Answer::History {
+            channel: "20".into(), before: None,
+            result: Ok(json!([
+                {"id":"1501320000000000002", "channel_id":"20", "type":0, "content":"new", "author":{"id":"200","username":"ada"}},
+                {"id":"1501320000000000001", "channel_id":"20", "type":0, "content":"old", "author":{"id":"200","username":"ada"}}
+            ])),
+        }, &mut out);
+        let Some(Event::History { messages, .. }) = out.first() else {
+            panic!("{out:?}")
+        };
+        assert_eq!(
+            messages.iter().map(|m| m.source.as_ref()).collect::<Vec<_>>(),
+            ["old", "new"]
+        );
     }
 
     #[test]

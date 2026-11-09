@@ -328,7 +328,8 @@ fn emoji_key(emoji: &Value) -> String {
     }
 }
 
-fn embed(e: &Value) -> Option<Embed> {
+/// An embed object as the core's link preview (also used by Discord-shaped networks).
+pub fn embed(e: &Value) -> Option<Embed> {
     let kind = e["type"].as_str().unwrap_or("rich");
     let image = e["image"]["url"].as_str().or_else(|| e["thumbnail"]["url"].as_str());
     let dims = |v: &Value| {
