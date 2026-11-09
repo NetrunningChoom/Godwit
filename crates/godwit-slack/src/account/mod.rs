@@ -219,7 +219,6 @@ impl SlackAccount {
             typing: HashMap::new(),
             directory: HashMap::new(),
             followed: HashMap::new(),
-            emoji: Value::Null,
             persist,
             media: godwit_core::media::Media::new("slack"),
         }
@@ -851,14 +850,53 @@ mod tests {
     fn custom_reactions_keep_the_workspace_image_url() {
         let (mut a, _cmds) = account();
         ready(&mut a);
-        a.custom_emoji("T1", &json!({"emoji":{"party":"https://emoji.slack-edge.com/T/party.png","celebrate":"alias:party"}}), &mut Vec::new());
-        let message = a.message("T1", "C1", &json!({
-            "user":"U2", "text":"hi", "ts":"1700000010.000200",
-            "reactions":[{"name":"celebrate","count":2,"users":["U1"]}]
-        }), false).unwrap();
+        a.custom_emoji(
+            "T1",
+            &json!({"emoji":{"party":"https://emoji.slack-edge.com/T/party.png","celebrate":"alias:party"}}),
+            &mut Vec::new(),
+        );
+        let message = a
+            .message(
+                "T1",
+                "C1",
+                &json!({
+                    "user":"U2", "text":"hi", "ts":"1700000010.000200",
+                    "reactions":[{"name":"celebrate","count":2,"users":["U1"]}]
+                }),
+                false,
+            )
+            .unwrap();
         assert_eq!(&*message.reactions[0].emoji, "party");
-        assert_eq!(message.reactions[0].image_url.as_deref(), Some("https://emoji.slack-edge.com/T/party.png"));
+        assert_eq!(
+            message.reactions[0].image_url.as_deref(),
+            Some("https://emoji.slack-edge.com/T/party.png")
+        );
         assert!(message.reactions[0].me);
+    }
+
+    #[test]
+    fn the_emoji_list_arrives_after_ready_and_its_failure_is_ignored() {
+        let (mut a, _cmds) = account();
+        let mut out = Vec::new();
+        // Before Ready there is no workspace to hold it.
+        a.answer(
+            "T1",
+            Answer::Emoji(json!({"emoji":{"party":"https://e/p.png"}})),
+            &mut out,
+        );
+        assert!(out.is_empty());
+        ready(&mut a);
+        a.answer("T1", Answer::Emoji(Value::Null), &mut out);
+        assert!(out.is_empty(), "a failed emoji.list changes nothing: {out:?}");
+        a.answer(
+            "T1",
+            Answer::Emoji(json!({"emoji":{"party":"https://e/p.png","cheer":"alias:party"}})),
+            &mut out,
+        );
+        let Some(Event::CustomEmoji { groups, .. }) = out.first() else {
+            panic!("{out:?}")
+        };
+        assert_eq!(groups[0].emoji.len(), 1, "aliases are not listed twice");
     }
 
     #[test]

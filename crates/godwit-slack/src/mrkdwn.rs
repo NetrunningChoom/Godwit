@@ -51,14 +51,19 @@ pub fn shortcode(name: &str) -> Option<String> {
 }
 
 /// Resolve Slack's custom emoji aliases and reactions to their canonical image entry.
-pub fn custom_emoji<'a>(name: &str, emoji: &'a serde_json::Map<String, serde_json::Value>) -> Option<(&'a str, &'a str)> {
+pub fn custom_emoji<'a>(
+    name: &str,
+    emoji: &'a serde_json::Map<String, serde_json::Value>,
+) -> Option<(&'a str, &'a str)> {
     let mut key = name;
+    // Bounded, so an alias cycle cannot loop.
     for _ in 0..8 {
-        let value = emoji.get(key)?.as_str()?;
+        let (stored, value) = emoji.get_key_value(key)?;
+        let value = value.as_str()?;
         if let Some(alias) = value.strip_prefix("alias:") {
             key = alias;
         } else {
-            return Some((key, value));
+            return Some((stored.as_str(), value));
         }
     }
     None
@@ -400,7 +405,10 @@ mod tests {
     fn custom_workspace_emoji_aliases_resolve_to_the_image() {
         let emoji = serde_json::json!({"party":"https://emoji.slack-edge.com/T/party.png", "celebrate":"alias:party"});
         let map = emoji.as_object().expect("test object");
-        assert_eq!(custom_emoji("celebrate", map), Some(("party", "https://emoji.slack-edge.com/T/party.png")));
+        assert_eq!(
+            custom_emoji("celebrate", map),
+            Some(("party", "https://emoji.slack-edge.com/T/party.png"))
+        );
         assert_eq!(custom_emoji("missing", map), None);
     }
 

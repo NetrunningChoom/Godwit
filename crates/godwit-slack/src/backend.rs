@@ -370,7 +370,6 @@ async fn start(saved: Saved, out: Out, ready: Ready, generation: u64, fail: tmps
         .await;
         match loaded {
             Ok((me, conversations, counts, icon, emoji)) => {
-                out.send(Ev::Answer { team: team.id.clone(), answer: Answer::Emoji(emoji) });
                 any = true;
                 out.send(Ev::Ready {
                     team: team.id.clone(),
@@ -378,6 +377,11 @@ async fn start(saved: Saved, out: Out, ready: Ready, generation: u64, fail: tmps
                     conversations,
                     counts,
                     icon,
+                });
+                // After Ready: the workspace and account only exist once it is handled.
+                out.send(Ev::Answer {
+                    team: team.id.clone(),
+                    answer: Answer::Emoji(emoji),
                 });
             }
             Err(e) => {
