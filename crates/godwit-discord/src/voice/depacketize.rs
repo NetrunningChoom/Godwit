@@ -4,7 +4,8 @@
 // Copyright (C) the Yapfast authors, GPL-3.0-or-later.
 //! Received video: RTP packets put back in order (asking again for lost
 //! ones), then together into whole frames (VP8 by RFC 7741, H264 by RFC
-//! 6184, in Annex B form as DAVE expects them), and the RTCP a viewer sends:
+//! 6184, in Annex B form as DAVE expects them; AV1 per the AOM RTP payload
+//! format), and the RTCP a viewer sends:
 //! NACKs, picture loss indications and receiver reports.
 //!
 //! Ported from Yapfast's `rtp.rs` (GPL-3.0-or-later), its receiving part for
@@ -20,12 +21,15 @@ pub const H264: u8 = 101;
 pub const H264_RTX: u8 = 102;
 pub const VP8: u8 = 105;
 pub const VP8_RTX: u8 = 106;
+pub const AV1: u8 = 107;
+pub const AV1_RTX: u8 = 108;
 
 /// The video codecs Godwit receives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Codec {
     Vp8,
     H264,
+    Av1,
 }
 
 impl Codec {
@@ -33,6 +37,7 @@ impl Codec {
         match payload_type {
             VP8 => Some(Self::Vp8),
             H264 => Some(Self::H264),
+            AV1 => Some(Self::Av1),
             _ => None,
         }
     }
@@ -42,6 +47,7 @@ impl Codec {
         match name {
             "VP8" => Some(Self::Vp8),
             "H264" => Some(Self::H264),
+            "AV1" => Some(Self::Av1),
             _ => None,
         }
     }
@@ -50,6 +56,7 @@ impl Codec {
         match self {
             Self::Vp8 => "VP8",
             Self::H264 => "H264",
+            Self::Av1 => "AV1",
         }
     }
 
@@ -58,6 +65,7 @@ impl Codec {
         match self {
             Self::Vp8 => (VP8, VP8_RTX),
             Self::H264 => (H264, H264_RTX),
+            Self::Av1 => (AV1, AV1_RTX),
         }
     }
 
@@ -65,6 +73,7 @@ impl Codec {
         match self {
             Self::Vp8 => LiveCodec::Vp8,
             Self::H264 => LiveCodec::H264,
+            Self::Av1 => LiveCodec::Av1,
         }
     }
 
@@ -75,6 +84,7 @@ impl Codec {
             .filter_map(|codec| match codec {
                 LiveCodec::Vp8 => Some(Self::Vp8),
                 LiveCodec::H264 => Some(Self::H264),
+                LiveCodec::Av1 => Some(Self::Av1),
                 LiveCodec::Vp9 => None,
             })
             .collect()
@@ -101,6 +111,8 @@ pub struct Assembler {
     damaged: bool,
     keyframe: bool,
     waiting: bool,
+    obu: Vec<u8>,
+    obu_open: bool,
 }
 
 /// What a packet completed.
@@ -122,6 +134,8 @@ impl Assembler {
             damaged: false,
             keyframe: false,
             waiting: true,
+            obu: Vec::new(),
+            obu_open: false,
         }
     }
 
@@ -148,8 +162,10 @@ impl Assembler {
         let mut lost = false;
         if self.timestamp != Some(packet.timestamp) {
             // The last frame never saw its marker.
-            lost = !self.frame.is_empty();
+            lost = !self.frame.is_empty() || !self.obu.is_empty();
             self.frame.clear();
+            self.obu.clear();
+            self.obu_open = false;
             self.timestamp = Some(packet.timestamp);
             self.damaged = gap;
             self.keyframe = false;
@@ -160,14 +176,20 @@ impl Assembler {
         match self.codec {
             Codec::Vp8 => self.vp8(packet.payload, first),
             Codec::H264 => self.h264(packet.payload),
+            Codec::Av1 => self.av1(packet.payload),
         }
         // Packets that never end their frame would grow it without end.
-        if self.frame.len() > MAX_FRAME {
+        if self.frame.len().saturating_add(self.obu.len()) > MAX_FRAME {
             self.frame = Vec::new();
+            self.obu = Vec::new();
             self.damaged = true;
         }
         if !packet.marker {
             return Pushed { frame: None, lost };
+        }
+        if self.codec == Codec::Av1 {
+            self.damaged |= std::mem::take(&mut self.obu_open);
+            self.write_obu(false);
         }
         let data = std::mem::take(&mut self.frame);
         self.timestamp = None;
@@ -235,6 +257,85 @@ impl Assembler {
             self.keyframe = data.first().is_some_and(|tag| tag & 1 == 0);
         }
         self.frame.extend_from_slice(data);
+    }
+
+    /// AOM AV1 RTP payload format: Z/Y track a fragmented OBU, W counts
+    /// elements (zero means every element has a length), and N marks a new
+    /// coded video sequence. See https://aomediacodec.github.io/av1-rtp-spec/.
+    fn av1(&mut self, payload: &[u8]) {
+        let Some((&header, mut rest)) = payload.split_first() else {
+            self.damaged = true;
+            return;
+        };
+        let (continues, carries_on) = (header & 0x80 != 0, header & 0x40 != 0);
+        let count = usize::from((header >> 4) & 0x03);
+        self.keyframe |= header & 0x08 != 0;
+        if continues != self.obu_open {
+            self.damaged = true;
+            self.obu.clear();
+            if continues {
+                return;
+            }
+        }
+        if !continues && self.obu_open {
+            self.write_obu(true);
+            self.obu_open = false;
+        }
+        let mut index = 0;
+        let mut elements = 0;
+        while !rest.is_empty() {
+            index += 1;
+            if !(index == 1 && continues) {
+                elements += 1;
+            }
+            let size = if index == 1 && continues {
+                rest.len()
+            } else if count == 0 || elements < count {
+                let Some((size, used)) = read_leb128(rest) else {
+                    self.damaged = true;
+                    return;
+                };
+                rest = &rest[used..];
+                size
+            } else {
+                rest.len()
+            };
+            let Some(element) = rest.get(..size) else {
+                self.damaged = true;
+                return;
+            };
+            rest = &rest[size..];
+            if !(index == 1 && continues) {
+                self.write_obu(true);
+            }
+            self.obu.extend_from_slice(element);
+        }
+        if count != 0 && elements != count {
+            self.damaged = true;
+        }
+        self.obu_open = carries_on;
+    }
+
+    fn write_obu(&mut self, sized: bool) {
+        let Some(&header) = self.obu.first() else {
+            return;
+        };
+        let header_size = if header & 0x04 != 0 { 2 } else { 1 };
+        if self.obu.len() < header_size {
+            self.damaged = true;
+            self.obu.clear();
+            return;
+        }
+        if sized {
+            self.frame.push(header | 0x02);
+            self.frame.extend_from_slice(&self.obu[1..header_size]);
+            write_leb128(self.obu.len() - header_size, &mut self.frame);
+        } else {
+            self.frame.push(header & !0x02);
+            self.frame.extend_from_slice(&self.obu[1..header_size]);
+        }
+        self.frame.extend_from_slice(&self.obu[header_size..]);
+        self.obu.clear();
     }
 
     /// RFC 6184: single units, STAP-A and FU-A, written as Annex B with
@@ -560,6 +661,29 @@ pub fn sender_reports(mut rtcp: &[u8]) -> Vec<(u32, u32)> {
     reports
 }
 
+/// AV1 unsigned LEB128, bounded to eight bytes by the RTP payload format.
+fn read_leb128(bytes: &[u8]) -> Option<(usize, usize)> {
+    let mut value = 0u64;
+    for (index, &byte) in bytes.iter().enumerate().take(8) {
+        value |= u64::from(byte & 0x7f) << (7 * index);
+        if byte & 0x80 == 0 {
+            return usize::try_from(value).ok().map(|size| (size, index + 1));
+        }
+    }
+    None
+}
+
+fn write_leb128(mut value: usize, out: &mut Vec<u8>) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        out.push(byte | if value == 0 { 0 } else { 0x80 });
+        if value == 0 {
+            break;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
@@ -609,6 +733,98 @@ mod tests {
         assembler.push(&packet(4, 300, false, &[0x10, 0x01]).packet());
         let pushed = assembler.push(&packet(6, 300, true, &[0x00, 4]).packet());
         assert!(pushed.lost && pushed.frame.is_none());
+    }
+
+    #[test]
+    fn av1_aggregation_header_and_marker_assemble_temporal_unit() {
+        let mut assembler = Assembler::new(Codec::Av1);
+        // W=2: the first element has an explicit LEB128 length, the second
+        // occupies the rest. N marks the first packet as a keyframe.
+        let pushed = assembler.push(&Packet {
+            payload_type: AV1,
+            marker: true,
+            sequence: 7,
+            timestamp: 90,
+            ssrc: 2,
+            payload: &[0x28, 2, 0x0a, 0x01, 0x10, 0x55],
+        });
+        assert_eq!(
+            pushed.frame,
+            Some(Assembled {
+                data: vec![0x0a, 1, 1, 0x10, 0x55],
+                keyframe: true,
+            })
+        );
+    }
+
+    #[test]
+    fn av1_obu_fragment_uses_z_and_y_across_packets() {
+        let mut assembler = Assembler::new(Codec::Av1);
+        let key = assembler.push(&Packet {
+            payload_type: AV1,
+            marker: true,
+            sequence: 9,
+            timestamp: 90,
+            ssrc: 2,
+            payload: &[0x18, 0x01, 0x0a, 0x00],
+        });
+        assert!(key.frame.is_some());
+        let first = assembler.push(&Packet {
+            payload_type: AV1,
+            marker: false,
+            sequence: 10,
+            timestamp: 91,
+            ssrc: 2,
+            payload: &[0x40, 0x02, 0x0a, 0x22],
+        });
+        assert!(!first.lost);
+        let pushed = assembler.push(&Packet {
+            payload_type: AV1,
+            marker: true,
+            sequence: 11,
+            timestamp: 91,
+            ssrc: 2,
+            payload: &[0x80, 0x01, 0x33],
+        });
+        assert_eq!(
+            pushed.frame,
+            Some(Assembled {
+                data: vec![0x08, 0x22, 1, 0x33],
+                keyframe: false,
+            })
+        );
+    }
+
+    #[test]
+    fn av1_rejects_bad_fragment_and_drops_interframes_until_n() {
+        let mut assembler = Assembler::new(Codec::Av1);
+        let delta = Packet {
+            payload_type: AV1,
+            marker: true,
+            sequence: 1,
+            timestamp: 1,
+            ssrc: 2,
+            payload: &[0x10, 1, 0x32, 0x99],
+        };
+        assert!(assembler.push(&delta).frame.is_none());
+        let broken = Packet {
+            payload_type: AV1,
+            marker: true,
+            sequence: 2,
+            timestamp: 2,
+            ssrc: 2,
+            payload: &[0x90, 0x32],
+        };
+        assert!(assembler.push(&broken).lost);
+        let key = Packet {
+            payload_type: AV1,
+            marker: true,
+            sequence: 3,
+            timestamp: 3,
+            ssrc: 2,
+            payload: &[0x18, 1, 0x0a, 0],
+        };
+        assert!(assembler.push(&key).frame.is_some());
     }
 
     #[test]

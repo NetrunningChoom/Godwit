@@ -83,6 +83,7 @@ impl Packetizer {
         let payloads = match self.codec {
             Codec::Vp8 => self.vp8_payloads(frame),
             Codec::H264 => h264_payloads(frame),
+            Codec::Av1 => Vec::new(),
         };
         let count = payloads.len();
         let payload_type = self.codec.payload_types().0;

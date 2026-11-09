@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
 //! Decoding live call video (cameras, screen shares) frame by frame to RGBA:
-//! VP8 and VP9 through libvpx, and H264 through the FFmpeg inside livekit's
-//! libwebrtc, where its build has one.
+//! VP8 and VP9 through libvpx, H264 through FFmpeg, and AV1 through dav1d in
+//! livekit's libwebrtc archive.
 //!
 //! Why these: they're what livekit's prebuilt libwebrtc already carries, so
 //! no codec library is added. Its Linux and Windows builds use Chromium's
@@ -23,22 +23,114 @@ use std::ptr;
 use crate::vpx;
 use crate::webm;
 
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+mod av1 {
+    use std::ffi::{c_int, c_uchar, c_uint};
+
+    #[repr(C)]
+    struct Raw {
+        _private: [u8; 0],
+    }
+    pub(super) struct Frame {
+        pub width: u32,
+        pub height: u32,
+        pub planes: [*mut u8; 3],
+        pub strides: [c_int; 3],
+    }
+    unsafe extern "C" {
+        fn godwit_av1_new(threads: c_uint) -> *mut Raw;
+        fn godwit_av1_free(decoder: *mut Raw);
+        fn godwit_av1_decode(
+            decoder: *mut Raw,
+            data: *const c_uchar,
+            size: usize,
+            width: *mut c_int,
+            height: *mut c_int,
+            y: *mut *mut c_uchar,
+            u: *mut *mut c_uchar,
+            v: *mut *mut c_uchar,
+            ys: *mut c_int,
+            uvs: *mut c_int,
+        ) -> c_int;
+    }
+    pub(super) struct Decoder(*mut Raw);
+    unsafe impl Send for Decoder {}
+    impl Decoder {
+        pub(super) fn new(threads: usize) -> Option<Self> {
+            let threads = c_uint::try_from(threads.clamp(1, 4)).ok()?;
+            let raw = unsafe { godwit_av1_new(threads) };
+            (!raw.is_null()).then_some(Self(raw))
+        }
+        pub(super) fn decode(&mut self, data: &[u8]) -> Result<Option<Frame>, ()> {
+            let (mut w, mut h, mut y, mut u, mut v, mut ys, mut uvs) = (
+                0,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+                0,
+            );
+            let rc = unsafe {
+                godwit_av1_decode(
+                    self.0,
+                    data.as_ptr(),
+                    data.len(),
+                    &mut w,
+                    &mut h,
+                    &mut y,
+                    &mut u,
+                    &mut v,
+                    &mut ys,
+                    &mut uvs,
+                )
+            };
+            match rc {
+                0 => Ok(None),
+                1 if w > 0 && h > 0 => Ok(Some(Frame {
+                    width: w as u32,
+                    height: h as u32,
+                    planes: [y, u, v],
+                    strides: [ys, uvs, uvs],
+                })),
+                _ => Err(()),
+            }
+        }
+    }
+    impl Drop for Decoder {
+        fn drop(&mut self) {
+            unsafe { godwit_av1_free(self.0) }
+        }
+    }
+}
+
 /// A live video codec Godwit can decode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LiveCodec {
     Vp8,
     Vp9,
     H264,
+    Av1,
 }
 
-/// The codecs this build decodes, most wanted first: H264 where FFmpeg is
-/// in libwebrtc, as it's what most senders encode in hardware, then VP8,
-/// which every WebRTC sender can fall back to.
+/// The codecs this build decodes, most wanted first, following Yapfast's
+/// receive preference: AV1, H264 where available, then universally supported VP8.
 pub fn decodes() -> &'static [LiveCodec] {
-    if H264_AVAILABLE {
-        &[LiveCodec::H264, LiveCodec::Vp8]
-    } else {
-        &[LiveCodec::Vp8]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    {
+        if H264_AVAILABLE {
+            &[LiveCodec::Av1, LiveCodec::H264, LiveCodec::Vp8]
+        } else {
+            &[LiveCodec::Av1, LiveCodec::Vp8]
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        if H264_AVAILABLE {
+            &[LiveCodec::H264, LiveCodec::Vp8]
+        } else {
+            &[LiveCodec::Vp8]
+        }
     }
 }
 
@@ -71,6 +163,8 @@ enum Inner {
     Vpx(vpx::Decoder),
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     H264(h264::Decoder),
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    Av1(av1::Decoder),
 }
 
 impl LiveDecoder {
@@ -87,6 +181,13 @@ impl LiveDecoder {
         let inner = match codec {
             LiveCodec::Vp8 => Inner::Vpx(vpx::Decoder::new(webm::Codec::Vp8)?),
             LiveCodec::Vp9 => Inner::Vpx(vpx::Decoder::new(webm::Codec::Vp9)?),
+            #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+            LiveCodec::Av1 => Inner::Av1(av1::Decoder::new(threads)?),
+            #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+            LiveCodec::Av1 => {
+                let _ = threads;
+                return None;
+            }
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             LiveCodec::H264 => Inner::H264(h264::Decoder::new(threads.max(1))?),
             #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -141,6 +242,23 @@ impl LiveDecoder {
                     return Ok(Some(Picture { width: w, height: h }));
                 }
                 decoder.to_rgba(&mut self.scratch).ok_or(Undecodable)?;
+                (w, h)
+            }
+            #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+            Inner::Av1(decoder) => {
+                let Some(frame) = decoder.decode(data).map_err(|()| Undecodable)? else {
+                    return Ok(None);
+                };
+                let (w, h) = (frame.width, frame.height);
+                if w > MAX_SIDE || h > MAX_SIDE {
+                    return Err(Undecodable);
+                }
+                if !convert {
+                    return Ok(Some(Picture { width: w, height: h }));
+                }
+                // SAFETY: dav1d owns valid I420 planes through the next decode call.
+                unsafe { vpx::i420_to_rgba(frame.planes, frame.strides, (w, h), false, &mut self.scratch) }
+                    .ok_or(Undecodable)?;
                 (w, h)
             }
         };

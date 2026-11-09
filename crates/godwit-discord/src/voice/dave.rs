@@ -97,6 +97,7 @@ impl Dave {
         let codec = match codec {
             super::depacketize::Codec::Vp8 => davey::Codec::VP8,
             super::depacketize::Codec::H264 => davey::Codec::H264,
+            super::depacketize::Codec::Av1 => davey::Codec::AV1,
         };
         if self.version == 0 {
             return Some(frame.to_vec());
