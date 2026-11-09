@@ -32,6 +32,7 @@ pub mod net;
 pub mod network;
 pub mod own_profile;
 pub mod poll;
+pub mod preferences;
 pub mod privacy;
 pub mod privacy_overview;
 pub mod public_address;

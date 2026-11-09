@@ -1472,6 +1472,10 @@ impl NetworkAccount for DiscordAccount {
                 }
             }
             Command::LogOutSession(id) => req(&self.net, Request::LogOutSession(id.to_string())),
+            Command::SetPreferences(prefs) => {
+                self.store.prefs = self.store.prefs.merged(prefs);
+                req(&self.net, Request::Preferences(prefs));
+            }
             Command::LoadPrivacy => {
                 req(&self.net, Request::Consents);
                 self.send_privacy(true, None, &mut out);
@@ -2733,6 +2737,16 @@ mod tests {
         assert!(matches!(
             cmds.try_recv(),
             Ok(Cmd::Request(Request::ShowActivity(false)))
+        ));
+        // Appearance choices go out as one request.
+        let prefs = godwit_core::preferences::SyncedPreferences {
+            dark: Some(false),
+            convert_emoticons: None,
+        };
+        a.run(Command::SetPreferences(prefs));
+        assert!(matches!(
+            cmds.try_recv(),
+            Ok(Cmd::Request(Request::Preferences(p))) if p == prefs
         ));
         // Unknown keys send nothing.
         a.run(Command::SetPrivacy {

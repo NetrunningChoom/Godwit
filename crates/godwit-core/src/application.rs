@@ -377,6 +377,7 @@ impl Application {
             | Event::Presences { account, .. }
             | Event::Activities { account, .. }
             | Event::FriendRequests { account, .. }
+            | Event::Preferences { account, .. }
             | Event::Privacy { account, .. }
             | Event::Sessions { account, .. }
             | Event::SessionActionPending { account }

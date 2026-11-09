@@ -6,6 +6,12 @@ use super::*;
 /// Something the user did.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
+    /// A look-and-feel choice changed here: write it to the account, where
+    /// its network syncs them.
+    SetPreferences {
+        account: AccountId,
+        prefs: crate::preferences::SyncedPreferences,
+    },
     /// Edit the signed-in account's rail folders, where its network supports them.
     EditFolders(crate::ids::AccountId, crate::folder_edit::FolderEdit),
     /// An account's privacy switches: load them, or flip one.

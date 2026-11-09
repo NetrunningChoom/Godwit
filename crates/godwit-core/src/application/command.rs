@@ -6,6 +6,9 @@ use super::*;
 /// Work for a network backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
+    /// Write the look-and-feel choices that were set here
+    /// ([`Network::syncs_preferences`](crate::network::Network::syncs_preferences)).
+    SetPreferences(crate::preferences::SyncedPreferences),
     /// Change server folders; the account answers with its updated server list.
     EditFolders(crate::folder_edit::FolderEdit),
     /// The account's privacy switches (Settings → Privacy).

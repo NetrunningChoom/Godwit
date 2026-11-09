@@ -28,6 +28,13 @@ impl Application {
                     Vec::new()
                 }
             }
+            Action::SetPreferences { account, prefs } if account.network.syncs_preferences() => {
+                vec![Effect::Backend {
+                    account,
+                    command: Command::SetPreferences(prefs),
+                }]
+            }
+            Action::SetPreferences { .. } => Vec::new(),
             Action::LoadPrivacy(account) => vec![Effect::Backend {
                 account,
                 command: Command::LoadPrivacy,

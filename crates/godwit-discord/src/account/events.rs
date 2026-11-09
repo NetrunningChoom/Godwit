@@ -285,6 +285,12 @@ impl DiscordAccount {
             "invisible" => Presence::Invisible,
             _ => Presence::Online,
         };
+        if !self.store.prefs.is_empty() {
+            out.push(Event::Preferences {
+                account: account.clone(),
+                prefs: self.store.prefs,
+            });
+        }
         out.push(Event::OwnPresence {
             account,
             presence,
@@ -312,7 +318,12 @@ impl DiscordAccount {
                 if d["settings"]["type"].as_u64().unwrap_or(1) == 1
                     && let Some(proto) = d["settings"]["proto"].as_str()
                 {
-                    self.store.apply_settings(proto);
+                    let prefs = self.store.apply_settings(proto);
+                    if !prefs.is_empty()
+                        && let Some(account) = self.account.clone()
+                    {
+                        out.push(Event::Preferences { account, prefs });
+                    }
                     self.sync_servers(out);
                 }
             }

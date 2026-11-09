@@ -179,6 +179,12 @@ impl Network {
         matches!(self, Self::Stoat | Self::Discord)
     }
 
+    /// The account keeps look-and-feel choices (theme, emoticon conversion)
+    /// that Godwit reads on sign-in and writes back when they change here.
+    pub fn syncs_preferences(self) -> bool {
+        self == Self::Discord
+    }
+
     /// The account settings pages the network offers besides the profile.
     pub fn account_pages(self) -> &'static [AccountPage] {
         match self {

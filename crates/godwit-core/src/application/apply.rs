@@ -29,6 +29,8 @@ impl Application {
             _ => {}
         }
         match event {
+            // For the shell, which applies it to its own settings.
+            Event::Preferences { .. } => Vec::new(),
             Event::Privacy { account, view } => {
                 self.state.privacy.insert(account, view);
                 Vec::new()

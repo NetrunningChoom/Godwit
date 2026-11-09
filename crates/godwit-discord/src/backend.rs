@@ -202,6 +202,8 @@ pub enum Request {
     },
     /// Activities shared in the presence, or not.
     ShowActivity(bool),
+    /// Theme and emoticon conversion, set here.
+    Preferences(godwit_core::preferences::SyncedPreferences),
     /// The signed-in devices, and signing one out (its `id_hash`).
     Sessions,
     LogOutSession(String),
@@ -1325,6 +1327,10 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::ShowActivity(shown) => Answer::Done {
             what: "changing activity sharing",
             result: api.set_show_activity(shown).await.map_err(RequestError::from),
+        },
+        Request::Preferences(prefs) => Answer::Done {
+            what: "saving appearance settings",
+            result: api.set_preferences(&prefs).await.map_err(RequestError::from),
         },
         Request::TightenPrivacy => Answer::Done {
             what: "changing privacy settings",

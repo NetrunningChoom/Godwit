@@ -119,6 +119,8 @@ pub struct Shell {
     typing_timer: slint::Timer,
     /// A failed outgoing message, shown briefly in the chat window.
     send_error: String,
+    /// Look-and-feel choices accounts said, to apply once the window is at hand.
+    synced_prefs: Vec<godwit_core::preferences::SyncedPreferences>,
     /// Prevent idle lock/sleep only while a call video is being watched or sent.
     media_awake: keep_awake::MediaAwake,
     /// The demo's stand-in network (`godwit --demo`).
@@ -483,6 +485,7 @@ impl Shell {
             wake: wake.clone(),
             typing_timer: slint::Timer::default(),
             send_error: String::new(),
+            synced_prefs: Vec::new(),
             media_awake: keep_awake::MediaAwake::new(),
             sound_cache: std::collections::VecDeque::new(),
             sound_cache_bytes: 0,
@@ -626,6 +629,7 @@ impl Shell {
         // Background profiles: only their alerts (and the menu's dot) show.
         had_events |= self.pump_background();
         self.apply_all(events);
+        self.apply_synced_prefs(ui);
         while let Ok((room, samples, volume)) = self.sound_play_done.try_recv() {
             self.finish_call_sound(&room, samples, volume);
             had_events = true;
@@ -908,6 +912,7 @@ impl Shell {
             match &event {
                 Event::MessageFailed { error, .. } => self.send_error = error.to_string(),
                 Event::MessageConfirmed { .. } => self.send_error.clear(),
+                Event::Preferences { prefs, .. } => self.synced_prefs.push(*prefs),
                 _ => {}
             }
             if matches!(

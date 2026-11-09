@@ -127,7 +127,7 @@ impl StoatAccount {
             }
             Command::AutoDelete(command) => self.autodelete_command(command),
             // Stoat's privacy switches aren't offered here (yet).
-            Command::LoadPrivacy | Command::SetPrivacy { .. } => Vec::new(),
+            Command::LoadPrivacy | Command::SetPrivacy { .. } | Command::SetPreferences(_) => Vec::new(),
             // Stoat keeps no favourites (`Network::keeps_favourites`).
             Command::SetFavourite { .. } => Vec::new(),
             // Contact nicknames stay in Godwit's local contact model here.

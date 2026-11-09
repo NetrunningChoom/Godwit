@@ -6,6 +6,11 @@ use super::*;
 /// Something a network backend reports.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
+    /// An account's synced look-and-feel choices, as far as its network said them.
+    Preferences {
+        account: AccountId,
+        prefs: crate::preferences::SyncedPreferences,
+    },
     /// An account's privacy switches, as its network says them now.
     Privacy {
         account: AccountId,

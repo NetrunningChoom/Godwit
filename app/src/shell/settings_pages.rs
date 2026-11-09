@@ -711,6 +711,64 @@ impl Shell {
         }
     }
 
+    /// Applies the look-and-feel choices accounts said (on sign-in, or changed
+    /// on another device) to the settings and the window.
+    pub(super) fn apply_synced_prefs(&mut self, ui: &AppWindow) {
+        if self.synced_prefs.is_empty() {
+            return;
+        }
+        let said = std::mem::take(&mut self.synced_prefs)
+            .into_iter()
+            .fold(godwit_core::preferences::SyncedPreferences::default(), |all, p| {
+                all.merged(p)
+            });
+        let (dark, convert) = (
+            said.dark.unwrap_or(self.settings.dark),
+            said.convert_emoticons.unwrap_or(self.settings.convert_emoticons),
+        );
+        if dark == self.settings.dark && convert == self.settings.convert_emoticons {
+            return;
+        }
+        let restyle = dark != self.settings.dark;
+        self.settings.dark = dark;
+        self.settings.convert_emoticons = convert;
+        ui.set_dark(dark);
+        ui.set_convert_emoticons(convert);
+        if restyle {
+            theme::apply(ui, self.settings.accent(), self.settings.style, dark);
+        }
+        self.presenter.muzzle = self.settings.clone();
+        if let Some(path) = &self.settings_path
+            && let Err(e) = settings::save(path, &self.settings)
+        {
+            eprintln!("error: saving settings: {e}");
+        }
+    }
+
+    /// Writes the look-and-feel choices changed here to the accounts whose
+    /// network keeps them.
+    fn write_synced_prefs(&mut self, ui: &AppWindow, new: &Settings) {
+        let prefs = godwit_core::preferences::SyncedPreferences {
+            dark: (new.dark != self.settings.dark).then_some(new.dark),
+            convert_emoticons: (new.convert_emoticons != self.settings.convert_emoticons)
+                .then_some(new.convert_emoticons),
+        };
+        if prefs.is_empty() {
+            return;
+        }
+        let accounts: Vec<AccountId> = self
+            .app
+            .state()
+            .accounts
+            .iter()
+            .filter(|a| a.id.network.syncs_preferences())
+            .map(|a| a.id.clone())
+            .collect();
+        for account in accounts {
+            self.act(ui, Action::SetPreferences { account, prefs });
+        }
+    }
+
     /// Something in Settings changed: apply it and save.
     pub fn settings_changed(&mut self, ui: &AppWindow) {
         let devices = self.audio_devices();
@@ -840,6 +898,7 @@ impl Shell {
         for account in &mut self.live {
             account.set_notifications(s.notifications || s.sounds);
         }
+        self.write_synced_prefs(ui, &s);
         self.settings = s;
         self.presenter.muzzle = self.settings.clone();
         if let Some(path) = &self.settings_path

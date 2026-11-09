@@ -337,6 +337,8 @@ pub struct ReadState {
 pub struct Store {
     /// Whether the presence shares activities, as the settings last said.
     pub show_game: Option<bool>,
+    /// Theme and emoticon conversion, as the settings last said them.
+    pub prefs: godwit_core::preferences::SyncedPreferences,
     pub me: Option<User>,
     pub users: HashMap<String, User>,
     /// In READY's order (the folder order from settings comes later).
@@ -607,9 +609,11 @@ impl Store {
     /// The account's settings (base64 protobuf): status, custom status and
     /// the server list's order (servers it doesn't place go first, as new
     /// ones do in Discord's list).
-    pub fn apply_settings(&mut self, proto: &str) {
+    /// Answers what the settings said of the look-and-feel choices.
+    pub fn apply_settings(&mut self, proto: &str) -> godwit_core::preferences::SyncedPreferences {
         self.settings_proto = proto.to_owned();
         let read = crate::settings::read(proto);
+        self.prefs = self.prefs.merged(read.prefs);
         if read.show_game.is_some() {
             self.show_game = read.show_game;
         }
@@ -633,6 +637,7 @@ impl Store {
             placed.splice(0..0, loose);
             self.guild_order = placed;
         }
+        read.prefs
     }
 
     /// Takes the folder list (settings' `guild_folders`).

@@ -9,6 +9,7 @@
 //! gateway its presence.
 
 use base64::Engine;
+use godwit_core::preferences::SyncedPreferences;
 use serde_json::{Value, json};
 
 /// `PreloadedUserSettings.status`.
@@ -65,6 +66,41 @@ pub fn write_show_game(shown: bool) -> String {
     let mut inner = Vec::new();
     put_bytes(&mut inner, STATUS_SHOW_GAME, &wrapper);
     status_settings(&inner)
+}
+
+/// `PreloadedUserSettings.text_and_images` and `.appearance`, with the fields
+/// used (discord-protos, MIT: https://github.com/discord-userdoccers/discord-protos
+/// and https://docs.discord.food/resources/user-settings-proto).
+const TEXT_AND_IMAGES: u64 = 6;
+/// `TextAndImagesSettings.convert_emoticons`, a `BoolValue`.
+const CONVERT_EMOTICONS: u64 = 21;
+const APPEARANCE: u64 = 13;
+/// `AppearanceSettings.theme`: an enum (0 unset, 1 dark, 2 light, 3 darker, 4 midnight).
+const THEME: u64 = 1;
+const THEME_DARK: u64 = 1;
+const THEME_LIGHT: u64 = 2;
+
+/// Settings that write the look-and-feel choices that are `Some`.
+pub fn write_preferences(prefs: &SyncedPreferences) -> String {
+    let mut settings = Vec::new();
+    if let Some(convert) = prefs.convert_emoticons {
+        let mut wrapper = Vec::new();
+        // A BoolValue leaves out false.
+        if convert {
+            put_varint(&mut wrapper, 1 << 3);
+            put_varint(&mut wrapper, 1);
+        }
+        let mut inner = Vec::new();
+        put_bytes(&mut inner, CONVERT_EMOTICONS, &wrapper);
+        put_bytes(&mut settings, TEXT_AND_IMAGES, &inner);
+    }
+    if let Some(dark) = prefs.dark {
+        let mut inner = Vec::new();
+        put_varint(&mut inner, THEME << 3);
+        put_varint(&mut inner, if dark { THEME_DARK } else { THEME_LIGHT });
+        put_bytes(&mut settings, APPEARANCE, &inner);
+    }
+    base64::engine::general_purpose::STANDARD.encode(settings)
 }
 
 /// Settings that set the custom status's text, or clear it with `None`.
@@ -291,6 +327,8 @@ pub struct Read {
     pub folders: Option<Vec<Folder>>,
     /// Whether the presence shares activities (games); None when unsaid.
     pub show_game: Option<bool>,
+    /// Theme and emoticon conversion, where the settings carry them.
+    pub prefs: SyncedPreferences,
 }
 
 /// Reads base64 settings, as READY's `user_settings_proto` or a
@@ -320,6 +358,23 @@ pub fn read(encoded: &str) -> Read {
                 _ => {}
             }
         }
+    }
+    if let Some(text) = message(&data, TEXT_AND_IMAGES) {
+        for (number, value) in fields(text) {
+            if let (CONVERT_EMOTICONS, Field::Bytes(wrapper)) = (number, value) {
+                out.prefs.convert_emoticons =
+                    Some(fields(wrapper).any(|(n, v)| n == 1 && matches!(v, Field::Varint(1..))));
+            }
+        }
+    }
+    if let Some(appearance) = message(&data, APPEARANCE) {
+        // No theme is the client's default, which says nothing; the other
+        // dark variants are dark too.
+        let theme = fields(appearance).find_map(|(n, v)| match v {
+            Field::Varint(t) if n == THEME => Some(t),
+            _ => None,
+        });
+        out.prefs.dark = theme.filter(|t| *t != 0).map(|t| t != THEME_LIGHT);
     }
     if let Some(folders) = message(&data, GUILD_FOLDERS) {
         let mut order = Vec::new();
@@ -394,6 +449,58 @@ pub(crate) fn test_folders_proto(folders: &[(u64, &[u64])]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preferences_are_written_and_read_back() {
+        let prefs = SyncedPreferences {
+            dark: Some(false),
+            convert_emoticons: Some(true),
+        };
+        let read = read(&write_preferences(&prefs));
+        assert_eq!(read.prefs, prefs);
+        assert_eq!(read.status, None);
+    }
+
+    #[test]
+    fn false_emoticons_is_an_empty_wrapper_and_dark_is_theme_one() {
+        let prefs = SyncedPreferences {
+            dark: Some(true),
+            convert_emoticons: Some(false),
+        };
+        let encoded = write_preferences(&prefs);
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&encoded).unwrap();
+        // text_and_images { convert_emoticons {} }, appearance { theme: 1 }.
+        assert_eq!(bytes, [0x32, 3, 0xaa, 1, 0, 0x6a, 2, 8, 1]);
+        assert_eq!(read(&encoded).prefs, prefs);
+    }
+
+    #[test]
+    fn a_partial_write_names_only_what_changed() {
+        let only_theme = SyncedPreferences {
+            dark: Some(true),
+            ..Default::default()
+        };
+        let read = read(&write_preferences(&only_theme));
+        assert_eq!(read.prefs.dark, Some(true));
+        assert_eq!(read.prefs.convert_emoticons, None);
+        assert!(write_preferences(&SyncedPreferences::default()).is_empty());
+    }
+
+    #[test]
+    fn other_dark_themes_read_as_dark_and_light_as_not() {
+        let theme = |value: u64| {
+            let mut inner = Vec::new();
+            put_varint(&mut inner, THEME << 3);
+            put_varint(&mut inner, value);
+            let mut settings = Vec::new();
+            put_bytes(&mut settings, APPEARANCE, &inner);
+            read(&base64::engine::general_purpose::STANDARD.encode(settings))
+                .prefs
+                .dark
+        };
+        assert_eq!(theme(4), Some(true));
+        assert_eq!(theme(2), Some(false));
+    }
 
     #[test]
     fn an_edited_folder_list_round_trips_and_keeps_other_fields() {

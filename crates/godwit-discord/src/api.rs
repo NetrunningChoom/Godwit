@@ -950,6 +950,17 @@ impl Api {
         .map(drop)
     }
 
+    /// The look-and-feel choices that are `Some`, in the settings.
+    pub async fn set_preferences(&self, prefs: &godwit_core::preferences::SyncedPreferences) -> Result<()> {
+        let body = json!({"settings": crate::settings::write_preferences(prefs)});
+        self.json(with_json(
+            self.request(Method::PATCH, "/users/@me/settings-proto/1"),
+            &body,
+        ))
+        .await
+        .map(drop)
+    }
+
     /// Stops sharing activities (games) in the presence, in the settings.
     pub async fn hide_activity(&self) -> Result<()> {
         let body = json!({"settings": crate::settings::write_show_game(false)});

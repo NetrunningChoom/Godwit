@@ -1175,6 +1175,27 @@ fn only_recent_rooms_keep_their_messages() {
 }
 
 #[test]
+fn preferences_are_written_only_where_the_network_syncs_them() {
+    let prefs = crate::preferences::SyncedPreferences {
+        dark: Some(true),
+        convert_emoticons: None,
+    };
+    let mut app = Application::default();
+    ready(&mut app, Network::Stoat, Vec::new());
+    let effects = app.dispatch(Action::SetPreferences {
+        account: account(Network::Stoat),
+        prefs,
+    });
+    assert!(commands(&effects).is_empty());
+    ready(&mut app, Network::Discord, Vec::new());
+    let effects = app.dispatch(Action::SetPreferences {
+        account: account(Network::Discord),
+        prefs,
+    });
+    assert_eq!(commands(&effects), [&Command::SetPreferences(prefs)]);
+}
+
+#[test]
 fn our_presence_shows_at_once_and_only_where_there_is_presence() {
     let mut app = Application::default();
     ready(&mut app, Network::Stoat, Vec::new());
