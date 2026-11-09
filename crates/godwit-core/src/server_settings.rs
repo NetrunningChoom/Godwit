@@ -271,6 +271,27 @@ pub struct ServerRoles {
     /// What everyone has without a role.
     pub default_allow: u64,
     pub permissions: Arc<[PermissionInfo]>,
+    /// The network can list a role's members and hand a role to several at
+    /// once (the Members tab of a role).
+    pub role_members: bool,
+}
+
+/// Someone shown on a role's Members tab.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleMember {
+    pub user: UserId,
+    pub name: Arc<str>,
+    pub avatar_url: Option<Arc<str>>,
+}
+
+/// Who has a role and who could be given it. Only members the client has
+/// loaded are known, so a large server may show fewer than it has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleMembers {
+    pub role: Arc<str>,
+    pub members: Vec<RoleMember>,
+    /// Known members without the role, for the Add members picker.
+    pub candidates: Vec<RoleMember>,
 }
 
 /// A change to a role; None leaves that part as it is.
@@ -293,6 +314,15 @@ pub enum ServerAdmin {
     LoadBans,
     Unban(UserId),
     LoadRoles,
+    /// Who has a role (answered with [`ServerAdminResult::RoleMembers`]).
+    LoadRoleMembers(Arc<str>),
+    /// Gives or takes a role from several members at once (a role's Members
+    /// tab; the profile card uses [`Self::SetMemberRole`]).
+    SetRoleMembers {
+        role: Arc<str>,
+        users: Vec<UserId>,
+        on: bool,
+    },
     CreateRole(Arc<str>),
     EditRole(RoleEdit),
     /// Replaces role priority, most important first.
@@ -428,7 +458,7 @@ impl ServerAdmin {
     pub fn is_load(&self) -> bool {
         matches!(
             self,
-            Self::LoadInvites | Self::LoadBans | Self::LoadRoles | Self::LoadEmoji
+            Self::LoadInvites | Self::LoadBans | Self::LoadRoles | Self::LoadRoleMembers(_) | Self::LoadEmoji
         )
     }
 }
@@ -439,6 +469,7 @@ pub enum ServerAdminResult {
     Invites(Vec<ServerInvite>),
     Bans(Vec<ServerBan>),
     Roles(ServerRoles),
+    RoleMembers(RoleMembers),
     Emoji(ServerEmojis),
     /// A change went through: what to tell the user.
     Done(Arc<str>),
@@ -458,6 +489,7 @@ pub struct ServerSettingsState {
     pub invites: Option<Vec<ServerInvite>>,
     pub bans: Option<Vec<ServerBan>>,
     pub roles: Option<ServerRoles>,
+    pub role_members: Option<RoleMembers>,
     pub emoji: Option<ServerEmojis>,
     /// A change is on its way; the page's buttons wait for it.
     pub admin_busy: bool,
@@ -478,6 +510,7 @@ impl ServerSettingsState {
             invites: None,
             bans: None,
             roles: None,
+            role_members: None,
             emoji: None,
             admin_busy: false,
             notice: None,

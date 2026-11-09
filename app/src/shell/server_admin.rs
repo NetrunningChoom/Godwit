@@ -80,6 +80,8 @@ impl Shell {
     }
 
     pub fn server_settings_page(&mut self, ui: &AppWindow, page: i32) {
+        // A role always opens on its settings.
+        self.server_editor.set_members_tab(false);
         self.act(
             ui,
             Action::ServerSettingsPage(crate::server_settings::page_from_index(page)),
@@ -127,7 +129,58 @@ impl Shell {
 
     pub fn select_server_role(&mut self, ui: &AppWindow, row: i32) {
         self.server_editor.select_role(ui, self.app.state(), row);
+        self.load_role_members(ui);
         self.show_server_settings(ui);
+    }
+
+    /// Asks for the selected role's members while its Members tab is up.
+    fn load_role_members(&mut self, ui: &AppWindow) {
+        if let Some(action) = self.server_editor.load_role_members(self.app.state()) {
+            self.act(ui, action);
+        }
+    }
+
+    pub fn set_server_role_members_tab(&mut self, ui: &AppWindow, on: bool) {
+        self.server_editor.set_members_tab(on);
+        self.load_role_members(ui);
+        self.show_server_settings(ui);
+    }
+
+    /// The filter over the role's members, or over the picker's candidates.
+    pub fn server_role_member_search(&mut self, ui: &AppWindow, text: &str, picker: bool) {
+        if picker {
+            self.server_editor.picker_search_edited(text);
+        } else {
+            self.server_editor.member_search_edited(text);
+        }
+        self.show_server_settings(ui);
+    }
+
+    pub fn server_role_picker(&mut self, ui: &AppWindow, open: bool) {
+        if open {
+            self.server_editor.open_picker();
+        } else {
+            self.server_editor.close_picker();
+        }
+        self.show_server_settings(ui);
+    }
+
+    pub fn toggle_server_role_picked(&mut self, ui: &AppWindow, row: i32) {
+        self.server_editor.toggle_picked(self.app.state(), row);
+        self.show_server_settings(ui);
+    }
+
+    pub fn add_server_role_members(&mut self, ui: &AppWindow) {
+        if let Some(action) = self.server_editor.add_picked(self.app.state()) {
+            self.act(ui, action);
+        }
+        self.show_server_settings(ui);
+    }
+
+    pub fn remove_server_role_member(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(action) = self.server_editor.remove_role_member(self.app.state(), row) {
+            self.act(ui, action);
+        }
     }
 
     pub fn create_server_role(&mut self, ui: &AppWindow, name: &str) {

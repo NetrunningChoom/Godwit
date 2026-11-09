@@ -113,6 +113,10 @@ impl StoatAccount {
             }
             // Checked below with the owner and rank rules.
             ServerAdmin::SetMemberRole { .. } => None,
+            // Stoat has no Members tab on a role (the page doesn't offer it).
+            ServerAdmin::SetRoleMembers { .. } | ServerAdmin::LoadRoleMembers(_) => {
+                return fail(server, "This server can't list a role's members.");
+            }
             ServerAdmin::Timeout { .. } => Some((p::TIMEOUT_MEMBERS, "Timeout Members")),
             // Checked below: our own needs Change Nickname, others' Manage Nicknames.
             ServerAdmin::SetServerNickname { .. } => None,
@@ -279,6 +283,8 @@ impl StoatAccount {
                     delete_message_seconds: delete_seconds.into(),
                 })
             }
+            // Refused above.
+            ServerAdmin::SetRoleMembers { .. } | ServerAdmin::LoadRoleMembers(_) => return Vec::new(),
             ServerAdmin::LoadRoles => {
                 // Roles come with the server: nothing to fetch.
                 let roles = self.server_roles(&raw);
@@ -568,6 +574,7 @@ impl StoatAccount {
                 .collect(),
             default_allow: s.default_permissions as u64,
             permissions: crate::permissions::server_list(),
+            role_members: false,
         }
     }
 

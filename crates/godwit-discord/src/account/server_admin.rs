@@ -6,7 +6,7 @@
 
 use super::*;
 use godwit_core::server_settings::{
-    SafetyChoices, SafetyMfa, SafetyOption, ServerOverviewEdit, ServerSafety, VoiceMemberOp,
+    RoleMember, RoleMembers, SafetyChoices, SafetyMfa, SafetyOption, ServerOverviewEdit, ServerSafety, VoiceMemberOp,
 };
 
 /// Verification levels, 0 to 4, worded as the official client words them.
@@ -168,6 +168,44 @@ impl DiscordAccount {
                 .collect(),
             default_allow: g.roles.get(guild).map_or(0, |r| r.permissions),
             permissions: permission_list(),
+            role_members: true,
+        }
+    }
+
+    /// A role's Members tab: who has it among the members the client has
+    /// loaded (Discord's list for a large server is only partial), and the
+    /// loaded members without it. Bots are left out of the picker.
+    pub(super) fn role_members(&self, guild: &str, role: &str) -> RoleMembers {
+        let Some(account) = self.account.clone() else {
+            return RoleMembers {
+                role: role.into(),
+                members: Vec::new(),
+                candidates: Vec::new(),
+            };
+        };
+        let (mut members, mut candidates) = (Vec::new(), Vec::new());
+        for ((g, user), m) in &self.store.members {
+            if g != guild {
+                continue;
+            }
+            let has = m.roles.iter().any(|r| r == role);
+            if !has && self.store.users.get(user).is_some_and(|u| u.bot) {
+                continue;
+            }
+            let entry = RoleMember {
+                user: UserId::new(account.clone(), user.as_str()),
+                name: self.store.display_name(user, Some(guild)).into(),
+                avatar_url: Some(self.avatar(user, Some(guild)).into()),
+            };
+            if has { &mut members } else { &mut candidates }.push(entry);
+        }
+        for list in [&mut members, &mut candidates] {
+            list.sort_by_cached_key(|m: &RoleMember| (m.name.to_lowercase(), m.user.raw.clone()));
+        }
+        RoleMembers {
+            role: role.into(),
+            members,
+            candidates,
         }
     }
 
@@ -364,6 +402,9 @@ impl DiscordAccount {
             | ServerAdmin::Timeout { .. }
             | ServerAdmin::SetServerNickname { .. }
             | ServerAdmin::VoiceMember { .. } => None,
+            ServerAdmin::SetRoleMembers { .. } | ServerAdmin::LoadRoleMembers(_) => {
+                Some((p::MANAGE_ROLES, "Manage Roles"))
+            }
             ServerAdmin::LoadRoles
             | ServerAdmin::DeleteServer
             | ServerAdmin::MarkRead
@@ -511,6 +552,42 @@ impl DiscordAccount {
                         server,
                         result: Ok(ServerAdminResult::Roles(roles)),
                     }];
+                }
+                ServerAdmin::LoadRoleMembers(role) => {
+                    return vec![Event::ServerAdmin {
+                        server,
+                        result: Ok(ServerAdminResult::RoleMembers(self.role_members(&guild, &role))),
+                    }];
+                }
+                ServerAdmin::SetRoleMembers { role, users, on } => {
+                    // The same rule as the member's card: only roles below our
+                    // highest, and only members ranked below us.
+                    let users: Vec<String> = users.iter().map(|u| u.raw.to_string()).collect();
+                    let allowed = users.iter().all(|u| {
+                        self.moderation(&guild, u)
+                            .is_some_and(|m| m.roles.iter().any(|r| r.id == role))
+                    });
+                    if users.is_empty() || !allowed {
+                        return fail(server, "You can't change that role for some of these members.");
+                    }
+                    if self.demo.is_some() {
+                        let mut out = Vec::new();
+                        self.admin_answer(
+                            &guild,
+                            Ok(AdminAnswer::RoleMembers {
+                                role: role.to_string(),
+                                users,
+                                on,
+                            }),
+                            &mut out,
+                        );
+                        return out;
+                    }
+                    Admin::RoleMembers {
+                        role: role.to_string(),
+                        users,
+                        on,
+                    }
                 }
                 ServerAdmin::CreateRole(name) => {
                     let name = name.trim();
@@ -735,11 +812,27 @@ impl DiscordAccount {
             Ok(AdminAnswer::InviteCreated(code)) => Ok(ServerAdminResult::InviteCreated(
                 format!("https://discord.gg/{code}").into(),
             )),
+            // The gateway repeats each member's change; the store follows now so
+            // the tab shows the result at once.
+            Ok(AdminAnswer::RoleMembers { role, users, on }) => {
+                for user in users {
+                    if let Some(m) = self.store.members.get_mut(&(guild.to_owned(), user)) {
+                        m.roles.retain(|r| *r != role);
+                        if on {
+                            m.roles.push(role.clone());
+                        }
+                    }
+                }
+                Ok(ServerAdminResult::RoleMembers(self.role_members(guild, &role)))
+            }
             Ok(AdminAnswer::Done) => Ok(ServerAdminResult::Done("Done.".into())),
             Err(e) => Err(e.into()),
         };
         // A list after a change (revoke, unban) also finishes the change.
-        let listed = matches!(result, Ok(ServerAdminResult::Invites(_) | ServerAdminResult::Bans(_)));
+        let listed = matches!(
+            result,
+            Ok(ServerAdminResult::Invites(_) | ServerAdminResult::Bans(_) | ServerAdminResult::RoleMembers(_))
+        );
         let failed = result.is_err();
         out.push(Event::ServerAdmin {
             server: server.clone(),

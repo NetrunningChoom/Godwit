@@ -350,6 +350,12 @@ pub enum Admin {
         role: String,
         on: bool,
     },
+    /// One role for several members, one request each.
+    RoleMembers {
+        role: String,
+        users: Vec<String>,
+        on: bool,
+    },
     /// Timeout or nickname; `user` is "@me" for our own nickname.
     ModifyMember {
         user: String,
@@ -600,6 +606,12 @@ pub enum AdminAnswer {
     /// The new emoji, as Discord answered the create.
     EmojiCreated(Value),
     InviteCreated(String),
+    /// A role handed to or taken from these members.
+    RoleMembers {
+        role: String,
+        users: Vec<String>,
+        on: bool,
+    },
     Done,
 }
 
@@ -1571,6 +1583,12 @@ async fn admin(api: &Api, guild: &str, op: Admin) -> anyhow::Result<AdminAnswer>
         Admin::MemberRole { user, role, on } => {
             api.set_member_role(guild, &user, &role, on).await?;
             AdminAnswer::Done
+        }
+        Admin::RoleMembers { role, users, on } => {
+            for user in &users {
+                api.set_member_role(guild, user, &role, on).await?;
+            }
+            AdminAnswer::RoleMembers { role, users, on }
         }
         Admin::ModifyMember { user, body } => {
             api.modify_member(guild, &user, &body).await?;

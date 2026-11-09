@@ -301,6 +301,18 @@ impl Application {
                     return Vec::new();
                 }
             }
+            // Handing a role to several members needs the Members tab: the
+            // network's capability and a role of this server.
+            if let crate::server_settings::ServerAdmin::SetRoleMembers { role, users, .. } = &op
+                && (users.is_empty()
+                    || users.iter().any(|u| u.account != server.account)
+                    || !s
+                        .roles
+                        .as_ref()
+                        .is_some_and(|r| r.role_members && r.roles.iter().any(|x| x.id == *role)))
+            {
+                return Vec::new();
+            }
             s.admin_busy = true;
             s.notice = None;
         }

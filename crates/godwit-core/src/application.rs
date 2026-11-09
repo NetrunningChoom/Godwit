@@ -485,6 +485,7 @@ impl Application {
             Ok(ServerAdminResult::Invites(list)) => s.invites = Some(list),
             Ok(ServerAdminResult::Bans(list)) => s.bans = Some(list),
             Ok(ServerAdminResult::Roles(roles)) => s.roles = Some(roles),
+            Ok(ServerAdminResult::RoleMembers(members)) => s.role_members = Some(members),
             Ok(ServerAdminResult::Emoji(emoji)) => s.emoji = Some(emoji),
             Ok(ServerAdminResult::Done(message)) => {
                 s.admin_busy = false;

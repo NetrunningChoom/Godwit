@@ -1533,6 +1533,7 @@ fn demo_admin(overview: &godwit_core::server_settings::ServerOverview, seed: u64
             roles,
             default_allow: p::VIEW_CHANNEL | p::READ_MESSAGE_HISTORY | p::SEND_MESSAGE | p::REACT | p::CONNECT,
             permissions: p::server_list(),
+            role_members: false,
         },
     }
 }
@@ -1942,9 +1943,12 @@ impl DemoAccount {
             A::Kick(_)
             | A::Ban { .. }
             | A::SetMemberRole { .. }
+            | A::SetRoleMembers { .. }
             | A::Timeout { .. }
             | A::SetServerNickname { .. }
             | A::VoiceMember { .. } => R::Done("Done.".into()),
+            // The demo's roles have no Members tab (`role_members` is off).
+            A::LoadRoleMembers(_) => R::Done("Done.".into()),
             A::CreateInvite => R::InviteCreated(format!("https://stt.gg/{}", Bogus::new(77).word()).into()),
             A::MarkRead => R::Done("Marked as read.".into()),
             A::SetNotify(_) => R::Done("Notifications changed.".into()),

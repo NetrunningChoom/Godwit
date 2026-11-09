@@ -3874,6 +3874,55 @@ mod member_admin_tests {
     }
 
     #[test]
+    fn a_roles_members_list_and_batch_change_follow_hierarchy() {
+        use godwit_core::server_settings::ServerAdminResult;
+        let (mut a, mut cmds) = staffed();
+        let listed = a.role_members("10", "20");
+        let names = |l: &[godwit_core::server_settings::RoleMember]| {
+            l.iter().map(|m| m.user.raw.to_string()).collect::<Vec<_>>()
+        };
+        assert_eq!(names(&listed.members), ["300"]);
+        assert!(!names(&listed.candidates).contains(&"300".to_owned()));
+        let kim = a.user_id("300").unwrap();
+        let op = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::SetRoleMembers {
+                role: "20".into(),
+                users: vec![kim.clone()],
+                on: false,
+            },
+        );
+        assert!(matches!(op, Some(Admin::RoleMembers { users, role, on: false }) if users == ["300"] && role == "20"));
+        // A role above ours is refused with no request.
+        let refused = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::SetRoleMembers {
+                role: "21".into(),
+                users: vec![kim],
+                on: true,
+            },
+        );
+        assert!(refused.is_none());
+        // The answer moves the member out of the list at once.
+        let mut out = Vec::new();
+        let answer = crate::backend::AdminAnswer::RoleMembers {
+            role: "20".into(),
+            users: vec!["300".into()],
+            on: false,
+        };
+        a.admin_answer("10", Ok(answer), &mut out);
+        assert!(matches!(
+            out.as_slice(),
+            [
+                Event::ServerAdmin { result: Ok(ServerAdminResult::RoleMembers(m)), .. },
+                Event::ServerAdmin { result: Ok(ServerAdminResult::Done(_)), .. },
+            ] if m.members.is_empty() && names(&m.candidates).contains(&"300".to_owned())
+        ));
+    }
+
+    #[test]
     fn the_card_offers_only_what_hierarchy_and_permissions_allow() {
         let (a, _cmds) = staffed();
         let m = a.moderation("10", "300").unwrap();

@@ -14,7 +14,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem, ModerationLogItem, SoundItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, RoleMemberItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem, ModerationLogItem, SoundItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -238,6 +238,16 @@ export component AppWindow inherits Window {
     in-out property <bool> server-edit-role-hoist;
     in property <[PermissionItem]> server-edit-permissions;
     in property <bool> server-edit-role-dirty;
+    in property <bool> server-edit-role-members-available;
+    in property <bool> server-edit-role-members-tab;
+    in property <bool> server-edit-role-members-loaded;
+    in property <[RoleMemberItem]> server-edit-role-members;
+    in property <bool> server-edit-role-picking;
+    in property <[RoleMemberItem]> server-edit-role-picker;
+    in property <bool> server-edit-role-picker-more;
+    in property <int> server-edit-role-picked;
+    in-out property <string> server-edit-role-member-search;
+    in-out property <string> server-edit-role-picker-search;
     callback server-settings-page(int);
     callback load-more-moderation-log();
     callback delete-server-invite(int); callback copy-server-invite(int);
@@ -245,6 +255,9 @@ export component AppWindow inherits Window {
     callback select-server-role(int); callback create-server-role(string); callback server-role-edited();
     callback set-server-permission-state(int, int); callback save-server-role(); callback delete-server-role();
     callback move-server-role(bool);
+    callback set-server-role-members-tab(bool); callback server-role-member-search-edited(string);
+    callback open-server-role-picker(); callback close-server-role-picker(); callback server-role-picker-search-edited(string);
+    callback toggle-server-role-picked(int); callback add-server-role-members(); callback remove-server-role-member(int);
     callback delete-server();
     // The profile card's Kick / Ban (ban: true), with the ban's reason.
     in property <bool> card-can-kick;
@@ -1778,6 +1791,15 @@ export component AppWindow inherits Window {
         roles: root.server-edit-roles; roles-loaded: root.server-edit-roles-loaded; roles-reorderable: root.server-edit-roles-reorderable; role-index: root.server-edit-role-index;
         role-name <=> root.server-edit-role-name; role-colour <=> root.server-edit-role-colour; role-hoist <=> root.server-edit-role-hoist;
         permissions: root.server-edit-permissions; role-dirty: root.server-edit-role-dirty;
+        role-members-available: root.server-edit-role-members-available; role-members-tab: root.server-edit-role-members-tab;
+        role-members-loaded: root.server-edit-role-members-loaded; role-members: root.server-edit-role-members;
+        role-picking: root.server-edit-role-picking; role-picker: root.server-edit-role-picker;
+        role-picker-more: root.server-edit-role-picker-more; role-picked: root.server-edit-role-picked;
+        role-member-search <=> root.server-edit-role-member-search; role-picker-search <=> root.server-edit-role-picker-search;
+        set-role-members-tab(on) => { root.set-server-role-members-tab(on); } role-member-search-edited(t) => { root.server-role-member-search-edited(t); }
+        open-role-picker => { root.open-server-role-picker(); } close-role-picker => { root.close-server-role-picker(); }
+        role-picker-search-edited(t) => { root.server-role-picker-search-edited(t); } toggle-role-picked(i) => { root.toggle-server-role-picked(i); }
+        add-role-members => { root.add-server-role-members(); } remove-role-member(i) => { root.remove-server-role-member(i); }
         emoji: root.server-edit-emoji; emoji-loaded: root.server-edit-emoji-loaded; emoji-new-name <=> root.server-edit-emoji-new-name;
         emoji-new-error: root.server-edit-emoji-new-error; emoji-file-label: root.server-edit-emoji-file-label;
         emoji-slots: root.server-edit-emoji-slots; emoji-can-create: root.server-edit-emoji-can-create;

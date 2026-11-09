@@ -388,6 +388,14 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_save_server_role() => |sh, ui| sh.save_server_role(ui));
     callback!(ui.on_move_server_role(up) => |sh, ui| sh.move_server_role(ui, up));
     callback!(ui.on_delete_server_role() => |sh, ui| sh.delete_server_role(ui));
+    callback!(ui.on_set_server_role_members_tab(on) => |sh, ui| sh.set_server_role_members_tab(ui, on));
+    callback!(ui.on_server_role_member_search_edited(text) => |sh, ui| sh.server_role_member_search(ui, &text, false));
+    callback!(ui.on_server_role_picker_search_edited(text) => |sh, ui| sh.server_role_member_search(ui, &text, true));
+    callback!(ui.on_open_server_role_picker() => |sh, ui| sh.server_role_picker(ui, true));
+    callback!(ui.on_close_server_role_picker() => |sh, ui| sh.server_role_picker(ui, false));
+    callback!(ui.on_toggle_server_role_picked(row) => |sh, ui| sh.toggle_server_role_picked(ui, row));
+    callback!(ui.on_add_server_role_members() => |sh, ui| sh.add_server_role_members(ui));
+    callback!(ui.on_remove_server_role_member(row) => |sh, ui| sh.remove_server_role_member(ui, row));
     callback!(ui.on_report_profile() => |sh, ui| sh.report_profile(ui));
     callback!(ui.on_report_message(row) => |sh, ui| sh.report_message(ui, row));
     callback!(ui.on_report_server() => |sh, ui| sh.report_server(ui));

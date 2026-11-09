@@ -4484,6 +4484,76 @@ fn games_page_replaces_the_room_and_goes_with_its_data() {
 }
 
 #[test]
+fn a_role_goes_to_several_members_only_with_the_tab_and_a_known_role() {
+    use crate::server_settings::{RoleMember, RoleMembers, ServerAdmin, ServerRole, ServerRoles};
+    let mut app = Application::default();
+    let (server, _) = server_settings_open(&mut app);
+    let users = vec![
+        UserId::new(account(Network::Stoat), "a"),
+        UserId::new(account(Network::Stoat), "b"),
+    ];
+    let send = |app: &mut Application, role: &str, users: Vec<UserId>| {
+        app.dispatch(Action::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::SetRoleMembers {
+                role: role.into(),
+                users,
+                on: true,
+            },
+        })
+    };
+    let roles = |role_members| ServerRoles {
+        roles: vec![ServerRole {
+            id: "r1".into(),
+            name: "Mods".into(),
+            colour: None,
+            hoist: false,
+            allow: 0,
+            deny: 0,
+        }],
+        role_members,
+        ..Default::default()
+    };
+    app.apply(Event::ServerAdmin {
+        server: server.clone(),
+        result: Ok(crate::server_settings::ServerAdminResult::Roles(roles(false))),
+    });
+    assert!(
+        send(&mut app, "r1", users.clone()).is_empty(),
+        "the network has no Members tab"
+    );
+    app.apply(Event::ServerAdmin {
+        server: server.clone(),
+        result: Ok(crate::server_settings::ServerAdminResult::Roles(roles(true))),
+    });
+    assert!(send(&mut app, "nope", users.clone()).is_empty(), "unknown role");
+    assert!(send(&mut app, "r1", Vec::new()).is_empty(), "nobody picked");
+    let other = vec![UserId::new(account(Network::Discord), "x")];
+    assert!(send(&mut app, "r1", other).is_empty(), "another account's member");
+    assert_eq!(send(&mut app, "r1", users).len(), 1);
+    let listed = RoleMembers {
+        role: "r1".into(),
+        members: vec![RoleMember {
+            user: UserId::new(account(Network::Stoat), "a"),
+            name: "Amy".into(),
+            avatar_url: None,
+        }],
+        candidates: Vec::new(),
+    };
+    app.apply(Event::ServerAdmin {
+        server,
+        result: Ok(crate::server_settings::ServerAdminResult::RoleMembers(listed.clone())),
+    });
+    assert_eq!(
+        app.state()
+            .server_settings
+            .as_ref()
+            .and_then(|s| s.role_members.clone()),
+        Some(listed)
+    );
+}
+
+#[test]
 fn member_changes_need_the_open_card_and_its_powers() {
     use crate::members::{Moderation, ModerationRole};
     use crate::server_settings::{NICKNAME_MAX, ServerAdmin};

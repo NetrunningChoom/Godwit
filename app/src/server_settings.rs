@@ -3,14 +3,17 @@
 //! Server drafts stay local until Save; refreshes and failures preserve edits.
 use crate::{
     images::{AVATAR, Fit, Images},
-    ui::{AdminRoleItem, AppWindow, BanItem, EmojiItem, ModerationLogItem, PermissionItem, ServerInviteItem},
+    ui::{
+        AdminRoleItem, AppWindow, BanItem, EmojiItem, ModerationLogItem, PermissionItem, RoleMemberItem,
+        ServerInviteItem,
+    },
 };
 use godwit_core::application::{Action, AppState};
-use godwit_core::ids::ServerId;
+use godwit_core::ids::{ServerId, UserId};
 use godwit_core::own_profile::ProfileImage;
 use godwit_core::server_settings::{
-    EmojiFile, RoleEdit, SafetyChoices, ServerAdmin, ServerEmojis, ServerOverview, ServerOverviewEdit, ServerPage,
-    ServerRoles, ServerSettingsState,
+    EmojiFile, RoleEdit, RoleMember, RoleMembers, SafetyChoices, ServerAdmin, ServerEmojis, ServerOverview,
+    ServerOverviewEdit, ServerPage, ServerRoles, ServerSettingsState,
 };
 use slint::{ModelRc, VecModel};
 
@@ -30,6 +33,13 @@ pub struct ServerEditor {
     role_deny: u64,
     role_dirty: bool,
     roles_seen: Option<ServerRoles>,
+    /// The role's Members tab: whether it is showing, the filter over the
+    /// role's members, and the Add members picker (its filter and ticks).
+    members_tab: bool,
+    member_search: String,
+    picking: bool,
+    picker_search: String,
+    picked: Vec<UserId>,
     /// The Emoji page: the picture chosen for the next emoji, a problem with
     /// picking it, and whether a create is waiting for its answer.
     emoji_file: Option<EmojiFile>,
@@ -58,6 +68,18 @@ pub fn page_from_index(i: i32) -> ServerPage {
         5 => ServerPage::ModerationLog,
         _ => ServerPage::Overview,
     }
+}
+
+/// Most candidates the Add members picker lists at once; typing narrows them.
+const PICKER_LIMIT: usize = 100;
+
+/// The people whose name contains `query` (ignoring case), at most `limit`.
+fn matching<'a>(list: &'a [RoleMember], query: &str, limit: usize) -> Vec<&'a RoleMember> {
+    let query = query.trim().to_lowercase();
+    list.iter()
+        .filter(|m| query.is_empty() || m.name.to_lowercase().contains(&query))
+        .take(limit)
+        .collect()
 }
 
 /// A role colour as typed: empty for none, else `#rgb` or `#rrggbb`. The
@@ -258,6 +280,111 @@ impl ServerEditor {
         };
         self.role_index = usize::try_from(index).unwrap_or(0);
         self.load_role(ui, roles);
+        self.close_picker();
+        self.member_search.clear();
+        ui.set_server_edit_role_member_search("".into());
+    }
+
+    fn selected_role_id(&self, state: &AppState) -> Option<std::sync::Arc<str>> {
+        let roles = state.server_settings.as_ref()?.roles.as_ref()?;
+        Some(roles.roles.get(self.role_index.checked_sub(1)?)?.id.clone())
+    }
+
+    /// The members of the selected role, once they have arrived for it.
+    fn role_members<'a>(&self, state: &'a AppState) -> Option<&'a RoleMembers> {
+        let id = self.selected_role_id(state)?;
+        state
+            .server_settings
+            .as_ref()?
+            .role_members
+            .as_ref()
+            .filter(|m| m.role == id)
+    }
+
+    /// Asks for the selected role's members when the tab shows them and they
+    /// are not here yet.
+    pub fn load_role_members(&self, state: &AppState) -> Option<Action> {
+        let s = state.server_settings.as_ref()?;
+        if !self.members_tab || !s.roles.as_ref()?.role_members || self.role_members(state).is_some() {
+            return None;
+        }
+        Some(Action::ServerAdmin {
+            server: s.server.clone(),
+            op: ServerAdmin::LoadRoleMembers(self.selected_role_id(state)?),
+        })
+    }
+
+    pub fn set_members_tab(&mut self, on: bool) {
+        self.members_tab = on;
+        self.close_picker();
+    }
+
+    pub fn member_search_edited(&mut self, text: &str) {
+        self.member_search = text.to_owned();
+    }
+
+    pub fn picker_search_edited(&mut self, text: &str) {
+        self.picker_search = text.to_owned();
+    }
+
+    pub fn open_picker(&mut self) {
+        self.picking = true;
+    }
+
+    pub fn close_picker(&mut self) {
+        self.picking = false;
+        self.picker_search.clear();
+        self.picked.clear();
+    }
+
+    /// Ticks or unticks the picker's row.
+    pub fn toggle_picked(&mut self, state: &AppState, row: i32) {
+        let Some(user) = self
+            .role_members(state)
+            .and_then(|m| {
+                matching(&m.candidates, &self.picker_search, PICKER_LIMIT)
+                    .get(usize::try_from(row).ok()?)
+                    .copied()
+            })
+            .map(|m| m.user.clone())
+        else {
+            return;
+        };
+        match self.picked.iter().position(|u| *u == user) {
+            Some(i) => {
+                self.picked.remove(i);
+            }
+            None => self.picked.push(user),
+        }
+    }
+
+    /// Gives the role to everyone ticked in the picker.
+    pub fn add_picked(&mut self, state: &AppState) -> Option<Action> {
+        let role = self.selected_role_id(state)?;
+        let server = state.server_settings.as_ref()?.server.clone();
+        let users = std::mem::take(&mut self.picked);
+        self.close_picker();
+        (!users.is_empty()).then_some(Action::ServerAdmin {
+            server,
+            op: ServerAdmin::SetRoleMembers { role, users, on: true },
+        })
+    }
+
+    /// Takes the role from the member in row `row` of the filtered list.
+    pub fn remove_role_member(&self, state: &AppState, row: i32) -> Option<Action> {
+        let role = self.selected_role_id(state)?;
+        let user = matching(&self.role_members(state)?.members, &self.member_search, usize::MAX)
+            .get(usize::try_from(row).ok()?)?
+            .user
+            .clone();
+        Some(Action::ServerAdmin {
+            server: state.server_settings.as_ref()?.server.clone(),
+            op: ServerAdmin::SetRoleMembers {
+                role,
+                users: vec![user],
+                on: false,
+            },
+        })
     }
 
     pub fn role_edited(&mut self) {
@@ -615,6 +742,41 @@ impl ServerEditor {
                     })
                     .collect();
                 ui.set_server_edit_permissions(ModelRc::new(VecModel::from(perms)));
+                let tab = roles.role_members && self.role_index > 0 && self.members_tab;
+                ui.set_server_edit_role_members_available(roles.role_members && self.role_index > 0);
+                ui.set_server_edit_role_members_tab(tab);
+                ui.set_server_edit_role_picking(tab && self.picking);
+                let data = self.role_members(state).filter(|_| tab);
+                ui.set_server_edit_role_members_loaded(data.is_some());
+                let item =
+                    |m: &RoleMember, checked: bool, avatar: &mut dyn FnMut(Option<&str>) -> Option<slint::Image>| {
+                        let image = avatar(m.avatar_url.as_deref());
+                        RoleMemberItem {
+                            name: m.name.as_ref().into(),
+                            has_avatar: image.is_some(),
+                            avatar: image.unwrap_or_default(),
+                            checked,
+                        }
+                    };
+                let members: Vec<RoleMemberItem> = data
+                    .iter()
+                    .flat_map(|d| matching(&d.members, &self.member_search, usize::MAX))
+                    .map(|m| item(m, false, &mut avatar))
+                    .collect();
+                ui.set_server_edit_role_members(ModelRc::new(VecModel::from(members)));
+                let shown: Vec<&RoleMember> = data
+                    .filter(|_| self.picking)
+                    .map(|d| matching(&d.candidates, &self.picker_search, PICKER_LIMIT))
+                    .unwrap_or_default();
+                ui.set_server_edit_role_picker_more(
+                    data.is_some_and(|d| shown.len() == PICKER_LIMIT && d.candidates.len() > PICKER_LIMIT),
+                );
+                let picker: Vec<RoleMemberItem> = shown
+                    .into_iter()
+                    .map(|m| item(m, self.picked.contains(&m.user), &mut avatar))
+                    .collect();
+                ui.set_server_edit_role_picker(ModelRc::new(VecModel::from(picker)));
+                ui.set_server_edit_role_picked(i32::try_from(self.picked.len()).unwrap_or(i32::MAX));
             }
         }
     }
@@ -759,6 +921,31 @@ fn moved_role_ranks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn member_search_ignores_case_and_respects_the_limit() {
+        use godwit_core::ids::AccountId;
+        use godwit_core::network::Network;
+        let account = AccountId::new(Network::Stoat, "me");
+        let list: Vec<RoleMember> = ["Amy", "bob", "Abe"]
+            .iter()
+            .map(|n| RoleMember {
+                user: UserId::new(account.clone(), *n),
+                name: (*n).into(),
+                avatar_url: None,
+            })
+            .collect();
+        let names = |q: &str, l: usize| {
+            matching(&list, q, l)
+                .iter()
+                .map(|m| m.name.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names("", 10), ["Amy", "bob", "Abe"]);
+        assert_eq!(names(" A", 10), ["Amy", "Abe"]);
+        assert_eq!(names("a", 1), ["Amy"]);
+        assert!(names("zz", 10).is_empty());
+    }
 
     #[test]
     fn role_rank_moves_swap_neighbors_and_stop_at_the_edges() {

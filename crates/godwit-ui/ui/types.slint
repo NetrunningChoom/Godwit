@@ -754,6 +754,15 @@ export struct BanItem {
     has-avatar: bool,
 }
 
+// Server settings → Roles → Members: one person in the role's list or the
+// Add members picker (`checked` is the picker's tick).
+export struct RoleMemberItem {
+    name: string,
+    avatar: image,
+    has-avatar: bool,
+    checked: bool,
+}
+
 // Server settings → Emoji: one custom emoji.
 export struct EmojiItem {
     name: string,

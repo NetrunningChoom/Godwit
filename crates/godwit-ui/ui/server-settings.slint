@@ -4,8 +4,8 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import { Section } from "settings.slint";
-import { AdminRoleItem, BanItem, EmojiItem, PermissionItem, ServerInviteItem, ModerationLogItem } from "types.slint";
-import { Avatar, Button, ConfirmDialog, Dialog, IconButton, Select, TextArea, TextField, Toggle, TriState } from "widgets.slint";
+import { AdminRoleItem, BanItem, EmojiItem, PermissionItem, RoleMemberItem, ServerInviteItem, ModerationLogItem } from "types.slint";
+import { Avatar, Button, Checkbox, ConfirmDialog, Dialog, IconButton, Select, TextArea, TextField, Toggle, TriState } from "widgets.slint";
 
 // Server settings, as the official ServerSettings: a sidebar of pages
 // (Overview, Roles, Emoji, Invites, Bans), each shown only with the permission it
@@ -80,6 +80,18 @@ export component ServerSettings inherits Rectangle {
     in-out property <bool> role-hoist;
     in property <[PermissionItem]> permissions;
     in property <bool> role-dirty;
+    // The selected role's Members tab: offered, showing, its people (filtered
+    // in Rust), and the Add members picker.
+    in property <bool> role-members-available;
+    in property <bool> role-members-tab;
+    in property <bool> role-members-loaded;
+    in property <[RoleMemberItem]> role-members;
+    in property <bool> role-picking;
+    in property <[RoleMemberItem]> role-picker;
+    in property <bool> role-picker-more;
+    in property <int> role-picked;
+    in-out property <string> role-member-search;
+    in-out property <string> role-picker-search;
 
     callback close(); callback save(); callback reset(); callback reload(); callback changed();
     callback pick-image(bool); callback remove-image(bool);
@@ -89,6 +101,9 @@ export component ServerSettings inherits Rectangle {
     callback select-role(int); callback create-role(string); callback role-edited();
     callback set-permission-state(int, int); callback save-role(); callback delete-role();
     callback move-role(bool);
+    callback set-role-members-tab(bool); callback role-member-search-edited(string);
+    callback open-role-picker(); callback close-role-picker(); callback role-picker-search-edited(string);
+    callback toggle-role-picked(int); callback add-role-members(); callback remove-role-member(int);
     callback pick-emoji-file(); callback emoji-name-edited(); callback create-emoji();
     callback rename-emoji(int, string); callback delete-emoji(int);
     callback delete-server();
@@ -237,7 +252,63 @@ export component ServerSettings inherits Rectangle {
                     }
                     VerticalLayout {
                         horizontal-stretch: 1; spacing: Theme.space-4;
-                        if root.roles-loaded && root.role-index > 0: VerticalLayout {
+                        if root.role-members-available: HorizontalLayout {
+                            spacing: Theme.space-3; alignment: start;
+                            Button { text: "Settings"; kind: !root.role-members-tab ? "tonal" : "text"; clicked => { root.set-role-members-tab(false); } }
+                            Button { text: "Members"; kind: root.role-members-tab ? "tonal" : "text"; clicked => { root.set-role-members-tab(true); } }
+                        }
+                        if root.role-members-tab: VerticalLayout {
+                            vertical-stretch: 1; spacing: Theme.space-3;
+                            if !root.role-members-loaded: Text { text: "Loading members…"; color: Theme.on-surface-variant; }
+                            if root.role-members-loaded && !root.role-picking: HorizontalLayout {
+                                spacing: Theme.space-3;
+                                TextField { placeholder: "Search members"; text <=> root.role-member-search; edited(t) => { root.role-member-search-edited(t); } }
+                                Button { y: 4px; text: "Add members"; kind: "filled"; enabled: !root.admin-busy; clicked => { root.open-role-picker(); } }
+                            }
+                            if root.role-members-loaded && !root.role-picking && root.role-members.length == 0: Text { text: "No one has this role yet."; color: Theme.outline; }
+                            if root.role-members-loaded && !root.role-picking: members-scroll := ScrollView {
+                                vertical-stretch: 1;
+                                VerticalLayout {
+                                    width: members-scroll.visible-width;
+                                    spacing: Theme.space-1; alignment: start;
+                                    for m[i] in root.role-members: HorizontalLayout {
+                                        spacing: Theme.space-3; height: 40px;
+                                        Avatar { y: 4px; size: 32px; source: m.avatar; has-image: m.has-avatar; initials: ""; }
+                                        Text { text: m.name; vertical-alignment: center; overflow: elide; color: Theme.on-surface; horizontal-stretch: 1; }
+                                        IconButton { y: 4px; glyph: Icons.close; tooltip: "Remove from role"; enabled: !root.admin-busy; clicked => { root.remove-role-member(i); } }
+                                    }
+                                }
+                            }
+                            if root.role-members-loaded && root.role-picking: HorizontalLayout {
+                                spacing: Theme.space-3;
+                                TextField { placeholder: "Search server members"; autofocus: true; text <=> root.role-picker-search; edited(t) => { root.role-picker-search-edited(t); } }
+                            }
+                            if root.role-members-loaded && root.role-picking && root.role-picker.length == 0: Text { text: "No members to add."; color: Theme.outline; }
+                            if root.role-members-loaded && root.role-picking: picker-scroll := ScrollView {
+                                vertical-stretch: 1;
+                                VerticalLayout {
+                                    width: picker-scroll.visible-width;
+                                    spacing: Theme.space-1; alignment: start;
+                                    for m[i] in root.role-picker: Rectangle {
+                                        height: 40px;
+                                        HorizontalLayout {
+                                            spacing: Theme.space-3;
+                                            Checkbox { y: 0px; checked: m.checked; toggled => { root.toggle-role-picked(i); } }
+                                            Avatar { y: 4px; size: 32px; source: m.avatar; has-image: m.has-avatar; initials: ""; }
+                                            Text { text: m.name; vertical-alignment: center; overflow: elide; color: Theme.on-surface; horizontal-stretch: 1; }
+                                        }
+                                        TouchArea { mouse-cursor: pointer; clicked => { root.toggle-role-picked(i); } }
+                                    }
+                                    if root.role-picker-more: Text { text: "Search to narrow the list."; font-size: Theme.text-small; color: Theme.outline; }
+                                }
+                            }
+                            if root.role-members-loaded && root.role-picking: HorizontalLayout {
+                                spacing: Theme.space-3; alignment: end;
+                                Button { text: "Cancel"; kind: "text"; clicked => { root.close-role-picker(); } }
+                                Button { text: root.role-picked > 0 ? "Add " + root.role-picked : "Add"; kind: "filled"; enabled: root.role-picked > 0 && !root.admin-busy; clicked => { root.add-role-members(); } }
+                            }
+                        }
+                        if root.roles-loaded && root.role-index > 0 && !root.role-members-tab: VerticalLayout {
                             vertical-stretch: 0;
                             spacing: Theme.space-3;
                             Text { text: "Role name"; color: Theme.on-surface; }
@@ -262,7 +333,7 @@ export component ServerSettings inherits Rectangle {
                             }
                         }
                         if root.roles-loaded && root.role-index == 0: Text { text: "Everyone: what every member has without a role."; wrap: word-wrap; color: Theme.on-surface-variant; }
-                        perms := ScrollView {
+                        if !root.role-members-tab: perms := ScrollView {
                             vertical-stretch: 1;
                             VerticalLayout {
                                 width: perms.visible-width - 12px;
@@ -286,7 +357,7 @@ export component ServerSettings inherits Rectangle {
                                 }
                             }
                         }
-                        HorizontalLayout {
+                        if !root.role-members-tab: HorizontalLayout {
                             spacing: Theme.space-3; alignment: end;
                             if root.role-index > 0: Button { text: "Delete role"; danger: true; enabled: !root.admin-busy; clicked => { root.delete-role(); } }
                             Button { text: "Save"; kind: "filled"; enabled: root.role-dirty && !root.admin-busy; clicked => { root.save-role(); } }
