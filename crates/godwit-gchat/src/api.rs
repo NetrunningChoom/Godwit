@@ -354,6 +354,20 @@ impl Api {
         Ok(())
     }
 
+    /// Sets the conversation's typing state, following maugclib's
+    /// `GoogleChatClient.mark_typing` request shape.
+    pub async fn set_typing(&mut self, group: &str) -> Result<()> {
+        // https://github.com/mautrix/googlechat/blob/main/maugclib/client.py
+        let mut context = proto::TypingContext::new();
+        context.set_group_id(group_id(group).context("not a Google Chat conversation")?);
+        let mut request = proto::SetTypingStateRequest::new();
+        request.request_header = Some(Self::header()).into();
+        request.set_state(proto::TypingState::TYPING);
+        request.context = Some(context).into();
+        let _: proto::SetTypingStateResponse = self.call("set_typing_state", &request).await?;
+        Ok(())
+    }
+
     /// Sends `text` as a new topic (Chat's unthreaded message), with our
     /// `local_id` so its echo can be matched.
     pub async fn send(

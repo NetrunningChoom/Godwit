@@ -62,6 +62,9 @@ pub struct GChatAccount {
     conversations: HashMap<String, Conversation>,
     /// User id → (name, picture).
     users: HashMap<String, (String, Option<String>)>,
+    /// Who is typing per room, with when their notice came: a stop that
+    /// never arrives must not bring a name back with the next notice.
+    typing: HashMap<String, Vec<(String, std::time::Instant)>>,
     asked: HashSet<String>,
     /// Loaded messages' topics and times, by message id: edits, deletes,
     /// reactions and replies name a message within its topic.
@@ -113,6 +116,7 @@ impl GChatAccount {
             statuses: HashMap::new(),
             conversations: HashMap::new(),
             users: HashMap::new(),
+            typing: HashMap::new(),
             asked: HashSet::new(),
             messages: HashMap::new(),
             seen: HashSet::new(),
@@ -708,6 +712,50 @@ impl GChatAccount {
                         self.presence_now_forced(vec![id.to_owned()]);
                     }
                 }
+                Some(Type::TypingStateChanged(typing)) => {
+                    let raw = typing.context.group_id();
+                    let parsed = api::group_raw(raw);
+                    let Some(group) = parsed.as_deref().or(group.as_deref()) else {
+                        continue;
+                    };
+                    let user = typing.user_id.id();
+                    if user.is_empty() || user == self.me {
+                        continue;
+                    }
+                    let state = typing.state.unwrap_or_default().enum_value_or_default();
+                    if state != proto::TypingState::TYPING && state != proto::TypingState::STOPPED {
+                        continue;
+                    }
+                    let room = if typing.context.has_topic_id() {
+                        let topic = typing.context.topic_id().topic_id();
+                        let thread = format!("{group}#{topic}");
+                        if self.conversations.contains_key(&thread) {
+                            thread
+                        } else {
+                            group.to_owned()
+                        }
+                    } else {
+                        group.to_owned()
+                    };
+                    let name = self.users.get(user).map(|(name, _)| name.clone());
+                    if let Some(name) = name {
+                        let now = std::time::Instant::now();
+                        let names = self.typing.entry(room.clone()).or_default();
+                        names.retain(|(n, at)| {
+                            n != &name && now.saturating_duration_since(*at) < godwit_core::application::TYPING_FOR
+                        });
+                        if state == proto::TypingState::TYPING {
+                            names.push((name, now));
+                        }
+                        let names: Vec<_> = names.iter().map(|(n, _)| n.as_str().into()).collect();
+                        out.push(Event::Typing {
+                            room: RoomId::new(account.clone(), room.as_str()),
+                            names,
+                        });
+                    } else {
+                        self.want_users([user.to_owned()]);
+                    }
+                }
                 _ => {}
             }
         }
@@ -1155,6 +1203,12 @@ impl NetworkAccount for GChatAccount {
                     reply_to,
                 });
             }
+            Command::Typing { room } => {
+                let group = api::room_parts(&room.raw).0.to_owned();
+                if self.conversations.contains_key(&group) {
+                    self.net.send(Cmd::Typing { group });
+                }
+            }
             Command::EditMessage { room, message, text } => self.change(&room, &message, Change::Edit(text)),
             Command::DeleteMessage { room, message } => self.change(&room, &message, Change::Delete),
             Command::React {
@@ -1275,6 +1329,72 @@ mod tests {
         event.set_type(proto::event::EventType::MESSAGE_POSTED);
         event.body = Some(body).into();
         event
+    }
+
+    #[test]
+    fn typing_command_is_sent_only_for_a_known_room() {
+        let (mut a, mut cmds) = account();
+        let room = RoomId::new(AccountId::new(Network::GoogleChat, "test"), "space:2");
+        a.run(Command::Typing { room: room.clone() });
+        assert!(cmds.try_recv().is_err());
+        a.conversations.insert(
+            "space:2".into(),
+            Conversation {
+                name: "Team".into(),
+                with: None,
+                unread: false,
+                sort_us: 0,
+                icon: None,
+                parent: None,
+                root_time: 0,
+            },
+        );
+        a.run(Command::Typing { room });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Typing { group }) if group == "space:2"));
+    }
+
+    #[test]
+    fn typing_events_map_to_core_events_and_ignore_our_own_state() {
+        let (mut a, _) = account();
+        a.account = Some(AccountId::new(Network::GoogleChat, "test"));
+        a.me = "me".into();
+        a.conversations.insert(
+            "space:2".into(),
+            Conversation {
+                name: "Team".into(),
+                with: None,
+                unread: false,
+                sort_us: 0,
+                icon: None,
+                parent: None,
+                root_time: 0,
+            },
+        );
+        a.users.insert("ann".into(), ("Ann".into(), None));
+        let mut typing = proto::TypingStateChangedEvent::new();
+        typing.set_state(proto::TypingState::TYPING);
+        typing.user_id.mut_or_insert_default().set_id("ann".into());
+        let mut context = proto::TypingContext::new();
+        context.set_group_id(api::group_id("space:2").unwrap());
+        typing.context = Some(context).into();
+        let mut body = proto::event::EventBody::new();
+        body.set_typing_state_changed(typing.clone());
+        let mut event = proto::Event::new();
+        event.set_type(proto::event::EventType::TYPING_STATE_CHANGED);
+        event.body = Some(body).into();
+        let mut out = Vec::new();
+        a.stream_event(event, &mut out);
+        assert!(matches!(out.as_slice(), [Event::Typing { names, .. }] if names.len() == 1 && &*names[0] == "Ann"));
+
+        typing.user_id.mut_or_insert_default().set_id("me".into());
+        let mut body = proto::event::EventBody::new();
+        body.set_typing_state_changed(typing);
+        let mut event = proto::Event::new();
+        event.set_type(proto::event::EventType::TYPING_STATE_CHANGED);
+        event.body = Some(body).into();
+        out.clear();
+        a.stream_event(event, &mut out);
+        assert!(out.is_empty());
     }
 
     #[test]

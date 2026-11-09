@@ -43,6 +43,9 @@ pub enum Cmd {
         /// The message this quotes, if a reply.
         reply_to: Option<crate::api::Target>,
     },
+    Typing {
+        group: String,
+    },
     /// Edit, delete or react to a message; the conversation is fetched again
     /// after (no push yet), so it shows the result.
     Change {
@@ -236,6 +239,13 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                                 let result = result
                                     .map(Box::new).map_err(|e| text(&e));
                                 out.send(Ev::Sent { group, nonce, result });
+                            });
+                        }
+                    }
+                    Cmd::Typing { group } => {
+                        if let Some(api) = api.clone() {
+                            requests.spawn(async move {
+                                let _ = api.lock().await.set_typing(&group).await;
                             });
                         }
                     }
