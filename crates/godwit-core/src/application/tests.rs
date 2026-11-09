@@ -571,17 +571,28 @@ fn late_results_after_sign_out_do_not_bring_its_state_back() {
         account: me.clone(),
         users: vec![UserId::new(me.clone(), "them")],
     });
+    app.apply(Event::Ignored {
+        account: me.clone(),
+        users: vec![UserId::new(me.clone(), "ignored")],
+    });
     assert_eq!(app.state().blocked.len(), 1);
+    assert_eq!(app.state().ignored.len(), 1);
     app.apply(Event::AccountLost {
         account: me.clone(),
         reason: "".into(),
     });
     assert!(app.state().blocked.is_empty(), "signing out clears the blocked list");
+    assert!(app.state().ignored.is_empty(), "signing out clears the ignored list");
     app.apply(Event::Blocked {
         account: me.clone(),
         users: vec![UserId::new(me.clone(), "them")],
     });
+    app.apply(Event::Ignored {
+        account: me.clone(),
+        users: vec![UserId::new(me.clone(), "ignored")],
+    });
     assert!(app.state().blocked.is_empty(), "late lists are ignored");
+    assert!(app.state().ignored.is_empty(), "late ignored lists are ignored");
     let them = Person {
         id: UserId::new(me.clone(), "them"),
         name: "Them".into(),

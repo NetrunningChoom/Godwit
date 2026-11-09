@@ -336,6 +336,11 @@ impl Application {
                 self.state.blocked.extend(users);
                 Vec::new()
             }
+            Event::Ignored { account, users } => {
+                self.state.ignored.retain(|u| u.account != account);
+                self.state.ignored.extend(users);
+                Vec::new()
+            }
             Event::Favourites { account, users } => {
                 self.state.favourites.retain(|u| u.account != account);
                 self.state.favourites.extend(users);

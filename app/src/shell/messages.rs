@@ -331,9 +331,9 @@ impl Shell {
     }
 
     pub fn link(&mut self, ui: &AppWindow, row: i32, url: &str) {
-        if url == crate::view::REVEAL_BLOCKED {
-            // A collapsed run of blocked messages: show each of its messages.
-            if let Some(run) = self.message_at(row).and_then(|id| self.presenter.blocked_runs.get(&id)) {
+        if url == crate::view::REVEAL_HIDDEN {
+            // A collapsed run of hidden messages: show each message for this session.
+            if let Some(run) = self.message_at(row).and_then(|id| self.presenter.hidden_runs.get(&id)) {
                 let run = run.clone();
                 self.presenter.revealed_runs.extend(run);
                 self.refresh(ui);

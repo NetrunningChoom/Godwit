@@ -924,6 +924,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         Scene::new("channel", Box::new(|_, _, _, _| Screen::Main)),
         Scene::new(
+            "ignored-messages",
+            Box::new(|app, _, _, _| {
+                let general = RoomId::new(account(), "general");
+                let ignored = user("ignored-preview");
+                app.apply(Event::History {
+                    room: general,
+                    before: None,
+                    messages: vec![
+                        msg(
+                            "ignore-a",
+                            "ignored-preview",
+                            "Ignored person",
+                            1,
+                            "First hidden message",
+                        ),
+                        msg(
+                            "ignore-b",
+                            "ignored-preview",
+                            "Ignored person",
+                            2,
+                            "Second hidden message",
+                        ),
+                    ],
+                    reached_start: true,
+                });
+                app.apply(Event::Ignored {
+                    account: account(),
+                    users: vec![ignored],
+                });
+                Screen::Main
+            }),
+        ),
+        Scene::new(
             "composer-emoji",
             Box::new(|app, _, _, _| {
                 app.dispatch(Action::SetDraft("Hello 👋 😀 ❤️ 👩‍💻 🇫🇮 — text after emoji".into()));

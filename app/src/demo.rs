@@ -2633,7 +2633,16 @@ impl DemoAccount {
         } else {
             self.ignored.remove(&raw);
         }
-        self.run(godwit_core::application::Command::LoadProfile { user, room: None })
+        let mut out = self.run(godwit_core::application::Command::LoadProfile { user, room: None });
+        out.push(Event::Ignored {
+            account: self.id.clone(),
+            users: self
+                .ignored
+                .iter()
+                .map(|raw| UserId::new(self.id.clone(), raw.as_str()))
+                .collect(),
+        });
+        out
     }
 
     /// What the card of `raw` offers us in a server we manage (everything, as

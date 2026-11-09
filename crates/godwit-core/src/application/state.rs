@@ -208,6 +208,8 @@ pub struct AppState {
     pub reactors: Option<(RoomId, MessageId, Arc<str>, Vec<Person>)>,
     /// People we blocked: their messages collapse in the timeline.
     pub blocked: std::collections::HashSet<UserId>,
+    /// People we ignored on networks that support it: their messages collapse too.
+    pub ignored: std::collections::HashSet<UserId>,
     /// Favourite people as the networks keep them (on those whose
     /// [`Network::keeps_favourites`](crate::network::Network::keeps_favourites)),
     /// so a star set in their own clients shows here too. Godwit's own,

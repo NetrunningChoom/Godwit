@@ -81,6 +81,15 @@ impl DiscordAccount {
                 users: blocked,
             });
         }
+        let mut ignored: Vec<UserId> = self.store.ignored.iter().filter_map(|u| self.user_id(u)).collect();
+        ignored.sort_by(|a, b| a.raw.cmp(&b.raw));
+        if ignored != self.ignored {
+            self.ignored = ignored.clone();
+            out.push(Event::Ignored {
+                account: account.clone(),
+                users: ignored,
+            });
+        }
         if requests != self.requests {
             self.requests = requests.clone();
             out.push(Event::FriendRequests {

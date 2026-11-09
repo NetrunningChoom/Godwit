@@ -346,6 +346,7 @@ impl Application {
         match event {
             Event::Friends { account, .. }
             | Event::Blocked { account, .. }
+            | Event::Ignored { account, .. }
             | Event::Authors { account, .. }
             | Event::PeopleDirectory { account, .. }
             | Event::Presences { account, .. }

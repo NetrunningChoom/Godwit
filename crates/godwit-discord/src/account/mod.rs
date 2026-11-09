@@ -123,6 +123,7 @@ pub struct DiscordAccount {
     requests: (Vec<Person>, Vec<Person>),
     /// The users we blocked, as last sent to the core.
     blocked: Vec<UserId>,
+    ignored: Vec<UserId>,
     /// Friends' activities as last sent (Event::Activities), to send changes only.
     activities: Vec<(UserId, Arc<str>)>,
     /// The custom emoji groups as last sent (Event::CustomEmoji).
@@ -219,6 +220,7 @@ impl DiscordAccount {
             friends: Vec::new(),
             requests: (Vec::new(), Vec::new()),
             blocked: Vec::new(),
+            ignored: Vec::new(),
             activities: Vec::new(),
             emoji_sent: None,
             stickers_sent: None,
@@ -2247,6 +2249,17 @@ mod tests {
         assert!(
             out.iter()
                 .any(|e| matches!(e, Event::Blocked { users, .. } if users.is_empty()))
+        );
+        let ignored = a.user_id("200").unwrap();
+        let out = a.run(Command::IgnoreUser { user: ignored.clone() });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Ignored { users, .. } if users == std::slice::from_ref(&ignored)))
+        );
+        let out = a.run(Command::UnignoreUser { user: ignored });
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::Ignored { users, .. } if users.is_empty()))
         );
     }
 
