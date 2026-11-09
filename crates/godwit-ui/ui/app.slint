@@ -963,6 +963,7 @@ export component AppWindow inherits Window {
     // Copies this text itself to the clipboard (a username).
     callback copy-string(string);
     callback copy-link(int);
+    callback activate-message-button(int, string);
     callback message-profile();
     callback link-profile();
     callback set-nudges(int, bool);
@@ -1489,6 +1490,7 @@ export component AppWindow inherits Window {
                                         create-poll => { root.create-poll(); }
                                         copy-text(i) => { root.copy-text(i); }
                                         copy-link(i) => { root.copy-link(i); }
+                                        activate-message-button(i, custom-id) => { root.activate-message-button(i, custom-id); }
                                     }
                                     if !root.has-room && !root.page: Rectangle {
                                         horizontal-stretch: 1;

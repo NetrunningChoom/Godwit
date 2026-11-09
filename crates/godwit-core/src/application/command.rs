@@ -414,6 +414,12 @@ pub enum Command {
         to: RoomId,
         comment: String,
     },
+    /// Activates a network-defined message button.
+    ActivateMessageButton {
+        room: RoomId,
+        message: MessageId,
+        custom_id: Arc<str>,
+    },
     /// Everything after `last_read` is unread again (None: the whole room).
     MarkUnread {
         room: RoomId,

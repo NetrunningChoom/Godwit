@@ -397,6 +397,7 @@ impl FluxerAccount {
                 .map(|r| MessageId(r.into())),
             jumbo: Vec::new(),
             attachments,
+            components: None,
             embeds: Vec::new(),
             invites: Vec::new(),
             reactions,
@@ -718,6 +719,8 @@ impl FluxerAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            // This account has no message component button implementation.
+            Command::ActivateMessageButton { .. } => {}
             // Fluxer contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Fluxer rooms do not currently expose group leave or recipient editing.

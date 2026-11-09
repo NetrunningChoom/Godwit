@@ -1305,6 +1305,44 @@ impl Application {
         }]
     }
 
+    pub(super) fn dispatch_activate_message_button(
+        &mut self,
+        room: RoomId,
+        message: MessageId,
+        custom_id: Arc<str>,
+    ) -> Vec<Effect> {
+        let valid = !custom_id.is_empty()
+            && self.state.room(&room).is_some()
+            && self.state.timelines.get(&room).is_some_and(|timeline| {
+                timeline.messages.iter().any(|m| {
+                    m.id == message
+                        && m.components.as_ref().is_some_and(|components| {
+                            components.rows.iter().any(|row| {
+                                row.items.iter().any(|item| match item {
+                                    crate::message::MessageComponent::Button(button) => {
+                                        !button.disabled
+                                            && button.url.is_none()
+                                            && button.custom_id.as_deref() == Some(&custom_id)
+                                    }
+                                    crate::message::MessageComponent::Select(_) => false,
+                                })
+                            })
+                        })
+                })
+            });
+        if !valid {
+            return Vec::new();
+        }
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::ActivateMessageButton {
+                room,
+                message,
+                custom_id,
+            },
+        }]
+    }
+
     pub(super) fn dispatch_create_poll(
         &mut self,
         question: String,

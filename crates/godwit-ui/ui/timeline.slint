@@ -199,6 +199,7 @@ export component Timeline inherits Rectangle {
     callback create-poll();
     callback copy-text(int);
     callback copy-link(int);
+    callback activate-message-button(int, string);
 
     // A newly opened room puts the cursor in its composer, as officially.
     changed title => { input.focus(); }
@@ -1131,6 +1132,7 @@ export component Timeline inherits Rectangle {
                     end-poll => { root.end-poll(i); }
                     copy-text => { root.copy-text(i); }
                     copy-link => { root.copy-link(i); }
+                    activate-component(custom-id) => { root.activate-message-button(i, custom-id); }
                 }
                 if i == root.messages.length - 1: Rectangle { height: Theme.gap-md; }
             }

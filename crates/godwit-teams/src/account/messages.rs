@@ -171,6 +171,7 @@ impl TeamsAccount {
             reply_to: converted.reply_to.or(thread_root).map(|r| MessageId(r.into())),
             jumbo: Vec::new(),
             attachments,
+            components: None,
             embeds: Vec::new(),
             invites: Vec::new(),
             reactions,

@@ -68,6 +68,7 @@ impl StoatAccount {
                     })
                 })
                 .collect(),
+            components: None,
             embeds: m.embeds.iter().filter_map(|e| self.embed(e, server)).collect(),
             invites: if system {
                 Vec::new()

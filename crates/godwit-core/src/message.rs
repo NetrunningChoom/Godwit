@@ -59,6 +59,58 @@ pub struct Reaction {
     pub me: bool,
 }
 
+/// A compact row of controls attached to a message. Networks map their own
+/// component formats here so the timeline stays network-neutral.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageComponents {
+    pub rows: Vec<MessageComponentRow>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageComponentRow {
+    pub items: Vec<MessageComponent>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MessageComponent {
+    Button(MessageButton),
+    Select(MessageSelect),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MessageButtonStyle {
+    #[default]
+    Secondary,
+    Primary,
+    Success,
+    Danger,
+    Link,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageButton {
+    pub label: Option<Arc<str>>,
+    pub emoji: Option<Arc<str>>,
+    pub style: MessageButtonStyle,
+    pub url: Option<Arc<str>>,
+    pub disabled: bool,
+    pub custom_id: Option<Arc<str>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageSelect {
+    pub placeholder: Option<Arc<str>>,
+    pub options: Vec<MessageSelectOption>,
+    pub disabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageSelectOption {
+    pub label: Arc<str>,
+    pub description: Option<Arc<str>>,
+    pub emoji: Option<Arc<str>>,
+}
+
 /// How an embed is drawn (the official Stoat client's three looks).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EmbedStyle {
@@ -130,6 +182,9 @@ pub struct Message {
     /// large in place of the text.
     pub jumbo: Vec<(Arc<str>, Arc<str>)>,
     pub attachments: Vec<Attachment>,
+    /// Kept absent on ordinary messages to avoid per-message component storage.
+    #[serde(default)]
+    pub components: Option<Box<MessageComponents>>,
     pub embeds: Vec<Embed>,
     /// Invite codes the message links to plainly (the official client shows
     /// a card with Join for each).

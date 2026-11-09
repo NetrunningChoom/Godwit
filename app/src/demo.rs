@@ -74,6 +74,7 @@ pub fn msg(id: &str, who: &str, name: &str, at_min: i64, text: &str) -> Message 
         pinned: false,
         forwardable: false,
         poll_endable: false,
+        components: None,
     }
 }
 
@@ -890,6 +891,7 @@ pub fn multi(app: &mut Application) -> RoomId {
                 reply_to: None,
                 jumbo: c.jumbo.into_iter().map(|(u, n)| (u.into(), n.into())).collect(),
                 attachments: Vec::new(),
+                components: None,
                 embeds: Vec::new(),
                 invites: Vec::new(),
                 reactions: Vec::new(),
@@ -1034,6 +1036,7 @@ impl godwit_core::account::NetworkAccount for DemoSteam {
                 nonce,
                 error: "Not signed in to this account.".into(),
             }],
+            godwit_core::application::Command::ActivateMessageButton { .. } => Vec::new(),
             _ => Vec::new(),
         }
     }
@@ -1117,6 +1120,7 @@ pub fn discord_world() -> (
     // Two more servers, so the demo has a folder of two (as Discord's
     // `user_settings.guild_folders`: a lone server has a null id).
     let mut ready = ready;
+    ready["session_id"] = json!("demo-session");
     let (second, third) = (flake(120), flake(121));
     for (id, name) in [(&second, bogus.name()), (&third, bogus.name())] {
         if let Some(list) = ready["guilds"].as_array_mut() {
@@ -1205,6 +1209,18 @@ pub fn discord_world() -> (
         msg(207, &general, user(1), format!("<@&{mods}> {}", filler(319, 4))),
         msg(209, &general, user(0), "https://discord.gg/DemoInvite".into()),
     ];
+    let mut bot_message = msg(
+        210,
+        &general,
+        json!({"id": flake(8), "username": "helper_bot", "global_name": "Helper Bot", "avatar": null, "bot": true}),
+        "Need a hand? Try one of these.".into(),
+    );
+    bot_message["application_id"] = json!(flake(9));
+    bot_message["components"] = json!([{"type": 1, "components": [
+        {"type": 2, "style": 1, "label": "Help", "custom_id": "demo:help"},
+        {"type": 2, "style": 5, "label": "Project site", "url": "https://example.invalid"}
+    ]}]);
+    general_msgs.push(bot_message);
     general_msgs[1]["reactions"] = json!([{"emoji": {"id": null, "name": "👍"}, "count": 2, "me": true}, {"emoji": {"id": emoji, "name": "blob"}, "count": 1, "me": false}]);
     general_msgs[4]["type"] = json!(19);
     general_msgs[4]["message_reference"] = json!({"message_id": flake(201)});
@@ -2405,6 +2421,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 source: text.as_str().into(),
             }],
             Command::DeleteMessage { room, message } => vec![Event::MessageDeleted { room, id: message }],
+            Command::ActivateMessageButton { .. } => Vec::new(),
             // Every room's messages are there from the start.
             Command::LoadHistory { room, before } => {
                 vec![Event::History {

@@ -24,6 +24,19 @@ impl DiscordAccount {
             .or_else(|| self.store.channels.get(channel).and_then(|c| c.guild.clone()));
         let author = m["author"]["id"].as_str().unwrap_or_default();
         let kind = m["type"].as_u64().unwrap_or_default();
+        let components = parse_message_components(&m["components"]);
+        if components.is_some() {
+            self.component_contexts.borrow_mut().insert(
+                id.to_owned(),
+                json!({
+                    "application_id": m["application_id"],
+                    "guild_id": m["guild_id"],
+                    "flags": m["flags"].as_u64().unwrap_or_default(),
+                }),
+            );
+        } else {
+            self.component_contexts.borrow_mut().remove(id);
+        }
         // A forwarded message (`message_reference.type` 1) carries the original
         // in `message_snapshots`; it's shown with a "Forwarded" line, as officially.
         let forwarded = (m["message_reference"]["type"].as_u64() == Some(1))
@@ -109,6 +122,7 @@ impl DiscordAccount {
                 .map(|r| MessageId(r.into())),
             jumbo: stickers(m),
             attachments,
+            components: components.map(Box::new),
             embeds: body["embeds"]
                 .as_array()
                 .into_iter()
@@ -355,6 +369,111 @@ impl DiscordAccount {
 
     pub(super) fn channel_of(&self, room: &RoomId) -> Option<String> {
         (self.account.as_ref() == Some(&room.account)).then(|| room.raw.to_string())
+    }
+}
+
+fn parse_message_components(value: &Value) -> Option<godwit_core::message::MessageComponents> {
+    use godwit_core::message::{
+        MessageButton, MessageButtonStyle as Style, MessageComponent, MessageComponentRow, MessageComponents,
+        MessageSelect, MessageSelectOption,
+    };
+    // Discord's Message Components spec assigns these row, button and select types;
+    // skipping unknown types keeps newer controls from hiding known ones.
+    // https://discord.com/developers/docs/interactions/message-components
+    let mut rows = Vec::new();
+    for row in value.as_array()? {
+        if row["type"].as_u64() != Some(1) {
+            continue;
+        }
+        let mut items = Vec::new();
+        for item in row["components"].as_array().into_iter().flatten() {
+            let text = |key: &str| item[key].as_str().map(Into::into);
+            let emoji = || item["emoji"]["name"].as_str().map(Into::into);
+            match item["type"].as_u64() {
+                Some(2) => {
+                    let style = match item["style"].as_u64().unwrap_or(2) {
+                        1 => Style::Primary,
+                        3 => Style::Success,
+                        4 => Style::Danger,
+                        5 => Style::Link,
+                        _ => Style::Secondary,
+                    };
+                    items.push(MessageComponent::Button(MessageButton {
+                        label: text("label"),
+                        emoji: emoji(),
+                        style,
+                        url: text("url"),
+                        disabled: item["disabled"].as_bool().unwrap_or(false),
+                        custom_id: text("custom_id"),
+                    }));
+                }
+                Some(kind @ (3 | 5 | 6 | 7 | 8)) => {
+                    let options = if kind == 3 {
+                        item["options"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|option| {
+                                Some(MessageSelectOption {
+                                    label: option["label"].as_str()?.into(),
+                                    description: option["description"].as_str().map(Into::into),
+                                    emoji: option["emoji"]["name"].as_str().map(Into::into),
+                                })
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    items.push(MessageComponent::Select(MessageSelect {
+                        placeholder: text("placeholder"),
+                        options,
+                        disabled: item["disabled"].as_bool().unwrap_or(false),
+                    }));
+                }
+                _ => {}
+            }
+        }
+        if !items.is_empty() {
+            rows.push(MessageComponentRow { items });
+        }
+    }
+    (!rows.is_empty()).then_some(MessageComponents { rows })
+}
+
+#[cfg(test)]
+mod component_tests {
+    use super::*;
+
+    #[test]
+    fn parses_supported_component_types_and_skips_unknowns() {
+        let parsed = parse_message_components(&json!([
+            {"type": 1, "components": [
+                {"type": 2, "style": 1, "label": "Go", "custom_id": "go", "emoji": {"name": "✅"}},
+                {"type": 2, "style": 5, "label": "Site", "url": "https://example.org"},
+                {"type": 99, "label": "future"}
+            ]},
+            {"type": 1, "components": [
+                {"type": 3, "placeholder": "Pick", "options": [{"label": "One", "description": "First", "emoji": {"name": "1️⃣"}}]},
+                {"type": 5, "placeholder": "Upload"},
+                {"type": 6, "placeholder": "User"},
+                {"type": 7, "placeholder": "Role"},
+                {"type": 8, "placeholder": "Mentionable"},
+                {"type": 100}
+            ]},
+            {"type": 42, "components": [{"type": 2, "label": "ignored row"}]}
+        ])).expect("known components");
+        assert_eq!(parsed.rows.len(), 2);
+        assert_eq!(parsed.rows[0].items.len(), 2);
+        assert_eq!(parsed.rows[1].items.len(), 5);
+        let godwit_core::message::MessageComponent::Button(button) = &parsed.rows[0].items[0] else {
+            panic!("button")
+        };
+        assert_eq!(button.custom_id.as_deref(), Some("go"));
+        assert_eq!(button.emoji.as_deref(), Some("✅"));
+        let godwit_core::message::MessageComponent::Select(select) = &parsed.rows[1].items[0] else {
+            panic!("select")
+        };
+        assert_eq!(select.options[0].description.as_deref(), Some("First"));
     }
 }
 

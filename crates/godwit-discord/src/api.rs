@@ -1187,6 +1187,14 @@ impl Api {
         self.empty(with_json(self.request(Method::PUT, &path), &body)).await
     }
 
+    /// Invokes a message button using the browser client's interaction body
+    /// (Yapfast `components.rs`; Discord Message Components API).
+    pub async fn message_component(&self, body: &Value) -> Result<()> {
+        self.json(with_json(self.request(Method::POST, "/interactions"), body))
+            .await
+            .map(drop)
+    }
+
     /// Posts a poll as a message of its own (docs.discord.food, Poll Create
     /// Structure); it comes back through the gateway like any message.
     pub async fn create_poll(&self, channel: &str, body: &Value) -> Result<()> {
@@ -1274,6 +1282,44 @@ pub fn snowflake_ms(id: &str) -> i64 {
 pub fn nonce() -> String {
     let now_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
     (now_ms.saturating_sub(DISCORD_EPOCH_MS) << 22).to_string()
+}
+
+/// Inputs the browser client includes in a type 3 component interaction.
+pub struct MessageComponentInteraction<'a> {
+    pub application_id: &'a str,
+    pub guild_id: Option<&'a str>,
+    pub channel_id: &'a str,
+    pub message_id: &'a str,
+    pub message_flags: u64,
+    pub session_id: &'a str,
+    pub nonce: &'a str,
+    pub custom_id: &'a str,
+}
+
+/// The browser client sends component clicks as type 3 interactions
+/// (docs/discord-parity.md, Yapfast `components.rs`).
+pub fn message_component_body(interaction: MessageComponentInteraction<'_>) -> Value {
+    let MessageComponentInteraction {
+        application_id,
+        guild_id,
+        channel_id,
+        message_id,
+        message_flags,
+        session_id,
+        nonce,
+        custom_id,
+    } = interaction;
+    json!({
+        "type": 3,
+        "application_id": application_id,
+        "guild_id": guild_id,
+        "channel_id": channel_id,
+        "message_id": message_id,
+        "message_flags": message_flags,
+        "session_id": session_id,
+        "nonce": nonce,
+        "data": {"component_type": 2, "custom_id": custom_id},
+    })
 }
 
 /// An answer's JSON body, or null.
@@ -1443,6 +1489,27 @@ mod tests {
     fn reactor_emoji_path_segment_is_encoded() {
         assert_eq!(encode("name:123"), "name%3A123");
         assert_eq!(encode("😀"), "%F0%9F%98%80");
+    }
+
+    #[test]
+    fn component_interaction_payload_matches_browser_shape() {
+        assert_eq!(
+            message_component_body(MessageComponentInteraction {
+                application_id: "app",
+                guild_id: Some("guild"),
+                channel_id: "channel",
+                message_id: "message",
+                message_flags: 64,
+                session_id: "session",
+                nonce: "nonce",
+                custom_id: "custom"
+            }),
+            json!({
+                "type": 3, "application_id": "app", "guild_id": "guild", "channel_id": "channel",
+                "message_id": "message", "message_flags": 64, "session_id": "session", "nonce": "nonce",
+                "data": {"component_type": 2, "custom_id": "custom"}
+            })
+        );
     }
 
     #[test]

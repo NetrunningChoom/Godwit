@@ -828,6 +828,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_close_picker() => |sh, ui| sh.close_picker(ui));
     callback!(ui.on_open_attachment(row, index) => |sh, ui| sh.open_attachment(ui, row, index));
     callback!(ui.on_link_clicked(row, url) => |sh, ui| sh.link(ui, row, &url));
+    callback!(ui.on_activate_message_button(row, custom_id) => |sh, ui| sh.activate_message_button(ui, row, &custom_id));
     callback!(ui.on_play_inline(url, kind) => |sh, ui| sh.play_inline(ui, &url, &kind));
     callback!(ui.on_join_invite(code) => |sh, ui| sh.join_invite(ui, &code));
     callback!(ui.on_join_activity(url) => |sh, _ui| sh.join_activity(&url));

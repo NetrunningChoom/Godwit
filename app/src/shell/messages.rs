@@ -575,6 +575,21 @@ impl Shell {
         }
     }
 
+    pub fn activate_message_button(&mut self, ui: &AppWindow, row: i32, custom_id: &str) {
+        let Some(room) = self.presenter.timeline_of.clone() else {
+            return;
+        };
+        let Some(message) = self.message_at(row) else { return };
+        self.act(
+            ui,
+            Action::ActivateMessageButton {
+                room,
+                message,
+                custom_id: custom_id.into(),
+            },
+        );
+    }
+
     /// "Open" in the link question.
     pub fn open_confirmed_link(&mut self, ui: &AppWindow) {
         let url = ui.get_confirm_link();

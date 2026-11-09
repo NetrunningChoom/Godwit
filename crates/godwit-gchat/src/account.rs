@@ -353,6 +353,7 @@ impl GChatAccount {
             reply_to: None,
             jumbo: Vec::new(),
             attachments: crate::media::attachments(m, &self.media),
+            components: None,
             embeds: crate::media::embeds(m, &self.media),
             invites: Vec::new(),
             reactions: m
@@ -1006,6 +1007,8 @@ impl NetworkAccount for GChatAccount {
 
     fn run(&mut self, command: Command) -> Vec<Event> {
         match command {
+            // Google Chat interactive cards aren't mapped to message buttons.
+            Command::ActivateMessageButton { .. } => {}
             // Google Chat contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Google Chat rooms do not currently expose group leave or recipient editing.

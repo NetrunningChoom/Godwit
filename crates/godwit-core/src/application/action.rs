@@ -230,6 +230,12 @@ pub enum Action {
         to: RoomId,
         comment: String,
     },
+    /// Activates a button attached to a message, where the network supports it.
+    ActivateMessageButton {
+        room: RoomId,
+        message: MessageId,
+        custom_id: Arc<str>,
+    },
     /// Add our reaction with `emoji`, or take it back if it's there.
     ToggleReaction {
         message: MessageId,

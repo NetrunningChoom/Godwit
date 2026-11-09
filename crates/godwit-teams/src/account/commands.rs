@@ -106,6 +106,7 @@ impl TeamsAccount {
                                     .as_str()
                                     .map(|content| crate::media::attachments(content, &[], self.media.as_ref()))
                                     .unwrap_or_default(),
+                                components: None,
                                 embeds: Vec::new(),
                                 invites: Vec::new(),
                                 reactions: Vec::new(),
@@ -226,6 +227,8 @@ impl TeamsAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            // Teams message components are not available through this account.
+            Command::ActivateMessageButton { .. } => {}
             // Teams contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Teams rooms do not currently expose group leave or recipient editing.

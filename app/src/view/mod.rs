@@ -42,8 +42,8 @@ use crate::code;
 use crate::images::{AVATAR, BANNER, CAPSULE, EMBED_ICON, EMOJI, Fit, Images, JUMBO, PREVIEW, REPLY_AVATAR, THUMBNAIL};
 use crate::inline_player::{InlinePlayers, Kind as PlayerKind, Spec as PlayerSpec};
 use crate::ui::{
-    AccountItem, AppWindow, AttachmentItem, BlockItem, CallMemberItem, ContactItem, DirectoryItem, EmbedItem,
-    EmojiCellItem, IdentityItem, InviteItem, MemberItem, MemberRoleItem, MergeItem, MessageItem, MutualItem,
-    NetworkItem, PersonItem, PieceItem, ReactionItem, RequestItem, RoleItem, RoomItem, ServerItem, SwitchItem,
-    VerifyEmojiItem,
+    AccountItem, AppWindow, AttachmentItem, BlockItem, CallMemberItem, ComponentItem, ComponentRowItem, ContactItem,
+    DirectoryItem, EmbedItem, EmojiCellItem, IdentityItem, InviteItem, MemberItem, MemberRoleItem, MergeItem,
+    MessageItem, MutualItem, NetworkItem, PersonItem, PieceItem, ReactionItem, RequestItem, RoleItem, RoomItem,
+    ServerItem, SwitchItem, VerifyEmojiItem,
 };

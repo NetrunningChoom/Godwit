@@ -18,6 +18,8 @@ impl StoatAccount {
 
     pub(super) fn run_command(&mut self, command: Command) -> Vec<Event> {
         match command {
+            // Stoat does not provide message component buttons.
+            Command::ActivateMessageButton { .. } => Vec::new(),
             Command::CreateServer { name } => {
                 // The official for-web CreateServer modal follows DataCreateServer.name (1–32 characters):
                 // https://github.com/stoatchat/for-web/blob/main/packages/client/components/modal/modals/CreateServer.tsx

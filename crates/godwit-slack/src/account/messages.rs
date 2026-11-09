@@ -119,6 +119,7 @@ impl SlackAccount {
             reply_to: thread,
             jumbo: Vec::new(),
             attachments,
+            components: None,
             embeds: Vec::new(),
             invites: Vec::new(),
             reactions,

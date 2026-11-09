@@ -93,6 +93,7 @@ export component MessageRow inherits Rectangle {
     callback copy-link();
     callback open-picker();
     callback jump-to-reply();
+    callback activate-component(string);
 
 
 
@@ -346,6 +347,40 @@ export component MessageRow inherits Rectangle {
                             player-fullscreen(u) => { root.player-fullscreen(u); }
                             player-pointer(u, x, y, d) => { root.player-pointer(u, x, y, d); }
                             player-move(u, x, y) => { root.player-move(u, x, y); }
+                        }
+                    }
+                    for component_row in message.components: HorizontalLayout {
+                        alignment: start;
+                        spacing: Theme.space-2;
+                        for item in component_row.items: Rectangle {
+                            if item.kind == "button": Button {
+                                text: item.label;
+                                compact: true;
+                                kind: item.style == 1 || item.style == 3 ? "filled" : item.style == 2 ? "tonal" : "text";
+                                danger: item.style == 4;
+                                enabled: !item.disabled;
+                                clicked => {
+                                    if item.style == 5 { root.link-clicked(item.url); }
+                                    else { root.activate-component(item.custom-id); }
+                                }
+                            }
+                            if item.kind == "select": Rectangle {
+                                height: Theme.control-button;
+                                width: max(Theme.control-button, placeholder.preferred-width + 2 * Theme.space-3);
+                                border-radius: Theme.radius-sm;
+                                border-width: 1px;
+                                border-color: Theme.outline-variant;
+                                background: Theme.surface-high;
+                                placeholder := Text {
+                                    x: Theme.space-3;
+                                    width: parent.width - 2 * Theme.space-3;
+                                    height: parent.height;
+                                    text: item.label;
+                                    vertical-alignment: center;
+                                    color: Theme.outline;
+                                    overflow: elide;
+                                }
+                            }
                         }
                     }
                     if message.reactions.length > 0: HorizontalLayout {

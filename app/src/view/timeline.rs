@@ -766,6 +766,60 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
         reply_note: reply_note.into(),
         reply_missing: m.reply_to.is_some() && replied.is_none(),
         attachments: ModelRc::new(VecModel::from(attachments)),
+        components: ModelRc::new(VecModel::from(m.components.as_ref().map_or_else(
+            Vec::new,
+            |components| {
+                components
+                    .rows
+                    .iter()
+                    .map(|row| ComponentRowItem {
+                        items: ModelRc::new(VecModel::from(
+                            row.items
+                                .iter()
+                                .map(|component| match component {
+                                    godwit_core::message::MessageComponent::Button(button) => {
+                                        let style = match button.style {
+                                            godwit_core::message::MessageButtonStyle::Primary => 1,
+                                            godwit_core::message::MessageButtonStyle::Secondary => 2,
+                                            godwit_core::message::MessageButtonStyle::Success => 3,
+                                            godwit_core::message::MessageButtonStyle::Danger => 4,
+                                            godwit_core::message::MessageButtonStyle::Link => 5,
+                                        };
+                                        let label = match (&button.emoji, &button.label) {
+                                            (Some(emoji), Some(label)) => format!("{emoji} {label}"),
+                                            (Some(emoji), None) => emoji.to_string(),
+                                            (None, Some(label)) => label.to_string(),
+                                            (None, None) => String::new(),
+                                        };
+                                        ComponentItem {
+                                            kind: "button".into(),
+                                            label: label.into(),
+                                            url: button.url.as_deref().unwrap_or_default().into(),
+                                            custom_id: button.custom_id.as_deref().unwrap_or_default().into(),
+                                            style,
+                                            disabled: button.disabled,
+                                        }
+                                    }
+                                    godwit_core::message::MessageComponent::Select(select) => ComponentItem {
+                                        kind: "select".into(),
+                                        label: select
+                                            .placeholder
+                                            .as_deref()
+                                            .or_else(|| select.options.first().map(|option| option.label.as_ref()))
+                                            .unwrap_or("Choose an option")
+                                            .into(),
+                                        url: "".into(),
+                                        custom_id: "".into(),
+                                        style: 2,
+                                        disabled: true,
+                                    },
+                                })
+                                .collect::<Vec<_>>(),
+                        )),
+                    })
+                    .collect()
+            },
+        ))),
         embeds: ModelRc::new(VecModel::from(embeds)),
         invites: ModelRc::new(VecModel::from(invites)),
         reactions: ModelRc::new(VecModel::from(reactions)),

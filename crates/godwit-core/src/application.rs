@@ -953,6 +953,7 @@ impl Application {
                     original_url: None,
                 })
                 .collect(),
+            components: None,
             embeds: Vec::new(),
             invites: Vec::new(),
             reactions: Vec::new(),

@@ -189,6 +189,7 @@ pub enum Request {
         message: String,
         answers: Vec<u64>,
     },
+    MessageComponent(Value),
     Search {
         guild: Option<String>,
         channel: String,
@@ -1310,6 +1311,10 @@ async fn answer(api: &Api, request: Request) -> Answer {
         } => Answer::Done {
             what: "vote",
             result: api.vote(&channel, &message, &answers).await.map_err(RequestError::from),
+        },
+        Request::MessageComponent(body) => Answer::Done {
+            what: "button",
+            result: api.message_component(&body).await.map_err(RequestError::from),
         },
         Request::Pin {
             channel,

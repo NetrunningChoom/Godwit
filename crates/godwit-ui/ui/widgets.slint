@@ -346,13 +346,14 @@ export component Button inherits Rectangle {
     in property <string> kind: "text";
     in property <bool> danger;
     in property <bool> enabled: true;
+    in property <bool> compact: false;
     callback clicked;
     // Out so IconLabelButton (built on this) colours its icon and label alike.
     out property <color> fg: !root.enabled ? Theme.outline
         : root.kind == "filled" ? Theme.on-primary
         : root.kind == "tonal" ? Theme.on-secondary-container
         : root.danger ? Theme.error : Theme.primary;
-    height: Theme.control-button;
+    height: root.compact ? Theme.control-button - Theme.space-2 : Theme.control-button;
     min-width: label.preferred-width + 24px;
     border-radius: self.height / 2;
     background: root.kind == "filled" ? (root.enabled ? Theme.primary : Theme.surface-highest)

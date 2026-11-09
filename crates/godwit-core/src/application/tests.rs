@@ -57,6 +57,7 @@ fn msg(id: &str) -> Message {
         reply_to: None,
         jumbo: Vec::new(),
         attachments: Vec::new(),
+        components: None,
         embeds: Vec::new(),
         invites: Vec::new(),
         reactions: Vec::new(),
@@ -5008,4 +5009,65 @@ fn reset_view_closes_settings_dialogs_and_contact_links() {
     app.reset_view();
     assert!(app.state.invite_link.is_none() && app.state.link_request.is_none());
     assert!(app.state.server_settings.is_none() && app.state.channel_settings.is_none());
+}
+
+#[test]
+fn message_button_action_requires_an_enabled_non_link_button_in_the_timeline() {
+    let (mut app, room) = open_dm(&[]);
+    let mut message = msg("component-message");
+    message.components = Some(Box::new(crate::message::MessageComponents {
+        rows: vec![crate::message::MessageComponentRow {
+            items: vec![
+                crate::message::MessageComponent::Button(crate::message::MessageButton {
+                    label: Some("Go".into()),
+                    emoji: None,
+                    style: crate::message::MessageButtonStyle::Primary,
+                    url: None,
+                    disabled: false,
+                    custom_id: Some("go".into()),
+                }),
+                crate::message::MessageComponent::Button(crate::message::MessageButton {
+                    label: Some("Disabled".into()),
+                    emoji: None,
+                    style: crate::message::MessageButtonStyle::Secondary,
+                    url: None,
+                    disabled: true,
+                    custom_id: Some("disabled".into()),
+                }),
+                crate::message::MessageComponent::Button(crate::message::MessageButton {
+                    label: Some("Link".into()),
+                    emoji: None,
+                    style: crate::message::MessageButtonStyle::Link,
+                    url: Some("https://example.org".into()),
+                    disabled: false,
+                    custom_id: None,
+                }),
+            ],
+        }],
+    }));
+    app.apply(Event::History {
+        room: room.clone(),
+        before: None,
+        messages: vec![message],
+        reached_start: true,
+    });
+
+    let effects = app.dispatch(Action::ActivateMessageButton {
+        room: room.clone(),
+        message: MessageId("component-message".into()),
+        custom_id: "go".into(),
+    });
+    assert!(commands(&effects).iter().any(
+        |command| matches!(command, Command::ActivateMessageButton { custom_id, .. } if custom_id.as_ref() == "go")
+    ));
+    for custom_id in ["missing", "disabled"] {
+        assert!(
+            app.dispatch(Action::ActivateMessageButton {
+                room: room.clone(),
+                message: MessageId("component-message".into()),
+                custom_id: custom_id.into()
+            })
+            .is_empty()
+        );
+    }
 }

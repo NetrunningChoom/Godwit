@@ -80,6 +80,7 @@ impl SteamAccount {
                 .map(|(url, name)| (url.into(), name.into()))
                 .collect(),
             attachments: images(converted.images),
+            components: None,
             embeds,
             invites: converted.invites.into_iter().map(Into::into).collect(),
             reactions,

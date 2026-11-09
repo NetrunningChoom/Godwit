@@ -901,6 +901,11 @@ impl Application {
                 to,
                 comment,
             } => self.dispatch_forward_message(room, message, to, comment),
+            Action::ActivateMessageButton {
+                room,
+                message,
+                custom_id,
+            } => self.dispatch_activate_message_button(room, message, custom_id),
             Action::ToggleReaction { message, emoji } => self.dispatch_toggle_reaction(message, emoji),
             Action::RemoveReactions { message, emoji } => self.dispatch_remove_reactions(message, emoji),
             Action::ShowReactors { message, emoji } => self.dispatch_show_reactors(message, emoji),

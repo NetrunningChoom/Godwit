@@ -887,6 +887,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         ),
         discord_scene("discord-channel", false),
+        discord_scene("discord-components", false),
         discord_scene("discord-dm", true),
         // The picker's Stickers tab over a server channel (tiles filled below).
         discord_scene("discord-stickers", false),

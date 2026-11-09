@@ -116,6 +116,8 @@ pub struct DiscordAccount {
     /// vote's counts can change without fetching it again. Filled as
     /// messages are shown (`message` takes `&self`).
     polls: RefCell<HashMap<String, Value>>,
+    /// Discord-only metadata needed to invoke controls; stored only for messages with components.
+    component_contexts: RefCell<HashMap<String, Value>>,
     /// What the core was last sent, to send only changes.
     rooms: godwit_core::room_sync::RoomSync,
     servers: Vec<CoreServer>,
@@ -214,6 +216,7 @@ impl DiscordAccount {
             status,
             account: None,
             polls: RefCell::new(HashMap::new()),
+            component_contexts: RefCell::new(HashMap::new()),
             store: Store::default(),
             rooms: Default::default(),
             servers: Vec::new(),
@@ -1037,6 +1040,34 @@ impl NetworkAccount for DiscordAccount {
                         comment,
                     },
                 );
+            }
+            Command::ActivateMessageButton {
+                room,
+                message,
+                custom_id,
+            } => {
+                let (Some(channel), Some(session), Some(context)) = (
+                    self.channel_of(&room),
+                    self.session_id.as_deref(),
+                    self.component_contexts.borrow().get(message.0.as_ref()).cloned(),
+                ) else {
+                    return out;
+                };
+                let Some(application) = context["application_id"].as_str() else {
+                    return out;
+                };
+                let nonce = crate::api::nonce();
+                let body = crate::api::message_component_body(crate::api::MessageComponentInteraction {
+                    application_id: application,
+                    guild_id: context["guild_id"].as_str(),
+                    channel_id: &channel,
+                    message_id: &message.0,
+                    message_flags: context["flags"].as_u64().unwrap_or_default(),
+                    session_id: session,
+                    nonce: &nonce,
+                    custom_id: &custom_id,
+                });
+                req(&self.net, Request::MessageComponent(body));
             }
             Command::MarkUnread { room, last_read } => {
                 if let Some(channel) = self.channel_of(&room) {

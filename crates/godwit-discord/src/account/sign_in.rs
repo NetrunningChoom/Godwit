@@ -101,6 +101,7 @@ impl DiscordAccount {
                     self.sync_rooms(&mut out);
                 }
             }
+            Command::ActivateMessageButton { .. } => {}
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => return Some(Vec::new()),
             Command::LoadReactors { room, message, emoji } => {
                 let people = vec!["100000000000000001", "100000000000000002"]

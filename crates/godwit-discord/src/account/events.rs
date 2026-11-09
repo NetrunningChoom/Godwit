@@ -170,6 +170,7 @@ impl DiscordAccount {
     }
 
     pub(super) fn ready(&mut self, d: &Value, out: &mut Vec<Event>) {
+        self.session_id = d["session_id"].as_str().map(str::to_owned);
         self.store.ready(d);
         let Some(me) = self.store.me.clone() else { return };
         let account = AccountId::new(Network::Discord, me.id.as_str());

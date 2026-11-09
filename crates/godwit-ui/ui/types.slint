@@ -337,6 +337,16 @@ export struct AttachmentItem {
     video: EmbedItem,
 }
 
+export struct ComponentItem {
+    kind: string,
+    label: string,
+    url: string,
+    custom-id: string,
+    style: int,
+    disabled: bool,
+}
+export struct ComponentRowItem { items: [ComponentItem] }
+
 export struct MessageItem {
     author: string,
     // Their role colour (has-author-colour false: the normal text colour).
@@ -389,6 +399,7 @@ export struct MessageItem {
     // The original isn't loaded: a jump link instead of a preview.
     reply-missing: bool,
     attachments: [AttachmentItem],
+    components: [ComponentRowItem],
     embeds: [EmbedItem],
     invites: [InviteItem],
     reactions: [ReactionItem],
