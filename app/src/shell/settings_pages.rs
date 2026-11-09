@@ -674,8 +674,10 @@ impl Shell {
             );
             return;
         };
-        // Every network's first slots too (the range sign-in discovery scans),
-        // so a kept sign-in missing from the settings' account list goes as well.
+        // Every network's first 16 slots too, so a kept sign-in missing from the
+        // settings' account list goes as well: discovery (godwit-core
+        // sessions.rs) scans 8 slots and 8 more past the last one found, so
+        // with 0..16 empty nothing further up can be found again.
         let mut accounts = self
             .settings
             .known_accounts
@@ -683,7 +685,7 @@ impl Shell {
             .map(|a| (a.network.clone(), a.slot))
             .collect::<Vec<_>>();
         for network in godwit_core::network::Network::ALL {
-            for slot in 0..8 {
+            for slot in 0..16 {
                 let entry = (network.key().to_owned(), slot);
                 if !accounts.contains(&entry) {
                     accounts.push(entry);
