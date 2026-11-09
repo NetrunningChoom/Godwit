@@ -78,6 +78,11 @@ pub enum Request {
         emoji: String,
         add: bool,
     },
+    Reactors {
+        channel: String,
+        message: String,
+        emoji: String,
+    },
     Ack {
         channel: String,
         message: String,
@@ -372,6 +377,12 @@ pub enum Answer {
         before: Option<String>,
         around: Option<String>,
         result: Result<Vec<Value>, RequestError>,
+    },
+    Reactors {
+        channel: String,
+        message: String,
+        emoji: String,
+        result: Result<Value, RequestError>,
     },
     Sent {
         channel: String,
@@ -824,6 +835,19 @@ async fn answer(api: &Api, request: Request) -> Answer {
                 result,
             }
         }
+        Request::Reactors {
+            channel,
+            message,
+            emoji,
+        } => Answer::Reactors {
+            result: api
+                .reaction_users(&channel, &message, &emoji)
+                .await
+                .map_err(RequestError::from),
+            channel,
+            message,
+            emoji,
+        },
         Request::Send {
             guild,
             channel,

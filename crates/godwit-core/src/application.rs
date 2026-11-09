@@ -370,6 +370,7 @@ impl Application {
             | Event::Typing { room, .. }
             | Event::HistoryAround { room, .. } => self.state.room(room).is_some(),
             Event::Webhooks { room, .. } | Event::WebhookChanged { room, .. } => self.state.room(room).is_some(),
+            Event::Reactors { room, .. } => self.state.room(room).is_some(),
             _ => true,
         }
     }
@@ -563,6 +564,8 @@ impl Application {
     }
 
     fn select(&mut self, room: RoomId) -> Vec<Effect> {
+        // The who-reacted popup belongs to the room it was opened in.
+        self.state.reactors = None;
         let Some(r) = self.state.room(&room).cloned() else {
             return Vec::new();
         };

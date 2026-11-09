@@ -1033,6 +1033,30 @@ mod tests {
     }
 
     #[test]
+    fn reactor_names_are_answered_from_the_cached_stoat_message() {
+        let (mut a, _tx, _cmds, _) = connected();
+        let mut cached: crate::api::Message = serde_json::from_value(json!({
+            "_id": "M", "channel": "D", "author": "ANN", "reactions": { "👍": ["ANN", "ME"] }
+        }))
+        .unwrap();
+        a.store
+            .messages
+            .entry("D".into())
+            .or_default()
+            .messages
+            .insert("M".into(), cached.clone());
+        let events = a.run(Command::LoadReactors {
+            room: room("D"),
+            message: MessageId("M".into()),
+            emoji: "👍".into(),
+        });
+        assert!(
+            matches!(&events[..], [Event::Reactors { people, .. }] if people.len() == 2 && people[0].name.as_ref() == "Ann")
+        );
+        cached.reactions.clear();
+    }
+
+    #[test]
     fn ready_becomes_an_account_with_rooms_and_servers() {
         let (a, _tx, mut cmds, events) = connected();
         assert_eq!(a.status(), &Status::Ready);

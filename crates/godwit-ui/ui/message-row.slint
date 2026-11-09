@@ -10,6 +10,7 @@ import { AttachmentView, EmbedMedia, EmbedCard, InviteCard, ActivityCard } from 
 component ReactionChip inherits Rectangle {
     in property <ReactionItem> item;
     callback clicked();
+    callback show-reactors();
     height: 26px;
     width: row.preferred-width;
     border-radius: Theme.radius-sm;
@@ -34,7 +35,13 @@ component ReactionChip inherits Rectangle {
             color: item.me ? Theme.on-primary-container : Theme.on-surface-variant;
         }
     }
-    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down { root.show-reactors(); }
+        }
+    }
 }
 
 export component MessageRow inherits Rectangle {
@@ -51,6 +58,7 @@ export component MessageRow inherits Rectangle {
     in property <bool> can-delete-others;
     in property <bool> can-pin;
     in property <bool> can-moderate-reactions;
+    in property <bool> can-show-reactors;
     // Others' messages can be reported here (the official MessageContextMenu).
     in property <bool> can-report;
     in property <bool> can-thread;
@@ -63,6 +71,7 @@ export component MessageRow inherits Rectangle {
     callback react(int);
     callback remove-reactions(int);
     callback remove-all-reactions();
+    callback show-reactors(int);
     callback pin(bool);
     callback report();
     callback create-thread();
@@ -345,6 +354,7 @@ export component MessageRow inherits Rectangle {
                         for r[i] in message.reactions: ReactionChip {
                             item: r;
                             clicked => { root.react(i); }
+                            show-reactors => { if root.can-show-reactors { root.show-reactors(i); } }
                         }
                     }
                 }

@@ -69,6 +69,23 @@ impl DiscordAccount {
         let mut out = Vec::new();
         match command {
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => return Some(Vec::new()),
+            Command::LoadReactors { room, message, emoji } => {
+                let people = vec!["100000000000000001", "100000000000000002"]
+                    .into_iter()
+                    .map(|id| godwit_core::application::Person {
+                        id: UserId::new(room.account.clone(), id),
+                        name: format!("Demo {id}").into(),
+                        avatar_url: None,
+                        online: true,
+                    })
+                    .collect();
+                out.push(Event::Reactors {
+                    room: room.clone(),
+                    message: message.clone(),
+                    emoji: emoji.clone(),
+                    people,
+                });
+            }
             Command::LoadHistory { room, before } => {
                 let channel = room.raw.to_string();
                 let page: Vec<Value> = history

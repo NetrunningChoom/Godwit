@@ -1003,6 +1003,20 @@ impl godwit_core::account::NetworkAccount for DemoSteam {
 
     fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
         match command {
+            godwit_core::application::Command::LoadReactors { room, message, emoji } => vec![Event::Reactors {
+                room: room.clone(),
+                message: message.clone(),
+                emoji: emoji.clone(),
+                people: vec!["Ada", "Linus", "Grace"]
+                    .into_iter()
+                    .map(|name| godwit_core::application::Person {
+                        id: UserId::new(room.account.clone(), name),
+                        name: name.into(),
+                        avatar_url: None,
+                        online: true,
+                    })
+                    .collect(),
+            }],
             godwit_core::application::Command::LoadGameLibraries { users } => users
                 .into_iter()
                 .map(|user| Event::GameLibrary {
@@ -2217,6 +2231,23 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 vec![Event::WebhookChanged {
                     room,
                     result: Ok(entries),
+                }]
+            }
+            Command::LoadReactors { room, message, emoji } => {
+                let people = ["ada", "linus", "grace"]
+                    .into_iter()
+                    .map(|name| godwit_core::application::Person {
+                        id: UserId::new(room.account.clone(), name),
+                        name: name.into(),
+                        avatar_url: None,
+                        online: true,
+                    })
+                    .collect();
+                vec![Event::Reactors {
+                    room,
+                    message,
+                    emoji,
+                    people,
                 }]
             }
             Command::ServerAdmin { server, op } if op.member_target().is_some() => self.member_change(&server, op),

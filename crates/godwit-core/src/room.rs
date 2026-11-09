@@ -26,6 +26,9 @@ pub struct Capabilities {
     /// Remove one or all reactions from a message as a moderator.
     #[serde(default)]
     pub moderate_reactions: bool,
+    /// Load the people who used one reaction on a message.
+    #[serde(default)]
+    pub reaction_users: bool,
     pub react: bool,
     /// "Mark unread" can move the read marker back (the network takes it).
     #[serde(default)]
@@ -121,6 +124,7 @@ impl Capabilities {
             delete: true,
             delete_others: false,
             moderate_reactions: false,
+            reaction_users: false,
             react: true,
             mark_unread: false,
             forward_from: false,

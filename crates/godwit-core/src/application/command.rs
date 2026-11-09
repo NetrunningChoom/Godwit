@@ -329,6 +329,12 @@ pub enum Command {
         message: MessageId,
         emoji: Option<Arc<str>>,
     },
+    /// Load names for one message reaction; answered by [`Event::Reactors`].
+    LoadReactors {
+        room: RoomId,
+        message: MessageId,
+        emoji: Arc<str>,
+    },
     /// We're typing in `room` (sent as the draft changes; networks throttle it).
     Typing {
         room: RoomId,

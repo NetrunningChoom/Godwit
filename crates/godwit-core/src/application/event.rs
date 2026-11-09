@@ -181,6 +181,13 @@ pub enum Event {
         id: MessageId,
         reactions: Vec<Reaction>,
     },
+    /// People who used one reaction, keyed so stale answers cannot replace a newer popup.
+    Reactors {
+        room: RoomId,
+        message: MessageId,
+        emoji: Arc<str>,
+        people: Vec<Person>,
+    },
     /// New text for a message (networks that send only the edit, like
     /// Matrix); everything else about it stays.
     MessageEdited {

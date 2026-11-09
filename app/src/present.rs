@@ -319,6 +319,29 @@ impl Presenter {
         players: Option<&InlinePlayers>,
     ) {
         images.next_frame();
+        let reactors = state
+            .reactors
+            .as_ref()
+            .map(|(_, _, _, people)| people)
+            .into_iter()
+            .flatten()
+            .map(|p| {
+                let (avatar, has_avatar) = view::picture(images, p.avatar_url.as_deref());
+                PersonItem {
+                    name: p.name.to_string().into(),
+                    name_runs: view::label_runs(&p.name, images),
+                    initials: view::initials(&p.name).into(),
+                    avatar,
+                    has_avatar,
+                    online: p.online,
+                    favourite: false,
+                    section: Default::default(),
+                    networks: ModelRc::new(VecModel::default()),
+                }
+            })
+            .collect::<Vec<_>>();
+        ui.set_reactors(ModelRc::new(VecModel::from(reactors)));
+        ui.set_reactors_open(state.reactors.is_some());
         if let Some(a) = focus_account(state, self.focus.as_ref()) {
             let (avatar, has_avatar) = view::avatar(images, a.avatar_url.as_deref());
             ui.set_account_avatar(avatar);
@@ -996,6 +1019,7 @@ impl Presenter {
         ui.set_can_delete(room.capabilities.delete);
         ui.set_can_delete_others(room.capabilities.delete_others);
         ui.set_can_moderate_reactions(room.capabilities.moderate_reactions);
+        ui.set_can_show_reactors(room.capabilities.reaction_users);
         ui.set_has_pins(room.capabilities.pins);
         // Every conversation has search: networks without a search API use
         // the messages Godwit has loaded locally.

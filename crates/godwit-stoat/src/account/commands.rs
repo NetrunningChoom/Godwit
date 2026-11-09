@@ -524,6 +524,19 @@ impl StoatAccount {
                 }));
                 Vec::new()
             }
+            Command::LoadReactors { room, message, emoji } => {
+                let channel = room.raw.to_string();
+                let server = self.store.channels.get(&channel).and_then(|c| c.server.as_deref());
+                let users = self.store.messages.get(&channel).and_then(|messages| messages.messages.get(&message.0.to_string())).and_then(|m| m.reactions.get(&emoji.to_string())).cloned().unwrap_or_default();
+                let people = users.iter()
+                    .map(|id| godwit_core::application::Person {
+                    id: UserId::new(room.account.clone(), id.as_str()),
+                        name: self.store.display_name(id, server).into(),
+                        avatar_url: Some(self.avatar_url(id, server).into()),
+                        online: self.store.users.get(id).and_then(|u| u.online).unwrap_or(false),
+                    }).collect();
+                vec![Event::Reactors { room, message, emoji, people }]
+            }
             Command::RemoveReactions { room, message, emoji } => {
                 let cmd = match emoji {
                     Some(emoji) => Cmd::Message(MessageCmd::RemoveReaction {

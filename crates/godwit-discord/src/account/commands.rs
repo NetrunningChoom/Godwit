@@ -29,6 +29,45 @@ impl DiscordAccount {
 
     pub(super) fn answer(&mut self, answer: Answer, out: &mut Vec<Event>) {
         match answer {
+            Answer::Reactors {
+                channel,
+                message,
+                emoji,
+                result,
+            } => {
+                let Some(room) = self.room_id(&channel) else { return };
+                let users = match result {
+                    Ok(users) => users,
+                    Err(e) => {
+                        godwit_core::verbose!("discord: loading reaction users failed: {e}");
+                        Value::Array(Vec::new())
+                    }
+                };
+                let people = users
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|u| {
+                        let id = u["id"].as_str()?;
+                        let user = self.store.users.get(id);
+                        Some(godwit_core::application::Person {
+                            id: UserId::new(room.account.clone(), id),
+                            name: self
+                                .store
+                                .display_name(id, self.store.channels.get(&channel).and_then(|c| c.guild.as_deref()))
+                                .into(),
+                            avatar_url: user.map(|u| crate::store::avatar_url(id, u.avatar.as_deref()).into()),
+                            online: self.store.presences.get(id).is_some_and(|status| status != "offline"),
+                        })
+                    })
+                    .collect();
+                out.push(Event::Reactors {
+                    room,
+                    message: MessageId(message.into()),
+                    emoji: emoji.into(),
+                    people,
+                });
+            }
             Answer::History {
                 channel,
                 before,

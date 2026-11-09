@@ -711,6 +711,26 @@ impl NetworkAccount for DiscordAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            Command::LoadReactors { room, message, emoji } => {
+                if !self.store.can(&room.raw, p::VIEW_CHANNEL | p::READ_MESSAGE_HISTORY) {
+                    return vec![Event::Reactors {
+                        room,
+                        message,
+                        emoji,
+                        people: Vec::new(),
+                    }];
+                }
+                if let Some(channel) = self.channel_of(&room) {
+                    req(
+                        &self.net,
+                        Request::Reactors {
+                            channel,
+                            message: message.0.to_string(),
+                            emoji: emoji.to_string(),
+                        },
+                    );
+                }
+            }
             Command::Focus { room } => {
                 self.viewing = room.as_ref().and_then(|r| self.channel_of(r));
                 // Leaving a forum (and its posts) lets go of its loaded

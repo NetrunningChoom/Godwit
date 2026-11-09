@@ -285,6 +285,23 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::Reactors {
+                room,
+                message,
+                emoji,
+                people,
+            } => {
+                let known = self.state.room(&room).is_some();
+                if known
+                    && let Some((open_room, open_message, open_emoji, current)) = self.state.reactors.as_mut()
+                    && *open_room == room
+                    && *open_message == message
+                    && *open_emoji == emoji
+                {
+                    *current = people;
+                }
+                Vec::new()
+            }
             Event::MessageEdited {
                 room,
                 id,

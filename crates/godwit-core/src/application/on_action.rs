@@ -1387,6 +1387,26 @@ impl Application {
         }]
     }
 
+    pub(super) fn dispatch_show_reactors(&mut self, message: MessageId, emoji: Arc<str>) -> Vec<Effect> {
+        let Some(room) = self.state.selected.clone() else {
+            return Vec::new();
+        };
+        let Some(m) = self.state.selected_message(&message) else {
+            return Vec::new();
+        };
+        if m.pending
+            || !m.reactions.iter().any(|r| r.emoji == emoji)
+            || !self.state.room(&room).is_some_and(|r| r.capabilities.reaction_users)
+        {
+            return Vec::new();
+        }
+        self.state.reactors = Some((room.clone(), message.clone(), emoji.clone(), Vec::new()));
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::LoadReactors { room, message, emoji },
+        }]
+    }
+
     /// "Games in common…": us and `with` (people of the same account), and
     /// a request for every library. The network keeps what it loaded for
     /// the session, so opening the dialog again costs no new requests.

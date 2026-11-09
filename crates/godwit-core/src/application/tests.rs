@@ -1874,6 +1874,53 @@ fn reactions_toggle_and_deletes_go_out() {
 }
 
 #[test]
+fn showing_reactors_is_capability_gated_and_stores_only_the_open_query_result() {
+    let (mut app, room) = open_dm(&[]);
+    let mut message = mine("m-reactors");
+    message.reactions.push(Reaction {
+        emoji: "👍".into(),
+        image_url: None,
+        count: 2,
+        me: false,
+    });
+    app.apply(Event::MessageAdded {
+        room: room.clone(),
+        message,
+    });
+    let action = Action::ShowReactors {
+        message: MessageId("m-reactors".into()),
+        emoji: "👍".into(),
+    };
+    assert!(
+        app.dispatch(action.clone()).is_empty(),
+        "Stoat support is per-room, not assumed by the core"
+    );
+    Arc::make_mut(app.state.rooms.iter_mut().find(|r| r.id == room).expect("room"))
+        .capabilities
+        .reaction_users = true;
+    let effects = app.dispatch(action);
+    assert!(matches!(commands(&effects)[..], [Command::LoadReactors { .. }]));
+    let person = Person {
+        id: UserId::new(account(Network::Stoat), "reactor"),
+        name: "Reactor".into(),
+        avatar_url: None,
+        online: false,
+    };
+    app.apply(Event::Reactors {
+        room: room.clone(),
+        message: MessageId("m-reactors".into()),
+        emoji: "👍".into(),
+        people: vec![person.clone()],
+    });
+    assert_eq!(
+        app.state().reactors.as_ref().map(|(_, _, _, people)| people.as_slice()),
+        Some([person].as_slice())
+    );
+    app.dispatch(Action::CloseReactors);
+    assert!(app.state().reactors.is_none());
+}
+
+#[test]
 fn reaction_moderation_requires_capability_and_targets_the_requested_emoji() {
     let mut app = Application::default();
     let mut r = dm(Network::Stoat, "moderate", "them");

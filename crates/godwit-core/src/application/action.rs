@@ -237,6 +237,12 @@ pub enum Action {
         message: MessageId,
         emoji: Option<Arc<str>>,
     },
+    /// Show who used one reaction on a message.
+    ShowReactors {
+        message: MessageId,
+        emoji: Arc<str>,
+    },
+    CloseReactors,
     /// Files to send with the selected room's next message.
     AddFiles(Vec<Outgoing>),
     /// Drop one of the files waiting to be sent.

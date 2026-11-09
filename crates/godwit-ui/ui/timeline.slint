@@ -91,6 +91,7 @@ export component Timeline inherits Rectangle {
     callback new-post();
     in property <bool> can-pin;
     in property <bool> can-moderate-reactions;
+    in property <bool> can-show-reactors;
     in property <bool> can-report;
     callback report(int);
     callback open-pins();
@@ -164,6 +165,7 @@ export component Timeline inherits Rectangle {
     callback react(int, int);
     callback remove-reactions(int, int);
     callback remove-all-reactions(int);
+    callback show-reactors(int, int);
     callback open-picker(int);
     // The emoji picker (for row's reactions, or the composer when -1).
     in property <bool> picker-open;
@@ -1092,6 +1094,7 @@ export component Timeline inherits Rectangle {
                     can-delete-others: root.can-delete-others;
                     can-pin: root.can-pin;
                     can-moderate-reactions: root.can-moderate-reactions;
+                    can-show-reactors: root.can-show-reactors;
                     pin(pinned) => { root.pin(i, pinned); }
                     can-report: root.can-report;
                     report => { root.report(i); }
@@ -1104,6 +1107,7 @@ export component Timeline inherits Rectangle {
                     react(r) => { root.react(i, r); }
                     remove-reactions(r) => { root.remove-reactions(i, r); }
                     remove-all-reactions => { root.remove-all-reactions(i); }
+                    show-reactors(r) => { root.show-reactors(i, r); }
                     open-picker => { root.open-picker(i); }
                     jump-to-reply => { root.jump-to-reply(i); }
                     open-attachment(a) => { root.open-attachment(i, a); }

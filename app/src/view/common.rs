@@ -230,7 +230,7 @@ pub fn quote_runs(m: &Message, images: &mut Images) -> (String, ModelRc<crate::u
     (text, ModelRc::from(Rc::new(VecModel::from(runs))), ready)
 }
 
-pub(super) fn picture(images: &mut Images, url: Option<&str>) -> (Image, bool) {
+pub(crate) fn picture(images: &mut Images, url: Option<&str>) -> (Image, bool) {
     match url.and_then(|u| images.get(u, AVATAR)) {
         Some(img) => (img, true),
         None => (no_image(), false),

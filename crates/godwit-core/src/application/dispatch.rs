@@ -871,6 +871,11 @@ impl Application {
             } => self.dispatch_forward_message(room, message, to, comment),
             Action::ToggleReaction { message, emoji } => self.dispatch_toggle_reaction(message, emoji),
             Action::RemoveReactions { message, emoji } => self.dispatch_remove_reactions(message, emoji),
+            Action::ShowReactors { message, emoji } => self.dispatch_show_reactors(message, emoji),
+            Action::CloseReactors => {
+                self.state.reactors = None;
+                Vec::new()
+            }
         }
     }
 }

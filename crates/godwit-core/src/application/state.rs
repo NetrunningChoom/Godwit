@@ -204,6 +204,8 @@ pub struct AppState {
     pub presence: HashMap<UserId, Presence>,
     /// Invite cards' states, by account and code.
     pub invites: HashMap<(AccountId, Arc<str>), crate::message::Invite>,
+    /// The reaction people currently shown by the timeline popup.
+    pub reactors: Option<(RoomId, MessageId, Arc<str>, Vec<Person>)>,
     /// People we blocked: their messages collapse in the timeline.
     pub blocked: std::collections::HashSet<UserId>,
     /// Favourite people as the networks keep them (on those whose

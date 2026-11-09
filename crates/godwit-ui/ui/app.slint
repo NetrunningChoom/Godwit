@@ -449,6 +449,7 @@ export component AppWindow inherits Window {
     in property <bool> can-delete;
     in property <bool> can-delete-others;
     in property <bool> can-moderate-reactions;
+    in property <bool> can-show-reactors;
     in property <string> compose-label;
     in property <string> typing;
     in property <bool> can-attach;
@@ -596,6 +597,10 @@ export component AppWindow inherits Window {
     in-out property <bool> confirm-pin-value;
     callback remove-reactions(int, int);
     callback remove-all-reactions(int);
+    callback show-reactors(int, int);
+    in property <bool> reactors-open;
+    in property <[PersonItem]> reactors;
+    callback close-reactors();
     // The pinned messages panel.
     in property <bool> pins-open;
     in property <bool> pins-loading;
@@ -1369,6 +1374,7 @@ export component AppWindow inherits Window {
                                         can-delete: root.can-delete;
                                         can-delete-others: root.can-delete-others;
                                         can-moderate-reactions: root.can-moderate-reactions;
+                                        can-show-reactors: root.can-show-reactors;
                                         compose-label: root.compose-label;
                                         typing: root.typing;
                                         can-attach: root.can-attach;
@@ -1424,6 +1430,7 @@ export component AppWindow inherits Window {
                                         pin(i, pinned) => { root.confirm-pin = i; root.confirm-pin-value = pinned; }
                                         remove-reactions(i, r) => { root.remove-reactions(i, r); }
                                         remove-all-reactions(i) => { root.remove-all-reactions(i); }
+                                        show-reactors(i, r) => { root.show-reactors(i, r); }
                                         members-shown: root.members-shown;
                                         toggle-members => { root.toggle-members(); }
                                         join-call => { root.join-call(); }
@@ -1971,6 +1978,18 @@ export component AppWindow inherits Window {
         pins: root.pins;
         pins-failed: root.pins-failed;
         pins-loading: root.pins-loading;
+    }
+    if root.reactors-open && screen == Screen.main: Dialog {
+        title: "Reactions";
+        closable: true;
+        dismissed => { root.close-reactors(); }
+        VerticalLayout {
+            for person in root.reactors: HorizontalLayout {
+                spacing: Theme.space-3;
+                Avatar { source: person.avatar; has-image: person.has-avatar; initials: person.initials; }
+                Text { text: person.name; color: Theme.on-surface; vertical-alignment: center; }
+            }
+        }
     }
     if root.confirm-pin >= 0 && screen == Screen.main: ConfirmDialog {
         title: root.confirm-pin-value ? "Pin message" : "Unpin message";

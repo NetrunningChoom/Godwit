@@ -75,6 +75,7 @@ impl StoatAccount {
         let capabilities = Capabilities {
             // for-web's group conversation menu offers Leave Group; Saved Notes and DMs do not.
             leave: c.channel_type == "Group",
+            reaction_users: true,
             delete_others: can(MANAGE_MESSAGES),
             moderate_reactions: can(MANAGE_MESSAGES),
             // The pinned list is readable by anyone who reads the channel;

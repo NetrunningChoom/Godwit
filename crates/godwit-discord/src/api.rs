@@ -156,6 +156,7 @@ pub enum Span<'a> {
 
 pub struct Api {
     http: Client,
+    base: String,
     /// Empty without a sign-in; Discord may refresh it in READY.
     token: RwLock<String>,
     limits: Limits,
@@ -183,6 +184,7 @@ impl Api {
             .context("could not set up HTTPS")?;
         Ok(Self {
             http,
+            base: API.to_owned(),
             token: RwLock::new(token),
             limits: Limits::default(),
             refusals: Refusals::default(),
@@ -267,7 +269,7 @@ impl Api {
         let cross_origin = !matches!(method, Method::GET | Method::HEAD);
         let mut request = self
             .http
-            .request(method, format!("{API}{path}"))
+            .request(method, format!("{}{path}", self.base))
             .header("sec-ch-ua-platform", client::sec_ch_ua_platform())
             .header("x-debug-options", "bugReporterEnabled")
             .header(header::ACCEPT_LANGUAGE, "en-US,en;q=0.9")
@@ -568,6 +570,15 @@ impl Api {
         );
         let method = if add { Method::PUT } else { Method::DELETE };
         self.empty(self.request(method, &path)).await
+    }
+
+    /// Discord's documented reaction users endpoint (docs.discord.food, Reactions).
+    pub async fn reaction_users(&self, channel: &str, message: &str, emoji: &str) -> Result<Value> {
+        let path = format!(
+            "/channels/{channel}/messages/{message}/reactions/{}?limit=100&type=0",
+            encode(emoji)
+        );
+        self.json(self.request(Method::GET, &path)).await
     }
 
     pub async fn typing(&self, channel: &str) -> Result<()> {
@@ -1352,6 +1363,12 @@ mod tests {
     }
 
     #[test]
+    fn reactor_emoji_path_segment_is_encoded() {
+        assert_eq!(encode("name:123"), "name%3A123");
+        assert_eq!(encode("😀"), "%F0%9F%98%80");
+    }
+
+    #[test]
     fn a_note_is_read_from_the_answer_and_sent_cut_to_the_limit() {
         assert_eq!(parse_note(&json!({"note": "hi", "note_user_id": "1"})), "hi");
         assert_eq!(parse_note(&json!({})), "", "no note reads as empty");
@@ -1387,6 +1404,25 @@ mod tests {
             .write_all(format!("HTTP/1.1 {headers}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}").as_bytes())
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reaction_user_request_uses_documented_query_and_parses_json() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut bytes = [0; 4096];
+            let n = socket.read(&mut bytes).await.unwrap();
+            let request = String::from_utf8_lossy(&bytes[..n]);
+            assert!(request.starts_with("GET /channels/1/messages/2/reactions/%F0%9F%91%8D?limit=100&type=0 "));
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 29\r\nConnection: close\r\n\r\n[{\"id\":\"7\",\"username\":\"Ada\"}]").await.unwrap();
+        });
+        let mut api = Api::anonymous().unwrap();
+        api.base = base;
+        let result = api.reaction_users("1", "2", "👍").await.unwrap();
+        assert_eq!(result[0]["username"], "Ada");
+        server.await.unwrap();
     }
 
     #[tokio::test]

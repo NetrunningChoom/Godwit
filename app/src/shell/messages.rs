@@ -474,4 +474,21 @@ impl Shell {
             self.act(ui, Action::RemoveReactions { message, emoji: None });
         }
     }
+
+    pub fn show_reactors_row(&mut self, ui: &AppWindow, row: i32, reaction: i32) {
+        let Some(id) = self.message_at(row) else { return };
+        let emoji = self.app.state().selected_message(&id).and_then(|m| {
+            m.reactions
+                .get(usize::try_from(reaction).ok()?)
+                .map(|r| r.emoji.clone())
+        });
+        if let Some(emoji) = emoji {
+            self.act(ui, Action::ShowReactors { message: id, emoji });
+        }
+    }
+
+    pub fn close_reactors(&mut self, ui: &AppWindow) {
+        self.act(ui, Action::CloseReactors);
+        ui.set_reactors_open(false);
+    }
 }
