@@ -59,13 +59,15 @@ pub fn trigger_at(text: &str, cursor: usize) -> Option<Trigger> {
         .char_indices()
         .rev()
         .find_map(|(i, c)| {
-            (c.is_whitespace() || (c.is_ascii_punctuation() && !matches!(c, '_' | '-' | '.' | '+' | '@' | '#' | ':')))
-                .then_some(i + c.len_utf8())
+            (c.is_whitespace()
+                || (c.is_ascii_punctuation() && !matches!(c, '_' | '-' | '.' | '+' | '@' | '#' | ':' | '%')))
+            .then_some(i + c.len_utf8())
         })
         .unwrap_or(0);
     let word = &before[start..];
     let (kind, prefix) = match word.chars().next()? {
         '@' => (TriggerKind::Person, '@'),
+        '%' => (TriggerKind::MentionSpecial, '%'),
         '#' => (TriggerKind::Channel, '#'),
         ':' if word.chars().count() >= 3 => (TriggerKind::Emoji, ':'),
         _ => return None,
@@ -102,7 +104,12 @@ pub fn matches<'a>(candidates: &'a [Candidate], query: &str, limit: usize) -> Ve
         .enumerate()
         .filter_map(|(i, c)| {
             let name = match &c.id {
-                CandidateId::MentionSpecial(_) => c.name.strip_prefix('@').unwrap_or(&c.name).to_lowercase(),
+                CandidateId::MentionSpecial(_) => c
+                    .name
+                    .strip_prefix('@')
+                    .or_else(|| c.name.strip_prefix('%'))
+                    .unwrap_or(&c.name)
+                    .to_lowercase(),
                 _ => c.name.to_lowercase(),
             };
             let rank = if name == q {
@@ -150,6 +157,10 @@ mod tests {
         assert_eq!(trigger_at("mail me@host", 12), None);
         assert_eq!(trigger_at("hi #gen", 7).map(|t| t.kind), Some(TriggerKind::Channel));
         assert_eq!(trigger_at("hi :smile", 9).map(|t| t.kind), Some(TriggerKind::Emoji));
+        assert_eq!(
+            trigger_at("hi %team", 8).map(|t| t.kind),
+            Some(TriggerKind::MentionSpecial)
+        );
         assert_eq!(trigger_at("hi :x", 5), None);
     }
 

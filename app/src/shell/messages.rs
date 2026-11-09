@@ -36,11 +36,6 @@ fn autocomplete_candidates(
                 add_person_candidate(&mut out, &member.user, &member.name);
             }
         }
-        if let Some(timeline) = state.timeline(room) {
-            for message in timeline.messages.iter().rev().take(100) {
-                add_person_candidate(&mut out, &message.author, &message.author_name);
-            }
-        }
         for person in state.friends.iter().filter(|p| p.id.account == room.account) {
             add_person_candidate(&mut out, &person.id, &person.name);
         }
@@ -49,15 +44,32 @@ fn autocomplete_candidates(
                 add_person_candidate(&mut out, &person.id, &person.name);
             }
         }
-        // Network accounts keep protocol-specific specials beside their cached room state.
-        // The app only sees neutral labels and opaque ids.
-        {
-            out.extend(specials.into_iter().map(|special| Candidate {
-                id: CandidateId::MentionSpecial(special.id.into()),
-                name: special.label.into(),
-                detail: special.detail.into(),
-            }));
+        out.extend(
+            specials
+                .into_iter()
+                .filter(|s| s.label.starts_with('@'))
+                .map(|special| Candidate {
+                    id: CandidateId::MentionSpecial(special.id.into()),
+                    name: special.label.into(),
+                    detail: special.detail.into(),
+                }),
+        );
+        if let Some(timeline) = state.timeline(room) {
+            for message in timeline.messages.iter().rev().take(100) {
+                add_person_candidate(&mut out, &message.author, &message.author_name);
+            }
         }
+    } else if kind == TriggerKind::MentionSpecial {
+        out.extend(
+            specials
+                .into_iter()
+                .filter(|s| s.label.starts_with('%'))
+                .map(|special| Candidate {
+                    id: CandidateId::MentionSpecial(special.id.into()),
+                    name: special.label.into(),
+                    detail: special.detail.into(),
+                }),
+        );
     } else if kind == TriggerKind::Channel {
         if let Some(server_id) = state.room(room).and_then(|r| match &r.kind {
             godwit_core::room::RoomKind::Channel { server } => Some(server),
@@ -806,17 +818,28 @@ mod autocomplete_tests {
             avatar_url: None,
             online: false,
         });
+        let friend_id = UserId::new(account.clone(), "friend");
+        state.friends.push(Person {
+            id: friend_id.clone(),
+            name: Arc::from("Bea"),
+            avatar_url: None,
+            online: false,
+        });
         let candidates = autocomplete_candidates(
             &state,
             &room_id,
             godwit_core::autocomplete::TriggerKind::Person,
             Vec::new(),
         );
-        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0].name.as_ref(), "Ada");
         assert_eq!(
             candidates[0].id,
             godwit_core::autocomplete::CandidateId::Person(person_id)
+        );
+        assert_eq!(
+            candidates[1].id,
+            godwit_core::autocomplete::CandidateId::Person(friend_id)
         );
     }
 

@@ -629,11 +629,33 @@ impl StoatAccount {
 }
 
 impl NetworkAccount for StoatAccount {
+    // The official for-web CodeMirror source uses `%` for roles and inserts
+    // `<%id> `; see
+    // https://github.com/stoatchat/for-web/blob/main/packages/client/components/ui/components/features/texteditor/codeMirrorAutoCompleteSource.ts.
+    fn mention_specials(&self, room: &RoomId) -> Vec<godwit_core::autocomplete::MentionSpecial> {
+        let Some(channel) = self.store.channels.get(room.raw.as_ref()) else {
+            return Vec::new();
+        };
+        let Some(server) = channel.server.as_deref().and_then(|id| self.store.servers.get(id)) else {
+            return Vec::new();
+        };
+        let mut roles: Vec<_> = server.roles.iter().collect();
+        roles.sort_by_key(|(_, role)| role.rank);
+        roles
+            .into_iter()
+            .map(|(id, role)| godwit_core::autocomplete::MentionSpecial {
+                id: id.clone(),
+                label: format!("%{}", role.name),
+                detail: "Role".into(),
+            })
+            .collect()
+    }
     fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
         match kind {
             godwit_core::autocomplete::TriggerKind::Person => format!("<@{id}>"),
             godwit_core::autocomplete::TriggerKind::Channel => format!("<#{id}>"),
             godwit_core::autocomplete::TriggerKind::Emoji => format!(":{id}:"),
+            godwit_core::autocomplete::TriggerKind::MentionSpecial if name.starts_with('%') => format!("<%{id}>"),
             godwit_core::autocomplete::TriggerKind::MentionSpecial => name.to_owned(),
         }
     }

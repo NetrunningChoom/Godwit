@@ -1004,6 +1004,7 @@ impl godwit_discord::markdown::Names for Names<'_> {
 }
 
 impl NetworkAccount for FluxerAccount {
+    // Fluxer documents Discord-compatible message formatting and mention metadata at https://docs.fluxer.com/http-api/messages/.
     fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
         match kind {
             godwit_core::autocomplete::TriggerKind::Person => format!("<@{id}>"),
@@ -1120,6 +1121,34 @@ mod tests {
             a.autocomplete_text(TriggerKind::MentionSpecial, "55", "@Team"),
             "<@&55>"
         );
+        assert_eq!(a.autocomplete_text(TriggerKind::Person, "55", "Ada"), "<@55>");
+        assert_eq!(a.autocomplete_text(TriggerKind::Channel, "55", "chat"), "<#55>");
+        assert_eq!(a.autocomplete_text(TriggerKind::Emoji, "55", "wave"), "<:wave:55>");
+    }
+
+    #[test]
+    fn received_mentions_render_and_drive_the_unread_mention_count() {
+        let (mut a, _, _) = account();
+        a.dispatch("READY", &ready(), &mut Vec::new());
+        let mut out = Vec::new();
+        a.dispatch(
+            "MESSAGE_CREATE",
+            &json!({
+                "id":"1501320000000000003", "channel_id":"20", "type":0,
+                "content":"<@200> <@&55> <:wave:66>",
+                "author":{"id":"200", "username":"Ada"},
+                "mentions":[{"id":"100"}], "mention_roles":["55"],
+                "timestamp":"2026-08-31T09:14:02.000Z", "attachments":[]
+            }),
+            &mut out,
+        );
+        let Some(Event::MessageAdded { message, .. }) = out.first() else {
+            panic!("message event missing")
+        };
+        assert!(message.text.contains("godwit://user/"), "{}", message.text);
+        assert!(message.text.contains("godwit://role/"), "{}", message.text);
+        assert!(message.text.contains("godwit://emoji/"), "{}", message.text);
+        assert_eq!(a.room("20").map(|r| r.mentions), Some(1));
     }
 
     fn account() -> (
@@ -1142,7 +1171,7 @@ mod tests {
             "users": [{"id": "200", "username": "ada", "global_name": "Ada", "avatar": "abc"}],
             "guilds": [{
                 "id": "10", "properties": {"id": "10", "name": "Lounge", "icon": "ic", "owner_id": "100"},
-                "roles": [{"id": "10", "name": "@everyone", "permissions": "0"}],
+                "roles": [{"id": "10", "name": "@everyone", "permissions": "0"}, {"id": "55", "name": "Team", "permissions": "0"}],
                 "channels": [
                     {"id": "11", "type": 4, "name": "Talk", "position": 0},
                     {"id": "12", "type": 0, "name": "general", "position": 1, "parent_id": "11", "last_message_id": "1501320000000000000"},
