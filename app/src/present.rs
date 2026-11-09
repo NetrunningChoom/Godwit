@@ -24,6 +24,12 @@ use crate::ui::{
 };
 use crate::view;
 
+/// Whether the call needs its video stage; camera and share tiles use the
+/// same stage layout, while participant cards remain visible below it.
+fn call_has_stage(video_count: usize) -> bool {
+    video_count > 0
+}
+
 /// A frame taken out of `godwit_voice::video::FRAMES` to be shown.
 struct Shown {
     serial: u64,
@@ -295,7 +301,7 @@ impl Presenter {
         ui.set_call_members(ModelRc::from(p.call_members.clone()));
         ui.set_call_sounds(ModelRc::new(VecModel::default()));
         ui.set_call_videos(ModelRc::from(p.call_videos.clone()));
-        ui.set_call_extra_videos(p.call_videos.iter().any(|v| !v.primary || v.participant < 0));
+        ui.set_call_extra_videos(call_has_stage(p.call_videos.row_count()));
         ui.set_call_quality(-1);
         ui.set_call_latency(-1);
         {
@@ -683,7 +689,7 @@ impl Presenter {
                 .collect();
             set_frames(&self.call_frames, pictures);
             ui.set_call_screen_videos(i32::try_from(videos.iter().filter(|v| v.screen).count()).unwrap_or(0));
-            ui.set_call_extra_videos(videos.iter().any(|v| !v.primary || v.participant < 0));
+            ui.set_call_extra_videos(call_has_stage(videos.len()));
             ui.set_call_status(view::call_status(call.status).into());
             ui.set_call_room(
                 state
@@ -1302,4 +1308,17 @@ pub fn alert_options(choices: &[crate::settings::AlertMode]) -> ModelRc<SharedSt
         cache.push((choices.to_vec(), model.clone()));
         model
     })
+}
+
+#[cfg(test)]
+mod call_stage_tests {
+    use super::call_has_stage;
+
+    #[test]
+    fn a_camera_video_opens_the_shared_stage() {
+        // The camera is the primary participant video, just as a screen
+        // share is an extra tile; both need the shared stage region.
+        assert!(call_has_stage(1));
+        assert!(!call_has_stage(0));
+    }
 }

@@ -547,7 +547,6 @@ export component Timeline inherits Rectangle {
                 padding: Theme.gap-sm;
                 spacing: Theme.gap-sm;
                 for video[vi] in root.call-videos: Rectangle {
-                    visible: !video.primary || video.participant < 0;
                     horizontal-stretch: 1;
                     min-width: 160px;
                     background: Theme.media-stage;
@@ -712,38 +711,17 @@ export component Timeline inherits Rectangle {
                     background: Theme.surface-high;
                     border-width: m.speaking ? 2px : 0;
                     border-color: Theme.primary;
-                    if m.video-index >= 0: Image {
-                        width: parent.width;
-                        height: parent.height;
-                        source: m.video-index < CallFrames.frames.length
-                            ? CallFrames.frames[m.video-index]
-                            : root.call-videos[m.video-index].frame;
-                        image-fit: cover;
-                    }
-                    if m.video-index >= 0: Rectangle {
-                        y: parent.height - 36px;
-                        height: 36px;
-                        background: @linear-gradient(180deg, transparent 0%, Theme.scrim-strong 100%);
-                    }
-                    if m.video-index >= 0: IconButton {
-                        x: parent.width - self.width - Theme.space-2;
-                        y: parent.height - self.height - Theme.space-2;
-                        glyph: Icons.fullscreen;
-                        tooltip: "Fullscreen";
-                        tint: white;
-                        clicked => { root.video-fullscreen(m.video-index); }
-                    }
                     VerticalLayout {
                         alignment: center;
                         spacing: Theme.gap-sm;
                         HorizontalLayout {
                             alignment: center;
-                            if m.video-index < 0: Avatar { size: Theme.avatar-profile; source: m.avatar; has-image: m.has-avatar; initials: m.initials; }
+                            Avatar { size: Theme.avatar-profile; source: m.avatar; has-image: m.has-avatar; initials: m.initials; }
                         }
                         HorizontalLayout {
                             alignment: center;
                             spacing: Theme.space-2;
-                            Text { text: m.name; color: m.video-index >= 0 ? white : Theme.on-surface; overflow: elide; }
+                            Text { text: m.name; color: Theme.on-surface; overflow: elide; }
                             if m.muted: Icon { text: Icons.mic-off; font-size: Theme.text-body; color: Theme.error; }
                             if m.deafened: Icon { text: Icons.headset-off; font-size: Theme.text-body; color: Theme.error; }
                             // Muted here only: a speaker-off icon beside the others, as the
