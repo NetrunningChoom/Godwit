@@ -2962,6 +2962,92 @@ fn leaving_a_group_requires_the_room_capability() {
 }
 
 #[test]
+fn closing_a_direct_room_requires_its_close_capability() {
+    let mut app = Application::default();
+    let mut direct = room(
+        Network::Discord,
+        "dm-close",
+        RoomKind::Direct {
+            with: UserId::new(account(Network::Discord), "u1"),
+        },
+    );
+    let id = direct.id.clone();
+    ready(&mut app, Network::Discord, vec![direct.clone()]);
+    assert!(app.dispatch(Action::CloseRoom(id.clone())).is_empty());
+    direct.capabilities.close = true;
+    app.apply(Event::RoomUpdated(direct));
+    assert_eq!(
+        commands(&app.dispatch(Action::CloseRoom(id.clone()))),
+        [&Command::CloseRoom { room: id }]
+    );
+}
+
+#[test]
+fn adding_a_group_member_requires_room_and_profile_capabilities() {
+    let mut app = Application::default();
+    let mut group = room(Network::Discord, "g-add", RoomKind::Group);
+    let rid = group.id.clone();
+    let user = UserId::new(account(Network::Discord), "friend");
+    ready(&mut app, Network::Discord, vec![group.clone()]);
+    app.state.selected = Some(rid.clone());
+    app.dispatch(Action::OpenProfile(user.clone()));
+    app.apply(Event::Profile(crate::members::Profile {
+        user: user.clone(),
+        name: "Friend".into(),
+        username: "friend".into(),
+        avatar_url: None,
+        banner_url: None,
+        presence: crate::members::Presence::Offline,
+        status: None,
+        bio: None,
+        pronouns: None,
+        profile_level: None,
+        member_since: None,
+        roles: Vec::new(),
+        me: false,
+        relationship: crate::members::Relationship::Friend,
+        bot: false,
+        has_friends: true,
+        moderation: None,
+        group_moderation: Some(crate::members::GroupModeration {
+            room: rid.clone(),
+            add_member: true,
+            remove_member: false,
+            transfer_ownership: false,
+        }),
+        can_block: false,
+        can_ignore: false,
+        ignored: false,
+        can_report: false,
+        mutual_servers: Vec::new(),
+        mutual_friends: Vec::new(),
+        has_mutuals: false,
+        mutual_groups: Vec::new(),
+        note: None,
+        can_note: false,
+        note_limit: 0,
+        activity_join: None,
+        can_invite_to_activity: false,
+    }));
+    assert!(
+        app.dispatch(Action::AddGroupMember {
+            room: rid.clone(),
+            user: user.clone()
+        })
+        .is_empty()
+    );
+    group.capabilities.add_group_member = true;
+    app.apply(Event::RoomUpdated(group));
+    assert_eq!(
+        commands(&app.dispatch(Action::AddGroupMember {
+            room: rid.clone(),
+            user: user.clone()
+        })),
+        [&Command::AddGroupMember { room: rid, user }]
+    );
+}
+
+#[test]
 fn a_created_server_opens_after_its_server_list_arrives() {
     let (mut app, _) = open_dm(&[]);
     let id = ServerId::new(account(Network::Stoat), "created");

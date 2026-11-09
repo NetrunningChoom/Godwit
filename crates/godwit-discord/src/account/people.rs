@@ -214,6 +214,12 @@ impl DiscordAccount {
 
     // Messages.
 
+    /// The room's channel if it is a group DM (where members can be managed).
+    pub(super) fn group_of(&self, room: Option<&RoomId>) -> Option<String> {
+        let channel = room?.raw.as_ref();
+        (self.store.channels.get(channel)?.kind == store::GROUP_DM).then(|| channel.to_owned())
+    }
+
     pub(super) fn profile(&self) -> Option<Profile> {
         let (user, guild) = self.profile_for.as_ref()?;
         let fetched = self
@@ -309,7 +315,26 @@ impl DiscordAccount {
             bot: u.is_some_and(|u| u.bot),
             has_friends: true,
             moderation: guild.as_deref().and_then(|g| self.moderation(g, user)),
-            group_moderation: None,
+            group_moderation: self.profile_group.as_deref().and_then(|channel| {
+                let c = self.store.channels.get(channel)?;
+                let me = self.store.me.as_ref()?.id.as_str();
+                let add_member = c.kind == store::GROUP_DM
+                    && c.owner.as_deref() == Some(me)
+                    && self.store.relationships.get(user) == Some(&store::FRIEND)
+                    && !c.recipients.iter().any(|u| u == user);
+                let remove_member = c.kind == store::GROUP_DM
+                    && user != me
+                    && c.owner.as_deref() == Some(me)
+                    && c.recipients.iter().any(|u| u == user)
+                    && c.recipients.iter().any(|u| u == me);
+                let account = self.account.as_ref()?.clone();
+                (add_member || remove_member).then(|| godwit_core::members::GroupModeration {
+                    room: RoomId::new(account, channel),
+                    add_member,
+                    remove_member,
+                    transfer_ownership: false,
+                })
+            }),
             // The web client's user context menu offers Block for anyone but us.
             can_block: user != self.me(),
             can_ignore: user != self.me(),

@@ -361,6 +361,7 @@ impl SlackAccount {
             Command::LeaveGroup { .. }
             | Command::AddGroupMember { .. }
             | Command::RemoveGroupMember { .. }
+            | Command::CloseRoom { .. }
             | Command::JoinThread { .. }
             | Command::LeaveThread { .. } => {}
             // Slack has no channel webhook manager in this account.

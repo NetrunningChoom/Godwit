@@ -162,6 +162,7 @@ pub struct Shell {
     switch_rows: Vec<RoomId>,
     /// The group awaiting the leave confirmation.
     leave_group_pending: Option<RoomId>,
+    close_room_pending: Option<RoomId>,
     /// The message the forward picker is for, and the room each result sends to.
     forward: Option<(RoomId, MessageId)>,
     forward_rows: Vec<RoomId>,
@@ -475,6 +476,7 @@ impl Shell {
             card_selection: crate::selection::BlockSelection::default(),
             switch_rows: Vec::new(),
             leave_group_pending: None,
+            close_room_pending: None,
             forward: None,
             forward_rows: Vec::new(),
             poll: poll::PollDraft::default(),

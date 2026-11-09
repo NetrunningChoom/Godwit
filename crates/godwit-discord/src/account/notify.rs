@@ -68,7 +68,10 @@ impl DiscordAccount {
         ) {
             body.extend(entry.clone());
         }
-        self.apply_override(guild.as_deref(), &body);
+        self.store.apply_guild_settings(&json!({
+            "guild_id": guild,
+            "channel_overrides": [body],
+        }));
         if self.demo.is_none() {
             self.net.send(Cmd::Request(Request::ChannelNotify {
                 guild,

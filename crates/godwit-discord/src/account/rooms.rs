@@ -106,6 +106,11 @@ impl DiscordAccount {
         let capabilities = Capabilities {
             // Discord's web client offers Leave Group for group DMs.
             leave: c.kind == store::GROUP_DM,
+            close: c.kind == store::DM,
+            add_group_member: c.kind == store::GROUP_DM
+                && c.owner
+                    .as_deref()
+                    .is_some_and(|owner| self.store.me.as_ref().is_some_and(|me| owner == me.id)),
             reaction_users: true,
             // Private threads are invite-only (docs.discord.food, Channel,
             // thread types): show Leave when we're in one, and Join only for

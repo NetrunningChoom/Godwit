@@ -48,6 +48,7 @@ export component UserCard inherits Rectangle {
     callback remove-timeout();
     callback edit-nickname();
     in property <bool> can-remove-group-member;
+    in property <bool> can-add-group-member;
     in property <bool> can-transfer-group-ownership;
     // The card may block them (the official UserContextMenu's safety group),
     // and we have: Unblock instead.
@@ -75,6 +76,7 @@ export component UserCard inherits Rectangle {
     callback kick();
     callback ban();
     callback remove-group-member();
+    callback add-group-member();
     callback transfer-group-ownership();
     callback block-user();
     callback unblock-user();
@@ -316,6 +318,10 @@ export component UserCard inherits Rectangle {
                 if !root.me && root.can-remove-group-member: HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;
                     Button { text: "Remove member"; kind: "text"; danger: true; clicked => { root.remove-group-member(); } }
+                }
+                if !root.me && root.can-add-group-member: HorizontalLayout {
+                    spacing: Theme.space-3; alignment: start;
+                    Button { text: "Add to group"; kind: "tonal"; clicked => { root.add-group-member(); } }
                 }
                 if !root.me && (root.can-block || root.can-ignore): HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;

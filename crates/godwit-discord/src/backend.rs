@@ -111,6 +111,9 @@ pub enum Request {
     LeaveGroup {
         channel: String,
     },
+    CloseDm {
+        channel: String,
+    },
     AddGroupRecipient {
         channel: String,
         user: String,
@@ -1119,6 +1122,10 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::LeaveGroup { channel } => Answer::Done {
             what: "Leaving group",
             result: api.leave_group(&channel).await.map_err(RequestError::from),
+        },
+        Request::CloseDm { channel } => Answer::Done {
+            what: "Closing DM",
+            result: api.close_dm(&channel).await.map_err(RequestError::from),
         },
         Request::AddGroupRecipient { channel, user } => Answer::Done {
             what: "Adding group recipient",

@@ -513,6 +513,7 @@ impl DiscordAccount {
                     .and_then(|r| self.store.channels.get(r.raw.as_ref()))
                     .and_then(|c| c.guild.clone());
                 self.profile_for = Some((user.raw.to_string(), guild));
+                self.profile_group = self.group_of(room.as_ref());
                 self.demo_profile(user.raw.as_ref());
                 self.sync_profile(&mut out);
             }
@@ -648,8 +649,8 @@ impl DiscordAccount {
             Command::LoadMembers { .. }
             | Command::LoadServerOverview { .. }
             | Command::OpenDirect { .. }
-            | Command::AddGroupMember { .. }
-            | Command::RemoveGroupMember { .. } => {
+            | Command::RemoveGroupMember { .. }
+            | Command::CloseRoom { .. } => {
                 return None;
             }
             // As the gateway's CHANNEL_DELETE after leaving would.

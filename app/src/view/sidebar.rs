@@ -333,6 +333,7 @@ pub(super) fn room_row(r: &Room, selected: bool, occupants: Option<&Vec<CallMemb
         thread: r.parent.is_some(),
         can_manage: r.capabilities.manage_channel,
         can_leave: r.capabilities.leave,
+        can_close: r.capabilities.close,
         can_join_thread: r.capabilities.join_thread,
         joined_thread: r.joined_thread,
         can_notify: r.capabilities.notify_settings,

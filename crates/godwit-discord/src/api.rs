@@ -679,6 +679,14 @@ impl Api {
             .map(drop)
     }
 
+    /// Closes a one-to-one DM without deleting its history (Close Channel,
+    /// docs.discord.food Channels resource).
+    pub async fn close_dm(&self, channel: &str) -> Result<()> {
+        self.json(self.request(Method::DELETE, &format!("/channels/{channel}")))
+            .await
+            .map(drop)
+    }
+
     /// Adds a recipient to a group DM.
     pub async fn add_group_recipient(&self, channel: &str, user: &str) -> Result<()> {
         self.empty(self.request(Method::PUT, &format!("/channels/{channel}/recipients/{user}")))

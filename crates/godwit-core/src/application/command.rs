@@ -199,6 +199,10 @@ pub enum Command {
         room: RoomId,
         user: UserId,
     },
+    /// Close a direct conversation in the network's DM list.
+    CloseRoom {
+        room: RoomId,
+    },
     /// Transfer ownership of a group conversation.
     TransferGroupOwnership {
         room: RoomId,

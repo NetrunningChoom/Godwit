@@ -644,6 +644,7 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
         .collect();
     ui.set_card_member_roles(ModelRc::new(VecModel::from(member_roles)));
     ui.set_card_can_remove_group_member(p.group_moderation.as_ref().is_some_and(|m| m.remove_member));
+    ui.set_card_can_add_group_member(p.group_moderation.as_ref().is_some_and(|m| m.add_member));
     ui.set_card_can_block(p.can_block);
     ui.set_card_blocked(p.relationship == Relationship::Blocked);
     ui.set_card_can_ignore(p.can_ignore);

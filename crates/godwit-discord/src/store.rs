@@ -95,6 +95,8 @@ impl Role {
 pub struct Channel {
     pub id: String,
     pub kind: u64,
+    /// Group DM owner (`owner_id` in Discord's Channel resource).
+    pub owner: Option<String>,
     pub guild: Option<String>,
     pub name: String,
     pub position: i64,
@@ -145,6 +147,7 @@ impl Channel {
         Some(Self {
             id: v["id"].as_str()?.to_owned(),
             kind: v["type"].as_u64().unwrap_or_default(),
+            owner: v["owner_id"].as_str().map(str::to_owned),
             guild: v["guild_id"].as_str().or(guild).map(str::to_owned),
             name: v["name"].as_str().unwrap_or_default().to_owned(),
             position: v["position"].as_i64().unwrap_or_default(),
@@ -514,6 +517,11 @@ impl Store {
                 self.guild_notify.insert(g.to_owned(), level);
             }
             self.apply_guild_settings(s);
+        }
+        if let Some(settings) = d["user_guild_settings"]["entries"].as_array() {
+            for entry in settings.iter().filter(|s| s["guild_id"].is_null()) {
+                self.apply_guild_settings(entry);
+            }
         }
         self.status = d["sessions"][0]["status"].as_str().unwrap_or("online").to_owned();
         // Presences usually come in READY_SUPPLEMENTAL; take any READY has.

@@ -856,7 +856,10 @@ impl NetworkAccount for SteamAccount {
                 }
             }
             Command::LeaveCall => self.net.send(Cmd::CallCmd(SessionCmd::Leave)),
-            Command::RemoveGroupMember { .. } | Command::JoinThread { .. } | Command::LeaveThread { .. } => {}
+            Command::RemoveGroupMember { .. }
+            | Command::CloseRoom { .. }
+            | Command::JoinThread { .. }
+            | Command::LeaveThread { .. } => {}
             Command::SetMuted(muted) => self.net.send(Cmd::CallCmd(SessionCmd::Muted(muted))),
             Command::SetDeafened(deafened) => self.net.send(Cmd::CallCmd(SessionCmd::Deafened(deafened))),
             // Steam's calls are voice only.

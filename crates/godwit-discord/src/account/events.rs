@@ -604,7 +604,13 @@ impl DiscordAccount {
                 self.sync_stickers(out);
             }
             "USER_GUILD_SETTINGS_UPDATE" => {
-                self.store.apply_guild_settings(d);
+                if let Some(entries) = d["entries"].as_array() {
+                    for entry in entries {
+                        self.store.apply_guild_settings(entry);
+                    }
+                } else {
+                    self.store.apply_guild_settings(d);
+                }
                 self.sync_rooms(out);
                 self.sync_servers(out);
             }

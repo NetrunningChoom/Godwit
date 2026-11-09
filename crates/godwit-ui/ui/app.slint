@@ -260,6 +260,7 @@ export component AppWindow inherits Window {
     callback remove-member-timeout();
     callback set-member-nickname(string);
     in property <bool> card-can-remove-group-member;
+    in property <bool> card-can-add-group-member;
     in property <bool> card-can-transfer-group-ownership;
     in property <bool> card-can-block;
     in property <bool> card-blocked;
@@ -284,6 +285,7 @@ export component AppWindow inherits Window {
     callback moderate-member(bool, string, int);
     in-out property <bool> confirm-remove-group-member: false;
     callback remove-group-member();
+    callback add-group-member();
     callback leave-group();
     in-out property <bool> confirm-transfer-group-ownership: false;
     callback transfer-group-ownership();
@@ -431,6 +433,8 @@ export component AppWindow inherits Window {
     callback close-invite-link();
     in property <string> sidebar-title;
     in property <string> leave-group-name: "this group";
+    in property <bool> close-room-confirmation;
+    callback cancel-leave-group();
     in property <image> sidebar-banner;
     in property <bool> sidebar-has-banner;
     in property <[RoomItem]> rooms;
@@ -1645,6 +1649,7 @@ export component AppWindow inherits Window {
         remove-timeout => { root.remove-member-timeout(); }
         edit-nickname => { root.nickname-text = root.card-nickname; root.nickname-open = true; }
         can-remove-group-member: root.card-can-remove-group-member;
+        can-add-group-member: root.card-can-add-group-member;
         can-transfer-group-ownership: root.card-can-transfer-group-ownership;
         can-block: root.card-can-block;
         blocked: root.card-blocked;
@@ -1669,6 +1674,7 @@ export component AppWindow inherits Window {
         kick => { root.confirm-moderate = 1; }
         ban => { root.confirm-moderate = 2; root.ban-reason = ""; root.ban-delete-index = 0; }
         remove-group-member => { root.confirm-remove-group-member = true; }
+        add-group-member => { root.add-group-member(); }
         transfer-group-ownership => { root.confirm-transfer-group-ownership = true; }
         close => { root.close-profile(); }
         copy(t) => { root.copy-string(t); }
@@ -2157,6 +2163,8 @@ export component AppWindow inherits Window {
         confirm-leave <=> root.confirm-leave;
         confirm-leave-group <=> root.confirm-leave-group;
         leave-group-name: root.leave-group-name;
+        close-room-confirmation: root.close-room-confirmation;
+        cancel-leave-group => { root.cancel-leave-group(); }
         leave-group => { root.leave-group(); }
         profile-switch-open <=> root.profile-switch-open;
         profile-switch-name: root.profile-switch-name;

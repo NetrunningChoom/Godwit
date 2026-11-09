@@ -354,6 +354,8 @@ pub enum Action {
     },
     /// Leave a group conversation, where the network supports it.
     LeaveGroup(RoomId),
+    /// Close a direct conversation in the network's DM list.
+    CloseRoom(RoomId),
     /// Talk to this person on `user`'s network from now on, and open that
     /// chat (the switcher in a merged person's chat).
     TalkOn(UserId),

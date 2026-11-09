@@ -276,6 +276,25 @@ impl Shell {
         }
     }
 
+    pub fn add_group_member(&mut self, ui: &AppWindow) {
+        let Some((user, Some(profile))) = self.app.state().profile.clone() else {
+            return;
+        };
+        let Some(moderation) = profile.group_moderation else {
+            return;
+        };
+        if moderation.add_member {
+            self.act(
+                ui,
+                Action::AddGroupMember {
+                    room: moderation.room,
+                    user,
+                },
+            );
+            self.act(ui, Action::CloseProfile);
+        }
+    }
+
     /// Transfer group ownership to the profile's member after confirmation.
     pub fn transfer_group_ownership(&mut self, ui: &AppWindow) {
         let Some((user, Some(profile))) = self.app.state().profile.clone() else {

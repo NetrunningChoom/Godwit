@@ -178,6 +178,8 @@ export component ManagementDialogs inherits Rectangle {
     callback server-menu-leave();
     in-out property <bool> confirm-leave-group;
     in property <string> leave-group-name;
+    in property <bool> close-room-confirmation;
+    callback cancel-leave-group();
     callback leave-group();
     in-out property <int> confirm-moderate;
     in property <string> card-name;
@@ -298,11 +300,11 @@ export component ManagementDialogs inherits Rectangle {
         confirmed => { root.confirm-leave = false; root.server-menu-leave(); }
     }
     if root.confirm-leave-group: ConfirmDialog {
-        title: "Leave group?";
-        message: "You will leave \"" + root.leave-group-name + "\" and it will disappear from your conversations.";
-        confirm-text: "Leave";
+        title: root.close-room-confirmation ? "Close DM?" : "Leave group?";
+        message: root.close-room-confirmation ? "This DM will disappear from your conversations. Its history is kept." : "You will leave \"" + root.leave-group-name + "\" and it will disappear from your conversations.";
+        confirm-text: root.close-room-confirmation ? "Close DM" : "Leave";
         danger: true;
-        cancelled => { root.confirm-leave-group = false; }
+        cancelled => { root.confirm-leave-group = false; root.cancel-leave-group(); }
         confirmed => { root.confirm-leave-group = false; root.leave-group(); }
     }
     if root.profile-switch-open: ConfirmDialog {

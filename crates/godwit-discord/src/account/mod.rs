@@ -150,6 +150,8 @@ pub struct DiscordAccount {
     pending: HashMap<String, Arc<str>>,
     /// The profile card on screen, and what Discord's profile said.
     profile_for: Option<(String, Option<String>)>,
+    /// The group DM the shown profile was opened from, for adding and removing members.
+    profile_group: Option<String>,
     profiles: HashMap<(String, Option<String>), Value>,
     /// Our private notes on people, by user id (asked when a profile opens,
     /// kept current by USER_NOTE_UPDATE); a person without one is absent.
@@ -242,6 +244,7 @@ impl DiscordAccount {
             typing: HashMap::new(),
             pending: HashMap::new(),
             profile_for: None,
+            profile_group: None,
             profiles: HashMap::new(),
             notes: HashMap::new(),
             own_profile: None,
@@ -1285,13 +1288,26 @@ impl NetworkAccount for DiscordAccount {
                     req(&self.net, Request::LeaveGroup { channel });
                 }
             }
+            Command::CloseRoom { room } => {
+                if self.store.channels.get(&*room.raw).is_some_and(|c| c.kind == store::DM) {
+                    req(
+                        &self.net,
+                        Request::CloseDm {
+                            channel: room.raw.to_string(),
+                        },
+                    );
+                }
+            }
             Command::AddGroupMember { room, user } => {
-                if self
-                    .store
-                    .channels
-                    .get(&*room.raw)
-                    .is_some_and(|c| c.kind == store::GROUP_DM)
-                {
+                if self.store.channels.get(&*room.raw).is_some_and(|c| {
+                    c.kind == store::GROUP_DM
+                        && c.owner
+                            .as_deref()
+                            .is_some_and(|owner| self.store.me.as_ref().is_some_and(|me| owner == me.id))
+                        && self.store.relationships.get(&*user.raw) == Some(&store::FRIEND)
+                        && !c.recipients.iter().any(|r| r == &*user.raw)
+                        && c.recipients.len() < 9
+                }) {
                     let channel = room.raw.to_string();
                     req(
                         &self.net,
@@ -1452,6 +1468,7 @@ impl NetworkAccount for DiscordAccount {
                     .and_then(|c| c.guild.clone());
                 let raw = user.raw.to_string();
                 self.profile_for = Some((raw.clone(), guild.clone()));
+                self.profile_group = self.group_of(room.as_ref());
                 self.sync_profile(&mut out);
                 // The note comes with the profile (the web client fetches it when the popout opens).
                 if !self.notes.contains_key(&raw) && raw != self.me() {
@@ -2244,6 +2261,45 @@ mod tests {
         let room = demo.room_id("50").expect("demo group exists");
         let output = demo.run(Command::LeaveGroup { room: room.clone() });
         assert!(output.contains(&Event::RoomRemoved(room)));
+    }
+
+    #[test]
+    fn recipient_events_update_group_members_and_channel_delete_closes_dm() {
+        let ready = json!({
+            "user": {"id": "100", "username": "me"},
+            "private_channels": [{"id": "50", "type": 3, "owner_id": "100", "name": "friends", "recipients": [{"id": "7", "username": "robin"}]}],
+            "relationships": [], "merged_members": []
+        });
+        let (mut a, _, _) = account();
+        let mut out = Vec::new();
+        a.handle(Ev::Ready(Box::new(ready)), &mut out);
+        a.dispatch(
+            "CHANNEL_RECIPIENT_ADD",
+            &json!({"channel_id":"50", "user":{"id":"8", "username":"sam"}}),
+            &mut out,
+        );
+        assert!(a.store.channels["50"].recipients.iter().any(|u| u == "8"));
+        a.dispatch(
+            "CHANNEL_RECIPIENT_REMOVE",
+            &json!({"channel_id":"50", "user":{"id":"7", "username":"robin"}}),
+            &mut out,
+        );
+        assert!(!a.store.channels["50"].recipients.iter().any(|u| u == "7"));
+        a.store.channels.insert(
+            "dm".into(),
+            crate::store::Channel {
+                id: "dm".into(),
+                kind: store::DM,
+                recipients: vec!["7".into()],
+                ..Default::default()
+            },
+        );
+        let dm = a.room_id("dm").expect("DM exists");
+        // The rail has been told of it, so deleting it removes it.
+        a.sync_rooms(&mut out);
+        a.dispatch("CHANNEL_DELETE", &json!({"id":"dm"}), &mut out);
+        assert!(out.contains(&Event::RoomRemoved(dm)));
+        assert!(!a.store.channels.contains_key("dm"));
     }
 
     #[test]
@@ -3223,6 +3279,37 @@ mod tests {
                 .any(|e| matches!(e, Event::RoomUpdated(r) if r.notify.level.is_none() && r.notify.muted))
         );
         assert!(out.iter().any(|e| matches!(e, Event::Error(_))));
+    }
+
+    #[test]
+    fn dm_notification_settings_use_at_me_and_close_dm_maps_to_delete() {
+        use godwit_core::room::RoomNotifyChange as C;
+        let (mut a, mut cmds, _) = account();
+        ready(&mut a);
+        a.store.channels.insert(
+            "dm50".into(),
+            crate::store::Channel {
+                id: "dm50".into(),
+                kind: store::DM,
+                recipients: vec!["200".into()],
+                ..Default::default()
+            },
+        );
+        while cmds.try_recv().is_ok() {}
+        let room = RoomId::new(a.account.clone().expect("signed in"), "dm50");
+        assert!(
+            a.room("dm50")
+                .is_some_and(|r| r.capabilities.notify_settings && r.capabilities.close)
+        );
+        a.run(Command::SetRoomNotify {
+            room: room.clone(),
+            change: C::Mute { seconds: None },
+        });
+        assert!(
+            matches!(cmds.try_recv(), Ok(Cmd::Request(Request::ChannelNotify { guild: None, channel, .. })) if channel == "dm50")
+        );
+        a.run(Command::CloseRoom { room });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Request(Request::CloseDm { channel })) if channel == "dm50"));
     }
 
     #[test]

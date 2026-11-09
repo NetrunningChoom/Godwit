@@ -403,6 +403,7 @@ impl Shell {
             return;
         }
         if choice == 12 {
+            ui.set_close_room_confirmation(false);
             self.leave_group_pending = Some(room.clone());
             ui.set_leave_group_name(
                 self.app
@@ -412,6 +413,22 @@ impl Shell {
                     .into(),
             );
             ui.set_confirm_leave_group(true);
+            return;
+        }
+        if choice == 14 {
+            if self.app.state().room(&room).is_some_and(|r| r.capabilities.close) {
+                self.close_room_pending = Some(room.clone());
+                self.leave_group_pending = None;
+                ui.set_close_room_confirmation(true);
+                ui.set_leave_group_name(
+                    self.app
+                        .state()
+                        .room(&room)
+                        .map_or_else(|| "this DM".into(), |r| r.name.to_string())
+                        .into(),
+                );
+                ui.set_confirm_leave_group(true);
+            }
             return;
         }
         if choice == 5 {
@@ -492,6 +509,13 @@ impl Shell {
 
     /// Confirmed in the shared destructive-action dialog before the backend is asked.
     pub fn leave_group(&mut self, ui: &AppWindow) {
+        ui.set_close_room_confirmation(false);
+        if let Some(room) = self.close_room_pending.take() {
+            if self.app.state().room(&room).is_some_and(|r| r.capabilities.close) {
+                self.act(ui, Action::CloseRoom(room));
+            }
+            return;
+        }
         if let Some(room) = self
             .leave_group_pending
             .take()
@@ -499,6 +523,12 @@ impl Shell {
         {
             self.act(ui, Action::LeaveGroup(room));
         }
+    }
+
+    pub fn cancel_leave_group(&mut self, ui: &AppWindow) {
+        self.leave_group_pending = None;
+        self.close_room_pending = None;
+        ui.set_close_room_confirmation(false);
     }
 
     /// A pinned chat dragged `by` rows among Home's pins (negative: up).

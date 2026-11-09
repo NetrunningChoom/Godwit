@@ -17,6 +17,12 @@ pub struct Capabilities {
     /// This group conversation can be left (the network removes it on confirmation).
     #[serde(default)]
     pub leave: bool,
+    /// A direct conversation can be closed (removed from the network's DM list).
+    #[serde(default)]
+    pub close: bool,
+    /// A member can be added to this group conversation.
+    #[serde(default)]
+    pub add_group_member: bool,
     pub send: bool,
     pub edit: bool,
     pub delete: bool,
@@ -122,6 +128,8 @@ impl Capabilities {
     pub const fn of(network: Network) -> Self {
         let all = Self {
             leave: false,
+            close: false,
+            add_group_member: false,
             send: true,
             edit: true,
             delete: true,

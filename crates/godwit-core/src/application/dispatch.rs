@@ -773,6 +773,19 @@ impl Application {
                     command: Command::LeaveGroup { room },
                 }]
             }
+            Action::CloseRoom(room) => {
+                if !self
+                    .state
+                    .room(&room)
+                    .is_some_and(|r| matches!(r.kind, crate::room::RoomKind::Direct { .. }) && r.capabilities.close)
+                {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::CloseRoom { room },
+                }]
+            }
             Action::AddFriend(user) => vec![Effect::Backend {
                 account: user.account.clone(),
                 command: Command::AddFriend { user },
@@ -866,7 +879,11 @@ impl Application {
                                     .is_some_and(|m| m.add_member && m.room == room)
                             })
                     });
-                if !permitted {
+                if !permitted
+                    || !self.state.room(&room).is_some_and(|r| {
+                        matches!(r.kind, crate::room::RoomKind::Group) && r.capabilities.add_group_member
+                    })
+                {
                     return Vec::new();
                 }
                 vec![Effect::Backend {

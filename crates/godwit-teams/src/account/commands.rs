@@ -236,6 +236,7 @@ impl TeamsAccount {
             Command::LeaveGroup { .. }
             | Command::AddGroupMember { .. }
             | Command::RemoveGroupMember { .. }
+            | Command::CloseRoom { .. }
             | Command::JoinThread { .. }
             | Command::LeaveThread { .. } => {}
             // Teams has no channel webhook manager.

@@ -2783,6 +2783,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 ]
             }
             Command::LeaveGroup { room } => vec![Event::RoomRemoved(room)],
+            Command::CloseRoom { room } => vec![Event::RoomRemoved(room)],
             Command::JoinThread { .. } | Command::LeaveThread { .. } => Vec::new(),
             Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => Vec::new(),
             // Any room's members: a few made-up people, seeded by the room.

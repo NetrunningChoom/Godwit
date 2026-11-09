@@ -1016,6 +1016,7 @@ impl NetworkAccount for GChatAccount {
             Command::LeaveGroup { .. }
             | Command::AddGroupMember { .. }
             | Command::RemoveGroupMember { .. }
+            | Command::CloseRoom { .. }
             | Command::JoinThread { .. }
             | Command::LeaveThread { .. } => {}
             // Google Chat has no channel webhook manager.

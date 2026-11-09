@@ -219,6 +219,7 @@ component RoomRow inherits Rectangle {
             if !room.header && room.can-join-thread && room.joined-thread: MenuRow { glyph: Icons.logout; label: "Leave Thread"; clicked => { root.menu(35); } }
             if !room.header && room.can-leave: MenuDivider { }
             if !room.header && room.can-leave: MenuRow { glyph: Icons.logout; label: "Leave group"; danger: true; clicked => { root.menu(12); } }
+            if !room.header && room.can-close: MenuRow { glyph: Icons.close; label: "Close DM"; danger: true; clicked => { root.menu(14); } }
             // The official channel menu's mute (with durations) and notification settings,
             // as rows (menu 20..=24 mute for a while, 26 until turned off, 27 unmute,
             // 30..=33 the level).
