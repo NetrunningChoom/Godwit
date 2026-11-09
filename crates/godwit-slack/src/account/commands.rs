@@ -17,6 +17,29 @@ impl SlackAccount {
                     Err(e) => out.push(Event::Error(format!("Slack, notification settings: {e}").into())),
                 }
             }
+            // User Groups are optional; personal and broadcast alerts work
+            // without them, so a failed read is ignored.
+            Answer::UserGroups(result) => {
+                if let Ok(value) = result {
+                    let me = self.workspaces.get(team).map(|ws| ws.me.clone()).unwrap_or_default();
+                    let groups: HashSet<String> = value["usergroups"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|g| {
+                            g["users"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .any(|u| u.as_str() == Some(me.as_str()))
+                        })
+                        .filter_map(|g| g["id"].as_str().map(str::to_owned))
+                        .collect();
+                    if let Some(ws) = self.workspaces.get_mut(team) {
+                        ws.usergroups = groups;
+                    }
+                }
+            }
             Answer::Conversation(result) => match result {
                 Ok(value) => {
                     self.put_conversation(team, &value["channel"]);

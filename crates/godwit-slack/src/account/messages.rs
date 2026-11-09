@@ -227,7 +227,17 @@ impl SlackAccount {
                     .skip(1)
                     .filter_map(|part| part.split_once('>'))
                     .any(|(id, _)| id.split('|').next() == Some(me.as_str()));
-            // @here, @channel and @everyone notify everyone in the channel.
+            // Slack encodes user-group mentions as <!subteam^ID>; the
+            // usergroups.list membership is documented at
+            // https://api.slack.com/methods/usergroups.list.
+            let group = ws.is_some_and(|w| {
+                text.split("<!subteam^")
+                    .skip(1)
+                    .filter_map(|part| part.split_once('>'))
+                    .any(|(id, _)| w.usergroups.contains(id))
+            });
+            // Slack's broadcast tokens notify channel members; user-group
+            // mentions are described at https://api.slack.com/docs/attachments.
             let broadcast = ["<!here", "<!channel", "<!everyone"].iter().any(|b| text.contains(b));
             let keyword = ws.is_some_and(|w| {
                 !w.keywords.is_empty() && {
@@ -243,7 +253,7 @@ impl SlackAccount {
             let wanted = match level {
                 "everything" | "all" => true,
                 "nothing" | "none" => false,
-                _ => personal || broadcast || keyword,
+                _ => personal || group || broadcast || keyword,
             };
             let followed = e["thread_ts"].as_str().is_some_and(|root| {
                 ws.and_then(|w| w.threads.get(&(channel.to_owned(), root.to_owned())))

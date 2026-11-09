@@ -21,8 +21,9 @@ impl SlackAccount {
     }
 
     pub(super) fn notification_prefs(&mut self, team: &str, prefs: &Value) {
-        // Protocol: slk GetMutedChannels, including the modern JSON-encoded
-        // all_notifications_prefs and Slack's older comma-separated list.
+        // gammons/slk reads the same modern preference and legacy fallback:
+        // https://github.com/gammons/slk (GetMutedChannels). Slack documents
+        // users.prefs.get as the read method; no public write method is used.
         let mut muted: HashSet<String> = prefs["muted_channels"]
             .as_str()
             .unwrap_or_default()

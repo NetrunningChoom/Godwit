@@ -151,8 +151,20 @@ impl SlackAccount {
             Kind::Direct(with) => self.pictures.get(&format!("{team}:{with}")).cloned(),
             _ => None,
         };
+        // A channel's own desktop preference maps to the shared all /
+        // mentions / nothing levels; without one it follows the workspace
+        // (None). Preference writes are not public.
+        let level = ws.channel_levels.get(id).map(String::as_str);
         Some(Room {
-            notify: Default::default(),
+            notify: godwit_core::room::RoomNotify {
+                level: match level {
+                    Some("everything" | "all") => Some(0),
+                    Some("mentions") => Some(1),
+                    Some("nothing" | "none") => Some(2),
+                    _ => None,
+                },
+                muted: ws.muted.contains(id),
+            },
             id: RoomId::new(account, format!("{team}:{id}").as_str()),
             name: name.into(),
             kind,

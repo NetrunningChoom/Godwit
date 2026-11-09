@@ -56,6 +56,7 @@ pub enum Request {
         ts: String,
     },
     NotificationPrefs,
+    UserGroups,
     Conversation(String),
     OwnState,
     SetOwnPresence(bool),
@@ -105,6 +106,7 @@ pub enum Answer {
     /// People's ids, names and pictures.
     Users(Vec<(String, String, Option<String>)>),
     NotificationPrefs(Result<Value, String>),
+    UserGroups(Result<Value, String>),
     Conversation(Result<Value, String>),
     OwnState(Result<Value, String>),
     Threads {
@@ -548,6 +550,13 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::NotificationPrefs => {
             Answer::NotificationPrefs(api.call("users.prefs.get", &[]).await.map_err(|e| text(&e)))
         }
+        // Slack documents include_users on usergroups.list for membership
+        // resolution: https://api.slack.com/methods/usergroups.list
+        Request::UserGroups => Answer::UserGroups(
+            api.call("usergroups.list", &[("include_users", "true")])
+                .await
+                .map_err(|e| text(&e)),
+        ),
         Request::Conversation(channel) => Answer::Conversation(
             api.call("conversations.info", &[("channel", channel.as_str())])
                 .await

@@ -76,6 +76,7 @@ impl SlackAccount {
                     }
                     prefs[name] = value.clone();
                     self.notification_prefs(team, &prefs);
+                    self.sync_rooms(out);
                 } else {
                     self.refresh_notification_prefs(team);
                 }
@@ -233,6 +234,7 @@ impl SlackAccount {
                 if online {
                     self.refresh_threads(&team, false);
                     self.refresh_notification_prefs(&team);
+                    self.request(&team, Request::UserGroups);
                     self.request(&team, Request::OwnState);
                 }
                 if let Some(account) = self.account.clone() {

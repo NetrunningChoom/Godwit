@@ -90,6 +90,8 @@ struct Workspace {
     desktop_level: String,
     /// Highlight words (`global.global_keywords`), lowercased.
     keywords: Vec<String>,
+    /// User-group ids whose membership includes the signed-in user.
+    usergroups: HashSet<String>,
     notification_settings: Value,
     prefs_pending: bool,
     seen: HashSet<(String, String)>,
@@ -439,6 +441,41 @@ mod tests {
             &json!({"all_notifications_prefs": r#"{"global":{"global_desktop":"nothing"},"channels":{}}"#}),
         );
         assert_eq!(alerts(&mut a, "Hi <@U1>", "1700000005.000100"), 0);
+    }
+
+    #[test]
+    fn user_group_membership_is_loaded_and_triggers_alerts() {
+        let (mut a, mut cmds) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        a.answer(
+            "T1",
+            Answer::UserGroups(Ok(json!({"usergroups":[
+                {"id":"S1","users":["U1","U2"]},
+                {"id":"S2","users":["U2"]}
+            ]}))),
+            &mut Vec::new(),
+        );
+        assert!(a.workspaces["T1"].usergroups.contains("S1"));
+        assert!(!a.workspaces["T1"].usergroups.contains("S2"));
+        let mut out = Vec::new();
+        a.news(
+            "T1",
+            &json!({"type":"message","channel":"C1","user":"U2","text":"hi <!subteam^S1>","ts":"1700000009.000100"}),
+            &mut out,
+        );
+        assert!(out.iter().any(|e| matches!(e, Event::Alert { .. })));
+    }
+
+    #[test]
+    fn slack_notification_preferences_populate_shared_room_state() {
+        let (mut a, _) = account();
+        ready(&mut a);
+        a.notification_prefs("T1", &json!({"all_notifications_prefs":r#"{"global":{"global_desktop":"mentions"},"channels":{"C1":{"desktop":"everything","muted":true}}}"#}));
+        let room = a.room("T1", "C1").expect("channel room");
+        assert_eq!(room.notify.level, Some(0));
+        assert!(room.notify.muted);
+        assert!(!room.capabilities.notify_settings);
     }
 
     #[test]
