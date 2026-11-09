@@ -131,18 +131,28 @@ impl StoatAccount {
         }
     }
 
-    /// Servers in the user's synced order; folders are flattened for now.
+    /// Servers in the user's synced order, each with its synced folder (the
+    /// shared rail groups them).
     pub(super) fn build_servers(&self, account: &AccountId) -> Vec<CoreServer> {
         let now_ms = chrono::Utc::now().timestamp_millis();
         self.store
             .rail()
             .into_iter()
             .flat_map(|e| match e {
-                RailEntry::Server(id) => vec![id],
-                RailEntry::Folder { servers, .. } => servers,
+                RailEntry::Server(id) => vec![(id, None)],
+                RailEntry::Folder { id, servers } => {
+                    let folder = self.store.folders.iter().find(|f| f.id == id).map(|f| {
+                        std::sync::Arc::new(godwit_core::server::ServerFolder {
+                            id: f.id.as_str().into(),
+                            name: (!f.name.trim().is_empty()).then(|| f.name.as_str().into()),
+                            colour: f.colour.as_deref().and_then(parse_folder_colour),
+                        })
+                    });
+                    servers.into_iter().map(|s| (s, folder.clone())).collect()
+                }
             })
-            .filter_map(|id| self.store.servers.get(&id))
-            .map(|s| CoreServer {
+            .filter_map(|(id, folder)| self.store.servers.get(&id).map(|s| (s, folder)))
+            .map(|(s, folder)| CoreServer {
                 id: ServerId::new(account.clone(), s.id.as_str()),
                 name: s.name.as_str().into(),
                 icon_url: s.icon.as_ref().and_then(|f| self.file_url(f)).map(Into::into),
@@ -175,7 +185,7 @@ impl StoatAccount {
                     .filter(|cat| cat.id.is_some() || !cat.rooms.is_empty())
                     .collect(),
                 muted: self.store.notification_prefs.mute(true, &s.id, now_ms).is_some(),
-                folder: None,
+                folder,
                 rights: {
                     use crate::permissions as p;
                     let can = |bit| self.store.can_in_server(&s.id, bit);
@@ -204,5 +214,24 @@ impl StoatAccount {
                 },
             })
             .collect()
+    }
+}
+
+/// A folder's synced colour (a CSS `#rrggbb` or `#rgb` from the official
+/// folder editor) as 0xRRGGBB; anything else draws the default colour.
+fn parse_folder_colour(css: &str) -> Option<u32> {
+    let (r, g, b) = crate::api::parse_hex_colour(css)?;
+    Some(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b))
+}
+
+#[cfg(test)]
+mod folder_colour_tests {
+    use super::parse_folder_colour;
+
+    #[test]
+    fn css_hex_colours() {
+        assert_eq!(parse_folder_colour("#ff8800"), Some(0xff8800));
+        assert_eq!(parse_folder_colour(" #F80 "), Some(0xff8800));
+        assert_eq!(parse_folder_colour("red"), None);
     }
 }
