@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use godwit_core::account::NetworkAccount;
-use godwit_core::application::{Command, Event};
+use godwit_core::application::{Command, Event, Person};
 use godwit_core::ids::{AccountId, MessageId, RoomId, ServerId, UserId};
 use godwit_core::message::{Attachment, AttachmentKind, Markup, Message, Reaction};
 use godwit_core::network::Network;
@@ -66,6 +66,8 @@ pub struct FluxerAccount {
     list_channel: HashMap<String, String>,
     /// The ranges last asked for, by guild (op 14 again only when they change).
     list_ranges: HashMap<String, Vec<[usize; 2]>>,
+    /// Friends, requests and blocked users as last sent to the core.
+    relationships: godwit_core::relationships::RelationshipLists,
 }
 
 /// A snowflake's time.
@@ -106,6 +108,7 @@ impl FluxerAccount {
             member_lists: godwit_discord::member_list::MemberLists::default(),
             list_channel: HashMap::new(),
             list_ranges: HashMap::new(),
+            relationships: Default::default(),
             persist,
             downloads: {
                 let media = godwit_core::media::Media::new("fluxer");
@@ -442,6 +445,12 @@ impl FluxerAccount {
             d["read_state"] = d["read_states"].clone();
         }
         self.store.ready(&d);
+        // Fluxer READY carries relationship records and any initial presence
+        // data; these share the documented gateway object shapes.
+        self.store.supplemental(&d);
+        for presence in d["presences"].as_array().into_iter().flatten() {
+            self.store.put_presence(presence);
+        }
         // DM recipients come as user objects: their names and avatars.
         for c in d["private_channels"].as_array().into_iter().flatten() {
             for u in c["recipients"].as_array().into_iter().flatten() {
@@ -464,6 +473,8 @@ impl FluxerAccount {
             },
             servers: self.servers(),
         });
+        self.sync_people(out);
+        self.sync_presences(self.store.presences.keys().cloned().collect::<Vec<_>>(), out);
     }
 
     /// Subscribes `guild`'s open channel (Lazy Request, op 14, as
@@ -493,6 +504,47 @@ impl FluxerAccount {
             Some("idle") => Presence::Idle,
             Some("dnd") => Presence::Busy,
             _ => Presence::Offline,
+        }
+    }
+
+    fn sync_people(&mut self, out: &mut Vec<Event>) {
+        let Some(account) = self.account.clone() else { return };
+        let people = |kind| -> Vec<Person> {
+            self.store
+                .relationships
+                .iter()
+                .filter(|(_, relationship)| **relationship == kind)
+                .map(|(user, _)| Person {
+                    id: UserId::new(account.clone(), user.as_str()),
+                    name: self.store.display_name(user, None).into(),
+                    avatar_url: self.avatar(user).map(Into::into),
+                    online: !matches!(self.presence(user), godwit_core::members::Presence::Offline),
+                })
+                .collect()
+        };
+        let blocked = self
+            .store
+            .relationships
+            .iter()
+            .filter(|(_, relationship)| **relationship == store::BLOCKED)
+            .map(|(user, _)| UserId::new(account.clone(), user.as_str()))
+            .collect();
+        let (friends, incoming, outgoing) = (people(store::FRIEND), people(store::INCOMING), people(store::OUTGOING));
+        self.relationships
+            .sync(&account, friends, incoming, outgoing, blocked, out);
+    }
+
+    fn sync_presences(&self, users: impl IntoIterator<Item = String>, out: &mut Vec<Event>) {
+        let Some(account) = self.account.clone() else { return };
+        let presence = users
+            .into_iter()
+            .filter_map(|user| {
+                self.store.presences.get(&user)?;
+                Some((UserId::new(account.clone(), user.as_str()), self.presence(&user)))
+            })
+            .collect::<Vec<_>>();
+        if !presence.is_empty() {
+            out.push(Event::Presences { account, presence });
         }
     }
 
@@ -540,6 +592,32 @@ impl FluxerAccount {
     fn dispatch(&mut self, event: &str, d: &Value, out: &mut Vec<Event>) {
         match event {
             "READY" => self.ready(d, out),
+            // Fluxer's published Gateway / relationship events use these
+            // records: https://docs.fluxer.com.
+            "RELATIONSHIP_ADD" | "RELATIONSHIP_UPDATE" | "RELATIONSHIP_REMOVE" => {
+                let relationship = d.get("relationship").unwrap_or(d);
+                let id = relationship["id"].as_str().or_else(|| relationship["user_id"].as_str());
+                if let Some(id) = id {
+                    if event == "RELATIONSHIP_REMOVE" {
+                        self.store.relationships.remove(id);
+                    } else if let Some(kind) = relationship["type"].as_u64() {
+                        self.store.relationships.insert(id.to_owned(), kind);
+                    }
+                    if let Some(user) = relationship.get("user") {
+                        self.store.put_user(user);
+                    }
+                    self.sync_people(out);
+                }
+            }
+            // Presence is pushed as a gateway event, so friends stay current
+            // without polling: https://docs.fluxer.com.
+            "PRESENCE_UPDATE" => {
+                self.store.put_presence(d);
+                if let Some(user) = d["user_id"].as_str().or_else(|| d["user"]["id"].as_str()) {
+                    self.sync_presences([user.to_owned()], out);
+                    self.sync_people(out);
+                }
+            }
             "GUILD_MEMBER_LIST_UPDATE" => self.member_list_update(d, out),
             "MESSAGE_CREATE" => {
                 if let Some(u) = d.get("author") {
@@ -799,10 +877,17 @@ impl FluxerAccount {
                 }
             }
             Command::LoadMembers { room } => {
-                if let Some(channel) = self.channel_of(&room)
-                    && let Some(groups) = self.list_groups(&channel)
-                {
-                    out.push(Event::Members { room, groups });
+                if let Some(channel) = self.channel_of(&room) {
+                    if let Some(groups) = self.list_groups(&channel) {
+                        out.push(Event::Members {
+                            room: room.clone(),
+                            groups,
+                        });
+                    }
+                    if let Some(guild) = self.store.channels.get(&channel).and_then(|c| c.guild.clone()) {
+                        self.list_channel.insert(guild.clone(), channel.clone());
+                        self.ask_ranges(&guild, &channel, 0, 0);
+                    }
                 }
             }
             Command::MemberRows { room, first, last } => {
@@ -1240,6 +1325,53 @@ mod tests {
         let titles: Vec<&str> = servers[0].categories.iter().map(|c| &*c.title).collect();
         assert_eq!(titles, ["", "Talk"]);
         assert_eq!(&*servers[0].categories[0].rooms[0].raw, "13");
+    }
+
+    #[test]
+    fn ready_and_relationship_dispatches_fill_the_neutral_friend_lists() {
+        let (mut a, _, _) = account();
+        let mut payload = ready();
+        payload["relationships"] = json!([
+            {"id":"200", "type":store::FRIEND, "user":{"id":"200", "username":"ada", "global_name":"Ada", "avatar":"abc"}},
+            {"id":"201", "type":store::INCOMING, "user":{"id":"201", "username":"bea"}}
+        ]);
+        payload["presences"] = json!([{ "user_id":"200", "status":"offline" }]);
+        let mut out = Vec::new();
+        a.dispatch("READY", &payload, &mut out);
+        assert!(out.iter().any(|event| matches!(event, Event::Friends { people, .. } if people.len() == 1 && people[0].name.as_ref() == "Ada")));
+        assert!(out.iter().any(|event| matches!(event, Event::FriendRequests { incoming, outgoing, .. } if incoming.len() == 1 && outgoing.is_empty())));
+        assert!(out.iter().any(|event| matches!(event, Event::Presences { presence, .. } if presence.iter().any(|(user, status)| user.raw.as_ref() == "200" && *status == godwit_core::members::Presence::Offline))));
+
+        out.clear();
+        a.dispatch("RELATIONSHIP_REMOVE", &json!({"id":"201"}), &mut out);
+        assert!(
+            out.iter()
+                .any(|event| matches!(event, Event::FriendRequests { incoming, .. } if incoming.is_empty()))
+        );
+        out.clear();
+        a.dispatch("PRESENCE_UPDATE", &json!({"user_id":"200", "status":"idle"}), &mut out);
+        assert!(out.iter().any(|event| matches!(event, Event::Presences { presence, .. } if presence == &vec![(UserId::new(a.id().unwrap().clone(), "200"), godwit_core::members::Presence::Idle)])));
+        assert!(
+            out.iter()
+                .any(|event| matches!(event, Event::Friends { people, .. } if people[0].online))
+        );
+    }
+
+    #[test]
+    fn loading_members_requests_the_first_lazy_range() {
+        let (mut a, mut cmds, _) = account();
+        a.dispatch("READY", &ready(), &mut Vec::new());
+        while cmds.try_recv().is_ok() {}
+        let room = RoomId::new(a.id().unwrap().clone(), "12");
+        a.run(Command::LoadMembers { room });
+        let Ok(Cmd::Gateway(op, payload)) = cmds.try_recv() else {
+            panic!("member range was not requested")
+        };
+        assert_eq!(op, crate::gateway::LAZY_REQUEST);
+        assert_eq!(
+            payload["subscriptions"]["10"]["member_list_channels"]["12"][0],
+            json!([0, 99])
+        );
     }
 
     #[test]

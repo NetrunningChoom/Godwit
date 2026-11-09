@@ -29,19 +29,24 @@ impl DiscordAccount {
 
     pub(super) fn sync_friends(&mut self, out: &mut Vec<Event>) {
         let Some(account) = self.account.clone() else { return };
-        let of = |kind| {
-            let mut v: Vec<Person> = self
-                .store
+        let of = |kind| -> Vec<Person> {
+            self.store
                 .relationships
                 .iter()
                 .filter(|(_, k)| **k == kind)
                 .filter_map(|(u, _)| self.person(u))
-                .collect();
-            v.sort_by_key(|a| a.name.to_lowercase());
-            v
+                .collect()
         };
-        let friends = of(store::FRIEND);
-        let requests = (of(store::INCOMING), of(store::OUTGOING));
+        let blocked = self
+            .store
+            .relationships
+            .iter()
+            .filter(|(_, k)| **k == store::BLOCKED)
+            .filter_map(|(u, _)| self.user_id(u))
+            .collect();
+        let (friends, incoming, outgoing) = (of(store::FRIEND), of(store::INCOMING), of(store::OUTGOING));
+        self.relationships
+            .sync(&account, friends, incoming, outgoing, blocked, out);
         // What friends are doing, for Active now.
         let mut activities: Vec<(UserId, Arc<str>)> = self
             .store
@@ -58,29 +63,6 @@ impl DiscordAccount {
                 activities,
             });
         }
-        if friends != self.friends {
-            self.friends = friends.clone();
-            out.push(Event::Friends {
-                account: account.clone(),
-                people: friends,
-            });
-        }
-        let mut blocked: Vec<UserId> = self
-            .store
-            .relationships
-            .iter()
-            .filter(|(_, k)| **k == store::BLOCKED)
-            .filter_map(|(u, _)| self.user_id(u))
-            .collect();
-        // By id, not by name: a rename mustn't send the list again.
-        blocked.sort_by(|a, b| a.raw.cmp(&b.raw));
-        if blocked != self.blocked {
-            self.blocked = blocked.clone();
-            out.push(Event::Blocked {
-                account: account.clone(),
-                users: blocked,
-            });
-        }
         let mut ignored: Vec<UserId> = self.store.ignored.iter().filter_map(|u| self.user_id(u)).collect();
         ignored.sort_by(|a, b| a.raw.cmp(&b.raw));
         if ignored != self.ignored {
@@ -88,14 +70,6 @@ impl DiscordAccount {
             out.push(Event::Ignored {
                 account: account.clone(),
                 users: ignored,
-            });
-        }
-        if requests != self.requests {
-            self.requests = requests.clone();
-            out.push(Event::FriendRequests {
-                account,
-                incoming: requests.0,
-                outgoing: requests.1,
             });
         }
     }

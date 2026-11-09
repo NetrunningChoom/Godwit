@@ -125,10 +125,8 @@ pub struct DiscordAccount {
     scheduled_events: HashMap<String, Vec<godwit_core::server::ServerEvent>>,
     /// Current-user RSVP changes seen before an event's full details arrive.
     scheduled_event_membership: HashMap<(String, String), bool>,
-    friends: Vec<Person>,
-    requests: (Vec<Person>, Vec<Person>),
-    /// The users we blocked, as last sent to the core.
-    blocked: Vec<UserId>,
+    /// Friends, requests and blocked users as last sent to the core.
+    relationships: godwit_core::relationships::RelationshipLists,
     ignored: Vec<UserId>,
     /// Friends' activities as last sent (Event::Activities), to send changes only.
     activities: Vec<(UserId, Arc<str>)>,
@@ -234,9 +232,7 @@ impl DiscordAccount {
             servers: Vec::new(),
             scheduled_events: HashMap::new(),
             scheduled_event_membership: HashMap::new(),
-            friends: Vec::new(),
-            requests: (Vec::new(), Vec::new()),
-            blocked: Vec::new(),
+            relationships: Default::default(),
             ignored: Vec::new(),
             activities: Vec::new(),
             emoji_sent: None,

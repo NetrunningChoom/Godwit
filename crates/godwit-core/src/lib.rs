@@ -35,6 +35,7 @@ pub mod poll;
 pub mod privacy;
 pub mod privacy_overview;
 pub mod public_address;
+pub mod relationships;
 pub mod report;
 pub mod rich;
 pub mod room;
