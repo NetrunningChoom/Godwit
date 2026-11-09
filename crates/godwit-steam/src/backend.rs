@@ -816,7 +816,12 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                 use steam_vent_proto_steam::steammessages_clientserver_friends::{
                     CMsgClientAddFriend, CMsgClientAddFriendResponse,
                 };
-                let id = name.parse::<u64>().ok().filter(|id| is_individual(*id));
+                let Ok(id) = resolve_friend_input(&name) else {
+                    return out.send(Ev::FriendRequest {
+                        request: request_id,
+                        result: Err("Steam can't look up custom profile URLs here. Use the profile's steamcommunity.com/profiles/ link, Steam ID or account name.".into()),
+                    });
+                };
                 let request = CMsgClientAddFriend {
                     steamid_to_add: id,
                     accountname_or_email_to_add: id.is_none().then_some(name),
@@ -1395,6 +1400,38 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
             }
         }
     }
+}
+
+/// The 64-bit id `CMsgClientAddFriend` takes, from a Steam64 id, a Steam2
+/// id (STEAM_X:Y:Z) or a steamcommunity.com/profiles/ link; `Ok(None)` for
+/// anything else, which goes as an account name. A custom (vanity) profile
+/// link is an `Err`: resolving it needs the Web API's ResolveVanityURL with
+/// a developer key (https://partner.steamgames.com/doc/webapi/ISteamUser),
+/// and a vanity name isn't an account name.
+pub(crate) fn resolve_friend_input(input: &str) -> Result<Option<u64>, ()> {
+    let input = input.trim();
+    let url = input
+        .strip_prefix("https://")
+        .or_else(|| input.strip_prefix("http://"))
+        .unwrap_or(input);
+    let value = if let Some(rest) = url.strip_prefix("steamcommunity.com/") {
+        let path = rest.split(['?', '#']).next().unwrap_or_default().trim_end_matches('/');
+        let mut parts = path.split('/');
+        match (parts.next(), parts.next(), parts.next()) {
+            (Some("profiles"), Some(id), None) => id,
+            _ => return Err(()),
+        }
+    } else {
+        input
+    };
+    if let Ok(id) = value.parse::<u64>() {
+        return Ok(is_individual(id).then_some(id));
+    }
+    if let Ok(id) = steamid_ng::SteamID::from_steam2(value) {
+        let raw = u64::from(id);
+        return Ok(is_individual(raw).then_some(raw));
+    }
+    Ok(None)
 }
 
 fn cancel_login(st: &mut State) {
@@ -2166,6 +2203,23 @@ pub(crate) fn now() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn steam_friend_inputs_resolve_published_id_forms() {
+        let steam64 = 76_561_197_960_287_930u64;
+        assert_eq!(resolve_friend_input(&steam64.to_string()), Ok(Some(steam64)));
+        assert_eq!(resolve_friend_input("STEAM_0:1:11101"), Ok(Some(steam_id(22_203))));
+        assert_eq!(
+            resolve_friend_input("https://steamcommunity.com/profiles/76561197960287930/"),
+            Ok(Some(steam64))
+        );
+        assert_eq!(
+            resolve_friend_input("steamcommunity.com/profiles/76561197960287930"),
+            Ok(Some(steam64))
+        );
+        assert_eq!(resolve_friend_input("https://steamcommunity.com/id/someone"), Err(()));
+        assert_eq!(resolve_friend_input("someone"), Ok(None));
+    }
 
     #[test]
     fn steam_ids_and_account_ids_convert() {

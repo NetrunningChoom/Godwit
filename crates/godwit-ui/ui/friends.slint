@@ -141,7 +141,7 @@ export component Friends inherits Rectangle {
                 spacing: Theme.gap-md;
                 TextField {
                     horizontal-stretch: 1;
-                    placeholder: "Username or account ID";
+                    placeholder: "Username, profile URL, or account ID";
                     edited(t) => { root.name = t; }
                     accepted => { if root.account-key != "" { root.send-request(root.account-key, root.name); } }
                 }
