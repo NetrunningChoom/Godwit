@@ -1137,6 +1137,26 @@ mod tests {
     }
 
     #[test]
+    fn room_delete_others_capability_comes_from_manage_messages() {
+        let (mut account, _tx, _cmds, _) = connected();
+        let id = account.account.clone().expect("fixture account");
+        let server = account.store.servers.get_mut("S").expect("fixture server");
+        server.owner = "OWNER".into();
+        server.default_permissions = crate::permissions::VIEW_CHANNEL as i64;
+        let room_without_permission = account.room(&id, account.store.channels.get("C1").expect("fixture channel"));
+        assert!(!room_without_permission.capabilities.delete_others);
+
+        account
+            .store
+            .servers
+            .get_mut("S")
+            .expect("fixture server")
+            .default_permissions = (crate::permissions::VIEW_CHANNEL | MANAGE_MESSAGES) as i64;
+        let room_with_permission = account.room(&id, account.store.channels.get("C1").expect("fixture channel"));
+        assert!(room_with_permission.capabilities.delete_others);
+    }
+
+    #[test]
     fn a_history_page_arrives_oldest_first() {
         let (mut a, tx, _cmds, _) = connected();
         let data = json!({ "messages": [message("02", "C1", "second"), message("01", "C1", "first")] });
