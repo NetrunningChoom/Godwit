@@ -165,6 +165,7 @@ impl SlackAccount {
             self.put_conversation(team, c);
         }
         self.put_counts(team, counts);
+        let emoji = self.workspaces.get(team).map(|w| w.emoji.clone()).unwrap_or(Value::Null);
         // The workspace's people for People, once per sign-in (paged and paced).
         self.request(team, Request::Directory);
         let dm_people: Vec<String> = self
@@ -190,6 +191,9 @@ impl SlackAccount {
         }
         let account = AccountId::new(Network::Slack, format!("{team}:{user}").as_str());
         self.account = Some(account.clone());
+        if emoji.is_object() {
+            self.custom_emoji(team, &serde_json::json!({"emoji": emoji}), out);
+        }
         self.my_name = me["user"].as_str().unwrap_or("Slack").to_owned();
         self.status = Status::Ready;
         out.push(Event::AccountReady {

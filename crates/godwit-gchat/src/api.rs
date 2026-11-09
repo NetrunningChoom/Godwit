@@ -248,12 +248,19 @@ impl Api {
 impl Api {
     /// A conversation's newest topics (each with its first replies),
     /// oldest first.
-    pub async fn topics(&mut self, group: &str, page: i32) -> Result<proto::ListTopicsResponse> {
+    pub async fn topics(&mut self, group: &str, page: i32, before: Option<i64>) -> Result<proto::ListTopicsResponse> {
         let mut req = proto::ListTopicsRequest::new();
         req.request_header = Some(Self::header()).into();
         req.group_id = Some(group_id(group).ok_or_else(|| anyhow!("not a Chat conversation"))?).into();
         req.set_page_size_for_topics(page);
         req.set_page_size_for_replies(page);
+        if let Some(timestamp) = before {
+            let mut anchor = proto::ReferenceRevision::new();
+            anchor.set_timestamp(timestamp);
+            // maugclib's list_topics uses a message timestamp revision as the older-page boundary.
+            req.group_not_older_than = Some(anchor.clone()).into();
+            req.user_not_older_than = Some(anchor).into();
+        }
         let mut resp: proto::ListTopicsResponse = self.call("list_topics", &req).await?;
         resp.topics.sort_by_key(|t| t.sort_time());
         Ok(resp)
@@ -275,19 +282,39 @@ impl Api {
         let response: proto::ListMessagesResponse = self.call("list_messages", &request).await?;
         Ok(response.messages)
     }
-    pub async fn history(&mut self, room: &str, page: i32) -> Result<Vec<proto::Message>> {
+    pub async fn history(&mut self, room: &str, page: i32, before: Option<i64>) -> Result<Vec<proto::Message>> {
         let (group, topic) = room_parts(room);
         if let Some(topic) = topic {
             self.thread_messages(group, topic, page).await
         } else {
             Ok(self
-                .topics(group, page)
+                .topics(group, page, before)
                 .await?
                 .topics
                 .into_iter()
                 .flat_map(|t| t.replies)
                 .collect())
         }
+    }
+
+    pub async fn topic_history(
+        &mut self,
+        room: &str,
+        page: i32,
+        before: Option<i64>,
+    ) -> Result<(Vec<proto::Message>, Option<i64>, bool)> {
+        let (group, topic) = room_parts(room);
+        if let Some(topic) = topic {
+            let messages = self.thread_messages(group, topic, page).await?;
+            let cursor = messages.iter().map(proto::Message::create_time).min();
+            let reached_start = messages.len() < page as usize;
+            return Ok((messages, cursor, reached_start));
+        }
+        let response = self.topics(group, page, before).await?;
+        let cursor = response.topics.iter().map(proto::Topic::sort_time).min();
+        let reached_start = response.contains_first_topic();
+        let messages = response.topics.into_iter().flat_map(|topic| topic.replies).collect();
+        Ok((messages, cursor, reached_start))
     }
     pub async fn mark_read(&mut self, group: &str, timestamp: i64) -> Result<()> {
         // maugclib/client.py::update_read_timestamp, in microseconds.
@@ -641,6 +668,17 @@ mod tests {
             assert_eq!(group_raw(&group_id(raw).unwrap()).as_deref(), Some(raw));
         }
         assert!(group_id("room:x").is_none());
+    }
+
+    #[test]
+    fn older_topic_anchor_uses_both_revision_fields() {
+        let mut req = proto::ListTopicsRequest::new();
+        let mut anchor = proto::ReferenceRevision::new();
+        anchor.set_timestamp(123_456);
+        req.group_not_older_than = Some(anchor.clone()).into();
+        req.user_not_older_than = Some(anchor).into();
+        assert_eq!(req.group_not_older_than.timestamp(), 123_456);
+        assert_eq!(req.user_not_older_than.timestamp(), 123_456);
     }
 
     #[test]

@@ -80,9 +80,10 @@ impl SlackAccount {
             .flatten()
             .filter_map(|r| {
                 let name = r["name"].as_str()?;
+                let custom = self.workspaces.get(team).and_then(|w| w.emoji.as_object()).and_then(|map| mrkdwn::custom_emoji(name, map));
                 Some(Reaction {
-                    emoji: mrkdwn::shortcode(name).unwrap_or_else(|| format!(":{name}:")).into(),
-                    image_url: None,
+                    emoji: custom.map_or_else(|| mrkdwn::shortcode(name).unwrap_or_else(|| format!(":{name}:")).into(), |(canonical, _)| canonical.into()),
+                    image_url: custom.map(|(_, url)| url).filter(|u| u.starts_with("https://")).map(Into::into),
                     count: r["count"].as_u64().and_then(|c| u32::try_from(c).ok()).unwrap_or(1),
                     me: r["users"]
                         .as_array()

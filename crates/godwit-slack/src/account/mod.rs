@@ -101,6 +101,7 @@ struct Workspace {
     conversations: HashMap<String, Conversation>,
     /// (channel, root `ts`) → the thread.
     threads: HashMap<(String, String), Thread>,
+    emoji: Value,
 }
 
 /// People whose presence a workspace follows at most: Slack asks clients to
@@ -218,6 +219,7 @@ impl SlackAccount {
             typing: HashMap::new(),
             directory: HashMap::new(),
             followed: HashMap::new(),
+            emoji: Value::Null,
             persist,
             media: godwit_core::media::Media::new("slack"),
         }
@@ -843,6 +845,20 @@ mod tests {
             !out.iter().any(|e| matches!(e, Event::MessageAdded { .. })),
             "the echo isn't added again"
         );
+    }
+
+    #[test]
+    fn custom_reactions_keep_the_workspace_image_url() {
+        let (mut a, _cmds) = account();
+        ready(&mut a);
+        a.custom_emoji("T1", &json!({"emoji":{"party":"https://emoji.slack-edge.com/T/party.png","celebrate":"alias:party"}}), &mut Vec::new());
+        let message = a.message("T1", "C1", &json!({
+            "user":"U2", "text":"hi", "ts":"1700000010.000200",
+            "reactions":[{"name":"celebrate","count":2,"users":["U1"]}]
+        }), false).unwrap();
+        assert_eq!(&*message.reactions[0].emoji, "party");
+        assert_eq!(message.reactions[0].image_url.as_deref(), Some("https://emoji.slack-edge.com/T/party.png"));
+        assert!(message.reactions[0].me);
     }
 
     #[test]

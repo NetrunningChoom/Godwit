@@ -7,6 +7,7 @@ use super::*;
 impl SlackAccount {
     pub(super) fn answer(&mut self, team: &str, answer: Answer, out: &mut Vec<Event>) {
         match answer {
+            Answer::Emoji(value) => self.custom_emoji(team, &value, out),
             Answer::NotificationPrefs(result) => {
                 if let Some(ws) = self.workspaces.get_mut(team) {
                     ws.prefs_pending = false;
@@ -327,6 +328,25 @@ impl SlackAccount {
                 }
             }
         }
+    }
+
+    fn custom_emoji(&mut self, team: &str, value: &Value, out: &mut Vec<Event>) {
+        let Some(ws) = self.workspaces.get_mut(team) else { return };
+        ws.emoji = value["emoji"].as_object().map(|m| Value::Object(m.clone())).unwrap_or(Value::Null);
+        let (Some(account), Some(map)) = (self.account.clone(), ws.emoji.as_object()) else { return };
+        let server = godwit_core::ids::ServerId::new(account.clone(), team);
+        let mut entries = Vec::new();
+        for name in map.keys() {
+            if let Some((canonical, url)) = mrkdwn::custom_emoji(name, map)
+                && canonical == name
+                && url.starts_with("https://")
+            {
+                entries.push(godwit_core::message::CustomEmoji {
+                    name: name.as_str().into(), image_url: url.into(), reaction: name.as_str().into(), code: format!(":{name}:").into(),
+                });
+            }
+        }
+        out.push(Event::CustomEmoji { account, groups: vec![godwit_core::message::EmojiGroup { server, title: ws.name.as_str().into(), emoji: entries }] });
     }
 
     /// The workspace and channel of a room, and the thread if it's one.

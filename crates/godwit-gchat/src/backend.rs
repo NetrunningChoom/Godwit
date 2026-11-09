@@ -30,7 +30,10 @@ pub enum Cmd {
     CancelSignIn,
     UseSession(Saved),
     /// A conversation's newest messages (`dm:…` / `space:…`).
-    History(String),
+    History {
+        group: String,
+        before: Option<i64>,
+    },
     Send {
         group: String,
         text: String,
@@ -80,7 +83,7 @@ pub enum Ev {
     },
     History {
         group: String,
-        result: Result<Vec<proto::Message>, String>,
+        result: Result<(Vec<proto::Message>, Option<i64>, bool), String>,
     },
     Sent {
         group: String,
@@ -215,11 +218,11 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                             godwit_core::backend::keep_starting(|| start(saved.clone(), out.clone(), ready.clone(), generation)).await;
                         }));
                     }
-                    Cmd::History(group) => {
+                    Cmd::History { group, before } => {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                let result = api.lock().await.history(&group, PAGE).await.map_err(|e| text(&e));
+                                let result = api.lock().await.topic_history(&group, PAGE, before).await.map_err(|e| text(&e));
                                 out.send(Ev::History { group, result });
                             });
                         }
@@ -250,7 +253,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                                 }
                                 // The conversation again, now showing the change.
                                 let group = room;
-                                let result = api.history(&group, PAGE).await.map_err(|e| text(&e));
+                                let result = api.topic_history(&group, PAGE, None).await.map_err(|e| text(&e));
                                 out.send(Ev::History { group, result });
                             });
                         }

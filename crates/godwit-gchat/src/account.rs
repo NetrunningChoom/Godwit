@@ -70,6 +70,9 @@ pub struct GChatAccount {
     world_pending: bool,
     catchup: HashMap<String, i64>,
     history_pending: HashSet<String>,
+    history_cursors: HashMap<String, i64>,
+    /// Older-page requests in flight, so the page is prepended (not swapped in as the newest).
+    older_pending: HashMap<String, MessageId>,
     presence_asked: HashMap<String, std::time::Instant>,
     read_pending: HashMap<String, i64>,
     read_wanted: HashMap<String, i64>,
@@ -115,6 +118,8 @@ impl GChatAccount {
             world_pending: false,
             catchup: HashMap::new(),
             history_pending: HashSet::new(),
+            history_cursors: HashMap::new(),
+            older_pending: HashMap::new(),
             presence_asked: HashMap::new(),
             read_pending: HashMap::new(),
             read_wanted: HashMap::new(),
@@ -442,7 +447,17 @@ impl GChatAccount {
     }
     fn history(&mut self, group: String) {
         if self.history_pending.insert(group.clone()) {
-            self.net.send(Cmd::History(group));
+            self.net.send(Cmd::History { group, before: None });
+        }
+    }
+    fn older_history(&mut self, group: String, anchor: i64, before: MessageId) {
+        if self.history_pending.insert(group.clone()) {
+            self.older_pending.insert(group.clone(), before);
+            self.net.send(Cmd::History {
+                group: group.clone(),
+                before: Some(anchor),
+            });
+            self.history_cursors.remove(&group);
         }
     }
     /// Like `presence_now`, but for a stream event: the server only sends
@@ -787,10 +802,16 @@ impl GChatAccount {
             Ev::Ready { me, world } => self.ready(me, world, out),
             Ev::History { group, result } => {
                 self.history_pending.remove(&group);
+                let older = self.older_pending.remove(&group);
                 let Some(account) = self.account.clone() else { return };
                 let room = RoomId::new(account, group.as_str());
                 match result {
-                    Ok(messages) => {
+                    Ok((messages, cursor, reached_start)) => {
+                        if let Some(cursor) = cursor {
+                            self.history_cursors.insert(group.clone(), cursor);
+                        } else {
+                            self.history_cursors.remove(&group);
+                        }
                         let catchup = self.catchup.remove(&group);
                         // Replies first: they make their topic a thread, so
                         // its root (earlier in the page) gets linked too.
@@ -829,12 +850,9 @@ impl GChatAccount {
                         self.thread_rooms(out);
                         out.push(Event::History {
                             room,
-                            before: None,
+                            before: older,
                             messages: messages.iter().filter_map(|m| self.message_in(&group, m)).collect(),
-                            // One page is all there is: the proto has no
-                            // page_token, so LoadHistory can't page deeper
-                            // (see the Command::LoadHistory arm).
-                            reached_start: true,
+                            reached_start,
                         });
                     }
                     Err(e) => {
@@ -1060,16 +1078,21 @@ impl NetworkAccount for GChatAccount {
             Command::SetPresence(p) => self.net.send(Cmd::SetPresence(p)),
             Command::SetStatusText(s) => self.net.send(Cmd::SetStatus(s)),
             Command::LoadHistory { room, before } => {
-                if before.is_some() {
-                    // No paging yet: the first page is all there is.
-                    return vec![Event::History {
-                        room,
-                        before,
-                        messages: Vec::new(),
-                        reached_start: true,
-                    }];
+                if let Some(before) = before {
+                    let group = room.raw.to_string();
+                    if let Some(anchor) = self.history_cursors.get(&group).copied() {
+                        self.older_history(group, anchor, before);
+                    } else {
+                        return vec![Event::History {
+                            room,
+                            before: Some(before),
+                            messages: Vec::new(),
+                            reached_start: true,
+                        }];
+                    }
+                } else {
+                    self.history(room.raw.to_string());
                 }
-                self.history(room.raw.to_string());
             }
             Command::SendMessage {
                 room,
@@ -1290,7 +1313,7 @@ mod tests {
         }
         let sent: Vec<_> = std::iter::from_fn(|| cmds.try_recv().ok()).collect();
         assert_eq!(sent.len(), 3);
-        assert_eq!(sent.iter().filter(|c| matches!(c, Cmd::History(_))).count(), 1);
+        assert_eq!(sent.iter().filter(|c| matches!(c, Cmd::History { .. })).count(), 1);
         assert_eq!(sent.iter().filter(|c| matches!(c, Cmd::World)).count(), 1);
         assert_eq!(sent.iter().filter(|c| matches!(c, Cmd::Presence(_))).count(), 1);
     }
@@ -1412,6 +1435,63 @@ mod tests {
     }
 
     #[test]
+    fn older_pages_prepend_from_the_stored_cursor() {
+        let (mut a, mut cmds) = account();
+        a.handle(
+            Ev::Ready {
+                me: "me".into(),
+                world: vec![world_item("space:2", "Team", None)],
+            },
+            &mut Vec::new(),
+        );
+        while cmds.try_recv().is_ok() {}
+        let room = RoomId::new(a.account.clone().unwrap(), "space:2");
+        let page = |cursor| Ev::History {
+            group: "space:2".into(),
+            result: Ok((Vec::new(), cursor, false)),
+        };
+
+        a.run(Command::LoadHistory {
+            room: room.clone(),
+            before: None,
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::History { before: None, .. })));
+        let mut out = Vec::new();
+        a.handle(page(Some(500)), &mut out);
+        assert!(
+            matches!(out.last(), Some(Event::History { before: None, .. })),
+            "{out:?}"
+        );
+
+        let anchor = MessageId("m1".into());
+        a.run(Command::LoadHistory {
+            room: room.clone(),
+            before: Some(anchor.clone()),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::History { before: Some(500), .. })));
+        let mut out = Vec::new();
+        a.handle(page(None), &mut out);
+        assert!(
+            matches!(out.last(), Some(Event::History { before: Some(b), reached_start: false, .. }) if *b == anchor),
+            "an older page must carry its anchor so it is prepended: {out:?}"
+        );
+
+        // Without a cursor there is nothing older to ask for.
+        let out = a.run(Command::LoadHistory {
+            room,
+            before: Some(anchor),
+        });
+        assert!(matches!(
+            out.as_slice(),
+            [Event::History {
+                reached_start: true,
+                ..
+            }]
+        ));
+        assert!(cmds.try_recv().is_err());
+    }
+
+    #[test]
     fn thread_replies_edit_delete_and_react_in_their_rooms() {
         let (mut a, mut cmds) = account();
         a.handle(
@@ -1454,7 +1534,8 @@ mod tests {
         );
         assert!(a.room("space:2#topic").is_some(), "the first reply makes the thread");
         assert!(
-            std::iter::from_fn(|| cmds.try_recv().ok()).any(|c| matches!(c, Cmd::History(raw) if &*raw == "space:2")),
+            std::iter::from_fn(|| cmds.try_recv().ok())
+                .any(|c| matches!(c, Cmd::History { group: raw, before: None } if &*raw == "space:2")),
             "the conversation reloads once so the root shows its link"
         );
 
@@ -1508,7 +1589,7 @@ mod tests {
         let sent: Vec<_> = std::iter::from_fn(|| cmds.try_recv().ok()).collect();
         assert!(
             sent.iter()
-                .any(|c| matches!(c, Cmd::History(raw) if &**raw == "space:2#topic")),
+                .any(|c| matches!(c, Cmd::History { group: raw, before: None } if &**raw == "space:2#topic")),
             "the reaction's history reload should hit the thread:"
         );
     }

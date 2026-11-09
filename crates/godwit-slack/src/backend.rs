@@ -120,6 +120,7 @@ pub enum Answer {
     Conversations(Vec<Value>),
     /// The workspace's people: ids, names and pictures.
     Directory(Vec<(String, String, Option<String>)>),
+    Emoji(Value),
     Done {
         what: &'static str,
         result: Result<(), String>,
@@ -363,11 +364,13 @@ async fn start(saved: Saved, out: Out, ready: Ready, generation: u64, fail: tmps
                     .flatten()
                     .find_map(api::picture)
             });
-            anyhow::Ok((me, conversations, counts, icon))
+            let emoji = api.call("emoji.list", &[]).await.unwrap_or(Value::Null);
+            anyhow::Ok((me, conversations, counts, icon, emoji))
         }
         .await;
         match loaded {
-            Ok((me, conversations, counts, icon)) => {
+            Ok((me, conversations, counts, icon, emoji)) => {
+                out.send(Ev::Answer { team: team.id.clone(), answer: Answer::Emoji(emoji) });
                 any = true;
                 out.send(Ev::Ready {
                     team: team.id.clone(),
