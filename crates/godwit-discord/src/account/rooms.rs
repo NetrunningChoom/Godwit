@@ -347,6 +347,9 @@ impl DiscordAccount {
                     categories: out,
                     muted: self.store.muted_guilds.contains(&g.id),
                     folder: self.store.folder_of.get(&g.id).cloned(),
+                    scheduled_events: true,
+                    scheduled_event_count: u32::try_from(self.scheduled_events.get(&g.id).map_or(0, Vec::len))
+                        .unwrap_or(u32::MAX),
                     rights: ServerRights {
                         invite: has(p::CREATE_INSTANT_INVITE),
                         create_channels: has(p::MANAGE_CHANNELS),

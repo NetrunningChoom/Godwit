@@ -498,6 +498,8 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_discord_privacy(tighten) => |sh, ui| sh.discord_privacy(ui, tighten));
     callback!(ui.on_delete_server() => |sh, ui| sh.delete_server(ui));
     callback!(ui.on_open_server_settings() => |sh, ui| sh.open_server_settings(ui));
+    callback!(ui.on_show_server_events() => |sh, ui| sh.open_server_events(ui));
+    callback!(ui.on_server_event_interested(index, interested) => |sh, ui| sh.server_event_interested(ui, index, interested));
     callback!(ui.on_close_server_settings() => |sh, ui| sh.act(ui, Action::CloseServerSettings));
     callback!(ui.on_save_server_overview() => |sh, ui| sh.save_server_overview(ui));
     callback!(ui.on_reload_server_overview() => |sh, ui| sh.reload_server_overview(ui));

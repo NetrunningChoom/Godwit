@@ -817,6 +817,18 @@ export struct ThreadItem {
     unread: bool,
 }
 
+export struct ServerEventItem {
+    name: string,
+    description: string,
+    when: string,
+    location: string,
+    status: string,
+    interested-count: string,
+    interested: bool,
+    cover: image,
+    has-cover: bool,
+}
+
 // A profile in the rail's switcher.
 export struct ProfileItem {
     name: string,

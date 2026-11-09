@@ -346,6 +346,8 @@ impl TeamsAccount {
                 id: ServerId::new(account.clone(), t.id.as_str()),
                 name: t.name.as_str().into(),
                 icon_url: None,
+                scheduled_events: false,
+                scheduled_event_count: 0,
                 banner_url: None,
                 categories: vec![Category {
                     id: None,

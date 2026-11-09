@@ -39,6 +39,13 @@ pub enum Event {
         server: ServerId,
         result: Result<crate::server_settings::ServerAdminResult, Arc<str>>,
     },
+    /// The server's scheduled events, or a load/update error.
+    ServerEvents {
+        server: ServerId,
+        result: Result<Vec<crate::server::ServerEvent>, Arc<str>>,
+        /// True for the response to an explicit page load, false for gateway updates.
+        load_response: bool,
+    },
     /// A channel's settings: loaded, saved or failed. `Ok(None)` means the
     /// channel was deleted.
     ChannelOverview {

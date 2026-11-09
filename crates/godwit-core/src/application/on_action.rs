@@ -377,6 +377,7 @@ impl Application {
     }
 
     pub(super) fn dispatch_select_server(&mut self, server: Option<ServerId>) -> Vec<Effect> {
+        self.state.showing_server_events = None;
         if server.as_ref().is_none_or(|s| self.state.server(s).is_some()) {
             self.state.selected_server = server.clone();
         }
@@ -941,6 +942,7 @@ impl Application {
     }
 
     pub(super) fn dispatch_show_friends(&mut self) -> Vec<Effect> {
+        self.state.showing_server_events = None;
         self.state.friend_request_status = None;
         self.state.showing_friends = true;
         self.state.showing_people = false;

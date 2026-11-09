@@ -157,6 +157,69 @@ impl Application {
             Action::LoadOwnProfile(account) => self.dispatch_load_own_profile(account),
             Action::SaveOwnProfile { account, edit } => self.dispatch_save_own_profile(account, edit),
             Action::SelectServer(server) => self.dispatch_select_server(server),
+            Action::OpenServerEvents(server) => {
+                let Some(info) = self.state.server(&server).filter(|s| s.scheduled_events) else {
+                    return Vec::new();
+                };
+                if self.state.showing_server_events.as_ref() == Some(&server) {
+                    return Vec::new();
+                }
+                let account = info.id.account.clone();
+                self.state.selected_server = Some(server.clone());
+                self.state.server_events_error.remove(&server);
+                self.state.showing_friends = false;
+                self.state.showing_people = false;
+                self.state.showing_active = false;
+                self.state.showing_notifications = false;
+                self.state.showing_games = false;
+                self.state.showing_threads = false;
+                self.state.showing_server_events = Some(server.clone());
+                if !self.state.server_events_loading.insert(server.clone()) {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account,
+                    command: Command::LoadServerEvents { server },
+                }]
+            }
+            Action::CloseServerEvents => {
+                self.state.showing_server_events = None;
+                Vec::new()
+            }
+            Action::SetServerEventInterest { event, interested } => {
+                let Some(server) = self.state.showing_server_events.clone() else {
+                    return Vec::new();
+                };
+                let Some(server_info) = self.state.server(&server).filter(|s| s.scheduled_events) else {
+                    return Vec::new();
+                };
+                let account = server_info.id.account.clone();
+                let Some(entry) = self
+                    .state
+                    .server_events
+                    .get_mut(&server)
+                    .and_then(|events| events.iter_mut().find(|e| e.id == event))
+                else {
+                    return Vec::new();
+                };
+                if entry.interested == interested {
+                    return Vec::new();
+                }
+                entry.interested = interested;
+                entry.interested_count = if interested {
+                    entry.interested_count.saturating_add(1)
+                } else {
+                    entry.interested_count.saturating_sub(1)
+                };
+                vec![Effect::Backend {
+                    account,
+                    command: Command::SetServerEventInterest {
+                        server,
+                        event,
+                        interested,
+                    },
+                }]
+            }
             Action::CreateServer { account, name } => {
                 let name = name.trim();
                 if name.is_empty() || name.chars().count() > 32 || !self.state.accounts.iter().any(|a| a.id == account)

@@ -362,6 +362,7 @@ impl Application {
             Event::GameLibrary { user, .. } => signed_in(&user.account),
             Event::ServerCreated(server) => signed_in(&server.account),
             Event::Directory { server, .. } => signed_in(&server.account),
+            Event::ServerEvents { server, .. } => self.state.server(server).is_some(),
             Event::Members { room, .. }
             | Event::VoiceSince { room, .. }
             | Event::Pins { room, .. }
@@ -474,6 +475,30 @@ impl Application {
             .collect();
         others.extend(servers.into_iter().map(Arc::new));
         self.state.servers = others;
+        let event_servers: HashSet<ServerId> = self
+            .state
+            .servers
+            .iter()
+            .filter(|server| server.scheduled_events)
+            .map(|server| server.id.clone())
+            .collect();
+        self.state
+            .server_events
+            .retain(|server, _| event_servers.contains(server));
+        self.state
+            .server_events_error
+            .retain(|server, _| event_servers.contains(server));
+        self.state
+            .server_events_loading
+            .retain(|server| event_servers.contains(server));
+        if self
+            .state
+            .showing_server_events
+            .as_ref()
+            .is_some_and(|server| !event_servers.contains(server))
+        {
+            self.state.showing_server_events = None;
+        }
         if self
             .state
             .server_settings
@@ -504,6 +529,7 @@ impl Application {
     /// People, Active now or Notifications in place of the open room.
     fn show_page(&mut self, page: Page) -> Vec<Effect> {
         self.state.showing_threads = false;
+        self.state.showing_server_events = None;
         self.state.showing_people = page == Page::People;
         self.state.showing_active = page == Page::Active;
         self.state.showing_notifications = page == Page::Notifications;
@@ -608,6 +634,7 @@ impl Application {
         self.state.showing_games = false;
         self.state.games = None;
         self.state.showing_threads = false;
+        self.state.showing_server_events = None;
         // A channel shows its server; anything else lives in Home.
         self.state.selected_server = match &r.kind {
             RoomKind::Channel { server } => Some(server.clone()),

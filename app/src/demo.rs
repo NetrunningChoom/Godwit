@@ -439,6 +439,8 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
                 },
             ],
             muted: false,
+            scheduled_events: true,
+            scheduled_event_count: 2,
             // Ours to run: every entry in its menu.
             folder: None,
             rights: godwit_core::server::ServerRights {
@@ -459,6 +461,8 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             banner_url: None,
             categories: Vec::new(),
             muted: false,
+            scheduled_events: false,
+            scheduled_event_count: 0,
             folder: None,
             rights: godwit_core::server::ServerRights {
                 invite: true,
@@ -473,6 +477,8 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             banner_url: None,
             categories: Vec::new(),
             muted: false,
+            scheduled_events: false,
+            scheduled_event_count: 0,
             folder: None,
             rights: godwit_core::server::ServerRights {
                 invite: true,
@@ -489,6 +495,38 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
         avatar_url: Some("preview://avatar/me".into()),
         rooms,
         servers,
+    });
+    app.apply(Event::ServerEvents {
+        server: server.clone(),
+        load_response: true,
+        result: Ok(vec![
+            godwit_core::server::ServerEvent {
+                id: "demo-event-1".into(),
+                server: server.clone(),
+                name: "Community game night".into(),
+                description: Some("Bring a game and join the voice channel.".into()),
+                starts_at: 1_795_000_000,
+                ends_at: None,
+                location: Some("General voice".into()),
+                status: "Scheduled".into(),
+                interested_count: 8,
+                interested: false,
+                cover_url: None,
+            },
+            godwit_core::server::ServerEvent {
+                id: "demo-event-2".into(),
+                server: server.clone(),
+                name: "Weekly community meetup".into(),
+                description: Some("Updates and questions from the community.".into()),
+                starts_at: 1_795_060_000,
+                ends_at: Some(1_795_063_600),
+                location: Some("# general".into()),
+                status: "Scheduled".into(),
+                interested_count: 14,
+                interested: true,
+                cover_url: None,
+            },
+        ]),
     });
     app.apply(Event::OwnPresence {
         account: account(),
@@ -1344,6 +1382,7 @@ pub struct DemoAccount {
     /// The servers as the rail shows them, and each one's editable overview,
     /// so a saved rename or icon comes back like a server's update would.
     servers: Vec<Server>,
+    server_events: std::collections::HashMap<ServerId, Vec<godwit_core::server::ServerEvent>>,
     overviews: std::collections::HashMap<String, godwit_core::server_settings::ServerOverview>,
     /// The channels we may manage, with their editable overview, so a save
     /// or delete comes back as the room's update or removal.
@@ -1517,6 +1556,7 @@ impl DemoAccount {
             }
         }
         let servers: Vec<Server> = app.state().servers.iter().map(|s| (**s).clone()).collect();
+        let server_events = app.state().server_events.clone();
         let overviews = servers
             .iter()
             .enumerate()
@@ -1581,6 +1621,7 @@ impl DemoAccount {
             id: account(),
             names,
             servers,
+            server_events,
             overviews,
             channels,
             categories,
@@ -2180,6 +2221,36 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
     fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
         use godwit_core::application::Command;
         match command {
+            Command::LoadServerEvents { server } => vec![Event::ServerEvents {
+                result: Ok(self.server_events.get(&server).cloned().unwrap_or_default()),
+                server,
+                load_response: true,
+            }],
+            Command::SetServerEventInterest {
+                server,
+                event,
+                interested,
+            } => {
+                if let Some(events) = self.server_events.get_mut(&server)
+                    && let Some(entry) = events.iter_mut().find(|entry| entry.id == event)
+                {
+                    if entry.interested != interested {
+                        entry.interested = interested;
+                        entry.interested_count = if interested {
+                            entry.interested_count.saturating_add(1)
+                        } else {
+                            entry.interested_count.saturating_sub(1)
+                        };
+                    }
+                    vec![Event::ServerEvents {
+                        server: server.clone(),
+                        result: Ok(events.clone()),
+                        load_response: false,
+                    }]
+                } else {
+                    Vec::new()
+                }
+            }
             Command::CreateServer { name } => {
                 let name = name.trim();
                 if name.is_empty() || name.chars().count() > 32 {
@@ -2195,6 +2266,8 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     muted: false,
                     rights: Default::default(),
                     folder: None,
+                    scheduled_events: false,
+                    scheduled_event_count: 0,
                 };
                 self.servers.push(server.clone());
                 vec![
@@ -3179,6 +3252,31 @@ mod tests {
             refused.as_slice(),
             [Event::ServerOverview { result: Err(_), .. }]
         ));
+    }
+
+    #[test]
+    fn demo_server_events_load_and_toggle_interest() {
+        let (mut app, _, _) = world(Contacts::default());
+        let mut demo = DemoAccount::new(&app);
+        let server = ServerId::new(account(), "S");
+        run(&mut app, &mut demo, Action::OpenServerEvents(server.clone()));
+        let events = app.state().server_events.get(&server).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].id.as_ref(), "demo-event-1");
+        assert!(!events[0].interested);
+        assert_eq!(events[0].interested_count, 8);
+
+        run(
+            &mut app,
+            &mut demo,
+            Action::SetServerEventInterest {
+                event: "demo-event-1".into(),
+                interested: true,
+            },
+        );
+        let first = app.state().server_events.get(&server).unwrap().first().unwrap();
+        assert!(first.interested);
+        assert_eq!(first.interested_count, 9);
     }
 
     #[test]

@@ -836,6 +836,8 @@ fn selecting_a_channel_selects_its_server() {
         muted: false,
         folder: None,
         rights: Default::default(),
+        scheduled_events: false,
+        scheduled_event_count: 0,
     };
     app.apply(Event::AccountReady {
         account: account(Network::Stoat),
@@ -858,6 +860,83 @@ fn selecting_a_channel_selects_its_server() {
         servers: Vec::new(),
     });
     assert_eq!(app.state().selected_server, None, "a server that's gone is deselected");
+}
+
+#[test]
+fn scheduled_events_are_gated_and_interest_updates_neutral_state() {
+    let mut app = Application::default();
+    let server = ServerId::new(account(Network::Discord), "guild");
+    let mut entry = crate::server::Server {
+        id: server.clone(),
+        name: "Guild".into(),
+        icon_url: None,
+        banner_url: None,
+        categories: Vec::new(),
+        muted: false,
+        rights: Default::default(),
+        folder: None,
+        scheduled_events: true,
+        scheduled_event_count: 1,
+    };
+    app.apply(Event::AccountReady {
+        account: account(Network::Discord),
+        display_name: "Me".into(),
+        username: "me".into(),
+        avatar_url: None,
+        rooms: Vec::new(),
+        servers: vec![entry.clone()],
+    });
+    let effects = app.dispatch(Action::OpenServerEvents(server.clone()));
+    assert_eq!(
+        commands(&effects),
+        [&Command::LoadServerEvents { server: server.clone() }]
+    );
+    let event = crate::server::ServerEvent {
+        id: "event".into(),
+        server: server.clone(),
+        name: "Meetup".into(),
+        description: None,
+        starts_at: 1,
+        ends_at: None,
+        location: None,
+        status: "Scheduled".into(),
+        interested_count: 3,
+        interested: false,
+        cover_url: None,
+    };
+    app.apply(Event::ServerEvents {
+        server: server.clone(),
+        result: Ok(vec![event]),
+        load_response: true,
+    });
+    let effects = app.dispatch(Action::SetServerEventInterest {
+        event: "event".into(),
+        interested: true,
+    });
+    assert_eq!(
+        commands(&effects),
+        [&Command::SetServerEventInterest {
+            server: server.clone(),
+            event: "event".into(),
+            interested: true
+        }]
+    );
+    let item = &app.state().server_events[&server][0];
+    assert!(item.interested);
+    assert_eq!(item.interested_count, 4);
+
+    app.dispatch(Action::CloseServerEvents);
+    assert_eq!(
+        commands(&app.dispatch(Action::OpenServerEvents(server.clone()))),
+        [&Command::LoadServerEvents { server: server.clone() }]
+    );
+
+    entry.scheduled_events = false;
+    app.apply(Event::ServersChanged {
+        account: account(Network::Discord),
+        servers: vec![entry],
+    });
+    assert!(app.dispatch(Action::OpenServerEvents(server)).is_empty());
 }
 
 #[test]
@@ -1375,6 +1454,8 @@ fn picking_a_server_opens_its_last_or_first_text_channel_and_home_its_last_dm() 
             muted: false,
             folder: None,
             rights: Default::default(),
+            scheduled_events: false,
+            scheduled_event_count: 0,
         }],
     });
     let id = |raw: &str| Some(RoomId::new(account(n), raw));
@@ -1492,6 +1573,8 @@ fn a_servers_directory_loads_once_and_rooms_can_be_joined() {
         muted: false,
         folder: None,
         rights: Default::default(),
+        scheduled_events: false,
+        scheduled_event_count: 0,
     };
     app.apply(Event::ServersChanged {
         account: account(Network::Discord),
@@ -2720,6 +2803,8 @@ fn a_created_server_opens_after_its_server_list_arrives() {
             muted: false,
             rights: Default::default(),
             folder: None,
+            scheduled_events: false,
+            scheduled_event_count: 0,
         }],
     });
     app.apply(Event::ServerCreated(id.clone()));
@@ -3084,6 +3169,8 @@ fn server_settings_open(app: &mut Application) -> (ServerId, u64) {
             muted: false,
             folder: None,
             rights: Default::default(),
+            scheduled_events: false,
+            scheduled_event_count: 0,
         }],
     });
     let effects = app.dispatch(Action::OpenServerSettings(server.clone()));
@@ -4167,6 +4254,8 @@ fn structured_server(app: &mut Application, rights: crate::server::ServerRights)
             muted: false,
             folder: None,
             rights,
+            scheduled_events: false,
+            scheduled_event_count: 0,
         }],
     });
     server

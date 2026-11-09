@@ -463,9 +463,10 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
         && !state.showing_active
         && !state.showing_notifications
         && !state.showing_games
-        && !state.showing_threads)
-        .then_some(state.selected.as_ref())
-        .flatten();
+        && !state.showing_threads
+        && state.showing_server_events.is_none())
+    .then_some(state.selected.as_ref())
+    .flatten();
     let mut rows = Vec::new();
     let mut ids = Vec::new();
     match state.selected_server.as_ref().and_then(|s| state.server(s)) {
@@ -1087,6 +1088,8 @@ mod rail_tests {
             muted: false,
             folder,
             rights: Default::default(),
+            scheduled_events: false,
+            scheduled_event_count: 0,
         };
         app.apply(Event::RoomUpdated(crate::demo::room(
             "fb-room",

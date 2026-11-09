@@ -888,6 +888,24 @@ impl Api {
             .await
     }
 
+    /// List Scheduled Events with interested-user counts (`with_user_count=true`).
+    /// Source: Discord Developer Documentation, Guild Scheduled Event resource.
+    pub async fn scheduled_events(&self, guild: &str) -> Result<Value> {
+        self.json(self.request(
+            Method::GET,
+            &format!("/guilds/{guild}/scheduled-events?with_user_count=true"),
+        ))
+        .await
+    }
+
+    /// Set the current user's Scheduled Event RSVP.
+    /// Source: Discord Developer Documentation, Guild Scheduled Event resource, Modify Current User's RSVP.
+    pub async fn scheduled_event_interest(&self, guild: &str, event: &str, interested: bool) -> Result<()> {
+        let method = if interested { Method::PUT } else { Method::DELETE };
+        self.empty(self.request(method, &format!("/guilds/{guild}/scheduled-events/{event}/users/@me")))
+            .await
+    }
+
     pub async fn revoke_invite(&self, code: &str) -> Result<()> {
         self.empty(self.request(Method::DELETE, &format!("/invites/{}", encode(code))))
             .await

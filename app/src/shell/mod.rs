@@ -242,6 +242,7 @@ enum NavigationTarget {
     /// Games in common, on that account (who was picked isn't kept).
     Games(AccountId),
     Threads,
+    ServerEvents(ServerId),
 }
 
 impl Shell {
@@ -651,12 +652,15 @@ impl Shell {
                     | Action::ShowActive
                     | Action::ShowNotifications
                     | Action::ShowThreads
+                    | Action::OpenServerEvents(_)
                     | Action::OpenGamesInCommon { .. }
             )
         {
             let state = self.app.state();
             let current = if state.showing_threads {
                 Some(NavigationTarget::Threads)
+            } else if let Some(server) = state.showing_server_events.as_ref() {
+                Some(NavigationTarget::ServerEvents(server.clone()))
             } else if state.showing_active {
                 Some(NavigationTarget::Active)
             } else if state.showing_notifications {
@@ -794,6 +798,7 @@ impl Shell {
                 with: Vec::new(),
             },
             NavigationTarget::Threads => Action::ShowThreads,
+            NavigationTarget::ServerEvents(server) => Action::OpenServerEvents(server),
             NavigationTarget::Room(_) => return,
         };
         self.replaying_navigation = true;

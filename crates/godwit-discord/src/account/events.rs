@@ -7,6 +7,77 @@
 use super::*;
 
 impl DiscordAccount {
+    pub(super) fn parse_server_event(&self, guild: &str, value: &Value) -> Option<godwit_core::server::ServerEvent> {
+        let id = value["id"].as_str()?;
+        let start = value["scheduled_start_time"]
+            .as_str()?
+            .parse::<chrono::DateTime<chrono::Utc>>()
+            .ok()?;
+        let ends_at = value["scheduled_end_time"]
+            .as_str()
+            .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok())
+            .map(|t| t.timestamp());
+        let entity = value["entity_type"].as_i64().unwrap_or_default();
+        let event_status = value["status"].as_i64().unwrap_or_default();
+        // The official Events page lists only scheduled and active events (Discord Developer Documentation, Guild Scheduled Event resource).
+        if !matches!(event_status, 1 | 2) {
+            return None;
+        }
+        let channel = value["channel_id"]
+            .as_str()
+            .and_then(|c| self.store.channels.get(c))
+            .map(|c| c.name.clone());
+        let location = if entity == 3 {
+            value["entity_metadata"]["location"].as_str().map(str::to_owned)
+        } else {
+            channel.or_else(|| match entity {
+                1 => Some("Stage channel".to_owned()),
+                2 => Some("Voice channel".to_owned()),
+                _ => None,
+            })
+        };
+        let interested = self
+            .scheduled_event_membership
+            .get(&(guild.to_owned(), id.to_owned()))
+            .copied()
+            .unwrap_or_else(|| {
+                self.scheduled_events
+                    .get(guild)
+                    .and_then(|events| events.iter().find(|e| e.id.as_ref() == id))
+                    .is_some_and(|e| e.interested)
+            });
+        let description = value["description"].as_str().filter(|s| !s.is_empty()).map(Into::into);
+        let status = if event_status == 2 { "Active" } else { "Scheduled" };
+        let cover_url = value["image"]
+            .as_str()
+            .map(|image| format!("https://cdn.discordapp.com/guild-events/{id}/{image}.png?size=256").into());
+        Some(godwit_core::server::ServerEvent {
+            id: id.into(),
+            server: ServerId::new(self.account.clone()?, guild),
+            name: value["name"].as_str()?.into(),
+            description,
+            starts_at: start.timestamp(),
+            ends_at,
+            location: location.map(Into::into),
+            status: status.into(),
+            interested_count: u32::try_from(value["user_count"].as_u64().unwrap_or_default()).unwrap_or(u32::MAX),
+            interested,
+            cover_url,
+        })
+    }
+
+    pub(super) fn scheduled_events_changed(&mut self, guild: &str, out: &mut Vec<Event>) {
+        self.sync_servers(out);
+        let (Some(account), Some(events)) = (self.account.clone(), self.scheduled_events.get(guild)) else {
+            return;
+        };
+        out.push(Event::ServerEvents {
+            server: ServerId::new(account, guild),
+            result: Ok(events.clone()),
+            load_response: false,
+        });
+    }
+
     pub(super) fn handle(&mut self, ev: Ev, out: &mut Vec<Event>) {
         match ev {
             Ev::LinkStep(Step::Code(url)) => {
@@ -446,12 +517,78 @@ impl DiscordAccount {
                     for m in d["members"].as_array().into_iter().flatten() {
                         self.store.put_member(id, m);
                     }
+                    if let Some(entries) = d["guild_scheduled_events"].as_array() {
+                        let events = entries.iter().filter_map(|v| self.parse_server_event(id, v)).collect();
+                        self.scheduled_events.insert(id.to_owned(), events);
+                    }
                 }
                 self.sync_rooms(out);
                 self.sync_servers(out);
                 self.sync_emoji(out);
                 self.sync_stickers(out);
                 self.voice_dispatch(event, d, out);
+                if let Some(id) = d["id"].as_str() {
+                    self.scheduled_events_changed(id, out);
+                }
+            }
+            // Discord Developer Documentation, Gateway Events: keep the live
+            // scheduled-event cache current while the Events page is open.
+            "GUILD_SCHEDULED_EVENT_CREATE" | "GUILD_SCHEDULED_EVENT_UPDATE" => {
+                let Some(guild) = d["guild_id"].as_str() else { return };
+                let Some(id) = d["id"].as_str() else { return };
+                let Some(entry) = self.parse_server_event(guild, d) else {
+                    if let Some(events) = self.scheduled_events.get_mut(guild) {
+                        events.retain(|e| e.id.as_ref() != id);
+                    }
+                    self.scheduled_event_membership
+                        .remove(&(guild.to_owned(), id.to_owned()));
+                    self.scheduled_events_changed(guild, out);
+                    return;
+                };
+                let events = self.scheduled_events.entry(guild.to_owned()).or_default();
+                if let Some(old) = events.iter_mut().find(|e| e.id == entry.id) {
+                    *old = entry;
+                } else {
+                    events.push(entry);
+                }
+                self.scheduled_events_changed(guild, out);
+            }
+            "GUILD_SCHEDULED_EVENT_DELETE" => {
+                let (Some(guild), Some(id)) = (d["guild_id"].as_str(), d["id"].as_str()) else {
+                    return;
+                };
+                if let Some(events) = self.scheduled_events.get_mut(guild) {
+                    events.retain(|e| e.id.as_ref() != id);
+                }
+                self.scheduled_event_membership
+                    .remove(&(guild.to_owned(), id.to_owned()));
+                self.scheduled_events_changed(guild, out);
+            }
+            "GUILD_SCHEDULED_EVENT_USER_ADD" | "GUILD_SCHEDULED_EVENT_USER_REMOVE" => {
+                let (Some(guild), Some(id)) = (d["guild_id"].as_str(), d["guild_scheduled_event_id"].as_str()) else {
+                    return;
+                };
+                let is_me = d["user_id"].as_str() == Some(self.me());
+                let add = event == "GUILD_SCHEDULED_EVENT_USER_ADD";
+                if is_me {
+                    self.scheduled_event_membership
+                        .insert((guild.to_owned(), id.to_owned()), add);
+                }
+                if let Some(entry) = self
+                    .scheduled_events
+                    .get_mut(guild)
+                    .and_then(|events| events.iter_mut().find(|e| e.id.as_ref() == id))
+                {
+                    entry.interested_count = if add {
+                        entry.interested_count.saturating_add(1)
+                    } else {
+                        entry.interested_count.saturating_sub(1)
+                    };
+                    if is_me {
+                        entry.interested = add;
+                    }
+                }
+                self.scheduled_events_changed(guild, out);
             }
             "GUILD_EMOJIS_UPDATE" => {
                 if let Some(guild) = d["guild_id"].as_str().and_then(|g| self.store.guilds.get_mut(g)) {
@@ -481,6 +618,8 @@ impl DiscordAccount {
                 if d["unavailable"] != true
                     && let Some(id) = d["id"].as_str()
                 {
+                    self.scheduled_events.remove(id);
+                    self.scheduled_event_membership.retain(|(guild, _), _| guild != id);
                     self.store.remove_guild(id);
                     self.sync_rooms(out);
                     self.sync_servers(out);

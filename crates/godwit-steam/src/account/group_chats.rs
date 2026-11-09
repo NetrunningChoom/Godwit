@@ -108,6 +108,8 @@ impl SteamAccount {
                 name: self.group_title(g.id).into(),
                 icon_url: g.avatar_url.clone().map(Into::into),
                 banner_url: None,
+                scheduled_events: false,
+                scheduled_event_count: 0,
                 categories: vec![Category {
                     id: None,
                     can_manage: false,

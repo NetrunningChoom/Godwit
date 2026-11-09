@@ -363,6 +363,7 @@ impl Application {
         st.showing_notifications = false;
         st.showing_games = false;
         st.showing_threads = false;
+        st.showing_server_events = None;
         st.games = None;
         st.search = None;
         st.pins = None;

@@ -804,6 +804,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     };
     let scenes = vec![
+        Scene::new(
+            "server-events",
+            Box::new(|app, _, _, _| {
+                let server = ServerId::new(account(), "S");
+                app.dispatch(Action::SelectServer(Some(server.clone())));
+                app.dispatch(Action::OpenServerEvents(server));
+                Screen::Main
+            }),
+        ),
         // Several accounts (the demo's Steam one): Home merges a person on
         // two networks into one row; the Steam chat shows its markup.
         multi(
@@ -1982,6 +1991,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         muted: false,
                         folder: None,
                         rights: Default::default(),
+                        scheduled_events: false,
+                        scheduled_event_count: 0,
                     })
                     .collect();
                 servers.insert(
@@ -2000,6 +2011,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         muted: false,
                         folder: None,
                         rights: Default::default(),
+                        scheduled_events: false,
+                        scheduled_event_count: 0,
                     },
                 );
                 app.apply(Event::ServersChanged {
@@ -2050,6 +2063,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             muted: false,
                             folder,
                             rights: Default::default(),
+                            scheduled_events: false,
+                            scheduled_event_count: 0,
                         };
                     let (a, b) = (folder("fa", Some("Friends"), 0x5865f2), folder("fb", None, 0x3ba55d));
                     app.apply(Event::ServersChanged {

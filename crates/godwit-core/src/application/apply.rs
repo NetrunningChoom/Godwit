@@ -57,6 +57,30 @@ impl Application {
                 self.apply_server_admin(server, result);
                 Vec::new()
             }
+            Event::ServerEvents {
+                server,
+                result,
+                load_response,
+            } => {
+                if load_response {
+                    self.state.server_events_loading.remove(&server);
+                }
+                match result {
+                    Ok(mut events) => {
+                        // Upcoming events share one chronological order across network adapters.
+                        events.sort_by(|a, b| a.starts_at.cmp(&b.starts_at).then_with(|| a.id.cmp(&b.id)));
+                        if let Some(info) = self.state.servers.iter_mut().find(|info| info.id == server) {
+                            Arc::make_mut(info).scheduled_event_count = u32::try_from(events.len()).unwrap_or(u32::MAX);
+                        }
+                        self.state.server_events.insert(server.clone(), events);
+                        self.state.server_events_error.remove(&server);
+                    }
+                    Err(error) => {
+                        self.state.server_events_error.insert(server, error);
+                    }
+                }
+                Vec::new()
+            }
             Event::ChannelOverrides { room, overrides } => self.receive_channel_overrides(room, overrides),
             Event::Webhooks { room, result } | Event::WebhookChanged { room, result } => {
                 let is_open = self

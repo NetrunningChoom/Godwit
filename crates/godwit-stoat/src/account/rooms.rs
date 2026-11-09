@@ -147,6 +147,8 @@ impl StoatAccount {
                 name: s.name.as_str().into(),
                 icon_url: s.icon.as_ref().and_then(|f| self.file_url(f)).map(Into::into),
                 banner_url: s.banner.as_ref().and_then(|f| self.file_url(f)).map(Into::into),
+                scheduled_events: false,
+                scheduled_event_count: 0,
                 categories: self
                     .store
                     .ordered_categories(s)

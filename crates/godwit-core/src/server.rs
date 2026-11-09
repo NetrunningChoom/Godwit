@@ -42,6 +42,31 @@ pub struct Server {
     /// folders); None for a plain server.
     #[serde(default)]
     pub folder: Option<Arc<ServerFolder>>,
+    /// This server can list scheduled events and change the current user's interest.
+    #[serde(default)]
+    pub scheduled_events: bool,
+    /// Known scheduled and active events for the Events entry's badge.
+    #[serde(default)]
+    pub scheduled_event_count: u32,
+}
+
+/// A scheduled or active event hosted by a server, independent of its network.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerEvent {
+    pub id: Arc<str>,
+    pub server: ServerId,
+    pub name: Arc<str>,
+    pub description: Option<Arc<str>>,
+    /// Unix time in seconds.
+    pub starts_at: i64,
+    /// Unix time in seconds, when the event has an end time.
+    pub ends_at: Option<i64>,
+    /// A room name or an external location, prepared by the network adapter.
+    pub location: Option<Arc<str>>,
+    pub status: Arc<str>,
+    pub interested_count: u32,
+    pub interested: bool,
+    pub cover_url: Option<Arc<str>>,
 }
 
 /// A folder of servers on the rail. Servers name it by sharing its `id`;

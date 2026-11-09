@@ -29,6 +29,67 @@ impl DiscordAccount {
 
     pub(super) fn answer(&mut self, answer: Answer, out: &mut Vec<Event>) {
         match answer {
+            Answer::ScheduledEvents { guild, result } => {
+                let Some(account) = self.account.clone() else { return };
+                let server = ServerId::new(account, guild.as_str());
+                match result {
+                    Ok(value) => {
+                        let events = value
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|v| self.parse_server_event(&guild, v))
+                            .collect::<Vec<_>>();
+                        self.scheduled_events.insert(guild.clone(), events.clone());
+                        self.sync_servers(out);
+                        out.push(Event::ServerEvents {
+                            server,
+                            result: Ok(events),
+                            load_response: true,
+                        });
+                    }
+                    Err(error) => out.push(Event::ServerEvents {
+                        server,
+                        result: Err(error.to_string().into()),
+                        load_response: true,
+                    }),
+                }
+            }
+            Answer::ScheduledEventInterest {
+                guild,
+                event,
+                interested,
+                result,
+            } => match result {
+                Ok(()) => {
+                    self.scheduled_event_membership
+                        .insert((guild.clone(), event.clone()), interested);
+                    if let Some(entry) = self
+                        .scheduled_events
+                        .get_mut(&guild)
+                        .and_then(|events| events.iter_mut().find(|e| e.id.as_ref() == event))
+                        && entry.interested != interested
+                    {
+                        entry.interested = interested;
+                        entry.interested_count = if interested {
+                            entry.interested_count.saturating_add(1)
+                        } else {
+                            entry.interested_count.saturating_sub(1)
+                        };
+                    }
+                }
+                Err(error) => {
+                    godwit_core::verbose!("discord: setting scheduled event RSVP failed: {error}");
+                    if let (Some(account), Some(events)) = (self.account.clone(), self.scheduled_events.get(&guild)) {
+                        out.push(Event::ServerEvents {
+                            server: ServerId::new(account, guild.as_str()),
+                            result: Ok(events.clone()),
+                            load_response: false,
+                        });
+                    }
+                    out.push(Event::Error(format!("Discord, scheduled event RSVP: {error}").into()));
+                }
+            },
             Answer::Reactors {
                 channel,
                 message,

@@ -5,6 +5,34 @@
 use super::*;
 
 impl Shell {
+    pub fn open_server_events(&mut self, ui: &AppWindow) {
+        if let Some(server) = self.app.state().selected_server.clone() {
+            self.act(ui, Action::OpenServerEvents(server));
+        }
+    }
+
+    pub fn server_event_interested(&mut self, ui: &AppWindow, index: i32, interested: bool) {
+        let Some(server) = self.app.state().showing_server_events.as_ref() else {
+            return;
+        };
+        let Some(event) = self
+            .app
+            .state()
+            .server_events
+            .get(server)
+            .and_then(|events| usize::try_from(index).ok().and_then(|i| events.get(i)))
+        else {
+            return;
+        };
+        self.act(
+            ui,
+            Action::SetServerEventInterest {
+                event: event.id.clone(),
+                interested,
+            },
+        );
+    }
+
     pub fn open_server_settings(&mut self, ui: &AppWindow) {
         if let Some(server) = self.app.state().selected_server.clone() {
             self.act(ui, Action::OpenServerSettings(server));

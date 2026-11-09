@@ -14,7 +14,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -37,6 +37,7 @@ import { People } from "people.slint";
 import { Active } from "active.slint";
 import { Notifications } from "notifications.slint";
 import { Threads } from "threads.slint";
+import { ServerEvents } from "server-events.slint";
 import { ServerSettings } from "server-settings.slint";
 import { ChannelSettings } from "channel-settings.slint";
 import { Settings } from "settings.slint";
@@ -461,6 +462,13 @@ export component AppWindow inherits Window {
     in property <int> notifications-unseen;
     in property <[NotificationItem]> notification-items;
     in property <bool> showing-threads;
+    in property <bool> showing-server-events;
+    in property <int> server-event-count;
+    in property <string> server-event-count-label;
+    in property <[ServerEventItem]> server-event-items;
+    in property <string> server-events-error;
+    callback show-server-events();
+    callback server-event-interested(int, bool);
     in property <bool> can-show-threads;
     in property <[ThreadItem]> thread-items;
     callback show-threads();
@@ -472,7 +480,7 @@ export component AppWindow inherits Window {
     in property <[ContactItem]> people;
     in property <[MergeItem]> merges;
     // Friends, People or Active now is open in place of a room.
-    property <bool> page: root.showing-friends || root.showing-people || root.showing-active || root.showing-notifications || root.showing-games || root.showing-threads;
+    property <bool> page: root.showing-friends || root.showing-people || root.showing-active || root.showing-notifications || root.showing-games || root.showing-threads || root.showing-server-events;
     in property <[PersonItem]> friends;
     in property <[GroupPersonItem]> group-people;
     in property <int> group-selected-count;
@@ -1184,6 +1192,10 @@ export component AppWindow inherits Window {
                             can-show-threads: root.can-show-threads;
                             threads-selected: root.showing-threads;
                             show-threads => { root.show-threads(); }
+                            server-event-count: root.server-event-count;
+                            server-event-count-label: root.server-event-count-label;
+                            server-events-selected: root.showing-server-events;
+                            show-server-events => { root.show-server-events(); }
                             active-selected: root.showing-active;
                             show-active => { root.show-active(); }
                             notifications-selected: root.showing-notifications;
@@ -1278,6 +1290,12 @@ export component AppWindow inherits Window {
                                         open(i) => { root.overview-thread-open(i); }
                                         refresh => { root.show-threads(); }
                                         load-more => { root.threads-load-more(); }
+                                    }
+                                    if root.showing-server-events: ServerEvents {
+                                        horizontal-stretch: 1;
+                                        items: root.server-event-items;
+                                        error: root.server-events-error;
+                                        interested(i, on) => { root.server-event-interested(i, on); }
                                     }
                                     if root.showing-people: People {
                                         horizontal-stretch: 1;

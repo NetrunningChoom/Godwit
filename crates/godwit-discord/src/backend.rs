@@ -245,6 +245,14 @@ pub enum Request {
         guild: String,
         level: u8,
     },
+    ScheduledEvents {
+        guild: String,
+    },
+    ScheduledEventInterest {
+        guild: String,
+        event: String,
+        interested: bool,
+    },
     /// A channel's (or DM's) override in our guild settings: the body of
     /// its entry in `channel_overrides` (see `account::notify`).
     ChannelNotify {
@@ -503,6 +511,16 @@ pub enum Answer {
     Admin {
         guild: String,
         result: Result<AdminAnswer, RequestError>,
+    },
+    ScheduledEvents {
+        guild: String,
+        result: Result<Value, RequestError>,
+    },
+    ScheduledEventInterest {
+        guild: String,
+        event: String,
+        interested: bool,
+        result: Result<(), RequestError>,
     },
 }
 
@@ -1261,6 +1279,23 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::GuildNotify { guild, level } => Answer::Done {
             what: "notification setting",
             result: api.guild_notify(&guild, level).await.map_err(RequestError::from),
+        },
+        Request::ScheduledEvents { guild } => Answer::ScheduledEvents {
+            guild: guild.clone(),
+            result: api.scheduled_events(&guild).await.map_err(RequestError::from),
+        },
+        Request::ScheduledEventInterest {
+            guild,
+            event,
+            interested,
+        } => Answer::ScheduledEventInterest {
+            guild: guild.clone(),
+            event: event.clone(),
+            interested,
+            result: api
+                .scheduled_event_interest(&guild, &event, interested)
+                .await
+                .map_err(RequestError::from),
         },
         Request::ChannelNotify {
             guild,

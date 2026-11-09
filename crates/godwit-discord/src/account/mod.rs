@@ -121,6 +121,10 @@ pub struct DiscordAccount {
     /// What the core was last sent, to send only changes.
     rooms: godwit_core::room_sync::RoomSync,
     servers: Vec<CoreServer>,
+    /// Scheduled events last reported by REST or the gateway, keyed by guild.
+    scheduled_events: HashMap<String, Vec<godwit_core::server::ServerEvent>>,
+    /// Current-user RSVP changes seen before an event's full details arrive.
+    scheduled_event_membership: HashMap<(String, String), bool>,
     friends: Vec<Person>,
     requests: (Vec<Person>, Vec<Person>),
     /// The users we blocked, as last sent to the core.
@@ -220,6 +224,8 @@ impl DiscordAccount {
             store: Store::default(),
             rooms: Default::default(),
             servers: Vec::new(),
+            scheduled_events: HashMap::new(),
+            scheduled_event_membership: HashMap::new(),
             friends: Vec::new(),
             requests: (Vec::new(), Vec::new()),
             blocked: Vec::new(),
@@ -1560,6 +1566,34 @@ impl NetworkAccount for DiscordAccount {
                 }
             }
             Command::JoinInvite { code } => req(&self.net, Request::JoinInvite { code: code.to_string() }),
+            Command::LoadServerEvents { server } if self.store.guilds.contains_key(&server.raw.to_string()) => {
+                req(
+                    &self.net,
+                    Request::ScheduledEvents {
+                        guild: server.raw.to_string(),
+                    },
+                );
+            }
+            Command::SetServerEventInterest {
+                server,
+                event,
+                interested,
+            } if self.store.guilds.contains_key(&server.raw.to_string())
+                && self
+                    .scheduled_events
+                    .get(server.raw.as_ref())
+                    .is_some_and(|events| events.iter().any(|e| e.id == event)) =>
+            {
+                req(
+                    &self.net,
+                    Request::ScheduledEventInterest {
+                        guild: server.raw.to_string(),
+                        event: event.to_string(),
+                        interested,
+                    },
+                );
+            }
+            Command::LoadServerEvents { .. } | Command::SetServerEventInterest { .. } => {}
             Command::ServerAdmin { server, op } => out.extend(self.server_admin(server, op)),
             Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(&room, change)),
             Command::LoadChannelOverview { .. }
@@ -1833,6 +1867,125 @@ mod tests {
         let mut out = Vec::new();
         a.handle(Ev::Ready(Box::new(crate::store::test_ready())), &mut out);
         out
+    }
+
+    #[test]
+    fn scheduled_event_json_gateway_updates_and_rsvp_commands() {
+        let (mut a, mut commands, _) = account();
+        ready(&mut a);
+        while commands.try_recv().is_ok() {}
+        let raw = json!({
+            "id": "900", "guild_id": "10", "name": "Town hall", "description": "Monthly update",
+            "scheduled_start_time": "2026-12-01T18:00:00+00:00", "scheduled_end_time": "2026-12-01T19:00:00+00:00",
+            "entity_type": 2, "channel_id": "13", "status": 1, "user_count": 7, "image": "cover-hash"
+        });
+        let server = ServerId::new(a.account.clone().expect("ready account"), "10");
+        a.run(Command::LoadServerEvents { server: server.clone() });
+        assert!(matches!(commands.try_recv(), Ok(Cmd::Request(Request::ScheduledEvents { guild })) if guild == "10"));
+        let mut output = Vec::new();
+        let mut before_details = raw.clone();
+        before_details["id"] = json!("902");
+        a.dispatch(
+            "GUILD_SCHEDULED_EVENT_USER_ADD",
+            &json!({
+                "guild_id": "10", "guild_scheduled_event_id": "902", "user_id": "100"
+            }),
+            &mut output,
+        );
+        assert!(
+            a.parse_server_event("10", &before_details)
+                .expect("gateway RSVP before event details")
+                .interested
+        );
+        a.answer(
+            Answer::ScheduledEvents {
+                guild: "10".into(),
+                result: Ok(json!([raw.clone()])),
+            },
+            &mut output,
+        );
+        let parsed = a.scheduled_events["10"][0].clone();
+        assert_eq!(parsed.id.as_ref(), "900");
+        assert_eq!(parsed.name.as_ref(), "Town hall");
+        assert_eq!(parsed.location.as_deref(), Some("general"));
+        assert_eq!(parsed.interested_count, 7);
+        assert!(parsed.ends_at.is_some());
+        assert!(
+            parsed
+                .cover_url
+                .as_deref()
+                .is_some_and(|url| url.contains("cover-hash"))
+        );
+
+        let mut second = raw.clone();
+        second["id"] = json!("901");
+        a.dispatch("GUILD_SCHEDULED_EVENT_CREATE", &second, &mut output);
+        assert!(a.scheduled_events["10"].iter().any(|entry| entry.id.as_ref() == "901"));
+        second["name"] = json!("Updated event");
+        second["status"] = json!(2);
+        a.dispatch("GUILD_SCHEDULED_EVENT_UPDATE", &second, &mut output);
+        assert!(a.scheduled_events["10"].iter().any(|entry| entry.id.as_ref() == "901"
+            && entry.name.as_ref() == "Updated event"
+            && entry.status.as_ref() == "Active"));
+        a.dispatch(
+            "GUILD_SCHEDULED_EVENT_DELETE",
+            &json!({"guild_id": "10", "id": "901"}),
+            &mut output,
+        );
+        assert!(!a.scheduled_events["10"].iter().any(|entry| entry.id.as_ref() == "901"));
+
+        a.dispatch(
+            "GUILD_SCHEDULED_EVENT_USER_ADD",
+            &json!({
+                "guild_id": "10", "guild_scheduled_event_id": "900", "user_id": "100"
+            }),
+            &mut output,
+        );
+        let event = &a.scheduled_events["10"][0];
+        assert_eq!(event.interested_count, 8);
+        assert!(event.interested, "our own gateway RSVP marks the toggle on");
+        a.dispatch(
+            "GUILD_SCHEDULED_EVENT_USER_REMOVE",
+            &json!({
+                "guild_id": "10", "guild_scheduled_event_id": "900", "user_id": "200"
+            }),
+            &mut output,
+        );
+        assert_eq!(a.scheduled_events["10"][0].interested_count, 7);
+        assert!(
+            a.scheduled_events["10"][0].interested,
+            "another user's RSVP leaves ours on"
+        );
+
+        a.run(Command::SetServerEventInterest {
+            server,
+            event: "900".into(),
+            interested: false,
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::Request(Request::ScheduledEventInterest { guild, event, interested: false })) if guild == "10" && event == "900")
+        );
+        a.answer(
+            Answer::ScheduledEventInterest {
+                guild: "10".into(),
+                event: "900".into(),
+                interested: false,
+                result: Ok(()),
+            },
+            &mut output,
+        );
+        assert!(!a.scheduled_events["10"][0].interested);
+        assert_eq!(a.scheduled_events["10"][0].interested_count, 6);
+        a.dispatch(
+            "GUILD_CREATE",
+            &json!({"id": "10", "properties": {"name": "Qux Hall"}, "guild_scheduled_events": [raw]}),
+            &mut output,
+        );
+        assert_eq!(
+            a.scheduled_events["10"].len(),
+            1,
+            "GUILD_CREATE carries the event snapshot when present"
+        );
     }
 
     #[test]

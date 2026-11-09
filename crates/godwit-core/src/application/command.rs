@@ -36,6 +36,16 @@ pub enum Command {
     CreateServer {
         name: String,
     },
+    /// Load a server's upcoming and active scheduled events.
+    LoadServerEvents {
+        server: ServerId,
+    },
+    /// Change the current user's interest in a server event.
+    SetServerEventInterest {
+        server: ServerId,
+        event: Arc<str>,
+        interested: bool,
+    },
     /// Marks a whole chat read, up to its newest message as the network knows it.
     MarkRoomRead {
         room: RoomId,

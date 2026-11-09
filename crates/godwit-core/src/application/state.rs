@@ -184,6 +184,14 @@ pub struct AppState {
     pub servers: Vec<Arc<Server>>,
     /// The server whose rooms are listed; None lists direct messages.
     pub selected_server: Option<ServerId>,
+    /// The Events page is open for this server; its data is loaded on demand.
+    pub showing_server_events: Option<ServerId>,
+    /// Latest scheduled events received for each server.
+    pub server_events: HashMap<ServerId, Vec<crate::server::ServerEvent>>,
+    /// Servers whose event list failed to load.
+    pub server_events_error: HashMap<ServerId, Arc<str>>,
+    /// Servers whose first user-initiated event load is still pending.
+    pub server_events_loading: std::collections::HashSet<ServerId>,
     pub selected: Option<RoomId>,
     pub timelines: HashMap<RoomId, Timeline>,
     pub drafts: HashMap<RoomId, String>,

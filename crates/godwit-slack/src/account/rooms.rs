@@ -210,6 +210,8 @@ impl SlackAccount {
                     name: ws.name.as_str().into(),
                     icon_url: ws.icon.as_deref().map(Into::into),
                     banner_url: None,
+                    scheduled_events: false,
+                    scheduled_event_count: 0,
                     // Each channel, then its threads, the most recently active first.
                     categories: {
                         let mut relevant: Vec<_> = ws.threads.iter().filter(|(_, t)| t.subscribed).collect();

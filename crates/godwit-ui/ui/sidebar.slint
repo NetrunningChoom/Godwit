@@ -466,6 +466,10 @@ export component Sidebar inherits Rectangle {
     in property <bool> can-show-threads;
     in property <bool> threads-selected;
     callback show-threads();
+    in property <int> server-event-count;
+    in property <string> server-event-count-label;
+    in property <bool> server-events-selected;
+    callback show-server-events();
     in property <bool> in-call;
     in property <string> call-status;
     // -1: not measured, 0: good, 1: fair, 2: poor.
@@ -694,6 +698,18 @@ export component Sidebar inherits Rectangle {
                 alignment: start;
                 spacing: Theme.space-1;
                 padding-bottom: Theme.gap-md;
+                if root.server-event-count > 0: Rectangle {
+                    height: Theme.control-button;
+                    background: root.server-events-selected || events-touch.has-hover ? Theme.surface-high : transparent;
+                    border-radius: Theme.radius-sm;
+                    HorizontalLayout {
+                        padding-left: Theme.gap-md;
+                        padding-right: Theme.gap-md;
+                        Text { text: "Events"; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                        Text { text: root.server-event-count-label; color: Theme.outline; vertical-alignment: center; }
+                    }
+                    events-touch := TouchArea { mouse-cursor: pointer; clicked => { root.show-server-events(); } }
+                }
                 if root.can-show-threads: Rectangle {
                     height: 40px;
                     background: root.threads-selected || threads-touch.has-hover ? Theme.surface-high : transparent;

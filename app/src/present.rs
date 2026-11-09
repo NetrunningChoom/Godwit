@@ -55,6 +55,7 @@ pub struct Presenter {
     pub active_rows: Vec<view::ActiveTarget>,
     pub threads: Rc<VecModel<crate::ui::ThreadItem>>,
     pub thread_rows: Vec<RoomId>,
+    pub server_event_items: Rc<VecModel<crate::ui::ServerEventItem>>,
     pub requests: Rc<VecModel<RequestItem>>,
     pub people: Rc<VecModel<ContactItem>>,
     /// People who might be one (suggestions on People).
@@ -287,6 +288,7 @@ impl Presenter {
         ui.set_friends(ModelRc::from(p.friends.clone()));
         ui.set_active_items(ModelRc::from(p.active.clone()));
         ui.set_thread_items(ModelRc::from(p.threads.clone()));
+        ui.set_server_event_items(ModelRc::from(p.server_event_items.clone()));
         ui.set_friend_requests(ModelRc::from(p.requests.clone()));
         ui.set_people(ModelRc::from(p.people.clone()));
         ui.set_merges(ModelRc::from(p.merges.clone()));
@@ -455,7 +457,8 @@ impl Presenter {
                 && !state.showing_active
                 && !state.showing_notifications
                 && !state.showing_games
-                && !state.showing_threads,
+                && !state.showing_threads
+                && state.showing_server_events.is_none(),
         );
 
         let (directory, directory_rows) = view::directory(state);
@@ -779,6 +782,66 @@ impl Presenter {
         ui.set_showing_games(state.showing_games);
         ui.set_can_show_games(state.accounts.iter().any(|a| a.id.network.has_game_libraries()));
         ui.set_showing_threads(state.showing_threads);
+        ui.set_showing_server_events(state.showing_server_events.is_some());
+        let server_event_count = state
+            .selected_server
+            .as_ref()
+            .and_then(|id| state.server(id).filter(|server| server.scheduled_events))
+            .map_or(0, |server| {
+                i32::try_from(server.scheduled_event_count).unwrap_or(i32::MAX)
+            });
+        ui.set_server_event_count(server_event_count);
+        ui.set_server_event_count_label(server_event_count.to_string().into());
+        if let Some(server) = state.showing_server_events.as_ref() {
+            let events = state.server_events.get(server).cloned().unwrap_or_default();
+            let rows = events
+                .iter()
+                .map(|event| {
+                    let label = |at| {
+                        chrono::DateTime::from_timestamp(at, 0)
+                            .map(|time| {
+                                time.with_timezone(&chrono::Local)
+                                    .format("%a, %b %-d · %H:%M")
+                                    .to_string()
+                            })
+                            .unwrap_or_else(|| "Time not available".to_owned())
+                    };
+                    let when = event.ends_at.map_or_else(
+                        || label(event.starts_at),
+                        |end| format!("{} – {}", label(event.starts_at), label(end)),
+                    );
+                    crate::ui::ServerEventItem {
+                        name: event.name.as_ref().into(),
+                        description: event.description.as_deref().unwrap_or_default().into(),
+                        when: when.into(),
+                        location: event.location.as_deref().unwrap_or("Location not set").into(),
+                        status: event.status.as_ref().into(),
+                        interested_count: event.interested_count.to_string().into(),
+                        interested: event.interested,
+                        cover: event
+                            .cover_url
+                            .as_deref()
+                            .and_then(|url| images.get(url, crate::images::PREVIEW))
+                            .unwrap_or_else(view::no_image),
+                        has_cover: event.cover_url.is_some(),
+                    }
+                })
+                .collect();
+            view::sync(&self.server_event_items, rows);
+            let error = state
+                .server_events_error
+                .get(server)
+                .map(ToString::to_string)
+                .or_else(|| {
+                    (events.is_empty() && state.server_events_loading.contains(server))
+                        .then(|| "Loading events…".to_owned())
+                })
+                .unwrap_or_default();
+            ui.set_server_events_error(error.into());
+        } else {
+            view::sync(&self.server_event_items, Vec::new());
+            ui.set_server_events_error("".into());
+        }
         ui.set_can_show_threads(
             state
                 .selected_server

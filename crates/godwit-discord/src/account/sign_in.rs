@@ -42,6 +42,41 @@ impl DiscordAccount {
         account.demo = Some(history);
         let mut out = Vec::new();
         account.ready(&ready, &mut out);
+        if let (Some(account_id), Some(guild)) = (account.account.clone(), account.store.guild_order.first().cloned()) {
+            let server = ServerId::new(account_id, guild.as_str());
+            account.scheduled_events.insert(
+                guild.clone(),
+                vec![
+                    godwit_core::server::ServerEvent {
+                        id: "demo-event-1".into(),
+                        server: server.clone(),
+                        name: "Community game night".into(),
+                        description: Some("Bring a game and join the voice channel.".into()),
+                        starts_at: 1_795_000_000,
+                        ends_at: None,
+                        location: Some("General voice".into()),
+                        status: "Scheduled".into(),
+                        interested_count: 8,
+                        interested: false,
+                        cover_url: None,
+                    },
+                    godwit_core::server::ServerEvent {
+                        id: "demo-event-2".into(),
+                        server,
+                        name: "Weekly community meetup".into(),
+                        description: Some("Updates and questions from the community.".into()),
+                        starts_at: 1_795_060_000,
+                        ends_at: Some(1_795_063_600),
+                        location: Some("# general".into()),
+                        status: "Scheduled".into(),
+                        interested_count: 14,
+                        interested: true,
+                        cover_url: None,
+                    },
+                ],
+            );
+            account.scheduled_events_changed(&guild, &mut out);
+        }
         (account, out)
     }
 
@@ -102,6 +137,40 @@ impl DiscordAccount {
                 }
             }
             Command::ActivateMessageButton { .. } => {}
+            Command::LoadServerEvents { server } => {
+                let events = self
+                    .scheduled_events
+                    .get(server.raw.as_ref())
+                    .cloned()
+                    .unwrap_or_default();
+                out.push(Event::ServerEvents {
+                    server: server.clone(),
+                    result: Ok(events),
+                    load_response: true,
+                });
+            }
+            Command::SetServerEventInterest {
+                server,
+                event,
+                interested,
+            } => {
+                if let Some(events) = self.scheduled_events.get_mut(server.raw.as_ref())
+                    && let Some(entry) = events.iter_mut().find(|e| e.id == *event)
+                    && entry.interested != *interested
+                {
+                    entry.interested = *interested;
+                    entry.interested_count = if *interested {
+                        entry.interested_count.saturating_add(1)
+                    } else {
+                        entry.interested_count.saturating_sub(1)
+                    };
+                    out.push(Event::ServerEvents {
+                        server: server.clone(),
+                        result: Ok(events.clone()),
+                        load_response: false,
+                    });
+                }
+            }
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => return Some(Vec::new()),
             Command::LoadReactors { room, message, emoji } => {
                 let people = vec!["100000000000000001", "100000000000000002"]

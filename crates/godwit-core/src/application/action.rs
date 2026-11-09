@@ -80,6 +80,14 @@ pub enum Action {
     },
     /// Show a server's rooms, or (None) the direct messages.
     SelectServer(Option<ServerId>),
+    /// Open a server's scheduled events (loads them on the first open).
+    OpenServerEvents(ServerId),
+    CloseServerEvents,
+    /// Set whether the current user is interested in one scheduled event.
+    SetServerEventInterest {
+        event: Arc<str>,
+        interested: bool,
+    },
     /// Create a server on `account` and open it when the network confirms it.
     CreateServer {
         account: AccountId,

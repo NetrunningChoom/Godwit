@@ -372,7 +372,9 @@ impl TeamsAccount {
                     }
                 }
             }
-            Command::CreateServer { .. } => {}
+            Command::CreateServer { .. }
+            | Command::LoadServerEvents { .. }
+            | Command::SetServerEventInterest { .. } => {}
             // Teams has no separate ignore operation.
             Command::IgnoreUser { .. } | Command::UnignoreUser { .. } => {}
             _ => {}

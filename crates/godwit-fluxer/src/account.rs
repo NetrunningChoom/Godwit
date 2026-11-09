@@ -289,6 +289,8 @@ impl FluxerAccount {
                         .filter(|_| !self.media.is_empty())
                         .map(|h| format!("{}/icons/{}/{h}.webp?size=96", self.media, g.id).into()),
                     banner_url: None,
+                    scheduled_events: false,
+                    scheduled_event_count: 0,
                     categories,
                     muted: false,
                     folder: None,
@@ -895,6 +897,7 @@ impl FluxerAccount {
                     }
                 }
             }
+            Command::LoadServerEvents { .. } | Command::SetServerEventInterest { .. } => {}
             _ => {}
         }
         out

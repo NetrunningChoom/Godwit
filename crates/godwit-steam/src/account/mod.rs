@@ -851,7 +851,9 @@ impl NetworkAccount for SteamAccount {
                 }
             }
             // Other commands are not implemented by this backend yet.
-            Command::CreateServer { .. } => {}
+            Command::CreateServer { .. }
+            | Command::LoadServerEvents { .. }
+            | Command::SetServerEventInterest { .. } => {}
             _ => {}
         }
         out
