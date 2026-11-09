@@ -392,16 +392,12 @@ fn embed(e: &Value) -> Option<Embed> {
     (embed.title.is_some() || embed.description.is_some() || embed.image_url.is_some()).then_some(embed)
 }
 
-/// The largest upload Discord takes: Nitro's own limit, or a boosted
-/// server's, whichever is larger (Yapfast's `upload_limit`; 10 MB without
-/// either since Discord lowered it).
-fn upload_limit(premium_type: u8, premium_tier: Option<u8>) -> u64 {
+/// The largest upload Discord takes: the free 10 MB, or a boosted server's
+/// limit there (Yapfast's `upload_limit`). Nitro's larger limits are never
+/// used: Godwit offers no Nitro features.
+fn upload_limit(premium_tier: Option<u8>) -> u64 {
     const MB: u64 = 1024 * 1024;
-    let own = match premium_type {
-        2 => 500 * MB,
-        1 | 3 => 50 * MB,
-        _ => 10 * MB,
-    };
+    let own = 10 * MB;
     let boosted = match premium_tier {
         Some(3) => 100 * MB,
         Some(2) => 50 * MB,
@@ -2085,12 +2081,12 @@ mod tests {
     }
 
     #[test]
-    fn upload_limits_follow_nitro_and_boosts() {
+    fn upload_limits_follow_boosts_never_nitro() {
         const MB: u64 = 1024 * 1024;
-        assert_eq!(upload_limit(0, None), 10 * MB);
-        assert_eq!(upload_limit(3, None), 50 * MB);
-        assert_eq!(upload_limit(2, Some(3)), 500 * MB);
-        assert_eq!(upload_limit(0, Some(2)), 50 * MB);
+        assert_eq!(upload_limit(None), 10 * MB);
+        assert_eq!(upload_limit(Some(1)), 10 * MB);
+        assert_eq!(upload_limit(Some(2)), 50 * MB);
+        assert_eq!(upload_limit(Some(3)), 100 * MB);
     }
 
     #[test]

@@ -362,9 +362,10 @@ impl DiscordAccount {
         });
     }
 
-    /// Discord's own limit on a message: 2,000 characters, 4,000 with Nitro.
+    /// Discord's own limit on a message: 2,000 characters (Godwit never
+    /// offers Nitro features, so not Nitro's 4,000).
     pub(super) fn message_limit(&self) -> usize {
-        if self.store.premium_type == 2 { 4000 } else { 2000 }
+        2000
     }
 
     pub(super) fn channel_of(&self, room: &RoomId) -> Option<String> {

@@ -155,15 +155,14 @@ impl DiscordAccount {
         }
     }
 
-    /// The servers' custom emoji we may use, for the picker. Without Nitro,
-    /// Discord allows a server's own still emoji only, in that server (the
+    /// The servers' custom emoji we may use, for the picker. Godwit never
+    /// offers Nitro features, and without Nitro Discord allows a server's own still emoji only, in that server (the
     /// rooms' `external_emoji` keeps other servers' out); animated ones,
     /// ones the server lost the boost for, and ones kept for roles we don't
     /// have are left out, so the picker never offers what Discord refuses.
     pub(super) fn sync_emoji(&mut self, out: &mut Vec<Event>) {
         use godwit_core::message::{CustomEmoji, EmojiGroup};
         let Some(account) = self.account.clone() else { return };
-        let nitro = self.store.premium_type != 0;
         let me = self.me().to_owned();
         let groups: Vec<EmojiGroup> = self
             .store
@@ -182,7 +181,7 @@ impl DiscordAccount {
                     .iter()
                     .filter(|(id, (_, animated))| {
                         let rule = g.emoji_rules.get(*id);
-                        (nitro || !animated)
+                        !animated
                             && rule.is_none_or(|r| {
                                 r.available && (r.roles.is_empty() || r.roles.iter().any(|x| ours.contains(x)))
                             })

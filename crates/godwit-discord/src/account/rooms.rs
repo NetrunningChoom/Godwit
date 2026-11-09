@@ -129,8 +129,8 @@ impl DiscordAccount {
             forward_to: send,
             polls: (send && can(p::SEND_POLLS)).then_some(POLL_LIMITS),
             react: can(p::ADD_REACTIONS),
-            // Other servers' emoji: Nitro only (and, in a server, the permission).
-            external_emoji: self.store.premium_type != 0 && (c.private() || can(p::USE_EXTERNAL_EMOJIS)),
+            // Other servers' emoji are a Nitro feature, which Godwit never offers.
+            external_emoji: false,
             attachments: can(p::ATTACH_FILES),
             delete_others: c.guild.is_some() && can(p::MANAGE_MESSAGES),
             // Voice channels we may connect to, and calls in DMs and group
@@ -189,7 +189,6 @@ impl DiscordAccount {
             stickers: send && c.guild.is_some(),
             gifs: can(p::SEND_MESSAGES) && (c.guild.is_none() || can(p::EMBED_LINKS)),
             max_upload: upload_limit(
-                self.store.premium_type,
                 c.guild
                     .as_ref()
                     .and_then(|g| self.store.guilds.get(g))
