@@ -2883,6 +2883,35 @@ fn creating_a_group_requires_two_unique_users_on_a_supported_signed_in_account()
 }
 
 #[test]
+fn discord_group_creation_allows_at_most_nine_friends() {
+    let mut app = Application::default();
+    let account = account(Network::Discord);
+    ready(&mut app, Network::Discord, Vec::new());
+    let users: Vec<_> = (0..9)
+        .map(|i| UserId::new(account.clone(), format!("friend{i}")))
+        .collect();
+    assert!(
+        !app.dispatch(Action::CreateGroup {
+            account: account.clone(),
+            name: "Crew".into(),
+            users: users.clone()
+        })
+        .is_empty()
+    );
+    let ten_friends = (0..10)
+        .map(|i| UserId::new(account.clone(), format!("friend{i}")))
+        .collect();
+    assert!(
+        app.dispatch(Action::CreateGroup {
+            account,
+            name: "Too many".into(),
+            users: ten_friends
+        })
+        .is_empty()
+    );
+}
+
+#[test]
 fn server_creation_trims_and_checks_the_name_and_requires_a_signed_in_account() {
     let (mut app, _) = open_dm(&[]);
     let account = account(Network::Stoat);

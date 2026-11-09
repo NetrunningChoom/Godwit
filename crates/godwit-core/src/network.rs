@@ -45,7 +45,16 @@ impl Network {
 
     /// Creates named group conversations from existing friends.
     pub fn can_create_group(self) -> bool {
-        matches!(self, Self::Stoat | Self::Steam)
+        matches!(self, Self::Stoat | Self::Discord | Self::Steam)
+    }
+
+    /// Maximum friends selectable when creating a group; `None` means no
+    /// network-specific cap is known. Discord counts the account itself.
+    pub fn create_group_member_limit(self) -> Option<usize> {
+        match self {
+            Self::Discord => Some(10),
+            _ => None,
+        }
     }
 
     /// The network has a chat with yourself that can be created by opening
@@ -541,6 +550,9 @@ mod tests {
     #[test]
     fn declarations_per_network() {
         use Network::*;
+        assert!(Discord.can_create_group());
+        assert_eq!(Discord.create_group_member_limit(), Some(10));
+        assert_eq!(Stoat.create_group_member_limit(), None);
         let panel: Vec<_> = Network::ALL
             .into_iter()
             .filter(|n| n.thread_style() == ThreadStyle::Panel)

@@ -1159,7 +1159,19 @@ async fn answer(api: &Api, request: Request) -> Answer {
         },
         Request::OpenDm { user } => Answer::DmOpened(api.open_dm(&user).await.map_err(RequestError::from)),
         Request::CreateGroup { name, users } => {
-            Answer::DmOpened(api.create_group(&name, &users).await.map_err(RequestError::from))
+            // Create Private Channel takes no name, so the chosen one is set
+            // with Modify Channel afterwards (docs.discord.food, resources/channel).
+            let made = api.create_group(&users).await;
+            let named = match made {
+                Ok(c) => match c["id"].as_str() {
+                    Some(id) if !name.is_empty() => {
+                        Ok(api.modify_channel(id, &json!({"name": name})).await.unwrap_or(c))
+                    }
+                    _ => Ok(c),
+                },
+                Err(e) => Err(e),
+            };
+            Answer::DmOpened(named.map_err(RequestError::from))
         }
         Request::LeaveGroup { channel } => Answer::Done {
             what: "Leaving group",

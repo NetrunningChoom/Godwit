@@ -21,6 +21,10 @@ use crate::client;
 use crate::limits::{self, Limits, Refusals, Stopped};
 
 pub const API: &str = "https://discord.com/api/v9";
+
+fn create_group_body(users: &[String]) -> Value {
+    json!({"recipients": users})
+}
 /// The name requests carry in the network layer's log.
 const NET: &str = "discord";
 const WEB_APP: &str = "https://discord.com/app";
@@ -701,11 +705,12 @@ impl Api {
             .await
     }
 
-    /// Creates a group DM from recipients (Modify Channel Recipients).
-    pub async fn create_group(&self, name: &str, users: &[String]) -> Result<Value> {
+    /// Creates a group DM from recipients (Create Private Channel).
+    /// Discord's member limit includes the account that creates the group.
+    pub async fn create_group(&self, users: &[String]) -> Result<Value> {
         self.json(with_json(
             self.request(Method::POST, "/users/@me/channels"),
-            &json!({"recipients": users, "name": name}),
+            &create_group_body(users),
         ))
         .await
     }
@@ -1578,6 +1583,14 @@ mod tests {
         assert_eq!(
             Api::ignore_user_request("123", false),
             (Method::DELETE, "/users/@me/relationships/123/ignore".into())
+        );
+    }
+
+    #[test]
+    fn create_group_request_contains_recipients_without_a_name() {
+        assert_eq!(
+            create_group_body(&["12".into(), "34".into()]),
+            json!({"recipients": ["12", "34"]})
         );
     }
 

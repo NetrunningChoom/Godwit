@@ -1317,9 +1317,11 @@ impl NetworkAccount for DiscordAccount {
             }
             Command::CreateGroup { name, users } => {
                 let users: Vec<String> = users.into_iter().map(|u| u.raw.to_string()).collect();
+                // The account joins the recipients, making Discord's ten-member cap nine friends.
                 if users.len() < 2 || users.len() > 9 || name.trim().is_empty() {
                     return out;
                 }
+                self.opening_dm = true;
                 req(
                     &self.net,
                     Request::CreateGroup {

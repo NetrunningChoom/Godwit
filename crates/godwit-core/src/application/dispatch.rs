@@ -751,9 +751,14 @@ impl Application {
                 let valid_account =
                     account.network.can_create_group() && self.state.accounts.iter().any(|a| a.id == account);
                 let unique: std::collections::HashSet<_> = users.iter().collect();
+                let within_limit = account
+                    .network
+                    .create_group_member_limit()
+                    .is_none_or(|limit| users.len() < limit);
                 if !valid_account
                     || name.is_empty()
                     || users.len() < 2
+                    || !within_limit
                     || unique.len() != users.len()
                     || users.iter().any(|u| u.account != account)
                 {

@@ -188,6 +188,15 @@ impl Presenter {
                 self.group_people.set_row_data(index, row);
             }
         } else {
+            let selected_for_account = self
+                .group_person_selected
+                .iter()
+                .filter(|u| u.account == user.account)
+                .count();
+            let limit = user.account.network.create_group_member_limit().unwrap_or(usize::MAX);
+            if selected_for_account >= limit.saturating_sub(1) {
+                return Some(self.group_person_selected.len());
+            }
             self.group_person_selected.insert(user);
             if let Some(mut row) = self.group_people.row_data(index) {
                 row.selected = true;
