@@ -2691,7 +2691,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     reached_start: true,
                 }]
             }
-            Command::SetPresence(presence) => {
+            Command::SetPresence { presence, .. } => {
                 self.presence = presence;
                 vec![Event::OwnPresence {
                     account: self.id.clone(),

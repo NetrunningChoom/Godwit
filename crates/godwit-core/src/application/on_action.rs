@@ -1049,7 +1049,12 @@ impl Application {
         effects
     }
 
-    pub(super) fn dispatch_set_presence(&mut self, account: AccountId, presence: Presence) -> Vec<Effect> {
+    pub(super) fn dispatch_set_presence(
+        &mut self,
+        account: AccountId,
+        presence: Presence,
+        choice: usize,
+    ) -> Vec<Effect> {
         let Some(a) = self
             .state
             .accounts
@@ -1062,7 +1067,7 @@ impl Application {
         a.presence = Some(presence);
         vec![Effect::Backend {
             account,
-            command: Command::SetPresence(presence),
+            command: Command::SetPresence { presence, choice },
         }]
     }
 

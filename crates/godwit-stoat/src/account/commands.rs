@@ -276,7 +276,7 @@ impl StoatAccount {
             }
             // Stoat has no end-to-end encryption, so nothing to unlock.
             // Our status object keeps its text: the PATCH replaces it whole.
-            Command::SetPresence(presence) => {
+            Command::SetPresence { presence, .. } => {
                 let value = match presence {
                     Presence::Idle => "Idle",
                     Presence::Busy => "Busy",

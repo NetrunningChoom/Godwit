@@ -1219,7 +1219,7 @@ impl NetworkAccount for GChatAccount {
                     }
                 }
             }
-            Command::SetPresence(p) => self.net.send(Cmd::SetPresence(p)),
+            Command::SetPresence { presence: p, .. } => self.net.send(Cmd::SetPresence(p)),
             Command::SetStatusText(s) => self.net.send(Cmd::SetStatus(s)),
             Command::LoadHistory { room, before } => {
                 if let Some(before) = before {
@@ -1474,7 +1474,10 @@ mod tests {
             &mut Vec::new(),
         );
         while cmds.try_recv().is_ok() {}
-        a.run(Command::SetPresence(Presence::Idle));
+        a.run(Command::SetPresence {
+            presence: Presence::Idle,
+            choice: 1,
+        });
         assert!(matches!(cmds.try_recv(), Ok(Cmd::SetPresence(Presence::Idle))));
         a.run(Command::SetStatusText(Some("Reviewing".into())));
         assert!(matches!(cmds.try_recv(), Ok(Cmd::SetStatus(Some(s))) if s == "Reviewing"));

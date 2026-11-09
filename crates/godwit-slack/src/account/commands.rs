@@ -432,7 +432,7 @@ impl SlackAccount {
             // Slack has no channel webhook manager in this account.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::LoadThreads { server, more } => self.refresh_threads(&server.raw, more),
-            Command::SetPresence(presence) => {
+            Command::SetPresence { presence, .. } => {
                 if matches!(presence, Presence::Online | Presence::Idle) {
                     for team in &self.teams {
                         self.request(team, Request::SetOwnPresence(presence == Presence::Online));

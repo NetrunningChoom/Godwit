@@ -141,8 +141,17 @@ impl Network {
                 ("Appear offline", Invisible),
             ],
             Self::Slack => &[("Available", Online), ("Away", Idle)],
-            // Steam's friends list: online, away, invisible.
-            Self::Steam => &[("Online", Online), ("Away", Idle), ("Invisible", Invisible)],
+            // SteamDatabase's published EPersonaState values (enums_clientserver.proto):
+            // Online 1, Busy 2, Away 3, Snooze 4, LookingToTrade 5, LookingToPlay 6, Invisible 7.
+            Self::Steam => &[
+                ("Online", Online),
+                ("Busy", Busy),
+                ("Away", Idle),
+                ("Snooze", Idle),
+                ("Looking to trade", Online),
+                ("Looking to play", Online),
+                ("Invisible", Invisible),
+            ],
             // Workplace chats: always online while signed in (see `has_presence`).
             n if !n.has_presence() => &[("Online", Online)],
             // Stoat's (and the default): the official five.
@@ -584,7 +593,18 @@ mod tests {
             labels(Network::Stoat),
             ["Online", "Idle", "Focus", "Do Not Disturb", "Invisible"]
         );
-        assert_eq!(labels(Network::Steam), ["Online", "Away", "Invisible"]);
+        assert_eq!(
+            labels(Network::Steam),
+            [
+                "Online",
+                "Busy",
+                "Away",
+                "Snooze",
+                "Looking to trade",
+                "Looking to play",
+                "Invisible"
+            ]
+        );
         assert_eq!(labels(Network::Slack), ["Available", "Away"]);
         assert_eq!(labels(Network::Teams).len(), 5);
         assert_eq!(

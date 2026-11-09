@@ -1069,8 +1069,16 @@ mod rail_tests {
             .map(|c| (c.label.to_string(), c.value))
             .collect();
         assert_eq!(
-            steam,
-            [("Online".into(), 0), ("Away".into(), 1), ("Invisible".into(), 4)]
+            steam.iter().map(|c| c.0.as_str()).collect::<Vec<_>>(),
+            [
+                "Online",
+                "Busy",
+                "Away",
+                "Snooze",
+                "Looking to trade",
+                "Looking to play",
+                "Invisible"
+            ]
         );
         assert_eq!(presence_choices(Network::Stoat).len(), 5);
 

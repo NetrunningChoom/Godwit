@@ -726,14 +726,14 @@ impl NetworkAccount for SteamAccount {
                     }
                 }
             }
-            Command::SetPresence(p) => {
-                let state = match p {
+            Command::SetPresence { presence: p, choice } => {
+                let state = PERSONA_CHOICES.get(choice).copied().unwrap_or(match p {
                     Presence::Idle => 3,
                     Presence::Busy | Presence::Focus => 2,
                     Presence::Invisible => 7,
                     Presence::Offline => 0,
                     Presence::Online | Presence::Unknown => 1,
-                };
+                });
                 self.net.send(Cmd::SetPersona(state));
                 if let Some(account) = self.account.clone() {
                     out.push(Event::OwnPresence {
@@ -916,6 +916,12 @@ fn avatar_url(hash: &[u8]) -> String {
 }
 
 /// Steam's persona state as presence.
+/// The EPersonaState sent for each of `Network::Steam.presence_choices()`, in
+/// that order: Online 1, Busy 2, Away 3, Snooze 4, Looking to trade 5,
+/// Looking to play 6, Invisible 7 (SteamDatabase's enums_clientserver.proto,
+/// https://github.com/SteamDatabase/Protobufs/blob/master/steam/enums_clientserver.proto).
+const PERSONA_CHOICES: [u32; 7] = [1, 2, 3, 4, 5, 6, 7];
+
 fn presence(state: u32) -> Presence {
     match state {
         0 => Presence::Offline,
@@ -2050,5 +2056,34 @@ mod tests {
         );
         assert_eq!(p.name.as_deref(), Some("Old"), "names stay");
         assert_eq!(p.game_name, None, "the game ended");
+    }
+
+    #[test]
+    fn presence_choices_send_their_own_persona_state() {
+        assert_eq!(
+            PERSONA_CHOICES.len(),
+            godwit_core::network::Network::Steam.presence_choices().len()
+        );
+        let (handle, mut sent) = Handle::detached();
+        let (_tx, events) = mpsc::channel();
+        let mut account = SteamAccount::with(0, handle, events, Status::Connecting);
+        account.account = Some(AccountId::new(godwit_core::network::Network::Steam, "test"));
+        // Snooze shares Away's presence but is its own state.
+        let out = account.run(Command::SetPresence {
+            presence: Presence::Idle,
+            choice: 3,
+        });
+        assert!(matches!(sent.try_recv(), Ok(Cmd::SetPersona(4))));
+        assert!(matches!(
+            out.as_slice(),
+            [Event::OwnPresence {
+                presence: Presence::Idle,
+                ..
+            }]
+        ));
+        assert_eq!(
+            (0..=7).map(presence).collect::<Vec<_>>()[4..7],
+            [Presence::Idle, Presence::Online, Presence::Online]
+        );
     }
 }

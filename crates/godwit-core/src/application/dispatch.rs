@@ -626,7 +626,11 @@ impl Application {
                     command: Command::AnswerInvite { room, accept },
                 }]
             }
-            Action::SetPresence { account, presence } => self.dispatch_set_presence(account, presence),
+            Action::SetPresence {
+                account,
+                presence,
+                choice,
+            } => self.dispatch_set_presence(account, presence, choice),
             Action::SetStatusText { account, text } => self.dispatch_set_status_text(account, text),
             Action::StartVerification(account) => {
                 if !self.state.accounts.iter().any(|a| a.id == account) {

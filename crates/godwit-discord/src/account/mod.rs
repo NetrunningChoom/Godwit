@@ -1574,7 +1574,7 @@ impl NetworkAccount for DiscordAccount {
                     });
                 }
             }
-            Command::SetPresence(presence) => {
+            Command::SetPresence { presence, .. } => {
                 let status = match presence {
                     Presence::Idle => "idle",
                     Presence::Busy | Presence::Focus => "dnd",

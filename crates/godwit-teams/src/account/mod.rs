@@ -400,7 +400,10 @@ mod tests {
             }
         )));
         assert!(out.iter().any(|e| matches!(e, Event::Presences { presence, .. } if presence.iter().any(|(id, p)| &*id.raw == BEA && *p == Presence::Idle))));
-        a.run(Command::SetPresence(Presence::Focus));
+        a.run(Command::SetPresence {
+            presence: Presence::Focus,
+            choice: 2,
+        });
         assert!(
             matches!(cmds.try_recv(), Ok(Cmd::Request(Request::SetPresence { presence:Presence::Focus, user })) if user == ME)
         );

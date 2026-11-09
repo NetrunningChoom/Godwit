@@ -595,7 +595,10 @@ mod tests {
             &mut out,
         );
         assert!(out.iter().any(|e| matches!(e, Event::OwnPresence { presence: Presence::Idle, status:Some(text), .. } if &**text == "Deep work")));
-        a.run(Command::SetPresence(Presence::Online));
+        a.run(Command::SetPresence {
+            presence: Presence::Online,
+            choice: 0,
+        });
         assert!(matches!(
             cmds.try_recv(),
             Ok(Cmd::Request {

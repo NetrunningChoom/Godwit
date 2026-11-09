@@ -425,7 +425,12 @@ pub enum Command {
     /// [`Event::OwnPresence`].
     SetStatusText(Option<String>),
     /// Set our presence; answered with [`Event::OwnPresence`].
-    SetPresence(Presence),
+    /// `choice` is its index in [`Network::presence_choices`](crate::network::Network::presence_choices),
+    /// for networks with several choices that share one [`Presence`] (Steam's Away and Snooze).
+    SetPresence {
+        presence: Presence,
+        choice: usize,
+    },
     /// Ask our other devices to verify this one; answered with
     /// [`Event::Verification`] as it goes.
     StartVerification,

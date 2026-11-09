@@ -7,24 +7,14 @@ use super::*;
 /// The statuses an account can set, as its network names them (values as
 /// the profile popup's: 0 online, 1 idle, 2 focus, 3 busy, 4 invisible).
 pub fn presence_choices(network: godwit_core::network::Network) -> Vec<crate::ui::PresenceChoice> {
-    let choice = |label: &str, value: Presence, index: i32| crate::ui::PresenceChoice {
-        label: label.into(),
-        colour: presence_colour(value),
-        value: index,
-    };
-    network
-        .presence_choices()
-        .iter()
-        .map(|&(label, value)| {
-            // The UI's presence index (present.rs reads it back).
-            let index = match value {
-                Presence::Idle => 1,
-                Presence::Focus => 2,
-                Presence::Busy => 3,
-                Presence::Invisible => 4,
-                _ => 0,
-            };
-            choice(label, value, index)
+    // Each value is the choice's index in the network's list (main.rs and
+    // present.rs read it back).
+    (0..)
+        .zip(network.presence_choices())
+        .map(|(index, &(label, value))| crate::ui::PresenceChoice {
+            label: label.into(),
+            colour: presence_colour(value),
+            value: index,
         })
         .collect()
 }

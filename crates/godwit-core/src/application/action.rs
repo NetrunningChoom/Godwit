@@ -310,6 +310,8 @@ pub enum Action {
     SetPresence {
         account: AccountId,
         presence: Presence,
+        /// The picked entry's index in the network's `presence_choices`.
+        choice: usize,
     },
     /// Set our custom status text there (None or blank clears it).
     SetStatusText {

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use godwit_core::application::{AppState, Compose, Verify};
 use godwit_core::contacts::ContactId;
 use godwit_core::ids::{AccountId, MessageId, RoomId, UserId};
-use godwit_core::members::{MemberGroup, Presence};
+use godwit_core::members::MemberGroup;
 use godwit_core::room::RoomKind;
 use slint::Model as _;
 use slint::{ModelRc, SharedString, VecModel};
@@ -364,16 +364,16 @@ impl Presenter {
             ui.set_account_has_presence(a.presence.is_some());
             ui.set_account_presence(a.presence.map(view::presence_colour).unwrap_or_default());
             ui.set_account_status(a.status.as_deref().unwrap_or_default().into());
-            ui.set_account_presence_index(match a.presence {
-                Some(Presence::Idle) => 1,
-                Some(Presence::Focus) => 2,
-                Some(Presence::Busy) => 3,
-                Some(Presence::Invisible) => 4,
-                _ => 0,
-            });
-            // The network's own choices: Steam has online, away and invisible,
-            // and no custom status text.
+            // The network's own choices (and whether it has custom status
+            // text); the first choice with our presence is the one marked, so
+            // choices sharing a presence (Steam's Away and Snooze) mark the first.
             let network = a.id.network;
+            let picked = network
+                .presence_choices()
+                .iter()
+                .position(|&(_, p)| Some(p) == a.presence)
+                .unwrap_or(0);
+            ui.set_account_presence_index(i32::try_from(picked).unwrap_or(0));
             if self.choices_for != Some(network) {
                 self.choices_for = Some(network);
                 ui.set_account_presence_choices(ModelRc::new(VecModel::from(view::presence_choices(network))));

@@ -242,7 +242,7 @@ impl TeamsAccount {
             | Command::LeaveThread { .. } => {}
             // Teams has no channel webhook manager.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
-            Command::SetPresence(presence) => req(
+            Command::SetPresence { presence, .. } => req(
                 &self.net,
                 Request::SetPresence {
                     presence,

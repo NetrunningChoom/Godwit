@@ -1182,7 +1182,8 @@ fn our_presence_shows_at_once_and_only_where_there_is_presence() {
     assert!(
         app.dispatch(Action::SetPresence {
             account: me.clone(),
-            presence: Presence::Idle
+            presence: Presence::Idle,
+            choice: 1,
         })
         .is_empty(),
         "not known yet"
@@ -1195,8 +1196,15 @@ fn our_presence_shows_at_once_and_only_where_there_is_presence() {
     let effects = app.dispatch(Action::SetPresence {
         account: me.clone(),
         presence: Presence::Invisible,
+        choice: 4,
     });
-    assert_eq!(commands(&effects), [&Command::SetPresence(Presence::Invisible)]);
+    assert_eq!(
+        commands(&effects),
+        [&Command::SetPresence {
+            presence: Presence::Invisible,
+            choice: 4
+        }]
+    );
     assert_eq!(app.state().accounts[0].presence, Some(Presence::Invisible));
     ready(&mut app, Network::Stoat, Vec::new());
     assert_eq!(

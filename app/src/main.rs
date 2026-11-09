@@ -14,7 +14,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use godwit_core::application::{Action, Secret};
 use godwit_core::backend::Waker;
-use godwit_core::members::Presence;
 use godwit_core::server_settings::ServerAdmin;
 use slint::ComponentHandle;
 
@@ -1067,18 +1066,11 @@ fn connect_callbacks(ui: &AppWindow) {
         sh.create_group(ui, account.as_str(), name.as_str());
     });
     callback!(ui.on_set_presence(i) => |sh, ui| {
-        let presence = [
-            Presence::Online,
-            Presence::Idle,
-            Presence::Focus,
-            Presence::Busy,
-            Presence::Invisible,
-        ];
-        if let (Some(account), Some(p)) = (
-            sh.focus_account(),
-            usize::try_from(i).ok().and_then(|i| presence.get(i)),
-        ) {
-            sh.act(ui, Action::SetPresence { account, presence: *p });
+        // The picker's values are indexes in the network's own choices.
+        let Some(account) = sh.focus_account() else { return };
+        let Some(choice) = usize::try_from(i).ok() else { return };
+        if let Some(&(_, presence)) = account.network.presence_choices().get(choice) {
+            sh.act(ui, Action::SetPresence { account, presence, choice });
         }
     });
     callback!(ui.on_set_status_text(text) => |sh, ui| {
