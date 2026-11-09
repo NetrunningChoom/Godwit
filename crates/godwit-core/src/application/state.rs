@@ -160,6 +160,7 @@ pub struct AppState {
     /// Each account's auto-delete page, as its network last sent it.
     pub autodelete: HashMap<AccountId, crate::autodelete::AutoDeleteView>,
     pub server_settings: Option<crate::server_settings::ServerSettingsState>,
+    pub moderation_logs: HashMap<ServerId, crate::server_settings::ModerationLog>,
     pub channel_settings: Option<crate::channel_settings::ChannelSettingsState>,
     pub webhooks: Option<crate::webhooks::WebhooksState>,
     /// Home's pinned chats (at the top, in pin order) and hidden ones (in

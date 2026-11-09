@@ -54,6 +54,39 @@ pub enum ServerPage {
     Emoji,
     Invites,
     Bans,
+    ModerationLog,
+}
+
+/// A network-neutral entry in a server's moderation log.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModerationLogEntry {
+    pub id: Arc<str>,
+    /// Unix milliseconds, derived from the network's entry id.
+    pub time_ms: i64,
+    pub actor: Arc<str>,
+    pub actor_avatar_url: Option<Arc<str>>,
+    pub action: ModerationLogAction,
+    /// Network-prepared text such as "banned Alex".
+    pub text: Arc<str>,
+    pub target: Option<Arc<str>>,
+    pub reason: Option<Arc<str>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModerationLogAction {
+    Member,
+    Role,
+    Channel,
+    Message,
+    Other,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ModerationLog {
+    pub entries: Vec<ModerationLogEntry>,
+    pub loading: bool,
+    pub has_more: bool,
+    pub error: Option<Arc<str>>,
 }
 
 /// How a network spells a custom emoji's name; the pure check lives here so

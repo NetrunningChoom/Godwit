@@ -46,6 +46,11 @@ pub enum Event {
         /// True for the response to an explicit page load, false for gateway updates.
         load_response: bool,
     },
+    ModerationLog {
+        server: ServerId,
+        before: Option<Arc<str>>,
+        result: Result<Vec<crate::server_settings::ModerationLogEntry>, Arc<str>>,
+    },
     /// A channel's settings: loaded, saved or failed. `Ok(None)` means the
     /// channel was deleted.
     ChannelOverview {

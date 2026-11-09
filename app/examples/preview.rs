@@ -1994,6 +1994,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         folder: None,
                         rights: Default::default(),
                         scheduled_events: false,
+                        can_view_moderation_log: false,
                         scheduled_event_count: 0,
                         edit_own_profile: false,
                     })
@@ -2015,6 +2016,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         folder: None,
                         rights: Default::default(),
                         scheduled_events: false,
+                        can_view_moderation_log: false,
                         scheduled_event_count: 0,
                         edit_own_profile: false,
                     },
@@ -2068,6 +2070,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             folder,
                             rights: Default::default(),
                             scheduled_events: false,
+                            can_view_moderation_log: false,
                             scheduled_event_count: 0,
                             edit_own_profile: false,
                         };

@@ -1599,6 +1599,18 @@ impl NetworkAccount for DiscordAccount {
                     },
                 );
             }
+            Command::LoadModerationLog { server, before }
+                if self.store.guilds.contains_key(&server.raw.to_string())
+                    && self.store.guild_permissions(&server.raw) & p::VIEW_AUDIT_LOG != 0 =>
+            {
+                req(
+                    &self.net,
+                    Request::AuditLog {
+                        guild: server.raw.to_string(),
+                        before: before.map(|id| id.to_string()),
+                    },
+                );
+            }
             Command::SetServerEventInterest {
                 server,
                 event,
@@ -1618,7 +1630,9 @@ impl NetworkAccount for DiscordAccount {
                     },
                 );
             }
-            Command::LoadServerEvents { .. } | Command::SetServerEventInterest { .. } => {}
+            Command::LoadServerEvents { .. }
+            | Command::SetServerEventInterest { .. }
+            | Command::LoadModerationLog { .. } => {}
             Command::ServerAdmin { server, op } => out.extend(self.server_admin(server, op)),
             Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(&room, change)),
             Command::LoadChannelOverview { .. }

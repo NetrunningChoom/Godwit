@@ -149,6 +149,11 @@ impl DiscordAccount {
                     load_response: true,
                 });
             }
+            Command::LoadModerationLog { server, before } => out.push(Event::ModerationLog {
+                server: server.clone(),
+                before: before.clone(),
+                result: Ok(Vec::new()),
+            }),
             Command::SetServerEventInterest {
                 server,
                 event,

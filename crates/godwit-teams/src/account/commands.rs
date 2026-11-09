@@ -374,6 +374,7 @@ impl TeamsAccount {
             }
             Command::CreateServer { .. }
             | Command::LoadServerEvents { .. }
+            | Command::LoadModerationLog { .. }
             | Command::SetServerEventInterest { .. } => {}
             Command::LoadServerProfile { .. } | Command::SaveServerProfile { .. } => {}
             // Teams has no separate ignore operation.

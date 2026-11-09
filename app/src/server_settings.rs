@@ -3,7 +3,7 @@
 //! Server drafts stay local until Save; refreshes and failures preserve edits.
 use crate::{
     images::{AVATAR, Fit, Images},
-    ui::{AdminRoleItem, AppWindow, BanItem, EmojiItem, PermissionItem, ServerInviteItem},
+    ui::{AdminRoleItem, AppWindow, BanItem, EmojiItem, ModerationLogItem, PermissionItem, ServerInviteItem},
 };
 use godwit_core::application::{Action, AppState};
 use godwit_core::ids::ServerId;
@@ -45,6 +45,7 @@ fn page_index(page: ServerPage) -> i32 {
         ServerPage::Emoji => 2,
         ServerPage::Invites => 3,
         ServerPage::Bans => 4,
+        ServerPage::ModerationLog => 5,
     }
 }
 
@@ -54,6 +55,7 @@ pub fn page_from_index(i: i32) -> ServerPage {
         2 => ServerPage::Emoji,
         3 => ServerPage::Invites,
         4 => ServerPage::Bans,
+        5 => ServerPage::ModerationLog,
         _ => ServerPage::Overview,
     }
 }
@@ -389,7 +391,7 @@ impl ServerEditor {
     }
 
     /// The other pages' lists and the role editor.
-    fn show_pages(&mut self, ui: &AppWindow, s: &ServerSettingsState, images: &mut Images) {
+    fn show_pages(&mut self, ui: &AppWindow, s: &ServerSettingsState, state: &AppState, images: &mut Images) {
         let o = s.overview.as_ref();
         ui.set_server_edit_server_name(
             o.map(|o| o.name.as_ref())
@@ -399,10 +401,40 @@ impl ServerEditor {
                 .into(),
         );
         ui.set_server_edit_page(page_index(s.page));
+        let log = state.moderation_logs.get(&s.server);
+        ui.set_server_edit_moderation_log_loading(log.is_some_and(|l| l.loading));
+        ui.set_server_edit_moderation_log_has_more(log.is_some_and(|l| l.has_more));
+        ui.set_server_edit_moderation_log_error(log.and_then(|l| l.error.as_deref()).unwrap_or_default().into());
+        let rows = log
+            .into_iter()
+            .flat_map(|l| &l.entries)
+            .map(|e| {
+                let avatar = e.actor_avatar_url.as_deref().and_then(|url| images.get(url, AVATAR));
+                let has_avatar = avatar.is_some();
+                ModerationLogItem {
+                    actor: e.actor.as_ref().into(),
+                    avatar: avatar.unwrap_or_else(crate::view::no_image),
+                    has_avatar,
+                    text: e.text.as_ref().into(),
+                    target: e.target.as_deref().unwrap_or_default().into(),
+                    reason: e.reason.as_deref().unwrap_or_default().into(),
+                    time: chrono::DateTime::from_timestamp_millis(e.time_ms)
+                        .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                        .unwrap_or_default()
+                        .into(),
+                }
+            })
+            .collect::<Vec<_>>();
+        ui.set_server_edit_moderation_log(ModelRc::new(VecModel::from(rows)));
         ui.set_server_edit_show_roles(o.is_some_and(|o| o.can_manage_roles));
         ui.set_server_edit_show_emoji(o.is_some_and(|o| o.can_manage_emoji));
         ui.set_server_edit_show_invites(o.is_some_and(|o| o.can_manage));
         ui.set_server_edit_show_bans(o.is_some_and(|o| o.can_ban));
+        ui.set_server_edit_show_moderation_log(
+            state
+                .server(&s.server)
+                .is_some_and(|server| server.can_view_moderation_log),
+        );
         ui.set_server_edit_can_delete(o.is_some_and(|o| o.owner));
         ui.set_server_edit_admin_busy(s.admin_busy);
         let (notice, failed) = match &s.notice {
@@ -479,6 +511,7 @@ impl ServerEditor {
                     .collect();
                 ui.set_server_edit_invites(ModelRc::new(VecModel::from(rows)));
             }
+            ServerPage::ModerationLog => {}
             ServerPage::Bans => {
                 ui.set_server_edit_bans_loaded(s.bans.is_some());
                 let rows: Vec<BanItem> = s
@@ -670,7 +703,7 @@ impl ServerEditor {
         if let Some(image) = banner {
             ui.set_server_edit_banner(image);
         }
-        self.show_pages(ui, s, images);
+        self.show_pages(ui, s, state, images);
     }
 }
 

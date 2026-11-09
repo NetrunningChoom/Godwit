@@ -634,7 +634,7 @@ impl StoatAccount {
                 out
             }
             Command::LoadThreads { .. } | Command::LoadForum { .. }
-            | Command::LoadServerEvents { .. } | Command::SetServerEventInterest { .. } => Vec::new(),
+            | Command::LoadServerEvents { .. } | Command::SetServerEventInterest { .. } | Command::LoadModerationLog { .. } => Vec::new(),
         }
     }
 }

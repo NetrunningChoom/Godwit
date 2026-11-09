@@ -290,6 +290,7 @@ impl FluxerAccount {
                         .map(|h| format!("{}/icons/{}/{h}.webp?size=96", self.media, g.id).into()),
                     banner_url: None,
                     scheduled_events: false,
+                    can_view_moderation_log: false,
                     scheduled_event_count: 0,
                     edit_own_profile: false,
                     categories,
@@ -898,7 +899,9 @@ impl FluxerAccount {
                     }
                 }
             }
-            Command::LoadServerEvents { .. } | Command::SetServerEventInterest { .. } => {}
+            Command::LoadServerEvents { .. }
+            | Command::SetServerEventInterest { .. }
+            | Command::LoadModerationLog { .. } => {}
             _ => {}
         }
         out

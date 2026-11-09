@@ -1089,6 +1089,7 @@ mod rail_tests {
             folder,
             rights: Default::default(),
             scheduled_events: false,
+            can_view_moderation_log: false,
             scheduled_event_count: 0,
             edit_own_profile: false,
         };

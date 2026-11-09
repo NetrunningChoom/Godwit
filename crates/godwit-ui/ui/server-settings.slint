@@ -4,7 +4,7 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import { Section } from "settings.slint";
-import { AdminRoleItem, BanItem, EmojiItem, PermissionItem, ServerInviteItem } from "types.slint";
+import { AdminRoleItem, BanItem, EmojiItem, PermissionItem, ServerInviteItem, ModerationLogItem } from "types.slint";
 import { Avatar, Button, ConfirmDialog, Dialog, IconButton, Select, TextArea, TextField, Toggle, TriState } from "widgets.slint";
 
 // Server settings, as the official ServerSettings: a sidebar of pages
@@ -18,6 +18,7 @@ export component ServerSettings inherits Rectangle {
     in property <bool> show-emoji;
     in property <bool> show-invites;
     in property <bool> show-bans;
+    in property <bool> show-moderation-log;
     in property <bool> can-delete;
     // A page change is on its way; its buttons wait.
     in property <bool> admin-busy;
@@ -45,6 +46,10 @@ export component ServerSettings inherits Rectangle {
     in-out property <int> banned;
 
     in property <[ServerInviteItem]> invites;
+    in property <[ModerationLogItem]> moderation-log;
+    in property <bool> moderation-log-loading;
+    in property <bool> moderation-log-has-more;
+    in property <string> moderation-log-error;
     in property <bool> invites-loaded;
     in property <[BanItem]> bans;
     in property <bool> bans-loaded;
@@ -78,6 +83,7 @@ export component ServerSettings inherits Rectangle {
     callback pick-emoji-file(); callback emoji-name-edited(); callback create-emoji();
     callback rename-emoji(int, string); callback delete-emoji(int);
     callback delete-server();
+    callback load-more-moderation-log();
 
     property <bool> confirm-delete;
     // The emoji being renamed or deleted (-1: none).
@@ -102,6 +108,7 @@ export component ServerSettings inherits Rectangle {
                     if root.show-emoji: Section { label: "Emojis"; selected: root.page == 2; clicked => { root.select-page(2); } }
                     if root.show-invites: Section { label: "Invites"; selected: root.page == 3; clicked => { root.select-page(3); } }
                     if root.show-bans: Section { label: "Bans"; selected: root.page == 4; clicked => { root.select-page(4); } }
+                    if root.show-moderation-log: Section { label: "Moderation log"; selected: root.page == 5; clicked => { root.select-page(5); } }
                     if root.can-delete: Rectangle { height: 12px; }
                     if root.can-delete: Section { label: "Delete Server"; danger: true; clicked => { root.confirm-delete = true; } }
                 }
@@ -111,7 +118,7 @@ export component ServerSettings inherits Rectangle {
                 HorizontalLayout {
                     padding: Theme.space-5; spacing: Theme.space-4;
                     Text {
-                        text: root.page == 1 ? "Roles" : root.page == 2 ? "Emojis" : root.page == 3 ? "Invites" : root.page == 4 ? "Bans" : "Overview";
+                        text: root.page == 1 ? "Roles" : root.page == 2 ? "Emojis" : root.page == 3 ? "Invites" : root.page == 4 ? "Bans" : root.page == 5 ? "Moderation log" : "Overview";
                         font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center;
                     }
                     Button { text: "Close"; kind: "text"; clicked => { root.close(); } }
@@ -337,6 +344,28 @@ export component ServerSettings inherits Rectangle {
                             Text { text: ban.reason; vertical-alignment: center; color: Theme.on-surface-variant; horizontal-stretch: 1; overflow: elide; }
                             IconButton { y: 6px; glyph: Icons.delete; tooltip: "Pardon user"; enabled: !root.admin-busy; clicked => { root.unban(i); } }
                         }
+                    }
+                }
+                if root.page == 5: moderation-list := ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        width: min(moderation-list.visible-width, 680px);
+                        padding: Theme.space-5; spacing: Theme.space-2; alignment: start;
+                        if root.moderation-log-error != "": Text { text: root.moderation-log-error; color: Theme.error; wrap: word-wrap; }
+                        if root.moderation-log-loading && root.moderation-log.length == 0: Text { text: "Loading moderation log…"; color: Theme.on-surface-variant; }
+                        if !root.moderation-log-loading && root.moderation-log-error == "" && root.moderation-log.length == 0: Text { text: "No moderation log entries."; color: Theme.outline; }
+                        for entry[i] in root.moderation-log: HorizontalLayout {
+                            spacing: Theme.space-4; padding: Theme.space-2;
+                            Avatar { size: 36px; source: entry.avatar; has-image: entry.has-avatar; initials: ""; }
+                            VerticalLayout {
+                                spacing: Theme.space-1; horizontal-stretch: 1; alignment: center;
+                                Text { text: entry.actor + " " + entry.text; color: Theme.on-surface; wrap: word-wrap; }
+                                if entry.target != "": Text { text: "Target: " + entry.target; color: Theme.on-surface-variant; wrap: word-wrap; }
+                                if entry.reason != "": Text { text: "Reason: " + entry.reason; color: Theme.on-surface-variant; wrap: word-wrap; }
+                                Text { text: entry.time; font-size: Theme.text-small; color: Theme.outline; }
+                            }
+                        }
+                        if root.moderation-log-has-more: Button { text: root.moderation-log-loading ? "Loading…" : "Load more"; enabled: !root.moderation-log-loading; clicked => { root.load-more-moderation-log(); } }
                     }
                 }
             }

@@ -14,7 +14,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem, ModerationLogItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -186,6 +186,11 @@ export component AppWindow inherits Window {
     in property <bool> server-edit-show-emoji;
     in property <bool> server-edit-show-invites;
     in property <bool> server-edit-show-bans;
+    in property <bool> server-edit-show-moderation-log;
+    in property <[ModerationLogItem]> server-edit-moderation-log;
+    in property <bool> server-edit-moderation-log-loading;
+    in property <bool> server-edit-moderation-log-has-more;
+    in property <string> server-edit-moderation-log-error;
     in property <bool> server-edit-can-delete;
     in property <bool> server-edit-admin-busy;
     in property <string> server-edit-notice;
@@ -213,6 +218,7 @@ export component AppWindow inherits Window {
     in property <[PermissionItem]> server-edit-permissions;
     in property <bool> server-edit-role-dirty;
     callback server-settings-page(int);
+    callback load-more-moderation-log();
     callback delete-server-invite(int); callback copy-server-invite(int);
     callback unban-server-user(int);
     callback select-server-role(int); callback create-server-role(string); callback server-role-edited();
@@ -1670,7 +1676,8 @@ export component AppWindow inherits Window {
         changed => { root.server-overview-edited(); }
         pick-image(icon) => { root.pick-server-image(icon); } remove-image(icon) => { root.remove-server-image(icon); }
         server-name: root.server-edit-server-name; page: root.server-edit-page;
-        show-roles: root.server-edit-show-roles; show-emoji: root.server-edit-show-emoji; show-invites: root.server-edit-show-invites; show-bans: root.server-edit-show-bans;
+        show-roles: root.server-edit-show-roles; show-emoji: root.server-edit-show-emoji; show-invites: root.server-edit-show-invites; show-bans: root.server-edit-show-bans; show-moderation-log: root.server-edit-show-moderation-log;
+        moderation-log: root.server-edit-moderation-log; moderation-log-loading: root.server-edit-moderation-log-loading; moderation-log-has-more: root.server-edit-moderation-log-has-more; moderation-log-error: root.server-edit-moderation-log-error;
         can-delete: root.server-edit-can-delete; admin-busy: root.server-edit-admin-busy;
         notice: root.server-edit-notice; notice-failed: root.server-edit-notice-failed;
         invites: root.server-edit-invites; invites-loaded: root.server-edit-invites-loaded;
@@ -1685,6 +1692,7 @@ export component AppWindow inherits Window {
         create-emoji => { root.create-server-emoji(); }
         rename-emoji(i, n) => { root.rename-server-emoji(i, n); } delete-emoji(i) => { root.delete-server-emoji(i); }
         select-page(i) => { root.server-settings-page(i); }
+        load-more-moderation-log => { root.load-more-moderation-log(); }
         delete-invite(i) => { root.delete-server-invite(i); } copy-invite(i) => { root.copy-server-invite(i); }
         unban(i) => { root.unban-server-user(i); }
         select-role(i) => { root.select-server-role(i); } create-role(n) => { root.create-server-role(n); }

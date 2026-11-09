@@ -348,6 +348,7 @@ impl DiscordAccount {
                     muted: self.store.muted_guilds.contains(&g.id),
                     folder: self.store.folder_of.get(&g.id).cloned(),
                     scheduled_events: true,
+                    can_view_moderation_log: has(p::VIEW_AUDIT_LOG),
                     scheduled_event_count: u32::try_from(self.scheduled_events.get(&g.id).map_or(0, Vec::len))
                         .unwrap_or(u32::MAX),
                     // Discord allows members to edit their own server profile; the official

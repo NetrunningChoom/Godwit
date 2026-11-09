@@ -45,6 +45,9 @@ pub struct Server {
     /// This server can list scheduled events and change the current user's interest.
     #[serde(default)]
     pub scheduled_events: bool,
+    /// This account may read the server's moderation log.
+    #[serde(default)]
+    pub can_view_moderation_log: bool,
     /// Known scheduled and active events for the Events entry's badge.
     #[serde(default)]
     pub scheduled_event_count: u32,

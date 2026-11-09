@@ -109,6 +109,7 @@ impl SteamAccount {
                 icon_url: g.avatar_url.clone().map(Into::into),
                 banner_url: None,
                 scheduled_events: false,
+                can_view_moderation_log: false,
                 scheduled_event_count: 0,
                 edit_own_profile: false,
                 categories: vec![Category {

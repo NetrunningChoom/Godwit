@@ -443,6 +443,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             ],
             muted: false,
             scheduled_events: true,
+            can_view_moderation_log: true,
             scheduled_event_count: 2,
             edit_own_profile: true,
             // Ours to run: every entry in its menu.
@@ -466,6 +467,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             categories: Vec::new(),
             muted: false,
             scheduled_events: false,
+            can_view_moderation_log: false,
             scheduled_event_count: 0,
             edit_own_profile: true,
             folder: None,
@@ -483,6 +485,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             categories: Vec::new(),
             muted: false,
             scheduled_events: false,
+            can_view_moderation_log: false,
             scheduled_event_count: 0,
             edit_own_profile: false,
             folder: None,
@@ -2227,6 +2230,50 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
     fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
         use godwit_core::application::Command;
         match command {
+            Command::LoadModerationLog { server, before } => {
+                use godwit_core::server_settings::{ModerationLogAction as K, ModerationLogEntry};
+                let entries = if before.is_none() {
+                    vec![
+                        ModerationLogEntry {
+                            id: "demo-audit-3".into(),
+                            time_ms: 1_798_000_000_000,
+                            actor: "Demo moderator".into(),
+                            actor_avatar_url: None,
+                            action: K::Member,
+                            text: "banned Demo troublemaker".into(),
+                            target: Some("Demo troublemaker".into()),
+                            reason: Some("Repeated spam".into()),
+                        },
+                        ModerationLogEntry {
+                            id: "demo-audit-2".into(),
+                            time_ms: 1_797_000_000_000,
+                            actor: "Demo owner".into(),
+                            actor_avatar_url: None,
+                            action: K::Channel,
+                            text: "changed channel #general name".into(),
+                            target: Some("#general".into()),
+                            reason: None,
+                        },
+                        ModerationLogEntry {
+                            id: "demo-audit-1".into(),
+                            time_ms: 1_796_000_000_000,
+                            actor: "Demo moderator".into(),
+                            actor_avatar_url: None,
+                            action: K::Role,
+                            text: "updated role Helpers".into(),
+                            target: Some("Helpers".into()),
+                            reason: None,
+                        },
+                    ]
+                } else {
+                    Vec::new()
+                };
+                vec![Event::ModerationLog {
+                    server,
+                    before,
+                    result: Ok(entries),
+                }]
+            }
             Command::LoadServerEvents { server } => vec![Event::ServerEvents {
                 result: Ok(self.server_events.get(&server).cloned().unwrap_or_default()),
                 server,
@@ -2273,6 +2320,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     rights: Default::default(),
                     folder: None,
                     scheduled_events: false,
+                    can_view_moderation_log: false,
                     scheduled_event_count: 0,
                     edit_own_profile: false,
                 };

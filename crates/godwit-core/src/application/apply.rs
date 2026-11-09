@@ -81,6 +81,24 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::ModerationLog { server, before, result } => {
+                if let Some(log) = self.state.moderation_logs.get_mut(&server) {
+                    log.loading = false;
+                    match result {
+                        Ok(entries) => {
+                            log.has_more = entries.len() >= 50;
+                            if before.is_some() {
+                                log.entries.extend(entries);
+                            } else {
+                                log.entries = entries;
+                            }
+                            log.error = None;
+                        }
+                        Err(error) => log.error = Some(error),
+                    }
+                }
+                Vec::new()
+            }
             Event::ChannelOverrides { room, overrides } => self.receive_channel_overrides(room, overrides),
             Event::Webhooks { room, result } | Event::WebhookChanged { room, result } => {
                 let is_open = self

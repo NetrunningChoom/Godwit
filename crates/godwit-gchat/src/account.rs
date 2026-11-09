@@ -1101,7 +1101,9 @@ impl NetworkAccount for GChatAccount {
             ),
             // Google Chat has no separate ignore operation.
             Command::IgnoreUser { .. } | Command::UnignoreUser { .. } => {}
-            Command::LoadServerEvents { .. } | Command::SetServerEventInterest { .. } => {}
+            Command::LoadServerEvents { .. }
+            | Command::SetServerEventInterest { .. }
+            | Command::LoadModerationLog { .. } => {}
             Command::LoadServerProfile { .. } | Command::SaveServerProfile { .. } => {}
             _ => {}
         }

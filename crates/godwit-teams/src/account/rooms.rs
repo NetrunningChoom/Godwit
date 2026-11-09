@@ -347,6 +347,7 @@ impl TeamsAccount {
                 name: t.name.as_str().into(),
                 icon_url: None,
                 scheduled_events: false,
+                can_view_moderation_log: false,
                 scheduled_event_count: 0,
                 edit_own_profile: false,
                 banner_url: None,

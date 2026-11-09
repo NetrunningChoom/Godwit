@@ -40,6 +40,11 @@ pub enum Command {
     LoadServerEvents {
         server: ServerId,
     },
+    /// Load the latest moderation log page, or older entries before this id.
+    LoadModerationLog {
+        server: ServerId,
+        before: Option<Arc<str>>,
+    },
     /// Change the current user's interest in a server event.
     SetServerEventInterest {
         server: ServerId,

@@ -731,6 +731,8 @@ export struct ServerInviteItem {
     has-avatar: bool,
 }
 
+export struct ModerationLogItem { actor: string, avatar: image, has-avatar: bool, text: string, target: string, reason: string, time: string }
+
 // Server settings → Bans: one banned user.
 export struct BanItem {
     name: string,

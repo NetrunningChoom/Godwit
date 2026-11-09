@@ -15,6 +15,8 @@ pub const BAN_MEMBERS: u64 = 1 << 2;
 pub const ADMINISTRATOR: u64 = 1 << 3;
 pub const MANAGE_CHANNELS: u64 = 1 << 4;
 pub const MANAGE_GUILD: u64 = 1 << 5;
+/// Discord's VIEW_AUDIT_LOG guild permission (Developer Documentation).
+pub const VIEW_AUDIT_LOG: u64 = 1 << 7;
 pub const ADD_REACTIONS: u64 = 1 << 6;
 pub const USE_EXTERNAL_EMOJIS: u64 = 1 << 18;
 pub const VIEW_CHANNEL: u64 = 1 << 10;

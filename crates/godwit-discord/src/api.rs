@@ -903,6 +903,16 @@ impl Api {
             .await
     }
 
+    /// Read a guild audit-log page. Field meanings follow Discord's Audit Log Entry object.
+    pub async fn audit_log(&self, guild: &str, before: Option<&str>) -> Result<Value> {
+        let mut path = format!("/guilds/{guild}/audit-logs?limit=50");
+        if let Some(before) = before {
+            path.push_str("&before=");
+            path.push_str(&encode(before));
+        }
+        self.json(self.request(Method::GET, &path)).await
+    }
+
     /// List Scheduled Events with interested-user counts (`with_user_count=true`).
     /// Source: Discord Developer Documentation, Guild Scheduled Event resource.
     pub async fn scheduled_events(&self, guild: &str) -> Result<Value> {

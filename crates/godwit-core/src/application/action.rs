@@ -68,6 +68,7 @@ pub enum Action {
     SaveServerOverview(crate::server_settings::ServerOverviewEdit),
     /// Switches the open settings to a page, loading it the first time.
     ServerSettingsPage(crate::server_settings::ServerPage),
+    LoadMoreModerationLog,
     /// An admin change or load, from server settings or a member's card.
     ServerAdmin {
         server: ServerId,

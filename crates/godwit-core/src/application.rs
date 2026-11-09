@@ -388,6 +388,7 @@ impl Application {
             Event::ServerCreated(server) => signed_in(&server.account),
             Event::Directory { server, .. } => signed_in(&server.account),
             Event::ServerEvents { server, .. } => self.state.server(server).is_some(),
+            Event::ModerationLog { server, .. } => self.state.server(server).is_some(),
             Event::Members { room, .. }
             | Event::VoiceSince { room, .. }
             | Event::Pins { room, .. }
@@ -418,7 +419,7 @@ impl Application {
 
     /// The open settings' page list, fetched when the page shows (Overview
     /// comes with the settings themselves).
-    fn load_server_page(&self, page: crate::server_settings::ServerPage) -> Vec<Effect> {
+    fn load_server_page(&mut self, page: crate::server_settings::ServerPage) -> Vec<Effect> {
         use crate::server_settings::{ServerAdmin, ServerPage};
         let Some(s) = &self.state.server_settings else {
             return Vec::new();
@@ -429,6 +430,7 @@ impl Application {
             ServerPage::Emoji => ServerAdmin::LoadEmoji,
             ServerPage::Invites => ServerAdmin::LoadInvites,
             ServerPage::Bans => ServerAdmin::LoadBans,
+            ServerPage::ModerationLog => return Vec::new(),
         };
         vec![Effect::Backend {
             account: s.server.account.clone(),

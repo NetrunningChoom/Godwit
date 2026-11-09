@@ -148,6 +148,7 @@ impl StoatAccount {
                 icon_url: s.icon.as_ref().and_then(|f| self.file_url(f)).map(Into::into),
                 banner_url: s.banner.as_ref().and_then(|f| self.file_url(f)).map(Into::into),
                 scheduled_events: false,
+                can_view_moderation_log: false,
                 scheduled_event_count: 0,
                 edit_own_profile: false,
                 categories: self

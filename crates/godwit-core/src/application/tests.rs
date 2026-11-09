@@ -837,6 +837,7 @@ fn selecting_a_channel_selects_its_server() {
         folder: None,
         rights: Default::default(),
         scheduled_events: false,
+        can_view_moderation_log: false,
         scheduled_event_count: 0,
         edit_own_profile: false,
     };
@@ -877,6 +878,7 @@ fn scheduled_events_are_gated_and_interest_updates_neutral_state() {
         rights: Default::default(),
         folder: None,
         scheduled_events: true,
+        can_view_moderation_log: false,
         scheduled_event_count: 1,
         edit_own_profile: false,
     };
@@ -939,6 +941,88 @@ fn scheduled_events_are_gated_and_interest_updates_neutral_state() {
         servers: vec![entry],
     });
     assert!(app.dispatch(Action::OpenServerEvents(server)).is_empty());
+}
+
+#[test]
+fn moderation_log_loads_lazily_pages_and_requires_capability() {
+    use crate::server_settings::{ModerationLogAction as Kind, ModerationLogEntry, ServerPage};
+    let mut app = Application::default();
+    let server = ServerId::new(account(Network::Discord), "audit-guild");
+    let mut info = crate::server::Server {
+        id: server.clone(),
+        name: "Guild".into(),
+        icon_url: None,
+        banner_url: None,
+        categories: Vec::new(),
+        muted: false,
+        rights: Default::default(),
+        folder: None,
+        scheduled_events: false,
+        can_view_moderation_log: true,
+        edit_own_profile: false,
+        scheduled_event_count: 0,
+    };
+    app.apply(Event::AccountReady {
+        account: account(Network::Discord),
+        display_name: "Me".into(),
+        username: "me".into(),
+        avatar_url: None,
+        rooms: Vec::new(),
+        servers: vec![info.clone()],
+    });
+    assert!(
+        app.dispatch(Action::OpenServerSettings(server.clone()))
+            .iter()
+            .all(|e| !matches!(
+                e,
+                Effect::Backend {
+                    command: Command::LoadModerationLog { .. },
+                    ..
+                }
+            ))
+    );
+    assert_eq!(
+        commands(&app.dispatch(Action::ServerSettingsPage(ServerPage::ModerationLog))),
+        [&Command::LoadModerationLog {
+            server: server.clone(),
+            before: None
+        }]
+    );
+    let first = ModerationLogEntry {
+        id: "id-new".into(),
+        time_ms: 1,
+        actor: "Mod".into(),
+        actor_avatar_url: None,
+        action: Kind::Member,
+        text: "banned a user".into(),
+        target: None,
+        reason: None,
+    };
+    app.apply(Event::ModerationLog {
+        server: server.clone(),
+        before: None,
+        result: Ok(vec![first.clone(); 50]),
+    });
+    assert_eq!(app.state().moderation_logs[&server].entries.len(), 50);
+    assert_eq!(
+        commands(&app.dispatch(Action::LoadMoreModerationLog)),
+        [&Command::LoadModerationLog {
+            server: server.clone(),
+            before: Some("id-new".into())
+        }]
+    );
+    app.apply(Event::ModerationLog {
+        server: server.clone(),
+        before: Some("id-new".into()),
+        result: Ok(vec![first]),
+    });
+    assert_eq!(app.state().moderation_logs[&server].entries.len(), 51);
+    info.can_view_moderation_log = false;
+    app.apply(Event::ServersChanged {
+        account: account(Network::Discord),
+        servers: vec![info],
+    });
+    assert!(app.dispatch(Action::LoadMoreModerationLog).is_empty());
 }
 
 #[test]
@@ -1457,6 +1541,7 @@ fn picking_a_server_opens_its_last_or_first_text_channel_and_home_its_last_dm() 
             folder: None,
             rights: Default::default(),
             scheduled_events: false,
+            can_view_moderation_log: false,
             scheduled_event_count: 0,
             edit_own_profile: false,
         }],
@@ -1577,6 +1662,7 @@ fn a_servers_directory_loads_once_and_rooms_can_be_joined() {
         folder: None,
         rights: Default::default(),
         scheduled_events: false,
+        can_view_moderation_log: false,
         scheduled_event_count: 0,
         edit_own_profile: false,
     };
@@ -1866,6 +1952,7 @@ fn server_profile_actions_are_capability_gated_and_serialized() {
             folder: None,
             scheduled_events: false,
             scheduled_event_count: 0,
+            can_view_moderation_log: false,
             edit_own_profile: false,
             rights: Default::default(),
         }],
@@ -1884,6 +1971,7 @@ fn server_profile_actions_are_capability_gated_and_serialized() {
             folder: None,
             scheduled_events: false,
             scheduled_event_count: 0,
+            can_view_moderation_log: false,
             edit_own_profile: true,
             rights: Default::default(),
         }],
@@ -2870,6 +2958,7 @@ fn a_created_server_opens_after_its_server_list_arrives() {
             rights: Default::default(),
             folder: None,
             scheduled_events: false,
+            can_view_moderation_log: false,
             scheduled_event_count: 0,
             edit_own_profile: false,
         }],
@@ -3248,6 +3337,7 @@ fn server_settings_open(app: &mut Application) -> (ServerId, u64) {
             folder: None,
             rights: Default::default(),
             scheduled_events: false,
+            can_view_moderation_log: false,
             scheduled_event_count: 0,
             edit_own_profile: false,
         }],
@@ -4337,6 +4427,7 @@ fn structured_server(app: &mut Application, rights: crate::server::ServerRights)
             folder: None,
             rights,
             scheduled_events: false,
+            can_view_moderation_log: false,
             scheduled_event_count: 0,
             edit_own_profile: false,
         }],

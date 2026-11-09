@@ -257,6 +257,10 @@ pub enum Request {
     ScheduledEvents {
         guild: String,
     },
+    AuditLog {
+        guild: String,
+        before: Option<String>,
+    },
     ScheduledEventInterest {
         guild: String,
         event: String,
@@ -532,6 +536,11 @@ pub enum Answer {
     },
     ScheduledEvents {
         guild: String,
+        result: Result<Value, RequestError>,
+    },
+    AuditLog {
+        guild: String,
+        before: Option<String>,
         result: Result<Value, RequestError>,
     },
     ScheduledEventInterest {
@@ -1324,6 +1333,14 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::ScheduledEvents { guild } => Answer::ScheduledEvents {
             guild: guild.clone(),
             result: api.scheduled_events(&guild).await.map_err(RequestError::from),
+        },
+        Request::AuditLog { guild, before } => Answer::AuditLog {
+            guild: guild.clone(),
+            before: before.clone(),
+            result: api
+                .audit_log(&guild, before.as_deref())
+                .await
+                .map_err(RequestError::from),
         },
         Request::ScheduledEventInterest {
             guild,

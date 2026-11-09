@@ -138,11 +138,55 @@ impl Application {
                     return Vec::new();
                 };
                 if s.page == page {
-                    return Vec::new();
+                    let retry_log = page == crate::server_settings::ServerPage::ModerationLog
+                        && self
+                            .state
+                            .moderation_logs
+                            .get(&s.server)
+                            .is_some_and(|log| log.error.is_some());
+                    return if retry_log {
+                        self.load_moderation_log_first()
+                    } else {
+                        Vec::new()
+                    };
                 }
                 s.page = page;
                 s.notice = None;
-                self.load_server_page(page)
+                if page == crate::server_settings::ServerPage::ModerationLog {
+                    self.load_moderation_log_first()
+                } else {
+                    self.load_server_page(page)
+                }
+            }
+            Action::LoadMoreModerationLog => {
+                let Some(server) = self
+                    .state
+                    .server_settings
+                    .as_ref()
+                    .filter(|s| s.page == crate::server_settings::ServerPage::ModerationLog)
+                    .map(|s| s.server.clone())
+                else {
+                    return Vec::new();
+                };
+                let Some(account) = self
+                    .state
+                    .server(&server)
+                    .filter(|s| s.can_view_moderation_log)
+                    .map(|s| s.id.account.clone())
+                else {
+                    return Vec::new();
+                };
+                let log = self.state.moderation_logs.entry(server.clone()).or_default();
+                if log.loading || (!log.has_more && log.error.is_none()) {
+                    return Vec::new();
+                }
+                log.loading = true;
+                log.error = None;
+                let before = log.entries.last().map(|e| e.id.clone());
+                vec![Effect::Backend {
+                    account,
+                    command: Command::LoadModerationLog { server, before },
+                }]
             }
             Action::ServerAdmin { server, op } => self.dispatch_server_admin(server, op),
             Action::CloseServerSettings => {
@@ -992,5 +1036,29 @@ impl Application {
                 Vec::new()
             }
         }
+    }
+
+    fn load_moderation_log_first(&mut self) -> Vec<Effect> {
+        let Some(server) = self.state.server_settings.as_ref().map(|s| s.server.clone()) else {
+            return Vec::new();
+        };
+        let Some(account) = self
+            .state
+            .server(&server)
+            .filter(|s| s.can_view_moderation_log)
+            .map(|s| s.id.account.clone())
+        else {
+            return Vec::new();
+        };
+        let log = self.state.moderation_logs.entry(server.clone()).or_default();
+        if log.loading || !log.entries.is_empty() {
+            return Vec::new();
+        }
+        log.loading = true;
+        log.error = None;
+        vec![Effect::Backend {
+            account,
+            command: Command::LoadModerationLog { server, before: None },
+        }]
     }
 }

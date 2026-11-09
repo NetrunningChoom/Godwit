@@ -86,6 +86,10 @@ impl Shell {
         );
     }
 
+    pub fn load_more_moderation_log(&mut self, ui: &AppWindow) {
+        self.act(ui, Action::LoadMoreModerationLog);
+    }
+
     /// An admin change on the open settings' server.
     pub(super) fn server_admin(&mut self, ui: &AppWindow, op: godwit_core::server_settings::ServerAdmin) {
         if let Some(server) = self.app.state().server_settings.as_ref().map(|s| s.server.clone()) {

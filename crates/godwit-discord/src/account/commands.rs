@@ -29,6 +29,18 @@ impl DiscordAccount {
 
     pub(super) fn answer(&mut self, answer: Answer, out: &mut Vec<Event>) {
         match answer {
+            Answer::AuditLog { guild, before, result } => {
+                let Some(account) = self.account.clone() else { return };
+                let server = ServerId::new(account, guild.as_str());
+                let parsed = result
+                    .map(|value| parse_audit_log(&value))
+                    .map_err(|e| e.to_string().into());
+                out.push(Event::ModerationLog {
+                    server,
+                    before: before.map(Into::into),
+                    result: parsed,
+                });
+            }
             Answer::ScheduledEvents { guild, result } => {
                 let Some(account) = self.account.clone() else { return };
                 let server = ServerId::new(account, guild.as_str());
@@ -575,6 +587,138 @@ impl DiscordAccount {
     }
 }
 
+/// Discord audit-log event ids and their meanings follow its Audit Log Entry
+/// object documentation: https://discord.com/developers/docs/resources/audit-log#audit-log-entry-object-audit-log-events
+fn parse_audit_log(value: &Value) -> Vec<godwit_core::server_settings::ModerationLogEntry> {
+    use godwit_core::server_settings::ModerationLogEntry;
+    let users = value
+        .get("users")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|u| {
+            Some((
+                u.get("id")?.as_str()?.to_owned(),
+                (
+                    u.get("global_name")
+                        .or_else(|| u.get("username"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("Unknown user")
+                        .to_owned(),
+                    u.get("avatar").and_then(Value::as_str).map(|hash| {
+                        format!(
+                            "https://cdn.discordapp.com/avatars/{}/{}.png",
+                            u.get("id").and_then(Value::as_str).unwrap_or(""),
+                            hash
+                        )
+                    }),
+                ),
+            ))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    value
+        .get("audit_log_entries")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let id = entry.get("id")?.as_str()?;
+            let actor_id = entry.get("user_id").and_then(Value::as_str).unwrap_or("");
+            let (actor, actor_avatar_url) = users
+                .get(actor_id)
+                .cloned()
+                .unwrap_or_else(|| ("Unknown user".to_owned(), None));
+            let action_type = entry.get("action_type").and_then(Value::as_u64).unwrap_or(0);
+            let target_id = entry.get("target_id").and_then(Value::as_str);
+            let mut target = target_id.map(|target| {
+                users
+                    .get(target)
+                    .map(|u| u.0.clone())
+                    .unwrap_or_else(|| target.to_owned())
+            });
+            let changes = entry
+                .get("changes")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            let named_change = changes.iter().find_map(|change| {
+                let key = change.get("key")?.as_str()?;
+                matches!(key, "name" | "nick")
+                    .then(|| {
+                        change.get("new_value").map(|value| match value {
+                            Value::String(name) => name.clone(),
+                            other => other.to_string(),
+                        })
+                    })
+                    .flatten()
+            });
+            if target.is_none() {
+                target = named_change.clone();
+            }
+            let (action, verb) = audit_action(action_type);
+            let text = format!(
+                "{}{}",
+                verb,
+                target.as_ref().map(|name| format!(" {name}")).unwrap_or_default()
+            );
+            let option_name = entry.get("options").and_then(Value::as_object).and_then(|options| {
+                ["role_name", "channel_name", "name"]
+                    .iter()
+                    .find_map(|key| options.get(*key).and_then(Value::as_str))
+            });
+            if target.is_none() {
+                target = option_name.map(str::to_owned);
+            }
+            let changed_name = changes
+                .iter()
+                .any(|change| change.get("key").and_then(Value::as_str) == Some("name"));
+            let detail = match action_type {
+                11 if changed_name => "name",
+                31 => "role settings",
+                _ => "",
+            };
+            let text = if detail.is_empty() {
+                text
+            } else {
+                format!("{text} ({detail})")
+            };
+            Some(ModerationLogEntry {
+                id: id.into(),
+                time_ms: crate::api::snowflake_ms(id),
+                actor: actor.into(),
+                actor_avatar_url: actor_avatar_url.map(Into::into),
+                action,
+                text: text.into(),
+                target: target.map(Into::into),
+                reason: entry
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .filter(|r| !r.is_empty())
+                    .map(Into::into),
+            })
+        })
+        .collect()
+}
+
+fn audit_action(code: u64) -> (godwit_core::server_settings::ModerationLogAction, &'static str) {
+    use godwit_core::server_settings::ModerationLogAction as K;
+    match code {
+        20 => (K::Member, "kicked"),
+        21 => (K::Member, "pruned members"),
+        22 => (K::Member, "banned"),
+        23 => (K::Member, "unbanned"),
+        30 => (K::Role, "created role"),
+        31 => (K::Role, "updated role"),
+        32 => (K::Role, "deleted role"),
+        10 => (K::Channel, "created channel"),
+        11 => (K::Channel, "updated channel"),
+        12 => (K::Channel, "deleted channel"),
+        72 => (K::Message, "deleted message by"),
+        _ => (K::Other, "performed server action"),
+    }
+}
+
 /// How many fetched profiles are kept (and notes with them).
 const PROFILE_CACHE: usize = 50;
 
@@ -604,4 +748,45 @@ fn slim_profile(v: &Value) -> Value {
         "mutual_guilds": v["mutual_guilds"],
         "mutual_friends": friends,
     })
+}
+
+#[cfg(test)]
+mod audit_log_tests {
+    use super::*;
+    use godwit_core::server_settings::ModerationLogAction as K;
+    use serde_json::json;
+
+    #[test]
+    fn parses_entries_resolves_actors_and_maps_common_actions() {
+        let raw = json!({
+            "users": [{"id":"101","username":"mod","global_name":"Moderator","avatar":"hash"},{"id":"202","username":"Member"}],
+            "audit_log_entries": [
+                {"id":"175928847299117063","user_id":"101","target_id":"202","action_type":22,"reason":"rule breaking"},
+                {"id":"175928847299117064","user_id":"101","target_id":"202","action_type":20},
+                {"id":"175928847299117065","user_id":"101","target_id":"303","action_type":31},
+                {"id":"175928847299117066","user_id":"101","target_id":"304","action_type":10},
+                {"id":"175928847299117067","user_id":"101","target_id":"305","action_type":11,"changes":[{"key":"name"}]},
+                {"id":"175928847299117068","user_id":"101","target_id":"306","action_type":12},
+                {"id":"175928847299117069","user_id":"101","target_id":"202","action_type":72}
+            ]
+        });
+        let entries = parse_audit_log(&raw);
+        assert_eq!(entries.len(), 7);
+        assert_eq!(entries[0].actor.as_ref(), "Moderator");
+        assert!(entries[0].actor_avatar_url.is_some());
+        assert_eq!(entries[0].text.as_ref(), "banned Member");
+        assert_eq!(entries[0].reason.as_deref(), Some("rule breaking"));
+        assert_eq!(entries[1].text.as_ref(), "kicked Member");
+        assert_eq!(entries[2].action, K::Role);
+        assert_eq!(entries[3].text.as_ref(), "created channel 304");
+        assert_eq!(entries[4].text.as_ref(), "updated channel 305 (name)");
+        assert_eq!(entries[5].text.as_ref(), "deleted channel 306");
+        assert_eq!(entries[6].text.as_ref(), "deleted message by Member");
+        assert_eq!(entries[0].time_ms, crate::api::snowflake_ms("175928847299117063"));
+    }
+
+    #[test]
+    fn unknown_actions_remain_readable() {
+        assert_eq!(audit_action(999), (K::Other, "performed server action"));
+    }
 }

@@ -211,6 +211,7 @@ impl SlackAccount {
                     icon_url: ws.icon.as_deref().map(Into::into),
                     banner_url: None,
                     scheduled_events: false,
+                    can_view_moderation_log: false,
                     scheduled_event_count: 0,
                     edit_own_profile: false,
                     // Each channel, then its threads, the most recently active first.

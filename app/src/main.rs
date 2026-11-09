@@ -364,6 +364,7 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_server_settings_page(page) => |sh, ui| sh.server_settings_page(ui, page));
+    callback!(ui.on_load_more_moderation_log() => |sh, ui| sh.act(ui, Action::LoadMoreModerationLog));
     callback!(ui.on_delete_server_invite(row) => |sh, ui| sh.delete_server_invite(ui, row));
     callback!(ui.on_copy_server_invite(row) => |sh, _| sh.copy_server_invite(row));
     callback!(ui.on_unban_server_user(row) => |sh, ui| sh.unban_server_user(ui, row));

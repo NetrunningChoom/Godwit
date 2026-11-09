@@ -526,6 +526,7 @@ impl SlackAccount {
             }
             Command::CreateServer { .. }
             | Command::LoadServerEvents { .. }
+            | Command::LoadModerationLog { .. }
             | Command::SetServerEventInterest { .. } => {}
             Command::LoadServerProfile { .. } | Command::SaveServerProfile { .. } => {}
             // Slack has no separate ignore operation.
