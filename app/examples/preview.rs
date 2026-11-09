@@ -1697,23 +1697,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             late: true,
             ..Scene::new(
                 "call-video",
-                Box::new(|app, ui, general, _| {
+                Box::new(|app, _, general, _| {
                     app.dispatch(Action::SelectRoom(general.clone()));
-                    ui.set_call_here(true);
-                    let tile = |label: &str, screen: bool| godwit::ui::CallVideoItem {
-                        label: label.into(),
-                        frame: gradient(1280, 720),
-                        has_frame: true,
-                        screen,
-                        stream: -1,
-                        participant: -1,
-                        primary: false,
-                    };
-                    ui.set_call_videos(slint::ModelRc::new(slint::VecModel::from(vec![tile(
-                        "Robin · Screen",
-                        true,
-                    )])));
-                    ui.set_call_screen_videos(1);
                     Screen::Main
                 }),
             )
@@ -2544,6 +2529,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
         let ui = AppWindow::new()?;
+        ui.on_video_columns(godwit::view::video_columns);
         theme::apply(&ui, theme::DEFAULT_ACCENT, 0, !scene.name.starts_with("light"));
         // The one shell callback the scenes check: closing the picker.
         let weak = ui.as_weak();
@@ -2661,6 +2647,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // keep it shown over what the presenter derived from the state.
         if scene.name == "games" {
             ui.set_showing_games(true);
+        }
+        // The call-video scene's tiles: frames come from the voice crate in
+        // the app, so they're set here, over what the presenter derived.
+        if scene.name == "call-video" {
+            let tile = |label: &str, screen: bool| godwit::ui::CallVideoItem {
+                label: label.into(),
+                frame: gradient(1280, 720),
+                has_frame: true,
+                screen,
+                stream: -1,
+                participant: -1,
+                primary: false,
+            };
+            // Your own screen share next to two cameras: every tile the same size.
+            ui.set_call_videos(slint::ModelRc::new(slint::VecModel::from(vec![
+                tile("You · Screen", true),
+                tile("Robin", false),
+                tile("Sam", false),
+            ])));
+            ui.set_call_screen_videos(1);
+            ui.set_call_extra_videos(true);
+            ui.set_call_here(true);
         }
         // The picker, with its scroll wired as the shell does: rows coming
         // into view get their pictures.

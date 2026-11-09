@@ -141,6 +141,8 @@ export component Timeline inherits Rectangle {
     in property <int> screen-videos;
     in property <bool> call-extra-videos;
     callback video-fullscreen(int);
+    // The video grid's column count for (tiles, width, height, gap).
+    pure callback video-columns(int, length, length, length) -> int;
     callback join-call();
     in property <[FileItem]> files;
     callback attach();
@@ -544,12 +546,31 @@ export component Timeline inherits Rectangle {
             preferred-height: 140px;
             vertical-stretch: 1;
             background: Theme.surface-low;
-            HorizontalLayout {
-                padding: Theme.gap-sm;
-                spacing: Theme.gap-sm;
+            // One size for every tile (16:9, the picture letterboxed inside),
+            // in the grid that makes them biggest; the last row is centred.
+            grid := Rectangle {
+                x: Theme.gap-sm;
+                y: Theme.gap-sm;
+                width: parent.width - 2 * Theme.gap-sm;
+                height: parent.height - 2 * Theme.gap-sm;
+                property <int> count: root.call-videos.length;
+                property <int> cols: max(1, root.video-columns(self.count, self.width, self.height, Theme.gap-sm));
+                property <int> rows: max(1, ceil(self.count / self.cols));
+                property <length> cell-w: (self.width - (self.cols - 1) * Theme.gap-sm) / self.cols;
+                property <length> cell-h: (self.height - (self.rows - 1) * Theme.gap-sm) / self.rows;
+                property <length> tile-w: max(0px, min(self.cell-w, self.cell-h * 16 / 9));
+                property <length> tile-h: self.tile-w * 9 / 16;
+                property <length> grid-w: self.cols * self.tile-w + (self.cols - 1) * Theme.gap-sm;
+                property <length> grid-h: self.rows * self.tile-h + (self.rows - 1) * Theme.gap-sm;
+                property <int> last-row-count: self.count - (self.rows - 1) * self.cols;
                 for video[vi] in root.call-videos: Rectangle {
-                    horizontal-stretch: 1;
-                    min-width: 160px;
+                    property <int> tile-row: floor(vi / grid.cols);
+                    property <int> in-row: self.tile-row == grid.rows - 1 ? grid.last-row-count : grid.cols;
+                    x: (grid.width - (self.in-row * grid.tile-w + (self.in-row - 1) * Theme.gap-sm)) / 2
+                        + Math.mod(vi, grid.cols) * (grid.tile-w + Theme.gap-sm);
+                    y: (grid.height - grid.grid-h) / 2 + self.tile-row * (grid.tile-h + Theme.gap-sm);
+                    width: grid.tile-w;
+                    height: grid.tile-h;
                     background: Theme.media-stage;
                     border-radius: Theme.radius-sm;
                     clip: true;

@@ -724,6 +724,7 @@ export component AppWindow inherits Window {
     // A call video filling the window (its index), or -1.
     in property <int> fullscreen-video: -1;
     callback video-fullscreen(int);
+    pure callback video-columns(int, length, length, length) -> int;
     in-out property <string> draft;
     in-out property <int> composer-anchor;
     in-out property <int> composer-cursor;
@@ -1493,6 +1494,7 @@ export component AppWindow inherits Window {
                                         screen-videos: root.call-screen-videos;
                                         call-extra-videos: root.call-extra-videos;
                                         video-fullscreen(i) => { root.video-fullscreen(i); }
+                                        video-columns(n, w, h, g) => { return root.video-columns(n, w, h, g); }
                                         call-videos: root.call-videos;
                                         call-camera: root.call-camera;
                                         call-screen-share: root.call-screen-share;

@@ -461,6 +461,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_user_sound(i, volume, muted, done) => |sh, ui| sh.user_sound(ui, i, volume, muted, done));
     callback!(ui.on_stream_sound(i, volume, muted, done) => |sh, ui| sh.stream_sound(ui, i, volume, muted, done));
     callback!(ui.on_video_fullscreen(i) => |sh, ui| sh.video_fullscreen(ui, i));
+    ui.on_video_columns(godwit::view::video_columns);
     callback!(ui.on_watch_stream(i, watch) => |sh, ui| {
         let user = usize::try_from(i)
             .ok()

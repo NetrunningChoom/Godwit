@@ -146,3 +146,46 @@ pub fn active(state: &AppState, images: &mut Images) -> (Vec<crate::ui::ActiveIt
     }
     (rows, targets)
 }
+
+/// How many columns the call's video grid gets: every tile is the same
+/// 16:9 size, so the count that makes them biggest in `width` x `height`
+/// (with `gap` between tiles) wins; ties go to fewer columns.
+pub fn video_columns(count: i32, width: f32, height: f32, gap: f32) -> i32 {
+    let count = count.max(1);
+    let mut best = (1, 0.0f32);
+    for cols in 1..=count {
+        let rows = (count + cols - 1) / cols;
+        let cell_w = (width - gap * (cols - 1) as f32) / cols as f32;
+        let cell_h = (height - gap * (rows - 1) as f32) / rows as f32;
+        let tile_w = cell_w.min(cell_h * 16.0 / 9.0);
+        if tile_w > best.1 + 0.5 {
+            best = (cols, tile_w);
+        }
+    }
+    best.0
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::video_columns;
+
+    #[test]
+    fn a_wide_strip_puts_the_tiles_side_by_side() {
+        assert_eq!(video_columns(2, 1200.0, 140.0, 4.0), 2);
+        assert_eq!(video_columns(4, 1600.0, 140.0, 4.0), 4);
+    }
+
+    #[test]
+    fn a_tall_stage_stacks_them() {
+        assert_eq!(video_columns(2, 400.0, 900.0, 4.0), 1);
+        // Four in a roughly 16:9 stage: two by two.
+        assert_eq!(video_columns(4, 1280.0, 720.0, 4.0), 2);
+        assert_eq!(video_columns(9, 1280.0, 720.0, 4.0), 3);
+    }
+
+    #[test]
+    fn nothing_or_no_room_still_gives_one_column() {
+        assert_eq!(video_columns(0, 800.0, 400.0, 4.0), 1);
+        assert_eq!(video_columns(3, 0.0, 0.0, 4.0), 1);
+    }
+}
