@@ -744,6 +744,7 @@ export component AppWindow inherits Window {
     in property <image> edit-profile-banner;
     in property <bool> edit-profile-has-banner;
     in property <bool> edit-profile-banner-allowed: true;
+    in property <bool> edit-profile-details-allowed: true;
     in property <string> edit-profile-banner-label;
     callback select-profile-account(int);
     callback reload-own-profile();
@@ -2107,6 +2108,8 @@ export component AppWindow inherits Window {
         edit-profile-banner: root.edit-profile-banner;
         edit-profile-has-banner: root.edit-profile-has-banner;
         edit-profile-banner-label: root.edit-profile-banner-label;
+        edit-profile-banner-allowed: root.edit-profile-banner-allowed;
+        edit-profile-details-allowed: root.edit-profile-details-allowed;
         reload-own-profile => { root.reload-own-profile(); }
         reset-own-profile => { root.reset-own-profile(); }
         save-own-profile => { root.save-own-profile(); }

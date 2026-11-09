@@ -148,6 +148,8 @@ export component ManagementDialogs inherits Rectangle {
     in property <image> edit-profile-banner;
     in property <bool> edit-profile-has-banner;
     in property <string> edit-profile-banner-label;
+    in property <bool> edit-profile-banner-allowed: true;
+    in property <bool> edit-profile-details-allowed: true;
     callback reload-own-profile(); callback reset-own-profile(); callback save-own-profile(); callback own-profile-edited();
     callback pick-profile-image(bool); callback remove-profile-image(bool);
     in property <bool> invite-open;
@@ -489,7 +491,8 @@ export component ManagementDialogs inherits Rectangle {
             avatar-label: root.edit-profile-avatar-label;
             banner: root.edit-profile-banner;
             has-banner: root.edit-profile-has-banner;
-            banner-allowed: true;
+            banner-allowed: root.edit-profile-banner-allowed;
+            details-allowed: root.edit-profile-details-allowed;
             banner-label: root.edit-profile-banner-label;
             selected-account(_) => { }
             save => { root.save-own-profile(); }

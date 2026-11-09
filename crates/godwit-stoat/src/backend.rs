@@ -178,6 +178,14 @@ pub enum MemberCmd {
         body: Value,
         avatar: Option<Upload>,
     },
+    /// Saves our own nickname and avatar in a server; answered with
+    /// ServerProfileSaved carrying the updated member.
+    SaveOwnProfile {
+        server: String,
+        user: String,
+        body: Value,
+        avatar: Option<Upload>,
+    },
     KickMember {
         server: String,
         user: String,
@@ -700,6 +708,10 @@ pub enum Ev {
     },
     /// A member edit, kick or ban finished (the change arrives by event).
     MemberSaved(Result<(), String>),
+    ServerProfileSaved {
+        server: String,
+        result: Result<crate::api::Member, String>,
+    },
     /// The request (None: there is none, so one can be made) or why it
     /// couldn't be fetched.
     DiscoverStatus {
@@ -1609,11 +1621,41 @@ impl Backend {
             MemberCmd::KickMember { server, .. }
             | MemberCmd::BanUser { server, .. }
             | MemberCmd::SetRoles { server, .. } => Some(server.clone()),
-            MemberCmd::EditMember { .. } | MemberCmd::RemoveRecipient { .. } | MemberCmd::TransferGroup { .. } => None,
+            MemberCmd::EditMember { .. }
+            | MemberCmd::SaveOwnProfile { .. }
+            | MemberCmd::RemoveRecipient { .. }
+            | MemberCmd::TransferGroup { .. } => None,
         };
+        if let MemberCmd::SaveOwnProfile {
+            server,
+            user,
+            mut body,
+            avatar,
+        } = cmd
+        {
+            tokio::spawn(async move {
+                let result: Result<crate::api::Member> = async {
+                    if let Some(f) = avatar {
+                        body["avatar"] = json!(upload(&rest, &autumn, f, "avatars").await?);
+                    }
+                    rest.send::<crate::api::Member>(
+                        rest.req(reqwest::Method::PATCH, &format!("/servers/{server}/members/{user}"))
+                            .json(&body),
+                    )
+                    .await
+                }
+                .await;
+                out.emit(Ev::ServerProfileSaved {
+                    server,
+                    result: result.map_err(|e| crate::errors::describe(&e)),
+                });
+            });
+            return;
+        }
         tokio::spawn(async move {
             let result: Result<()> = async {
                 match cmd {
+                    MemberCmd::SaveOwnProfile { .. } => {}
                     MemberCmd::EditMember {
                         server,
                         user,

@@ -534,6 +534,26 @@ impl StoatAccount {
         })
     }
 
+    /// Our nickname and avatar in one server, for the shared server-profile editor.
+    pub(super) fn own_server_profile(&self, server: &str) -> Result<OwnProfile, std::sync::Arc<str>> {
+        let unavailable = || std::sync::Arc::<str>::from("Your profile in this server is not available.");
+        let me = self.store.me.as_deref().ok_or_else(unavailable)?;
+        let member = self
+            .store
+            .members
+            .get(&MemberId {
+                server: server.to_owned(),
+                user: me.to_owned(),
+            })
+            .ok_or_else(unavailable)?;
+        Ok(OwnProfile {
+            name: self.store.display_name(me, Some(server)).into(),
+            display_name: member.nickname.as_deref().unwrap_or_default().into(),
+            avatar_url: member.avatar.as_ref().and_then(|f| self.file_url(f)).map(Into::into),
+            ..OwnProfile::default()
+        })
+    }
+
     /// An emoji's picture: a custom upload or the official Unicode pack.
     pub(super) fn emoji_url(&self, emoji: &str) -> Option<String> {
         let is_id = emoji.len() == 26 && emoji.bytes().all(|b| b.is_ascii_alphanumeric());

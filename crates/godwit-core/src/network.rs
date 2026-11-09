@@ -179,6 +179,17 @@ impl Network {
         self != Self::Discord
     }
 
+    /// A per-server profile can carry pronouns and a bio next to the name and
+    /// avatar (Discord's can; Stoat's server identity is a nickname and avatar).
+    pub fn has_server_profile_details(self) -> bool {
+        self == Self::Discord
+    }
+
+    /// A per-server profile can carry its own banner.
+    pub fn has_server_profile_banner(self) -> bool {
+        self == Self::Discord
+    }
+
     /// The size a picture is scaled to before uploading, and the most it may
     /// weigh. Avatars and icons are 512² (shown at most ~128 px); Stoat's
     /// Autumn takes icons up to 2.5 MB and banners up to 6 MB, Discord up to
@@ -528,6 +539,8 @@ mod tests {
         assert_eq!(settings, [Stoat, Discord]);
         assert!(!Steam.has_status_text() && Stoat.has_status_text() && !Fluxer.has_status_text());
         assert!(!Discord.has_profile_banner() && Stoat.has_profile_banner());
+        assert!(Discord.has_server_profile_details() && Discord.has_server_profile_banner());
+        assert!(!Stoat.has_server_profile_details() && !Stoat.has_server_profile_banner());
         assert_eq!(
             Stoat.account_pages(),
             [

@@ -227,7 +227,38 @@ impl StoatAccount {
                     Err(error) => vec![Event::OwnProfileSaved { account, result: Err(error.into()) }],
                 }
             }
-            Command::LoadServerProfile { .. } | Command::SaveServerProfile { .. } => Vec::new(),
+            Command::LoadServerProfile { server } => {
+                let result = self.own_server_profile(&server.raw);
+                vec![Event::ServerProfileLoaded { server, result }]
+            }
+            Command::SaveServerProfile { server, edit } => {
+                let Some(me) = self.store.me.clone() else { return Vec::new() };
+                let raw = server.raw.to_string();
+                let can = |bit| self.store.can_in_server(&raw, bit);
+                // Stoat's server identity: nickname and avatar, each behind its own permission.
+                let (nick, avatar) = (
+                    can(crate::permissions::CHANGE_NICKNAME),
+                    can(crate::permissions::CHANGE_AVATAR),
+                );
+                let limits = self
+                    .config
+                    .as_ref()
+                    .and_then(|c| c.features.limits.as_ref())
+                    .map(|limits| limits.default.file_upload_size_limits.clone())
+                    .unwrap_or_default();
+                match crate::server_profile::prepare(*edit, nick, avatar, &limits) {
+                    Ok(p) => {
+                        self.net.send(Cmd::Member(MemberCmd::SaveOwnProfile {
+                            server: raw,
+                            user: me.to_string(),
+                            body: p.body,
+                            avatar: p.avatar,
+                        }));
+                        Vec::new()
+                    }
+                    Err(error) => vec![Event::ServerProfileSaved { server, result: Err(error.into()) }],
+                }
+            }
             // Stoat has no end-to-end encryption, so nothing to unlock.
             // Our status object keeps its text: the PATCH replaces it whole.
             Command::SetPresence(presence) => {

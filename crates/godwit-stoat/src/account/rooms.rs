@@ -174,7 +174,9 @@ impl StoatAccount {
                 scheduled_events: false,
                 can_view_moderation_log: false,
                 scheduled_event_count: 0,
-                edit_own_profile: false,
+                // for-web's ServerIdentity modal: nickname and avatar, each behind its permission.
+                edit_own_profile: self.store.can_in_server(&s.id, crate::permissions::CHANGE_NICKNAME)
+                    || self.store.can_in_server(&s.id, crate::permissions::CHANGE_AVATAR),
                 categories: self
                     .store
                     .ordered_categories(s)

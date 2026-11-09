@@ -34,7 +34,8 @@ impl ProfileEditor {
             format!("{} — server", server.raw).into(),
         ])));
         ui.set_edit_profile_index(0);
-        ui.set_edit_profile_banner_allowed(true);
+        ui.set_edit_profile_banner_allowed(server.account.network.has_server_profile_banner());
+        ui.set_edit_profile_details_allowed(server.account.network.has_server_profile_details());
         Some(Action::LoadServerProfile(server))
     }
     pub fn populate(&mut self, ui: &AppWindow, state: &AppState, accounts: Vec<AccountId>) {
@@ -90,6 +91,7 @@ impl ProfileEditor {
         self.clear();
         ui.set_edit_profile_index(row);
         ui.set_edit_profile_banner_allowed(account.network.has_profile_banner());
+        ui.set_edit_profile_details_allowed(true);
         Some(Action::LoadOwnProfile(account))
     }
 

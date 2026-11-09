@@ -22,6 +22,8 @@ export component ProfileSettings inherits VerticalLayout {
     in property <string> banner-label;
     // The network lets a banner be set (Discord's are Nitro: hidden there).
     in property <bool> banner-allowed: true;
+    // The network lets pronouns and a bio be set (a Stoat server identity has neither).
+    in property <bool> details-allowed: true;
     callback selected-account(int);
     callback save();
     callback reset();
@@ -78,10 +80,10 @@ export component ProfileSettings inherits VerticalLayout {
         }
         Text { text: "Display name"; color: Theme.on-surface; }
         TextField { text <=> root.display-name; enabled: !root.busy; edited => { root.changed(); } accepted => { root.save(); } }
-        Text { text: "Pronouns"; color: Theme.on-surface; }
-        TextField { text <=> root.pronouns; enabled: !root.busy; edited => { root.changed(); } accepted => { root.save(); } }
-        Text { text: "Bio (Markdown)"; color: Theme.on-surface; }
-        TextArea { height: 160px; text <=> root.bio; enabled: !root.busy; edited => { root.changed(); } }
+        if root.details-allowed: Text { text: "Pronouns"; color: Theme.on-surface; }
+        if root.details-allowed: TextField { text <=> root.pronouns; enabled: !root.busy; edited => { root.changed(); } accepted => { root.save(); } }
+        if root.details-allowed: Text { text: "Bio (Markdown)"; color: Theme.on-surface; }
+        if root.details-allowed: TextArea { height: 160px; text <=> root.bio; enabled: !root.busy; edited => { root.changed(); } }
     }
     HorizontalLayout {
         alignment: start;

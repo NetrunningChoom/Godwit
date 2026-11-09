@@ -511,6 +511,21 @@ impl StoatAccount {
                     out.push(Event::Profile(p));
                 }
             }
+            Ev::ServerProfileSaved { server, result } => {
+                let Some(account) = self.account.clone() else { return };
+                let id = ServerId::new(account, server.as_str());
+                let result = match result {
+                    // Apply the answer now: the websocket's ServerMemberUpdate may come after it.
+                    Ok(member) => {
+                        self.store.members.insert(member.id.clone(), member);
+                        self.sync_members(out);
+                        self.sync_rooms(out);
+                        self.own_server_profile(&server)
+                    }
+                    Err(error) => Err(error.into()),
+                };
+                out.push(Event::ServerProfileSaved { server: id, result });
+            }
             Ev::MemberSaved(result) => {
                 let Some(action) = self.group_member_pending.take() else {
                     return;
