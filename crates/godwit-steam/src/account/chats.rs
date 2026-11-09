@@ -36,6 +36,7 @@ impl SteamAccount {
             member_count: None,
             last_activity: chat.map_or(0, |c| i64::from(c.last) * 1000),
             parent: None,
+            joined_thread: false,
         })
     }
 

@@ -126,6 +126,7 @@ impl StoatAccount {
             member_count: (c.channel_type == "Group").then(|| u32::try_from(c.recipients.len()).unwrap_or(u32::MAX)),
             last_activity: c.last_message_id.as_deref().map_or(0, ulid_ms),
             parent: None,
+            joined_thread: false,
             mentions: u32::try_from(self.store.mention_count(&c.id)).unwrap_or(u32::MAX),
         }
     }

@@ -370,6 +370,42 @@ impl DiscordAccount {
                 self.sync_rooms(out);
                 self.sync_servers(out);
             }
+            // Discord reports membership here (docs.discord.food, Gateway
+            // Events: THREAD_MEMBER_UPDATE and THREAD_MEMBERS_UPDATE).
+            "THREAD_MEMBER_UPDATE" => {
+                let channel = d["id"].as_str().or(d["channel_id"].as_str());
+                let me = self.me().to_owned();
+                let is_me = d["user_id"].as_str() == Some(me.as_str());
+                if is_me
+                    && let Some(channel) = channel
+                    && let Some(thread) = self.store.channels.get_mut(channel)
+                {
+                    thread.joined = !d["member"].is_null();
+                    self.sync_rooms(out);
+                }
+            }
+            "THREAD_MEMBERS_UPDATE" => {
+                let Some(channel) = d["id"].as_str().or(d["channel_id"].as_str()) else {
+                    return;
+                };
+                let me = self.me().to_owned();
+                let added = d["added_members"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|m| m["user_id"].as_str() == Some(me.as_str()));
+                let removed = d["removed_member_ids"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|u| u.as_str() == Some(me.as_str()));
+                if (added || removed)
+                    && let Some(thread) = self.store.channels.get_mut(channel)
+                {
+                    thread.joined = added;
+                    self.sync_rooms(out);
+                }
+            }
             "CHANNEL_CREATE" | "CHANNEL_UPDATE" => {
                 let id = d["id"].as_str().unwrap_or_default();
                 let before = self.store.channels.get(id).map(|c| c.overwrites.clone());

@@ -144,6 +144,9 @@ export struct RoomItem {
     // A server channel the account may manage (its menu opens the settings).
     can-manage: bool,
     can-leave: bool,
+    // Explicit thread membership, as offered by Discord's thread menu.
+    can-join-thread: bool,
+    joined-thread: bool,
     // The network takes a mute and (in server channels) a level of its own
     // for this room; its state: muted, and 0 all, 1 mentions, 2 nothing, 3 the server's.
     can-notify: bool,

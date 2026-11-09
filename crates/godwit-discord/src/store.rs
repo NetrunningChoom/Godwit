@@ -127,6 +127,8 @@ pub struct Channel {
     pub applied_tags: Vec<String>,
     /// A thread's `message_count` (replies and all but the first message).
     pub message_count: u32,
+    /// Discord includes `member` on threads the current user has joined.
+    pub joined: bool,
 }
 
 impl Channel {
@@ -171,6 +173,7 @@ impl Channel {
                 .map(str::to_owned)
                 .collect(),
             message_count: v["message_count"].as_u64().and_then(|n| n.try_into().ok()).unwrap_or(0),
+            joined: !v["member"].is_null(),
         })
     }
 
@@ -730,8 +733,14 @@ impl Store {
             g.channels.push(c.id.clone());
         }
         // An update keeps the last message we know of.
-        let last = self.channels.get(&c.id).and_then(|old| old.last_message_id.clone());
+        let previous = self.channels.get(&c.id);
+        let last = previous.and_then(|old| old.last_message_id.clone());
         let mut c = c;
+        // CHANNEL_UPDATE omits thread membership; preserve the gateway state
+        // until a thread member event or a channel payload includes it.
+        if v.get("member").is_none() {
+            c.joined = previous.is_some_and(|old| old.joined);
+        }
         if c.last_message_id.is_none() {
             c.last_message_id = last;
         }
@@ -1359,6 +1368,19 @@ mod tests {
         assert_eq!(activity(&serde_json::Value::Null), None);
     }
     use super::*;
+
+    #[test]
+    fn thread_member_payload_sets_joined_and_sparse_updates_keep_it() {
+        let mut store = Store::default();
+        store.put_channel(
+            &json!({"id":"123", "type":11, "name":"thread", "parent_id":"10", "member":{"id":"123","user_id":"100"}}),
+        );
+        assert!(store.channels["123"].joined);
+        store.put_channel(&json!({"id":"123", "type":11, "name":"thread", "parent_id":"10"}));
+        assert!(store.channels["123"].joined);
+        store.put_channel(&json!({"id":"123", "type":11, "name":"thread", "parent_id":"10", "member":null}));
+        assert!(!store.channels["123"].joined);
+    }
 
     #[test]
     fn member_list_ids_hash_like_discords_client() {

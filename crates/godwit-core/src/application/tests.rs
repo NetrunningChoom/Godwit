@@ -27,6 +27,7 @@ fn room(n: Network, raw: &str, kind: RoomKind) -> Room {
         member_count: None,
         last_activity: 0,
         parent: None,
+        joined_thread: false,
     }
 }
 
@@ -4728,6 +4729,44 @@ fn a_forum_loads_its_posts_and_a_required_tag_gates_new_posts() {
         }]
     ));
     assert!(app.dispatch(Action::LoadMoreForum).is_empty(), "not while loading");
+}
+
+#[test]
+fn thread_membership_actions_require_capability_and_current_state() {
+    let mut thread = room(Network::Discord, "thread", RoomKind::Group);
+    thread.parent = Some("parent".into());
+    thread.capabilities.join_thread = true;
+    let id = thread.id.clone();
+    let mut app = Application::default();
+    ready(&mut app, Network::Discord, vec![thread]);
+    assert!(matches!(
+        app.dispatch(Action::JoinThread(id.clone())).as_slice(),
+        [Effect::Backend {
+            command: Command::JoinThread { .. },
+            ..
+        }]
+    ));
+    assert!(
+        app.dispatch(Action::JoinThread(id.clone())).len() == 1,
+        "state changes only after backend update"
+    );
+    let mut joined = app.state().room(&id).map(|r| (**r).clone()).expect("thread exists");
+    joined.joined_thread = true;
+    app.apply(Event::RoomUpdated(joined));
+    assert!(app.dispatch(Action::JoinThread(id.clone())).is_empty());
+    assert!(matches!(
+        app.dispatch(Action::LeaveThread(id.clone())).as_slice(),
+        [Effect::Backend {
+            command: Command::LeaveThread { .. },
+            ..
+        }]
+    ));
+
+    let mut unsupported = room(Network::Stoat, "other", RoomKind::Group);
+    unsupported.parent = Some("parent".into());
+    let unsupported_id = unsupported.id.clone();
+    ready(&mut app, Network::Stoat, vec![unsupported]);
+    assert!(app.dispatch(Action::JoinThread(unsupported_id)).is_empty());
 }
 
 fn sticker(id: &str, available: bool) -> crate::stickers::Sticker {

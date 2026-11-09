@@ -215,6 +215,10 @@ pub enum Request {
         text: String,
         tags: Vec<String>,
     },
+    ThreadMembership {
+        channel: String,
+        join: bool,
+    },
     /// Modify Channel: the fields in `body` (name, topic, nsfw,
     /// rate_limit_per_user); answered with [`Answer::ChannelSaved`].
     ModifyChannel {
@@ -446,6 +450,11 @@ pub enum Answer {
         result: Result<Value, RequestError>,
     },
     ThreadCreated(Result<Value, RequestError>),
+    ThreadMembership {
+        channel: String,
+        join: bool,
+        result: Result<(), RequestError>,
+    },
     ForumThreads {
         channel: String,
         sort: godwit_core::forum::ForumSort,
@@ -1201,6 +1210,11 @@ async fn answer(api: &Api, request: Request) -> Answer {
                 .await
                 .map_err(RequestError::from),
         ),
+        Request::ThreadMembership { channel, join } => Answer::ThreadMembership {
+            result: api.thread_membership(&channel, join).await.map_err(RequestError::from),
+            channel,
+            join,
+        },
         Request::ForumThreads {
             channel,
             sort,

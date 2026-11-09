@@ -355,7 +355,11 @@ impl SlackAccount {
             // Slack contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Slack rooms do not currently expose group leave or recipient editing.
-            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            Command::LeaveGroup { .. }
+            | Command::AddGroupMember { .. }
+            | Command::RemoveGroupMember { .. }
+            | Command::JoinThread { .. }
+            | Command::LeaveThread { .. } => {}
             // Slack has no channel webhook manager in this account.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::LoadThreads { server, more } => self.refresh_threads(&server.raw, more),

@@ -80,6 +80,7 @@ impl SteamAccount {
             member_count: u32::try_from(g.members.len()).ok().filter(|n| *n > 0),
             last_activity: c.map_or(0, |c| i64::from(c.last) * 1000),
             parent: None,
+            joined_thread: false,
         })
     }
 

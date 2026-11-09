@@ -33,6 +33,13 @@ const REQUEST_SPACING: Duration = Duration::from_millis(500);
 static HTTP_PACE: Mutex<Option<Instant>> = Mutex::const_new(None);
 const REQUEST_QUEUE: usize = 16;
 
+fn thread_membership_path(thread: &str, join: bool) -> (Method, String) {
+    (
+        if join { Method::PUT } else { Method::DELETE },
+        format!("/channels/{thread}/thread-members/@me"),
+    )
+}
+
 /// Discord's own code and words for a refusal.
 #[derive(Debug)]
 pub struct DiscordError {
@@ -1115,6 +1122,18 @@ impl Api {
         self.json(with_json(self.request(Method::POST, &path), &body)).await
     }
 
+    /// Join or leave a thread (`PUT`/`DELETE /channels/{thread}/thread-members/@me`;
+    /// docs.discord.food, Channel, Thread Members).
+    pub async fn thread_membership(&self, thread: &str, join: bool) -> Result<()> {
+        let (method, path) = thread_membership_path(thread, join);
+        let context_name = if join { "Join Thread" } else { "Leave Thread" };
+        self.empty(
+            self.request(method, &path)
+                .header("X-Context-Properties", context(context_name)),
+        )
+        .await
+    }
+
     /// Our notification level for a server, as the client's server menu sets
     /// it (`PATCH /users/@me/guilds/{g}/settings`).
     pub async fn guild_notify(&self, guild: &str, level: u8) -> Result<()> {
@@ -1405,6 +1424,18 @@ mod tests {
         assert_eq!(
             Api::ignore_user_request("123", false),
             (Method::DELETE, "/users/@me/relationships/123/ignore".into())
+        );
+    }
+
+    #[test]
+    fn thread_membership_uses_discord_join_and_leave_routes() {
+        assert_eq!(
+            thread_membership_path("123", true),
+            (Method::PUT, "/channels/123/thread-members/@me".into())
+        );
+        assert_eq!(
+            thread_membership_path("123", false),
+            (Method::DELETE, "/channels/123/thread-members/@me".into())
         );
     }
 

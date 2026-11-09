@@ -181,6 +181,9 @@ pub enum Action {
         /// A forum post's tags, by id.
         tags: Vec<Arc<str>>,
     },
+    /// Join or leave a thread that supports explicit membership.
+    JoinThread(RoomId),
+    LeaveThread(RoomId),
     /// Order the open forum's posts.
     SetForumSort(crate::forum::ForumSort),
     /// Show only the open forum's posts with this tag (None: all).

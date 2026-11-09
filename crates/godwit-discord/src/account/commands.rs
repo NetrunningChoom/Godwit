@@ -311,6 +311,17 @@ impl DiscordAccount {
                 }
                 Err(e) => out.push(Event::Error(format!("Couldn't start the thread: {e}").into())),
             },
+            Answer::ThreadMembership { channel, join, result } => match result {
+                Ok(()) => {
+                    if let Some(thread) = self.store.channels.get_mut(&channel) {
+                        thread.joined = join;
+                    }
+                    self.sync_rooms(out);
+                }
+                Err(e) => out.push(Event::Error(
+                    format!("Discord, {} thread: {e}", if join { "joining" } else { "leaving" }).into(),
+                )),
+            },
             Answer::ForumThreads {
                 channel,
                 sort,

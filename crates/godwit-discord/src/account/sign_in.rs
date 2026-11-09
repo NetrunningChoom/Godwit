@@ -92,6 +92,15 @@ impl DiscordAccount {
         let history = self.demo.as_ref()?;
         let mut out = Vec::new();
         match command {
+            Command::JoinThread { room } | Command::LeaveThread { room } => {
+                let join = matches!(command, Command::JoinThread { .. });
+                if let Some(channel) = self.channel_of(room)
+                    && let Some(thread) = self.store.channels.get_mut(&channel)
+                {
+                    thread.joined = join;
+                    self.sync_rooms(&mut out);
+                }
+            }
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => return Some(Vec::new()),
             Command::LoadReactors { room, message, emoji } => {
                 let people = vec!["100000000000000001", "100000000000000002"]

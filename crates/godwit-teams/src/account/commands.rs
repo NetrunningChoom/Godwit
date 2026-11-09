@@ -229,7 +229,11 @@ impl TeamsAccount {
             // Teams contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Teams rooms do not currently expose group leave or recipient editing.
-            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            Command::LeaveGroup { .. }
+            | Command::AddGroupMember { .. }
+            | Command::RemoveGroupMember { .. }
+            | Command::JoinThread { .. }
+            | Command::LeaveThread { .. } => {}
             // Teams has no channel webhook manager.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::SetPresence(presence) => req(

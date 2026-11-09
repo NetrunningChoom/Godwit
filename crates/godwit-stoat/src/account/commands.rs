@@ -190,7 +190,9 @@ impl StoatAccount {
             // Servers' channels are all listed already.
             | Command::LoadDirectory { .. }
             | Command::SetRoomNotify { .. }
-            | Command::JoinRoom { .. } => Vec::new(),
+            | Command::JoinRoom { .. }
+            | Command::JoinThread { .. }
+            | Command::LeaveThread { .. } => Vec::new(),
             Command::Focus { room } => {
                 self.viewing = room.map(|r| r.raw.to_string());
                 Vec::new()

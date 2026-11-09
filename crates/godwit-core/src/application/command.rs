@@ -270,6 +270,14 @@ pub enum Command {
         /// A forum post's tags, by id (already checked against the forum's).
         tags: Vec<Arc<str>>,
     },
+    /// Join a thread; the room's membership is refreshed from network events.
+    JoinThread {
+        room: RoomId,
+    },
+    /// Leave a thread while keeping it visible in the room list.
+    LeaveThread {
+        room: RoomId,
+    },
     /// A forum's posts: with no `offset` its tags, rules and open posts;
     /// with one, the older (archived) posts from there in `sort` order,
     /// narrowed to `tag`. Answered with [`Event::Forum`].

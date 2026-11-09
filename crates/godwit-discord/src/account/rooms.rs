@@ -107,6 +107,10 @@ impl DiscordAccount {
             // Discord's web client offers Leave Group for group DMs.
             leave: c.kind == store::GROUP_DM,
             reaction_users: true,
+            // Private threads are invite-only (docs.discord.food, Channel,
+            // thread types): show Leave when we're in one, and Join only for
+            // public and announcement threads.
+            join_thread: c.thread() && (c.kind != store::PRIVATE_THREAD || c.joined),
             send,
             // Forwarding out: the server must allow it (its FORWARDING_DISABLED
             // feature) and we read the channel's history; in: we may send there
@@ -223,6 +227,7 @@ impl DiscordAccount {
             // The newest message's time, from its snowflake (or the DM's own).
             last_activity: crate::api::snowflake_ms(c.last_message_id.as_deref().unwrap_or(&c.id)),
             parent: c.thread().then(|| c.parent.clone()).flatten().map(Into::into),
+            joined_thread: c.thread() && c.joined,
         })
     }
 

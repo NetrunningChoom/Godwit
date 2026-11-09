@@ -46,6 +46,7 @@ pub fn room(raw: &str, name: &str, kind: RoomKind, unread: bool, mentions: u32) 
         member_count: None,
         last_activity: 0,
         parent: None,
+        joined_thread: false,
     }
 }
 
@@ -787,6 +788,7 @@ pub fn multi(app: &mut Application) -> RoomId {
         member_count: None,
         last_activity: 0,
         parent: None,
+        joined_thread: false,
     };
     let rooms = vec![
         steam_room(0, &friends[0].1, true, friends[0].3, false),
@@ -2520,6 +2522,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 ]
             }
             Command::LeaveGroup { room } => vec![Event::RoomRemoved(room)],
+            Command::JoinThread { .. } | Command::LeaveThread { .. } => Vec::new(),
             Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => Vec::new(),
             // Any room's members: a few made-up people, seeded by the room.
             Command::LoadMembers { room } => {

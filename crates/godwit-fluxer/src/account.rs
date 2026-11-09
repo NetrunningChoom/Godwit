@@ -217,6 +217,7 @@ impl FluxerAccount {
                 .then(|| u32::try_from(c.recipients.len() + 1).unwrap_or(u32::MAX)),
             last_activity: snowflake_ms(c.last_message_id.as_deref().unwrap_or(&c.id)),
             parent: c.thread().then(|| c.parent.clone()).flatten().map(Into::into),
+            joined_thread: false,
         })
     }
 
@@ -720,7 +721,11 @@ impl FluxerAccount {
             // Fluxer contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Fluxer rooms do not currently expose group leave or recipient editing.
-            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            Command::LeaveGroup { .. }
+            | Command::AddGroupMember { .. }
+            | Command::RemoveGroupMember { .. }
+            | Command::JoinThread { .. }
+            | Command::LeaveThread { .. } => {}
             // Fluxer has no channel webhook manager in this account.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             // A server channel opened: subscribed, as Fluxer's client does.

@@ -344,7 +344,7 @@ impl Shell {
     /// A Home row's menu: 0 pin/unpin, 1 mark read, 2 mark unread, 3 hide/unhide,
     /// 4 muzzle mode on/off for this chat, 5 its notifications (cycles),
     /// 6 its channel settings, 7 "Games in common…", 10/11 move its pin up/down,
-    /// 20..=33 its mute and level.
+    /// 20..=33 its mute and level; 34/35 join or leave a thread.
     pub fn room_menu(&mut self, ui: &AppWindow, row: i32, choice: i32) {
         // A category heading's menu: 6 its settings, 8 move up, 9 move down.
         if let Some(category) = usize::try_from(row)
@@ -372,6 +372,14 @@ impl Shell {
         let Some(room) = usize::try_from(row).ok().and_then(|r| self.room_at(r)) else {
             return;
         };
+        if choice == 34 {
+            self.act(ui, Action::JoinThread(room));
+            return;
+        }
+        if choice == 35 {
+            self.act(ui, Action::LeaveThread(room));
+            return;
+        }
         if choice == 7 {
             self.open_games_for(ui, &room);
             return;

@@ -57,6 +57,9 @@ pub struct Capabilities {
     pub search_has: crate::search::SearchHasSet,
     /// Threads can be started here (from a message, or as a forum's post).
     pub threads: bool,
+    /// A thread can be joined or left; its membership is shown on the room.
+    #[serde(default)]
+    pub join_thread: bool,
     /// A forum: no messages of its own, its posts are threads under it.
     #[serde(default)]
     pub forum: bool,
@@ -138,6 +141,7 @@ impl Capabilities {
             search_filters: crate::search::SearchFilters::NONE,
             search_has: crate::search::SearchHasSet::NONE,
             threads: false,
+            join_thread: false,
             voice: true,
             voice_user_limit: None,
             video: false,
@@ -308,6 +312,10 @@ pub struct Room {
     /// listed under it.
     #[serde(default)]
     pub parent: Option<Arc<str>>,
+    /// Whether the current user is a member of this thread. Only meaningful
+    /// when `capabilities.join_thread` is true.
+    #[serde(default)]
+    pub joined_thread: bool,
     /// Our own notification choices here (see `Capabilities::notify_settings`).
     #[serde(default)]
     pub notify: RoomNotify,

@@ -286,6 +286,7 @@ impl TeamsAccount {
                 .filter(|n| *n > 0),
             last_activity: c.last_ms,
             parent: c.parent.as_deref().map(Into::into),
+            joined_thread: false,
         })
     }
 

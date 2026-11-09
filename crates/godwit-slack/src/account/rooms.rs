@@ -168,6 +168,7 @@ impl SlackAccount {
             member_count: None,
             last_activity: ts_ms(&c.latest),
             parent: None,
+            joined_thread: false,
         })
     }
 

@@ -88,6 +88,7 @@ impl SlackAccount {
             member_count: None,
             last_activity: ts_ms(&t.latest),
             parent: Some(format!("{team}:{channel}").into()),
+            joined_thread: false,
         })
     }
 

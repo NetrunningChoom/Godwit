@@ -320,6 +320,7 @@ impl GChatAccount {
             member_count: None,
             last_activity: c.sort_us / 1000,
             parent: c.parent.as_deref().map(Into::into),
+            joined_thread: false,
         })
     }
 
@@ -1008,7 +1009,11 @@ impl NetworkAccount for GChatAccount {
             // Google Chat contact nicknames stay in Godwit's local contact model.
             Command::SetNickname { .. } => {}
             // Google Chat rooms do not currently expose group leave or recipient editing.
-            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            Command::LeaveGroup { .. }
+            | Command::AddGroupMember { .. }
+            | Command::RemoveGroupMember { .. }
+            | Command::JoinThread { .. }
+            | Command::LeaveThread { .. } => {}
             // Google Chat has no channel webhook manager.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::MarkRead { room, .. } | Command::MarkRoomRead { room } => self.mark_read(&room.raw),

@@ -1405,6 +1405,22 @@ impl NetworkAccount for DiscordAccount {
                     }));
                 }
             }
+            Command::JoinThread { room } => {
+                if let Some(channel) = self.channel_of(&room)
+                    && self.store.channels.get(&channel).is_some_and(|c| c.thread())
+                {
+                    self.net
+                        .send(Cmd::Request(Request::ThreadMembership { channel, join: true }));
+                }
+            }
+            Command::LeaveThread { room } => {
+                if let Some(channel) = self.channel_of(&room)
+                    && self.store.channels.get(&channel).is_some_and(|c| c.thread())
+                {
+                    self.net
+                        .send(Cmd::Request(Request::ThreadMembership { channel, join: false }));
+                }
+            }
             Command::LoadForum {
                 room,
                 sort,
@@ -1801,6 +1817,61 @@ mod tests {
         let room = demo.room_id("50").expect("demo group exists");
         let output = demo.run(Command::LeaveGroup { room: room.clone() });
         assert!(output.contains(&Event::RoomRemoved(room)));
+    }
+
+    #[test]
+    fn thread_membership_gateway_events_and_demo_commands_update_joined_state() {
+        let mut ready_payload = crate::store::test_ready();
+        ready_payload["guilds"][0]["threads"] = json!([
+            {"id":"15", "type":11, "guild_id":"10", "parent_id":"13", "name":"topic", "member":null},
+            {"id":"16", "type":12, "guild_id":"10", "parent_id":"13", "name":"private", "member":null}
+        ]);
+        let (mut account, _, _) = account();
+        let mut initial = Vec::new();
+        account.handle(Ev::Ready(Box::new(ready_payload.clone())), &mut initial);
+        let id = account.room_id("15").expect("thread room");
+        assert!(
+            !account
+                .room("16")
+                .expect("private thread room")
+                .capabilities
+                .join_thread
+        );
+        assert!(!account.room("15").expect("thread room").joined_thread);
+        let mut events = Vec::new();
+        account.dispatch(
+            "THREAD_MEMBERS_UPDATE",
+            &json!({"id":"15", "added_members":[{"user_id":"100"}]}),
+            &mut events,
+        );
+        assert!(account.room("15").expect("thread room").joined_thread);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::RoomUpdated(r) if r.id == id && r.joined_thread))
+        );
+        events.clear();
+        account.dispatch(
+            "THREAD_MEMBERS_UPDATE",
+            &json!({"id":"15", "removed_member_ids":["100"]}),
+            &mut events,
+        );
+        assert!(!account.room("15").expect("thread room").joined_thread);
+
+        let (mut demo, _) = DiscordAccount::demo(ready_payload, HashMap::new());
+        let id = demo.room_id("15").expect("demo thread room");
+        let joined = demo.run(Command::JoinThread { room: id.clone() });
+        assert!(
+            joined
+                .iter()
+                .any(|e| matches!(e, Event::RoomUpdated(r) if r.id == id && r.joined_thread))
+        );
+        let left = demo.run(Command::LeaveThread { room: id.clone() });
+        assert!(
+            left.iter()
+                .any(|e| matches!(e, Event::RoomUpdated(r) if r.id == id && !r.joined_thread))
+        );
+        assert!(demo.room("15").is_some(), "leaving keeps the thread visible");
     }
 
     #[test]

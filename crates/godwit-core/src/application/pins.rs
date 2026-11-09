@@ -214,6 +214,7 @@ mod tests {
             member_count: None,
             last_activity: 0,
             parent: None,
+            joined_thread: false,
         }
     }
 
@@ -392,6 +393,7 @@ mod tests {
                 member_count: None,
                 last_activity: 0,
                 parent: None,
+                joined_thread: false,
             }],
             servers: Vec::new(),
         });

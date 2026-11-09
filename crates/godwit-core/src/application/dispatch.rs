@@ -350,6 +350,26 @@ impl Application {
                 text,
                 tags,
             } => self.dispatch_create_thread(name, message, text, tags),
+            Action::JoinThread(room) => {
+                if self.allows(&room, |c| c.join_thread) && self.state.room(&room).is_some_and(|r| !r.joined_thread) {
+                    vec![Effect::Backend {
+                        account: room.account.clone(),
+                        command: Command::JoinThread { room },
+                    }]
+                } else {
+                    Vec::new()
+                }
+            }
+            Action::LeaveThread(room) => {
+                if self.allows(&room, |c| c.join_thread) && self.state.room(&room).is_some_and(|r| r.joined_thread) {
+                    vec![Effect::Backend {
+                        account: room.account.clone(),
+                        command: Command::LeaveThread { room },
+                    }]
+                } else {
+                    Vec::new()
+                }
+            }
             Action::SetForumSort(sort) => self.dispatch_forum(|f| f.set_sort(sort)),
             Action::SetForumTag(tag) => self.dispatch_forum(|f| f.set_tag(tag)),
             Action::LoadMoreForum => self.dispatch_forum_more(),
