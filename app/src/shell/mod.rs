@@ -54,6 +54,8 @@ type RegisteredMedia = (Vec<(String, MediaFetch)>, Vec<(String, String)>);
 pub struct Shell {
     app: Application,
     navigation_back: Vec<NavigationTarget>,
+    /// Views left by going back, for going forward; a new visit clears it.
+    navigation_forward: Vec<NavigationTarget>,
     replaying_navigation: bool,
     /// Updated by native window focus events; selection alone is not attention.
     window_focused: bool,
@@ -258,6 +260,14 @@ enum NavigationTarget {
     ServerEvents(ServerId),
 }
 
+/// Keeps a navigation stack to its last 32 views.
+fn push_capped(stack: &mut Vec<NavigationTarget>, target: NavigationTarget) {
+    stack.push(target);
+    if stack.len() > 32 {
+        stack.remove(0);
+    }
+}
+
 impl Shell {
     /// `demo`: a made-up world and no accounts (`godwit --demo`): no session
     /// is read, nothing goes out, and settings and contacts aren't saved.
@@ -433,6 +443,7 @@ impl Shell {
         let shell = Self {
             app,
             navigation_back: Vec::new(),
+            navigation_forward: Vec::new(),
             replaying_navigation: false,
             window_focused: false,
             recent_alerts: std::collections::HashMap::new(),
@@ -695,29 +706,10 @@ impl Shell {
                     | Action::OpenGamesInCommon { .. }
             )
         {
-            let state = self.app.state();
-            let current = if state.showing_threads {
-                Some(NavigationTarget::Threads)
-            } else if let Some(server) = state.showing_server_events.as_ref() {
-                Some(NavigationTarget::ServerEvents(server.clone()))
-            } else if state.showing_active {
-                Some(NavigationTarget::Active)
-            } else if state.showing_notifications {
-                Some(NavigationTarget::Notifications)
-            } else if let Some(g) = state.games.as_ref().filter(|_| state.showing_games) {
-                Some(NavigationTarget::Games(g.account.clone()))
-            } else if state.showing_people {
-                Some(NavigationTarget::People)
-            } else if state.showing_friends {
-                Some(NavigationTarget::Friends)
-            } else {
-                state.selected.clone().map(NavigationTarget::Room)
-            };
+            let current = self.navigation_current();
+            self.navigation_forward.clear();
             if let Some(current) = current {
-                self.navigation_back.push(current);
-                if self.navigation_back.len() > 32 {
-                    self.navigation_back.remove(0);
-                }
+                push_capped(&mut self.navigation_back, current);
             }
         }
         // Leaving: its sound now. The core forgets the call at once, so the
@@ -822,24 +814,76 @@ impl Shell {
         }
     }
 
+    /// The view shown now, as a place to come back to.
+    fn navigation_current(&self) -> Option<NavigationTarget> {
+        let state = self.app.state();
+        if state.showing_threads {
+            Some(NavigationTarget::Threads)
+        } else if let Some(server) = state.showing_server_events.as_ref() {
+            Some(NavigationTarget::ServerEvents(server.clone()))
+        } else if state.showing_active {
+            Some(NavigationTarget::Active)
+        } else if state.showing_notifications {
+            Some(NavigationTarget::Notifications)
+        } else if let Some(g) = state.games.as_ref().filter(|_| state.showing_games) {
+            Some(NavigationTarget::Games(g.account.clone()))
+        } else if state.showing_people {
+            Some(NavigationTarget::People)
+        } else if state.showing_friends {
+            Some(NavigationTarget::Friends)
+        } else {
+            state.selected.clone().map(NavigationTarget::Room)
+        }
+    }
+
+    /// Back (Alt+Left, the mouse's back button) through the views visited.
     pub fn navigate_back(&mut self, ui: &AppWindow) {
-        let Some(target) = self.navigation_back.pop() else {
-            return;
+        self.navigate(ui, false);
+    }
+
+    /// Forward (Alt+Right, the mouse's forward button) after going back.
+    pub fn navigate_forward(&mut self, ui: &AppWindow) {
+        self.navigate(ui, true);
+    }
+
+    /// Walks one step through the history (as Yapfast's `navigate`,
+    /// https://github.com/fayber/yapfast/commit/07f7e8cf207d0f0bab5f031b9efd54d9144d90d3),
+    /// skipping rooms that are gone; the view left goes on the other stack.
+    fn navigate(&mut self, ui: &AppWindow, forward: bool) {
+        let action = loop {
+            let stack = if forward {
+                &mut self.navigation_forward
+            } else {
+                &mut self.navigation_back
+            };
+            let Some(target) = stack.pop() else { return };
+            match target {
+                NavigationTarget::Room(room) if self.app.state().room(&room).is_some() => {
+                    break Action::SelectRoom(room);
+                }
+                NavigationTarget::Room(_) => continue,
+                NavigationTarget::Friends => break Action::ShowFriends,
+                NavigationTarget::People => break Action::ShowPeople,
+                NavigationTarget::Active => break Action::ShowActive,
+                NavigationTarget::Notifications => break Action::ShowNotifications,
+                NavigationTarget::Games(account) => {
+                    break Action::OpenGamesInCommon {
+                        account,
+                        with: Vec::new(),
+                    };
+                }
+                NavigationTarget::Threads => break Action::ShowThreads,
+                NavigationTarget::ServerEvents(server) => break Action::OpenServerEvents(server),
+            }
         };
-        let action = match target {
-            NavigationTarget::Room(room) if self.app.state().room(&room).is_some() => Action::SelectRoom(room),
-            NavigationTarget::Friends => Action::ShowFriends,
-            NavigationTarget::People => Action::ShowPeople,
-            NavigationTarget::Active => Action::ShowActive,
-            NavigationTarget::Notifications => Action::ShowNotifications,
-            NavigationTarget::Games(account) => Action::OpenGamesInCommon {
-                account,
-                with: Vec::new(),
-            },
-            NavigationTarget::Threads => Action::ShowThreads,
-            NavigationTarget::ServerEvents(server) => Action::OpenServerEvents(server),
-            NavigationTarget::Room(_) => return,
-        };
+        if let Some(current) = self.navigation_current() {
+            let other = if forward {
+                &mut self.navigation_back
+            } else {
+                &mut self.navigation_forward
+            };
+            push_capped(other, current);
+        }
         self.replaying_navigation = true;
         self.act(ui, action);
         self.replaying_navigation = false;

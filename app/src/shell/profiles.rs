@@ -433,6 +433,7 @@ impl Shell {
         self.picker_for = None;
         self.report = None;
         self.navigation_back.clear();
+        self.navigation_forward.clear();
         self.games.clear();
         self.selection.clear();
         self.card_selection.clear();

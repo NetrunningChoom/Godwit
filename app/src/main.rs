@@ -37,6 +37,18 @@ type ShellCall = Box<dyn FnOnce(&mut Shell, &AppWindow)>;
 /// and so does every callback after it until the queue is empty: order is
 /// kept, or a deferred draft edit could land after the Send that followed
 /// it and bring the sent text back (or leave the send with a stale draft).
+/// One step back or forward, while the workspace is shown and settings are closed.
+fn navigate(sh: &mut Shell, ui: &AppWindow, forward: bool) {
+    if ui.get_screen() != godwit::ui::Screen::Main || ui.get_settings_open() {
+        return;
+    }
+    if forward {
+        sh.navigate_forward(ui);
+    } else {
+        sh.navigate_back(ui);
+    }
+}
+
 fn with_shell(ui: &slint::Weak<AppWindow>, f: impl FnOnce(&mut Shell, &AppWindow) + 'static) {
     let Some(window) = ui.upgrade() else { return };
     let Some(shell) = SHELL.with(|s| s.borrow().clone()) else {
@@ -872,6 +884,7 @@ fn connect_callbacks(ui: &AppWindow) {
         let w = w.clone();
         // Where the pointer is (logical), for re-sending accelerated wheel turns.
         let mut pointer = slint::LogicalPosition::default();
+        let mut modifiers = winit::keyboard::ModifiersState::empty();
         let mut wheel = godwit::wheel::Wheel::default();
         ui.window().on_winit_window_event(move |window, event| {
             match event {
@@ -879,6 +892,7 @@ fn connect_callbacks(ui: &AppWindow) {
                     let focused = *focused;
                     with_shell(&w, move |sh, _| sh.window_focus_changed(focused));
                 }
+                winit::event::WindowEvent::ModifiersChanged(m) => modifiers = m.state(),
                 winit::event::WindowEvent::CursorMoved { position, .. } => {
                     let scale = f64::from(window.scale_factor());
                     #[allow(clippy::cast_possible_truncation)]
@@ -899,12 +913,40 @@ fn connect_callbacks(ui: &AppWindow) {
                     });
                     return EventResult::PreventDefault;
                 }
-                winit::event::WindowEvent::MouseInput {
-                    state: winit::event::ElementState::Released,
-                    button: winit::event::MouseButton::Back,
-                    ..
-                } => {
-                    with_shell(&w, |sh, ui| sh.navigate_back(ui));
+                // The mouse's side buttons and Alt+Left/Right walk the views
+                // visited, only on the workspace with settings closed (as
+                // Yapfast: https://github.com/fayber/yapfast/commit/07f7e8cf207d0f0bab5f031b9efd54d9144d90d3).
+                // Both press and release are kept from Slint so neither is
+                // taken for a click.
+                winit::event::WindowEvent::MouseInput { state, button, .. }
+                    if matches!(
+                        button,
+                        winit::event::MouseButton::Back | winit::event::MouseButton::Forward
+                    ) =>
+                {
+                    if *state == winit::event::ElementState::Released {
+                        let forward = *button == winit::event::MouseButton::Forward;
+                        with_shell(&w, move |sh, ui| navigate(sh, ui, forward));
+                    }
+                    return EventResult::PreventDefault;
+                }
+                winit::event::WindowEvent::KeyboardInput { event, .. }
+                    if event.state == winit::event::ElementState::Pressed
+                        && modifiers.alt_key()
+                        && !modifiers.control_key()
+                        && !modifiers.shift_key()
+                        && matches!(
+                            event.logical_key,
+                            winit::keyboard::Key::Named(
+                                winit::keyboard::NamedKey::ArrowLeft | winit::keyboard::NamedKey::ArrowRight
+                            )
+                        ) =>
+                {
+                    let forward =
+                        event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::ArrowRight);
+                    if !event.repeat {
+                        with_shell(&w, move |sh, ui| navigate(sh, ui, forward));
+                    }
                     return EventResult::PreventDefault;
                 }
                 _ => {}
