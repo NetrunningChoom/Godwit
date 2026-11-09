@@ -12,9 +12,9 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use steam_vent::{Connection, ConnectionError, ConnectionTrait, LoginError, ServerList};
 use steam_vent_proto_steam::steammessages_chat_steamclient::{
-    CChatRoom_ChatRoomGroupRoomsChange_Notification, CChatRoom_IncomingChatMessage_Notification,
-    CChatRoom_MemberStateChange_Notification, CChatRoom_MessageReaction_Notification,
-    ChatRoomClient_NotifyChatGroupUserStateChanged_Notification,
+    CChatRoom_ChatRoomGroupRoomsChange_Notification, CChatRoom_ChatRoomHeaderState_Notification,
+    CChatRoom_IncomingChatMessage_Notification, CChatRoom_MemberStateChange_Notification,
+    CChatRoom_MessageReaction_Notification, ChatRoomClient_NotifyChatGroupUserStateChanged_Notification,
 };
 use steam_vent_proto_steam::steammessages_clientserver_friends::{
     CMsgClientChangeStatus, CMsgClientEmoticonList, CMsgClientFriendsList, CMsgClientGetEmoticonList,
@@ -184,6 +184,17 @@ pub enum Cmd {
     GroupCreate {
         name: String,
         friends: Vec<u64>,
+    },
+    GroupInvite {
+        group: u64,
+        friend: u64,
+    },
+    GroupLeave {
+        group: u64,
+    },
+    GroupRename {
+        group: u64,
+        name: String,
     },
 }
 
@@ -785,6 +796,40 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                 });
             }
         }
+        Cmd::GroupInvite { group, friend } => {
+            if let Some(conn) = st.conn.clone() {
+                let out = out.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = crate::groups::invite(&conn, group, friend).await {
+                        out.send(Ev::Notice(format!(
+                            "Couldn't invite Steam friend to group chat: {error}"
+                        )));
+                    }
+                });
+            }
+        }
+        Cmd::GroupLeave { group } => {
+            if let Some(conn) = st.conn.clone() {
+                let out = out.clone();
+                tokio::spawn(async move {
+                    match crate::groups::leave(&conn, group).await {
+                        Ok(()) => fetch_groups(conn, out).await,
+                        Err(error) => out.send(Ev::Notice(format!("Couldn't leave Steam group chat: {error}"))),
+                    }
+                });
+            }
+        }
+        Cmd::GroupRename { group, name } => {
+            if let Some(conn) = st.conn.clone() {
+                let out = out.clone();
+                tokio::spawn(async move {
+                    match crate::groups::rename(&conn, group, &name).await {
+                        Ok(()) => fetch_groups(conn, out).await,
+                        Err(error) => out.send(Ev::Notice(format!("Couldn't rename Steam group chat: {error}"))),
+                    }
+                });
+            }
+        }
         Cmd::GroupSend {
             group,
             chat,
@@ -1307,6 +1352,7 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
     let mut group_messages = conn.on_notification::<CChatRoom_IncomingChatMessage_Notification>();
     let mut group_reactions = conn.on_notification::<CChatRoom_MessageReaction_Notification>();
     let mut group_rooms = conn.on_notification::<CChatRoom_ChatRoomGroupRoomsChange_Notification>();
+    let mut group_headers = conn.on_notification::<CChatRoom_ChatRoomHeaderState_Notification>();
     let mut group_states = conn.on_notification::<ChatRoomClient_NotifyChatGroupUserStateChanged_Notification>();
     let mut member_states = conn.on_notification::<CChatRoom_MemberStateChange_Notification>();
     let mut favourites_changed = conn.on_notification::<crate::favourites::Changed>();
@@ -1421,6 +1467,7 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
             loop {
                 let more = tokio::select! {
                     n = group_rooms.next() => n.is_some(),
+                    n = group_headers.next() => n.is_some(),
                     n = group_states.next() => n.is_some(),
                     n = member_states.next() => n.is_some(),
                 };

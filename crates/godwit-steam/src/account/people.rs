@@ -145,7 +145,7 @@ impl SteamAccount {
         let persona = friend.map(|friend| &friend.persona);
         let own = self.me == Some(id);
         Some(Profile {
-            user: UserId::new(account, id.to_string()),
+            user: UserId::new(account.clone(), id.to_string()),
             name: self.name_of(id).into(),
             username: id.to_string().into(),
             avatar_url: if own {
@@ -168,7 +168,16 @@ impl SteamAccount {
             bot: false,
             has_friends: true,
             moderation: None,
-            group_moderation: None,
+            group_moderation: self.groups.values().find_map(|g| {
+                let me = crate::backend::account_id(self.me?);
+                let rank = g.ranks.get(&me).copied().unwrap_or_default();
+                (id != self.me? && rank == 50).then(|| godwit_core::members::GroupModeration {
+                    room: RoomId::new(account.clone(), group_room_raw(g.id, g.default_chat)),
+                    add_member: true,
+                    remove_member: false,
+                    transfer_ownership: false,
+                })
+            }),
             can_block: !own,
             can_ignore: false,
             ignored: false,

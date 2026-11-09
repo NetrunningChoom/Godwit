@@ -62,6 +62,7 @@ impl SteamAccount {
                 g.avatar_url.clone().map(Into::into)
             },
             capabilities: Capabilities {
+                leave: !server,
                 // Steam rooms have text; voice only where the group allows it.
                 voice: r.voice_allowed,
                 voice_unavailable: false,
@@ -118,7 +119,27 @@ impl SteamAccount {
                 }],
                 muted: false,
                 folder: None,
-                rights: Default::default(),
+                rights: godwit_core::server::ServerRights {
+                    invite: g
+                        .ranks
+                        .get(&backend::account_id(self.me.unwrap_or_default()))
+                        .copied()
+                        .unwrap_or_default()
+                        >= 40,
+                    settings: g
+                        .ranks
+                        .get(&backend::account_id(self.me.unwrap_or_default()))
+                        .copied()
+                        .unwrap_or_default()
+                        == 50,
+                    owner: g
+                        .ranks
+                        .get(&backend::account_id(self.me.unwrap_or_default()))
+                        .copied()
+                        .unwrap_or_default()
+                        == 50,
+                    ..Default::default()
+                },
             })
             .collect()
     }

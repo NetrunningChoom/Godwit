@@ -9,8 +9,10 @@ use steam_vent::{Connection, ConnectionTrait};
 use steam_vent_proto_steam::steammessages_chat_steamclient::{
     CChatRoom_AckChatMessage_Notification, CChatRoom_CreateChatRoomGroup_Request,
     CChatRoom_GetChatRoomGroupSummary_Request, CChatRoom_GetChatRoomGroupSummary_Response,
-    CChatRoom_GetMessageHistory_Request, CChatRoom_GetMyChatRoomGroups_Request, CChatRoom_JoinChatRoomGroup_Request,
-    CChatRoom_SendChatMessage_Request, CChatRoom_SetSessionActiveChatRoomGroups_Request, CChatRoomState,
+    CChatRoom_GetMessageHistory_Request, CChatRoom_GetMyChatRoomGroups_Request,
+    CChatRoom_InviteFriendToChatRoomGroup_Request, CChatRoom_JoinChatRoomGroup_Request,
+    CChatRoom_LeaveChatRoomGroup_Request, CChatRoom_RenameChatRoomGroup_Request, CChatRoom_SendChatMessage_Request,
+    CChatRoom_SetSessionActiveChatRoomGroups_Request, CChatRoomState,
 };
 
 use crate::backend::Line;
@@ -178,13 +180,65 @@ pub async fn join(conn: &Connection, group: u64, chat: u64) -> Result<(), String
 
 /// Create an ad-hoc group chat with Steam friends, as Steam's ChatRoom service does.
 pub async fn create(conn: &Connection, name: &str, friends: &[u64]) -> Result<(), String> {
-    let req = CChatRoom_CreateChatRoomGroup_Request {
+    conn.service_method(create_request(name, friends))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn create_request(name: &str, friends: &[u64]) -> CChatRoom_CreateChatRoomGroup_Request {
+    CChatRoom_CreateChatRoomGroup_Request {
         name: Some(name.to_owned()),
         steamid_invitees: friends.to_vec(),
         ..Default::default()
-    };
-    conn.service_method(req).await.map_err(|e| e.to_string())?;
+    }
+}
+
+/// Invite via ChatRoom.InviteFriendToChatRoomGroup in steammessages_chat.steamclient.proto.
+pub async fn invite(conn: &Connection, group: u64, friend: u64) -> Result<(), String> {
+    conn.service_method(invite_request(group, friend))
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn invite_request(group: u64, friend: u64) -> CChatRoom_InviteFriendToChatRoomGroup_Request {
+    CChatRoom_InviteFriendToChatRoomGroup_Request {
+        chat_group_id: Some(group),
+        steamid: Some(friend),
+        ..Default::default()
+    }
+}
+
+/// Leave via ChatRoom.LeaveChatRoomGroup in steammessages_chat.steamclient.proto.
+pub async fn leave(conn: &Connection, group: u64) -> Result<(), String> {
+    conn.service_method(leave_request(group))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn leave_request(group: u64) -> CChatRoom_LeaveChatRoomGroup_Request {
+    CChatRoom_LeaveChatRoomGroup_Request {
+        chat_group_id: Some(group),
+        ..Default::default()
+    }
+}
+
+/// Rename via ChatRoom.RenameChatRoomGroup; ChatRoom ranks identify the owner.
+pub async fn rename(conn: &Connection, group: u64, name: &str) -> Result<(), String> {
+    conn.service_method(rename_request(group, name))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn rename_request(group: u64, name: &str) -> CChatRoom_RenameChatRoomGroup_Request {
+    CChatRoom_RenameChatRoomGroup_Request {
+        chat_group_id: Some(group),
+        name: Some(name.to_owned()),
+        ..Default::default()
+    }
 }
 
 /// A group's picture: its uploaded one, or by hash like an avatar. Groups
@@ -283,6 +337,19 @@ pub async fn ack(conn: &Connection, group: u64, chat: u64, time: u32) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn group_chat_requests_encode_group_friend_and_name() {
+        let create = create_request("Friends", &[11, 22]);
+        assert_eq!(create.name.as_deref(), Some("Friends"));
+        assert_eq!(create.steamid_invitees, [11, 22]);
+        let invite = invite_request(7, 22);
+        assert_eq!(invite.chat_group_id, Some(7));
+        assert_eq!(invite.steamid, Some(22));
+        assert_eq!(leave_request(7).chat_group_id, Some(7));
+        let rename = rename_request(7, "New name");
+        assert_eq!(rename.chat_group_id, Some(7));
+        assert_eq!(rename.name.as_deref(), Some("New name"));
+    }
     fn info(clan: Option<u32>, rooms: usize) -> GroupInfo {
         GroupInfo {
             clan,

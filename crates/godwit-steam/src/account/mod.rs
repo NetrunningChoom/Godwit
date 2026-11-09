@@ -411,6 +411,63 @@ impl NetworkAccount for SteamAccount {
                     self.net.send(Cmd::GroupCreate { name, friends });
                 }
             }
+            Command::LeaveGroup { room } => {
+                if let Some((group, _)) = parse_group_room(&room.raw) {
+                    self.net.send(Cmd::GroupLeave { group });
+                }
+            }
+            Command::AddGroupMember { room, user } => {
+                if let (Some((group, _)), Ok(friend)) = (parse_group_room(&room.raw), user.raw.parse::<u64>()) {
+                    self.net.send(Cmd::GroupInvite { group, friend });
+                }
+            }
+            Command::SaveServerOverview { server, edit, .. } => {
+                if let (Some(name), Some(group)) =
+                    (edit.name, server.raw.strip_prefix('g').and_then(|v| v.parse().ok()))
+                {
+                    self.net.send(Cmd::GroupRename {
+                        group,
+                        name: name.to_string(),
+                    });
+                }
+            }
+            Command::LoadServerOverview { server, request } => {
+                if let (Some(account), Some(group)) = (
+                    self.account.clone(),
+                    server.raw.strip_prefix('g').and_then(|v| v.parse::<u64>().ok()),
+                ) && let Some(info) = self.groups.get(&group)
+                {
+                    let owner = info.ranks.get(&crate::backend::account_id(self.me.unwrap_or_default())) == Some(&50);
+                    out.push(Event::ServerOverview {
+                        server,
+                        request,
+                        result: Ok(godwit_core::server_settings::ServerOverview {
+                            name: self.group_title(group).into(),
+                            can_manage: owner,
+                            owner,
+                            channels: info
+                                .rooms
+                                .iter()
+                                .map(|r| {
+                                    (
+                                        RoomId::new(account.clone(), group_room_raw(group, r.chat)),
+                                        r.name.clone().into(),
+                                    )
+                                })
+                                .collect(),
+                            ..Default::default()
+                        }),
+                    });
+                }
+            }
+            Command::ServerAdmin {
+                server,
+                op: godwit_core::server_settings::ServerAdmin::Leave,
+            } => {
+                if let Some(group) = server.raw.strip_prefix('g').and_then(|v| v.parse().ok()) {
+                    self.net.send(Cmd::GroupLeave { group });
+                }
+            }
             // Steam has no channel webhook manager.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::SendFriendRequest { request, name } => self.net.send(Cmd::AddFriend {
@@ -765,8 +822,7 @@ impl NetworkAccount for SteamAccount {
                 }
             }
             Command::LeaveCall => self.net.send(Cmd::CallCmd(SessionCmd::Leave)),
-            // Steam rooms do not yet advertise group leaving or member editing.
-            Command::LeaveGroup { .. } | Command::AddGroupMember { .. } | Command::RemoveGroupMember { .. } => {}
+            Command::RemoveGroupMember { .. } => {}
             Command::SetMuted(muted) => self.net.send(Cmd::CallCmd(SessionCmd::Muted(muted))),
             Command::SetDeafened(deafened) => self.net.send(Cmd::CallCmd(SessionCmd::Deafened(deafened))),
             // Steam's calls are voice only.
@@ -874,6 +930,11 @@ fn group_room_raw(group: u64, chat: u64) -> String {
 
 fn group_server_raw(group: u64) -> String {
     format!("g{group}")
+}
+
+fn parse_group_room(raw: &str) -> Option<(u64, u64)> {
+    let (group, chat) = raw.strip_prefix('g')?.split_once('-')?;
+    Some((group.parse().ok()?, chat.parse().ok()?))
 }
 
 /// The (group, chat) an invite code names (`g<group>-<chat>`, chat 0: the default).
@@ -1038,9 +1099,11 @@ mod tests {
             .collect();
         let adhoc = rooms.iter().find(|r| &*r.id.raw == "g20-200").expect("group dm");
         assert_eq!(adhoc.kind, RoomKind::Group);
+        assert!(adhoc.capabilities.leave);
         assert!(adhoc.capabilities.voice);
         let voice = rooms.iter().find(|r| &*r.id.raw == "g10-101").expect("channel");
         assert!(matches!(voice.kind, RoomKind::Channel { .. }));
+        assert!(!voice.capabilities.leave);
         assert!(events.iter().any(
             |e| matches!(e, Event::VoiceOccupants { room, members } if &*room.raw == "g10-101" && members.len() == 1)
         ));
@@ -1062,7 +1125,7 @@ mod tests {
                 ..
             })
         ));
-        a.run(Command::JoinCall { room });
+        a.run(Command::JoinCall { room: room.clone() });
         assert!(matches!(
             commands.try_recv(),
             Ok(Cmd::GroupCall {
@@ -1071,6 +1134,31 @@ mod tests {
                 ..
             })
         ));
+        a.run(Command::LeaveGroup {
+            room: RoomId::new(room.account.clone(), "g20-200"),
+        });
+        assert!(matches!(commands.try_recv(), Ok(Cmd::GroupLeave { group: 20 })));
+        a.run(Command::AddGroupMember {
+            room: RoomId::new(room.account.clone(), "g20-200"),
+            user: UserId::new(room.account.clone(), backend::steam_id(4).to_string()),
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::GroupInvite { group: 20, friend }) if friend == backend::steam_id(4))
+        );
+    }
+
+    #[test]
+    fn group_refresh_notification_updates_the_displayed_name() {
+        let (mut a, tx, _) = ready_with_commands();
+        tx.send(Ev::Groups(vec![group(20, None, &[(200, "General", false)])]))
+            .unwrap();
+        a.poll();
+        let mut renamed = group(20, None, &[(200, "General", false)]);
+        renamed.name = "Renamed group".into();
+        tx.send(Ev::Groups(vec![renamed])).unwrap();
+        let events = a.poll();
+        assert!(events.iter().any(|e| matches!(e, Event::RoomUpdated(room)
+            if &*room.id.raw == "g20-200" && &*room.name == "Renamed group")));
     }
 
     #[test]
