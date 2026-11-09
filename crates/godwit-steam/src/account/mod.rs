@@ -127,6 +127,7 @@ pub struct SteamAccount {
     /// Sent AccountReady already (for this connection).
     ready: bool,
     friends: HashMap<u64, Friend>,
+    blocked: Vec<UserId>,
     /// Steam games' names by app id, looked up once each (personas name
     /// only non-Steam games), and the ones asked for.
     app_names: HashMap<u32, String>,
@@ -291,6 +292,7 @@ impl SteamAccount {
             my_state: None,
             ready: false,
             friends: HashMap::new(),
+            blocked: Vec::new(),
             app_names: HashMap::new(),
             asked_apps: HashSet::new(),
             name_waits: Vec::new(),
@@ -422,6 +424,22 @@ impl NetworkAccount for SteamAccount {
             Command::RemoveFriend { user } => {
                 if let Ok(friend) = user.raw.parse::<u64>() {
                     self.net.send(Cmd::RemoveFriend(friend));
+                }
+            }
+            Command::BlockUser { user } if self.me != user.raw.parse::<u64>().ok() => {
+                if let Ok(steamid) = user.raw.parse::<u64>() {
+                    self.net.send(Cmd::IgnoreFriend {
+                        steamid,
+                        unignore: false,
+                    });
+                }
+            }
+            Command::UnblockUser { user } if self.me != user.raw.parse::<u64>().ok() => {
+                if let Ok(steamid) = user.raw.parse::<u64>() {
+                    self.net.send(Cmd::IgnoreFriend {
+                        steamid,
+                        unignore: true,
+                    });
                 }
             }
             Command::LoadGameLibraries { users } => {
@@ -1477,6 +1495,65 @@ mod tests {
         .unwrap();
         assert!(account.poll().iter().any(|e| matches!(e, Event::Profile(p)
             if &*p.name == "Updated friend" && p.avatar_url.is_some())));
+    }
+
+    #[test]
+    fn blocked_relationships_leave_friends_and_update_blocked_list() {
+        let (mut account, tx) = connected();
+        tx.send(Ev::ReadyDeadline).unwrap();
+        account.poll();
+        let (friend, stranger) = (backend::steam_id(2), backend::steam_id(3));
+        tx.send(Ev::FriendsList {
+            friends: vec![(friend, FRIEND), (stranger, BLOCKED)],
+            incremental: false,
+        })
+        .unwrap();
+        let events = account.poll();
+        assert!(events.iter().any(|e| matches!(e, Event::Friends { people, .. }
+            if people.len() == 1 && people[0].id.raw.as_ref() == friend.to_string())));
+        assert!(events.iter().any(|e| matches!(e, Event::Blocked { users, .. }
+            if users.len() == 1 && users[0].raw.as_ref() == stranger.to_string())));
+        assert!(
+            account
+                .profile(stranger)
+                .is_some_and(|p| p.relationship == Relationship::Blocked && p.can_block)
+        );
+        tx.send(Ev::FriendsList {
+            friends: vec![(stranger, 0)],
+            incremental: true,
+        })
+        .unwrap();
+        assert!(
+            account
+                .poll()
+                .iter()
+                .any(|e| matches!(e, Event::Blocked { users, .. } if users.is_empty()))
+        );
+    }
+
+    #[test]
+    fn block_commands_map_to_ignore_and_never_target_self() {
+        let (net, mut commands) = Handle::detached();
+        let (_tx, events) = mpsc::channel();
+        let mut account = SteamAccount::with(0, net, events, Status::Connecting);
+        account.me = Some(backend::steam_id(1));
+        let user = |id: u64| UserId::new(AccountId::new(Network::Steam, "me"), id.to_string());
+        account.run(Command::BlockUser {
+            user: user(backend::steam_id(2)),
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::IgnoreFriend { steamid, unignore: false }) if steamid == backend::steam_id(2))
+        );
+        account.run(Command::UnblockUser {
+            user: user(backend::steam_id(2)),
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::IgnoreFriend { steamid, unignore: true }) if steamid == backend::steam_id(2))
+        );
+        account.run(Command::BlockUser {
+            user: user(backend::steam_id(1)),
+        });
+        assert!(commands.try_recv().is_err());
     }
 
     #[test]

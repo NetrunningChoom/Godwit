@@ -57,6 +57,11 @@ const RECONNECT: [u64; 6] = [3, 10, 30, 60, 300, 900];
 /// From the account to the network thread.
 pub enum Cmd {
     RemoveFriend(u64),
+    /// Ignore or unignore a Steam account (Steam's block relationship).
+    IgnoreFriend {
+        steamid: u64,
+        unignore: bool,
+    },
     /// Star or unstar a friend (account id) in the friends list's favourites.
     SetFavourite {
         friend: u32,
@@ -573,6 +578,26 @@ fn http(st: &mut State) -> Result<reqwest::Client, String> {
 
 fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
     match cmd {
+        Cmd::IgnoreFriend { steamid, unignore } => {
+            let Some(conn) = st.conn.clone() else {
+                return out.send(Ev::Notice(
+                    "Steam is disconnected. Try again after reconnecting.".into(),
+                ));
+            };
+            tokio::spawn(async move {
+                use steam_vent_proto_steam::steammessages_player_steamclient::CPlayer_IgnoreFriend_Request;
+                if let Err(e) = conn
+                    .service_method(CPlayer_IgnoreFriend_Request {
+                        steamid: Some(steamid),
+                        unignore: Some(unignore),
+                        ..Default::default()
+                    })
+                    .await
+                {
+                    diag(&format!("Steam ignore request failed: {e}"));
+                }
+            });
+        }
         Cmd::RemoveFriend(friend) => {
             let Some(conn) = st.conn.clone() else {
                 return out.send(Ev::Notice(

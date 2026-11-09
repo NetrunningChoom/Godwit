@@ -133,6 +133,7 @@ impl SteamAccount {
                     self.typing_sent.clear();
                     self.ready = false;
                     self.friends.clear();
+                    self.blocked.clear();
                     self.chats.clear();
                     let error = Some(reason).filter(|r| !r.is_empty());
                     self.status = Status::SignedOut { error };

@@ -7,7 +7,7 @@ use super::*;
 impl SteamAccount {
     /// After friends' personas changed: the friends list, member lists and
     /// unnamed groups (named by their members), and these chats' rows.
-    pub(super) fn personas_changed(&self, changed_friends: bool, changed_rooms: Vec<u64>, out: &mut Vec<Event>) {
+    pub(super) fn personas_changed(&mut self, changed_friends: bool, changed_rooms: Vec<u64>, out: &mut Vec<Event>) {
         if self.ready {
             if changed_friends {
                 self.send_friends(out);
@@ -69,7 +69,7 @@ impl SteamAccount {
         self.send_friends(out);
     }
 
-    pub(super) fn send_friends(&self, out: &mut Vec<Event>) {
+    pub(super) fn send_friends(&mut self, out: &mut Vec<Event>) {
         let Some(account) = self.account.clone() else { return };
         if !self.ready {
             return;
@@ -119,6 +119,20 @@ impl SteamAccount {
             account: account.clone(),
             activities,
         });
+        let mut blocked: Vec<UserId> = self
+            .friends
+            .iter()
+            .filter(|(_, f)| f.relationship == BLOCKED)
+            .map(|(id, _)| UserId::new(account.clone(), id.to_string()))
+            .collect();
+        blocked.sort_by(|a, b| a.raw.cmp(&b.raw));
+        if blocked != self.blocked {
+            self.blocked = blocked.clone();
+            out.push(Event::Blocked {
+                account: account.clone(),
+                users: blocked,
+            });
+        }
         out.push(Event::Friends { account, people });
         if let Some(profile) = self.profile_for.and_then(|id| self.profile(id)) {
             out.push(Event::Profile(profile));
@@ -155,7 +169,8 @@ impl SteamAccount {
             has_friends: true,
             moderation: None,
             group_moderation: None,
-            can_block: false,
+            can_block: !own,
+            // Steam reports are handled through the Steam Community website.
             can_report: false,
             mutual_servers: Vec::new(),
             mutual_friends: Vec::new(),
