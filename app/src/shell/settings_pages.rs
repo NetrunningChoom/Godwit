@@ -129,6 +129,9 @@ impl Shell {
         let s = &self.settings;
         ui.set_notifications(s.notifications);
         ui.set_sounds(s.sounds);
+        ui.set_message_sound(s.message_sound);
+        ui.set_call_ring_sound(s.call_ring_sound);
+        ui.set_call_event_sounds(s.call_event_sounds);
         ui.set_muzzle(s.muzzle);
         let labels = |l: &[&str]| -> slint::ModelRc<slint::SharedString> {
             std::rc::Rc::new(slint::VecModel::from(l.iter().map(|&x| x.into()).collect::<Vec<_>>())).into()
@@ -585,6 +588,9 @@ impl Shell {
         let mut s = self.settings.clone();
         s.notifications = ui.get_notifications();
         s.sounds = ui.get_sounds();
+        s.message_sound = ui.get_message_sound();
+        s.call_ring_sound = ui.get_call_ring_sound();
+        s.call_event_sounds = ui.get_call_event_sounds();
         s.muzzle = ui.get_muzzle();
         let pick = |choices: &[u64], index: i32, old: u64| {
             usize::try_from(index)

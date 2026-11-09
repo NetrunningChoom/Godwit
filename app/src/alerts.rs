@@ -124,13 +124,18 @@ impl Alerts {
                 let tone = godwit_voice::sounds::Tone::ALL
                     .get(settings.message_tone)
                     .map_or(godwit_voice::sounds::Tone::Marimba, |(t, _)| *t);
-                self.sound(settings, Sound::MessageTone(tone));
+                if sound_enabled(settings, Sound::MessageTone(tone)) {
+                    self.sound(settings, Sound::MessageTone(tone));
+                }
             }
             AlertKind::Call => {
-                let tone = settings
-                    .sounds
-                    .then(|| sounds::play(Sound::Ring, settings.voice.output_device.clone(), SOUND_VOLUME))
-                    .and_then(|r| r.map_err(|e| eprintln!("error: ringing: {e:#}")).ok());
+                let tone = if sound_enabled(settings, Sound::Ring) {
+                    sounds::play(Sound::Ring, settings.voice.output_device.clone(), SOUND_VOLUME)
+                        .map_err(|e| eprintln!("error: ringing: {e:#}"))
+                        .ok()
+                } else {
+                    None
+                };
                 self.ringing = Some((room.clone(), tone));
             }
         }
@@ -183,7 +188,7 @@ impl Alerts {
     pub fn sound(&mut self, settings: &Settings, sound: Sound) {
         let now = Instant::now();
         self.playing.retain(|(until, _)| *until > now);
-        if !settings.sounds {
+        if !sound_enabled(settings, sound) {
             return;
         }
         match sounds::play(sound, settings.voice.output_device.clone(), SOUND_VOLUME) {
@@ -232,6 +237,38 @@ impl Alerts {
                 running
             }
         }
+    }
+}
+
+fn sound_enabled(settings: &Settings, sound: Sound) -> bool {
+    settings.sounds
+        && match sound {
+            Sound::Message | Sound::MessageTone(_) => settings.message_sound,
+            Sound::Ring => settings.call_ring_sound,
+            Sound::Join | Sound::Leave => settings.call_event_sounds,
+            _ => true,
+        }
+}
+
+#[cfg(test)]
+mod sound_setting_tests {
+    use super::*;
+
+    #[test]
+    fn sound_categories_follow_their_independent_settings() {
+        let mut settings = Settings {
+            message_sound: false,
+            call_ring_sound: false,
+            call_event_sounds: false,
+            ..Settings::default()
+        };
+        assert!(!sound_enabled(&settings, Sound::Message));
+        assert!(!sound_enabled(&settings, Sound::Ring));
+        assert!(!sound_enabled(&settings, Sound::Join));
+        assert!(!sound_enabled(&settings, Sound::Leave));
+        assert!(sound_enabled(&settings, Sound::Mute));
+        settings.sounds = false;
+        assert!(!sound_enabled(&settings, Sound::Mute));
     }
 }
 

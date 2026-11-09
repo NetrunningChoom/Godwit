@@ -774,6 +774,9 @@ export component AppWindow inherits Window {
 
     in-out property <bool> notifications;
     in-out property <bool> sounds;
+    in-out property <bool> message-sound;
+    in-out property <bool> call-ring-sound;
+    in-out property <bool> call-event-sounds;
     in-out property <bool> muzzle;
     in property <[string]> muzzle-pauses;
     in-out property <int> muzzle-pause-index;
@@ -1844,6 +1847,9 @@ export component AppWindow inherits Window {
 
         notifications <=> root.notifications;
         sounds <=> root.sounds;
+        message-sound <=> root.message-sound;
+        call-ring-sound <=> root.call-ring-sound;
+        call-event-sounds <=> root.call-event-sounds;
         muzzle <=> root.muzzle;
         muzzle-pauses: root.muzzle-pauses;
         muzzle-pause-index <=> root.muzzle-pause-index;

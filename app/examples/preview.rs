@@ -2194,6 +2194,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Screen::Main
             }),
         ),
+        Scene::new(
+            "settings-notifications-sounds",
+            Box::new(|_, ui, _, _| {
+                ui.set_settings_open(true);
+                ui.set_settings_section(1);
+                ui.set_sounds(true);
+                ui.set_message_sound(false);
+                ui.set_call_ring_sound(true);
+                ui.set_call_event_sounds(false);
+                Screen::Main
+            }),
+        ),
         Scene {
             escape: true,
             ..Scene::new(

@@ -36,6 +36,12 @@ pub struct Settings {
     pub notifications: bool,
     /// Message, ringing and call join/leave sounds.
     pub sounds: bool,
+    /// Whether new-message sounds play when sounds are enabled.
+    pub message_sound: bool,
+    /// Whether incoming calls ring when sounds are enabled.
+    pub call_ring_sound: bool,
+    /// Whether call join/leave cues play when sounds are enabled.
+    pub call_event_sounds: bool,
     /// Muzzle mode: a burst of messages from one sender makes noise once,
     /// the rest come in quietly until they pause (see `alerts`).
     pub muzzle: bool,
@@ -150,6 +156,9 @@ impl Default for Settings {
             emoji_pack: "twemoji".to_owned(),
             notifications: true,
             sounds: true,
+            message_sound: true,
+            call_ring_sound: true,
+            call_event_sounds: true,
             // Off unless asked for: quieter alerts would be unexpected.
             muzzle: false,
             muzzle_pause_secs: MUZZLE_PAUSES[1],
@@ -521,6 +530,17 @@ mod tests {
             !partial.notifications && partial.dark,
             "missing fields take their defaults"
         );
+        assert!(partial.message_sound && partial.call_ring_sound && partial.call_event_sounds);
+        let mut changed = Settings {
+            message_sound: false,
+            call_ring_sound: false,
+            call_event_sounds: false,
+            ..Settings::default()
+        };
+        changed.migrate_profiles();
+        save(&path, &changed).unwrap();
+        let loaded = load(&path).unwrap();
+        assert!(!loaded.message_sound && !loaded.call_ring_sound && !loaded.call_event_sounds);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

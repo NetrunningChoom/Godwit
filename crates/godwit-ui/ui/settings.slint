@@ -136,6 +136,9 @@ export component Settings inherits Rectangle {
 
     in-out property <bool> notifications;
     in-out property <bool> sounds;
+    in-out property <bool> message-sound;
+    in-out property <bool> call-ring-sound;
+    in-out property <bool> call-event-sounds;
     in-out property <bool> muzzle;
     // Muzzle mode's times: rows of `muzzle-pauses` and `muzzle-maxes`.
     in property <[string]> muzzle-pauses;
@@ -536,6 +539,21 @@ export component Settings inherits Rectangle {
                         label: "Sounds";
                         detail: "A sound for new messages, a ringtone for calls, and a tone when someone joins or leaves a call.";
                         Toggle { y: (parent.height - self.height) / 2; checked: root.sounds; toggled(on) => { root.sounds = on; root.changed(); } }
+                    }
+                    Row {
+                        label: "New message sound";
+                        detail: "Play a sound for incoming messages.";
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.message-sound; enabled: root.sounds; toggled(on) => { root.message-sound = on; root.changed(); } }
+                    }
+                    Row {
+                        label: "Incoming call ring";
+                        detail: "Play a ringtone for incoming calls.";
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.call-ring-sound; enabled: root.sounds; toggled(on) => { root.call-ring-sound = on; root.changed(); } }
+                    }
+                    Row {
+                        label: "Call join and leave sounds";
+                        detail: "Play a cue when someone joins or leaves a call.";
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.call-event-sounds; enabled: root.sounds; toggled(on) => { root.call-event-sounds = on; root.changed(); } }
                     }
                     Row {
                         label: "Muzzle mode";
