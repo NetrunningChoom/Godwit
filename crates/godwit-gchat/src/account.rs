@@ -21,6 +21,9 @@ use godwit_core::room::{Capabilities, Room, RoomEncryption, RoomKind};
 use crate::backend::{self, Change, Cmd, Ev, Handle};
 use crate::{api, proto, session};
 
+/// The longest thread prefix one older-history request asks for.
+const MAX_THREAD_PAGE: usize = 1000;
+
 /// Where signing in stands, for the sign-in screen.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -447,15 +450,30 @@ impl GChatAccount {
     }
     fn history(&mut self, group: String) {
         if self.history_pending.insert(group.clone()) {
-            self.net.send(Cmd::History { group, before: None });
+            self.net.send(Cmd::History {
+                group,
+                before: None,
+                page: backend::PAGE,
+            });
         }
     }
     fn older_history(&mut self, group: String, anchor: i64, before: MessageId) {
         if self.history_pending.insert(group.clone()) {
             self.older_pending.insert(group.clone(), before);
+            // A thread's list_messages has a page size but no cursor (maugclib's
+            // proto_list_messages, <https://github.com/mautrix/googlechat/blob/master/maugclib/client.py>),
+            // so an older page asks for a longer prefix and the history merge keeps
+            // only messages not shown yet. Spaces page by their `before` cursor.
+            let page = if api::room_parts(&group).1.is_some() {
+                let shown = self.seen.iter().filter(|(g, _)| g == &group).count();
+                shown.saturating_add(backend::PAGE as usize).min(MAX_THREAD_PAGE) as i32
+            } else {
+                backend::PAGE
+            };
             self.net.send(Cmd::History {
                 group: group.clone(),
                 before: Some(anchor),
+                page,
             });
             self.history_cursors.remove(&group);
         }
@@ -1593,7 +1611,7 @@ mod tests {
         assert!(a.room("space:2#topic").is_some(), "the first reply makes the thread");
         assert!(
             std::iter::from_fn(|| cmds.try_recv().ok())
-                .any(|c| matches!(c, Cmd::History { group: raw, before: None } if &*raw == "space:2")),
+                .any(|c| matches!(c, Cmd::History { group: raw, before: None, .. } if &*raw == "space:2")),
             "the conversation reloads once so the root shows its link"
         );
 
@@ -1647,7 +1665,7 @@ mod tests {
         let sent: Vec<_> = std::iter::from_fn(|| cmds.try_recv().ok()).collect();
         assert!(
             sent.iter()
-                .any(|c| matches!(c, Cmd::History { group: raw, before: None } if &**raw == "space:2#topic")),
+                .any(|c| matches!(c, Cmd::History { group: raw, before: None, .. } if &**raw == "space:2#topic")),
             "the reaction's history reload should hit the thread:"
         );
     }

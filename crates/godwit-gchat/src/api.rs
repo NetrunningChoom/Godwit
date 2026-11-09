@@ -291,6 +291,12 @@ impl Api {
 
     /// A topic's root and replies, as maugclib's proto_list_messages.
     pub async fn thread_messages(&mut self, group: &str, topic: &str, page: i32) -> Result<Vec<proto::Message>> {
+        let request = Self::thread_messages_request(group, topic, page)?;
+        let response: proto::ListMessagesResponse = self.call("list_messages", &request).await?;
+        Ok(response.messages)
+    }
+
+    fn thread_messages_request(group: &str, topic: &str, page: i32) -> Result<proto::ListMessagesRequest> {
         let mut request = proto::ListMessagesRequest::new();
         request.request_header = Some(Self::header()).into();
         request.parent_id = Target {
@@ -302,8 +308,7 @@ impl Api {
         .id()?
         .parent_id;
         request.set_page_size(page);
-        let response: proto::ListMessagesResponse = self.call("list_messages", &request).await?;
-        Ok(response.messages)
+        Ok(request)
     }
     pub async fn history(&mut self, room: &str, page: i32, before: Option<i64>) -> Result<Vec<proto::Message>> {
         let (group, topic) = room_parts(room);
@@ -701,6 +706,17 @@ mod tests {
         assert_eq!(older.boundary.sort_time(), 123_456);
         assert_eq!(older.sort_option(), 2);
         assert!(older.group_not_older_than.is_none() && older.user_not_older_than.is_none());
+    }
+
+    #[test]
+    fn thread_history_requests_expand_the_list_messages_prefix() {
+        use protobuf::Message as _;
+        let request = Api::thread_messages_request("space:AAQA", "topic", 60).unwrap();
+        assert_eq!(request.page_size(), 60);
+        assert_eq!(request.parent_id.topic_id().topic_id(), "topic");
+        let bytes = request.write_to_bytes().unwrap();
+        let decoded = proto::ListMessagesRequest::parse_from_bytes(&bytes).unwrap();
+        assert_eq!(decoded, request);
     }
 
     #[test]

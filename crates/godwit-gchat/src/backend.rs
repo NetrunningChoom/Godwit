@@ -33,6 +33,7 @@ pub enum Cmd {
     History {
         group: String,
         before: Option<i64>,
+        page: i32,
     },
     Send {
         group: String,
@@ -140,7 +141,7 @@ fn local_id() -> String {
 }
 
 /// Messages per conversation fetched at once.
-const PAGE: i32 = 30;
+pub(crate) const PAGE: i32 = 30;
 
 struct Started {
     generation: u64,
@@ -218,11 +219,11 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                             godwit_core::backend::keep_starting(|| start(saved.clone(), out.clone(), ready.clone(), generation)).await;
                         }));
                     }
-                    Cmd::History { group, before } => {
+                    Cmd::History { group, before, page } => {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                let result = api.lock().await.topic_history(&group, PAGE, before).await.map_err(|e| text(&e));
+                                let result = api.lock().await.topic_history(&group, page, before).await.map_err(|e| text(&e));
                                 out.send(Ev::History { group, result });
                             });
                         }
