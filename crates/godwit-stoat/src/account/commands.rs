@@ -263,6 +263,70 @@ impl StoatAccount {
                 self.net.send(Cmd::Settings(SettingsCmd::EditMe(body)));
                 Vec::new()
             }
+            Command::SetRoomNotify { room, change } => {
+                use godwit_core::room::RoomNotifyChange as Change;
+                let channel = room.raw.to_string();
+                if !self.store.channels.contains_key(&channel) {
+                    return Vec::new();
+                }
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let own_level = self.store.notification_prefs.channel.get(&channel).cloned();
+                // An older client's "muted" level is a mute, so unmuting clears it.
+                let was_muted_level = own_level.as_deref() == Some("muted");
+                let changes = match change {
+                    Change::Level(level) => {
+                        // for-web's channel states: all, mention, none; None follows the server.
+                        let value = match level {
+                            None => None,
+                            Some(0) => Some(serde_json::json!("all")),
+                            Some(1) => Some(serde_json::json!("mention")),
+                            Some(2) => Some(serde_json::json!("none")),
+                            Some(_) => return Vec::new(),
+                        };
+                        // As the server menu (server_admin.rs SetNotify): a level
+                        // chosen also lifts the channel's mute, so it is heard.
+                        vec![("channel_mutes", None), ("channel", value)]
+                    }
+                    Change::Mute { seconds } => {
+                        // Synced mutes are { until: epoch_ms }, or {} for until turned off
+                        // (as the server mute in server_admin.rs writes).
+                        let value = match seconds {
+                            Some(s) => {
+                                serde_json::json!({ "until": now_ms.saturating_add(i64::from(s) * 1000) })
+                            }
+                            None => serde_json::json!({}),
+                        };
+                        vec![("channel_mutes", Some(value))]
+                    }
+                    Change::Unmute => {
+                        let mut v = vec![("channel_mutes", None)];
+                        if was_muted_level {
+                            v.push(("channel", None));
+                        }
+                        v
+                    }
+                };
+                let mut saved = None;
+                for (kind, value) in changes {
+                    let Some(value) = self.store.set_notification(kind, &channel, value) else {
+                        return vec![Event::Error(
+                            "Your Stoat settings haven't loaded yet; try again in a moment.".into(),
+                        )];
+                    };
+                    saved = Some(value);
+                }
+                if let Some(value) = saved {
+                    self.net.send(Cmd::Settings(SettingsCmd::SetSyncedSetting {
+                        key: "notifications".into(),
+                        value,
+                    }));
+                }
+                self.account
+                    .as_ref()
+                    .and_then(|account| self.store.channels.get(&channel).map(|c| Event::RoomUpdated(self.room(account, c))))
+                    .into_iter()
+                    .collect()
+            }
             Command::UnlockWithKey { .. }
             | Command::StartVerification
             | Command::AnswerVerification { .. }
@@ -272,7 +336,6 @@ impl StoatAccount {
             | Command::AnswerInvite { .. }
             // Servers' channels are all listed already.
             | Command::LoadDirectory { .. }
-            | Command::SetRoomNotify { .. }
             | Command::JoinRoom { .. }
             | Command::JoinThread { .. }
             | Command::LeaveThread { .. } => Vec::new(),

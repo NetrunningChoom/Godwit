@@ -71,6 +71,19 @@ impl StoatAccount {
             RoomKind::Direct { with } => Some(self.avatar_url(&with.raw, None)),
             _ => c.icon.as_ref().and_then(|f| self.file_url(f)),
         };
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let prefs = &self.store.notification_prefs;
+        // The channel's own level only (None follows the server, as core
+        // expects); "muted" is an older client's level and counts as a mute.
+        let level = prefs.channel.get(&c.id).and_then(|level| match level.as_str() {
+            "all" => Some(0),
+            "mention" => Some(1),
+            "none" => Some(2),
+            _ => None,
+        });
+        // The room's own mute; a muted server still hides its channels' unread.
+        let muted = prefs.mute(false, &c.id, now_ms).is_some();
+        let hidden = muted || c.server.as_ref().is_some_and(|s| prefs.mute(true, s, now_ms).is_some());
         let can = |p: u64| self.store.can(&c.id, p);
         let capabilities = Capabilities {
             // for-web's group conversation menu offers Leave Group; Saved Notes and DMs do not.
@@ -107,10 +120,11 @@ impl StoatAccount {
             gifs: can(SEND_MESSAGE) && can(SEND_EMBEDS),
             // Any message can be reported (official MessageContextMenu).
             report: true,
+            notify_settings: true,
             ..Capabilities::of(Network::Stoat)
         };
         Room {
-            notify: Default::default(),
+            notify: godwit_core::room::RoomNotify { level, muted },
             id: RoomId::new(account.clone(), c.id.as_str()),
             name: self.store.channel_title(c).into(),
             kind,
@@ -118,7 +132,7 @@ impl StoatAccount {
             capabilities,
             // Stoat has no end-to-end encryption.
             encryption: RoomEncryption::Unencrypted,
-            unread: self.store.is_unread(&c.id),
+            unread: self.store.is_unread(&c.id) && !hidden,
             last_read: self.store.last_read.get(&c.id).map(|m| MessageId(m.as_str().into())),
             invited_by: None,
             presence,

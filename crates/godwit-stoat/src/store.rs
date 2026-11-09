@@ -1698,6 +1698,24 @@ mod tests {
     }
 
     #[test]
+    fn notification_edits_round_trip_unknown_fields_and_channel_precedence() {
+        use serde_json::json;
+        let mut s = Store::default();
+        s.apply_synced(&json!({ "notifications": [0, json!({
+            "server": {"S": "none"}, "channel": {}, "future": {"keep": true}
+        }).to_string()] }));
+        let edited = s.set_notification("channel", "C", Some(json!("all"))).unwrap();
+        let raw: Value = serde_json::from_str(&edited).unwrap();
+        assert_eq!(raw["future"]["keep"], json!(true));
+        let reparsed: NotificationPrefs = serde_json::from_value(raw).unwrap();
+        let channel: Channel = serde_json::from_value(json!({
+            "_id": "C", "channel_type": "TextChannel", "server": "S"
+        }))
+        .unwrap();
+        assert!(reparsed.should_notify(&channel, false, 0));
+    }
+
+    #[test]
     fn jumping_back_detaches_until_present() {
         use serde_json::json;
         let mut s = Store::default();
