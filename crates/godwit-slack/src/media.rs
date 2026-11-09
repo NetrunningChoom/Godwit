@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
-//! Slack's private file URLs need the workspace token (Slack's file-object
-//! documentation), plus the web session cookie. External/remote file URLs
+//! Slack's private file URLs need the workspace token and web session cookie
+//! (https://api.slack.com/types/file). External/remote file URLs
 //! are allowed, but never receive either credential.
 
 use crate::session::Saved;
@@ -104,6 +104,20 @@ mod tests {
         assert_eq!(files[0].kind, AttachmentKind::Image);
         assert_eq!(files[0].dimensions, Some((640, 480)));
         assert_ne!(files[0].original_url.as_deref(), Some(files[0].url.as_ref()));
+        assert!(files[0].url.starts_with("slack-media://"));
+    }
+
+    #[test]
+    fn private_non_image_files_keep_name_and_size() {
+        let files = attachments(
+            &json!({"files":[{"name":"notes.txt","mimetype":"text/plain","size":321,"url_private":"https://files.slack.com/private/notes"}]}),
+            &Media::new("slack"),
+            "T1",
+        );
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name.as_ref(), "notes.txt");
+        assert_eq!(files[0].size, 321);
+        assert_eq!(files[0].kind, AttachmentKind::File);
         assert!(files[0].url.starts_with("slack-media://"));
     }
 }

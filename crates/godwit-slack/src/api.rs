@@ -299,8 +299,10 @@ impl Api {
         self.call("chat.postMessage", &args).await
     }
 
-    /// Slack's current upload flow (files.upload was retired): obtain a
-    /// signed upload URL, send bytes, then share all files in one message.
+    /// Slack's documented external upload flow: obtain a signed upload URL,
+    /// send bytes, then share all files in one message. See
+    /// https://api.slack.com/methods/files.getUploadURLExternal and
+    /// https://api.slack.com/methods/files.completeUploadExternal.
     pub async fn post_files(
         &self,
         channel: &str,
@@ -332,17 +334,7 @@ impl Api {
                     &[("filename", file.name.as_ref()), ("length", &length)],
                 )
                 .await?;
-            let url = plan["upload_url"]
-                .as_str()
-                .and_then(godwit_core::media::https)
-                .context("Slack gave no upload URL")?;
-            if !url
-                .host_str()
-                .is_some_and(|h| h == "slack.com" || h.ends_with(".slack.com"))
-            {
-                bail!("Slack gave an unexpected upload host.");
-            }
-            let id = plan["file_id"].as_str().context("Slack gave no file id")?.to_owned();
+            let (url, id) = upload_plan(&plan)?;
             let request = upload_http
                 .post(url)
                 .header(header::CONTENT_TYPE, "application/octet-stream")
@@ -489,6 +481,23 @@ impl Api {
     }
 }
 
+/// The signed upload URL is used without the workspace credentials; only
+/// Slack's HTTPS upload host is accepted.
+fn upload_plan(plan: &Value) -> Result<(reqwest::Url, String)> {
+    let url = plan["upload_url"]
+        .as_str()
+        .and_then(godwit_core::media::https)
+        .context("Slack gave no upload URL")?;
+    if !url
+        .host_str()
+        .is_some_and(|h| h == "slack.com" || h.ends_with(".slack.com"))
+    {
+        bail!("Slack gave an unexpected upload host.");
+    }
+    let id = plan["file_id"].as_str().context("Slack gave no file id")?.to_owned();
+    Ok((url, id))
+}
+
 /// A picture Slack serves (its CDN, or Gravatar for some profiles), over
 /// HTTPS: only those are loaded.
 pub fn picture(url: &str) -> Option<String> {
@@ -552,6 +561,29 @@ mod tests {
         assert!(picture("http://avatars.slack-edge.com/a.png").is_none());
         assert!(picture("https://evil.example/a.png").is_none());
         assert!(picture("https://slack-edge.com.evil.example/a.png").is_none());
+    }
+
+    #[test]
+    fn documented_upload_answers_parse() {
+        // Shapes from the getUploadURLExternal and files.info docs.
+        let plans = [
+            json!({"ok":true,"upload_url":"https://files.slack.com/upload/v1/one","file_id":"F1"}),
+            json!({"ok":true,"upload_url":"https://files.slack.com/upload/v1/two","file_id":"F2"}),
+        ];
+        let parsed: Vec<_> = plans.iter().map(upload_plan).collect::<Result<_>>().unwrap();
+        assert_eq!(parsed[0].1, "F1");
+        assert_eq!(parsed[1].1, "F2");
+
+        let info = json!({"ok":true,"file":{"id":"F1","name":"one.png","mimetype":"image/png","url_private":"https://files.slack.com/files-pri/F1","thumb_480":"https://files.slack.com/thumb/F1","shares":{"private":{"C1":[{"ts":"2.0"}]}}}});
+        assert_eq!(
+            crate::media::shared_timestamp(&info["file"], "C1").as_deref(),
+            Some("2.0")
+        );
+    }
+
+    #[test]
+    fn upload_plan_rejects_non_slack_urls() {
+        assert!(upload_plan(&json!({"upload_url":"https://evil.example/upload","file_id":"F1"})).is_err());
     }
 
     #[test]
