@@ -196,11 +196,31 @@ impl Capabilities {
             // First version: text, replies, edits, deletes and reactions.
             Network::Fluxer => Self {
                 attachments: true,
+                file_spoilers: true,
                 max_upload: crate::media::MAX_UPLOAD,
-                pins: false,
-                search: false,
+                // Fluxer refuses a pin we may not make.
+                pin_messages: true,
+                search_filters: crate::search::SearchFilters::new(&[
+                    crate::search::SearchFilter::From,
+                    crate::search::SearchFilter::Mentions,
+                    crate::search::SearchFilter::Has,
+                    crate::search::SearchFilter::Before,
+                    crate::search::SearchFilter::After,
+                    crate::search::SearchFilter::During,
+                    crate::search::SearchFilter::Pinned,
+                ]),
+                search_has: crate::search::SearchHasSet::new(&[
+                    crate::search::SearchHas::Link,
+                    crate::search::SearchHas::Embed,
+                    crate::search::SearchHas::File,
+                    crate::search::SearchHas::Video,
+                    crate::search::SearchHas::Image,
+                    crate::search::SearchHas::Sound,
+                    crate::search::SearchHas::Sticker,
+                    crate::search::SearchHas::Poll,
+                    crate::search::SearchHas::Forward,
+                ]),
                 voice: false,
-                gifs: false,
                 ..all
             },
             // First version: text, deleting and read state. Editing, reactions

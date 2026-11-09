@@ -427,8 +427,20 @@ impl Account for FluxerAccount {
             FluxerStatus::Ready => Status::Ready,
         }
     }
+    fn login_view(&self) -> LoginView {
+        LoginView {
+            custom_server: true,
+            ..LoginView::default()
+        }
+    }
+    fn detail(&self) -> Option<String> {
+        FluxerAccount::instance_host(self)
+    }
     fn log_in(&mut self, user: String, password: String) {
         FluxerAccount::log_in(self, user, password);
+    }
+    fn set_server(&mut self, server: String) {
+        FluxerAccount::set_server(self, server);
     }
     fn submit_code(&mut self, code: String) {
         FluxerAccount::submit_code(self, code);

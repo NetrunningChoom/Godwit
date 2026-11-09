@@ -22,6 +22,27 @@ pub struct Instance {
     pub webapp: String,
 }
 
+/// The sign-in form's server field as an origin for discovery: empty is the
+/// official instance; a bare host gets https (discovery's endpoints are https
+/// and wss only, so plain http is refused); any path is dropped, since
+/// discovery lives at the origin's `/.well-known/fluxer`
+/// (https://docs.fluxer.com, Instance discovery).
+pub fn origin(input: &str) -> Result<String, String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Ok(OFFICIAL.to_owned());
+    }
+    if input.starts_with("http://") {
+        return Err("Fluxer instances need an https address.".into());
+    }
+    let rest = input.strip_prefix("https://").unwrap_or(input);
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if host.is_empty() || host.contains(char::is_whitespace) || rest.contains("://") || host.contains('@') {
+        return Err("That isn't a server address.".into());
+    }
+    Ok(format!("https://{}", host.to_ascii_lowercase()))
+}
+
 impl Instance {
     /// Reads a discovery answer; None if an address is missing or not https/wss.
     pub fn from(v: &Value) -> Option<Self> {
@@ -62,5 +83,21 @@ mod tests {
         assert_eq!(i.url("/users/@me"), "https://fluxer.com/api/v1/users/@me");
         assert_eq!(i.gateway, "wss://gateway.fluxer.com");
         assert!(Instance::from(&json!({"endpoints": {"api_public": "http://x"}})).is_none());
+    }
+
+    #[test]
+    fn the_server_field_becomes_an_origin() {
+        assert_eq!(origin("").as_deref(), Ok(OFFICIAL));
+        assert_eq!(origin("  ").as_deref(), Ok(OFFICIAL));
+        assert_eq!(origin("chat.example").as_deref(), Ok("https://chat.example"));
+        assert_eq!(
+            origin("https://Chat.Example:8443/app/").as_deref(),
+            Ok("https://chat.example:8443")
+        );
+        assert_eq!(origin("chat.example/?x#y").as_deref(), Ok("https://chat.example"));
+        assert!(origin("http://chat.example").is_err());
+        assert!(origin("ftp://chat.example").is_err());
+        assert!(origin("user@chat.example").is_err());
+        assert!(origin("https:///").is_err());
     }
 }

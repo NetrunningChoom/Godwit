@@ -194,7 +194,39 @@ impl SteamAccount {
             relationship: relationship(friend.map(|f| f.relationship)),
             bot: false,
             has_friends: true,
-            moderation: None,
+            moderation: self.groups.values().find_map(|g| {
+                // Only a server-style group the person is in.
+                let server = g.is_server() && g.members.contains(&crate::backend::account_id(id));
+                let actions = g.actions_for(crate::backend::account_id(self.me?));
+                (server && Some(id) != self.me && (actions.kick || actions.ban || actions.change_user_roles)).then(
+                    || {
+                        let mut moderation = godwit_core::members::Moderation::new(ServerId::new(
+                            account.clone(),
+                            group_server_raw(g.id),
+                        ));
+                        moderation.kick = actions.kick;
+                        moderation.ban = actions.ban;
+                        if actions.change_user_roles {
+                            let assigned = g
+                                .member_roles
+                                .get(&crate::backend::account_id(id))
+                                .cloned()
+                                .unwrap_or_default();
+                            moderation.roles = g
+                                .roles
+                                .iter()
+                                .map(|(role, name)| godwit_core::members::ModerationRole {
+                                    id: role.to_string().into(),
+                                    name: name.as_str().into(),
+                                    colour: None,
+                                    assigned: assigned.contains(role),
+                                })
+                                .collect();
+                        }
+                        moderation
+                    },
+                )
+            }),
             group_moderation: self.groups.values().find_map(|g| {
                 let me = crate::backend::account_id(self.me?);
                 let rank = g.ranks.get(&me).copied().unwrap_or_default();

@@ -7,13 +7,36 @@
 
 use steam_vent::{Connection, ConnectionTrait};
 use steam_vent_proto_steam::steammessages_chat_steamclient::{
-    CChatRoom_AckChatMessage_Notification, CChatRoom_CreateChatRoomGroup_Request,
-    CChatRoom_GetChatRoomGroupSummary_Request, CChatRoom_GetChatRoomGroupSummary_Response,
-    CChatRoom_GetMessageHistory_Request, CChatRoom_GetMyChatRoomGroups_Request,
-    CChatRoom_InviteFriendToChatRoomGroup_Request, CChatRoom_JoinChatRoomGroup_Request,
-    CChatRoom_LeaveChatRoomGroup_Request, CChatRoom_RenameChatRoomGroup_Request, CChatRoom_SendChatMessage_Request,
-    CChatRoom_SetSessionActiveChatRoomGroups_Request, CChatRoomState,
+    CChatRoom_AckChatMessage_Notification, CChatRoom_AddRoleToUser_Request, CChatRoom_CreateChatRoomGroup_Request,
+    CChatRoom_DeleteRoleFromUser_Request, CChatRoom_GetChatRoomGroupSummary_Request,
+    CChatRoom_GetChatRoomGroupSummary_Response, CChatRoom_GetMessageHistory_Request,
+    CChatRoom_GetMyChatRoomGroups_Request, CChatRoom_InviteFriendToChatRoomGroup_Request,
+    CChatRoom_JoinChatRoomGroup_Request, CChatRoom_KickUser_Request, CChatRoom_LeaveChatRoomGroup_Request,
+    CChatRoom_RenameChatRoomGroup_Request, CChatRoom_SendChatMessage_Request,
+    CChatRoom_SetSessionActiveChatRoomGroups_Request, CChatRoom_SetUserBanState_Request, CChatRoomState,
 };
+
+/// The subset of a group's role actions Godwit can express without exposing
+/// Steam's protocol types to the shared account model.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ModerationActions {
+    pub kick: bool,
+    pub ban: bool,
+    pub change_user_roles: bool,
+}
+
+impl ModerationActions {
+    /// One role's actions. `CChatRoleActions` has no message-delete flag, so
+    /// moderators can't delete others' messages here
+    /// (https://github.com/SteamDatabase/Protobufs).
+    pub fn of(action: &steam_vent_proto_steam::steammessages_chat_steamclient::CChatRoleActions) -> Self {
+        Self {
+            kick: action.can_kick(),
+            ban: action.can_ban(),
+            change_user_roles: action.can_change_user_roles(),
+        }
+    }
+}
 
 use crate::backend::Line;
 
@@ -34,6 +57,10 @@ pub struct GroupInfo {
     /// Members' ranks where Steam said (`EChatRoomGroupRank`: 50 owner,
     /// 40 officer, 30 moderator, 20 member, 15 guest), by account id.
     pub ranks: std::collections::BTreeMap<u32, i32>,
+    /// Role id and name; each member's role ids; each role's actions.
+    pub roles: Vec<(u64, String)>,
+    pub member_roles: std::collections::BTreeMap<u32, Vec<u64>>,
+    pub role_actions: std::collections::BTreeMap<u64, ModerationActions>,
     pub default_chat: u64,
     pub rooms: Vec<GroupRoom>,
 }
@@ -59,6 +86,24 @@ impl GroupInfo {
     /// An ad-hoc chat with one room reads as a group DM, as in Steam's list.
     pub fn is_server(&self) -> bool {
         self.clan.is_some() || self.rooms.len() > 1
+    }
+
+    pub fn actions_for(&self, account_id: u32) -> ModerationActions {
+        let ids = self
+            .member_roles
+            .get(&account_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        self.role_actions
+            .iter()
+            .fold(ModerationActions::default(), |mut all, (id, action)| {
+                if ids.contains(id) {
+                    all.kick |= action.kick;
+                    all.ban |= action.ban;
+                    all.change_user_roles |= action.change_user_roles;
+                }
+                all
+            })
     }
 }
 
@@ -129,6 +174,21 @@ pub async fn fetch(conn: &Connection) -> Result<Vec<GroupInfo>, String> {
                 group.members = state.members.iter().map(|m| m.accountid()).collect();
                 group.ranks = state.members.iter().map(|m| (m.accountid(), m.rank() as i32)).collect();
             }
+            group.role_actions = header
+                .role_actions
+                .iter()
+                .map(|action| (action.role_id(), ModerationActions::of(action)))
+                .collect();
+            group.roles = header
+                .roles
+                .iter()
+                .map(|role| (role.role_id(), role.name().to_owned()))
+                .collect();
+            group.member_roles = state
+                .members
+                .iter()
+                .map(|member| (member.accountid(), member.role_ids.clone()))
+                .collect();
             for full in &state.chat_rooms {
                 let fresh = room(full);
                 if let Some(r) = group.rooms.iter_mut().find(|r| r.chat == fresh.chat) {
@@ -150,6 +210,9 @@ fn summary_info(s: &CChatRoom_GetChatRoomGroupSummary_Response, mut rooms: Vec<G
         avatar_url: avatar(s.chat_group_avatar_sha(), s.avatar_ugc_url()),
         members: s.top_members.clone(),
         ranks: std::collections::BTreeMap::new(),
+        roles: Vec::new(),
+        member_roles: std::collections::BTreeMap::new(),
+        role_actions: std::collections::BTreeMap::new(),
         default_chat: s.default_chat_id(),
         rooms,
     }
@@ -231,6 +294,67 @@ pub async fn rename(conn: &Connection, group: u64, name: &str) -> Result<(), Str
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Moderation service methods and fields follow SteamDatabase's published
+/// protobuf definitions; the requests carry group and 64-bit Steam IDs.
+/// https://github.com/SteamDatabase/Protobufs
+pub async fn moderate(conn: &Connection, group: u64, action: crate::backend::GroupModeration) -> Result<(), String> {
+    use crate::backend::GroupModeration as A;
+    match action {
+        A::Kick(steamid) => conn
+            .service_method(kick_request(group, steamid))
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        A::Ban(steamid, banned) => conn
+            .service_method(ban_request(group, steamid, banned))
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        A::Role(steamid, role, true) => conn
+            .service_method(add_role_request(group, steamid, role))
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        A::Role(steamid, role, false) => conn
+            .service_method(remove_role_request(group, steamid, role))
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+    }
+}
+
+fn kick_request(group: u64, steamid: u64) -> CChatRoom_KickUser_Request {
+    CChatRoom_KickUser_Request {
+        chat_group_id: Some(group),
+        steamid: Some(steamid),
+        ..Default::default()
+    }
+}
+fn ban_request(group: u64, steamid: u64, banned: bool) -> CChatRoom_SetUserBanState_Request {
+    CChatRoom_SetUserBanState_Request {
+        chat_group_id: Some(group),
+        steamid: Some(steamid),
+        ban_state: Some(banned),
+        ..Default::default()
+    }
+}
+fn add_role_request(group: u64, steamid: u64, role: u64) -> CChatRoom_AddRoleToUser_Request {
+    CChatRoom_AddRoleToUser_Request {
+        chat_group_id: Some(group),
+        steamid: Some(steamid),
+        role_id: Some(role),
+        ..Default::default()
+    }
+}
+fn remove_role_request(group: u64, steamid: u64, role: u64) -> CChatRoom_DeleteRoleFromUser_Request {
+    CChatRoom_DeleteRoleFromUser_Request {
+        chat_group_id: Some(group),
+        steamid: Some(steamid),
+        role_id: Some(role),
+        ..Default::default()
+    }
 }
 
 fn rename_request(group: u64, name: &str) -> CChatRoom_RenameChatRoomGroup_Request {
@@ -338,6 +462,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn role_action_mapping_uses_only_published_moderation_flags() {
+        use steam_vent_proto_steam::steammessages_chat_steamclient::CChatRoleActions;
+        let permitted = CChatRoleActions {
+            can_kick: Some(true),
+            can_ban: Some(false),
+            can_change_user_roles: Some(true),
+            ..Default::default()
+        };
+        let denied = CChatRoleActions {
+            can_kick: Some(false),
+            can_ban: Some(true),
+            can_change_user_roles: Some(false),
+            ..Default::default()
+        };
+        let (permitted, denied) = (ModerationActions::of(&permitted), ModerationActions::of(&denied));
+        assert!(permitted.kick && !permitted.ban && permitted.change_user_roles);
+        assert!(!denied.kick && denied.ban && !denied.change_user_roles);
+    }
+
+    #[test]
     fn group_chat_requests_encode_group_friend_and_name() {
         let create = create_request("Friends", &[11, 22]);
         assert_eq!(create.name.as_deref(), Some("Friends"));
@@ -349,6 +493,29 @@ mod tests {
         let rename = rename_request(7, "New name");
         assert_eq!(rename.chat_group_id, Some(7));
         assert_eq!(rename.name.as_deref(), Some("New name"));
+    }
+
+    #[test]
+    fn moderation_requests_encode_group_user_and_role() {
+        let kick = kick_request(7, 99);
+        assert_eq!((kick.chat_group_id, kick.steamid), (Some(7), Some(99)));
+        let ban = ban_request(7, 99, true);
+        assert_eq!(
+            (ban.chat_group_id, ban.steamid, ban.ban_state),
+            (Some(7), Some(99), Some(true))
+        );
+        let unban = ban_request(7, 99, false);
+        assert_eq!(unban.ban_state, Some(false));
+        let add = add_role_request(7, 99, 4);
+        assert_eq!(
+            (add.chat_group_id, add.steamid, add.role_id),
+            (Some(7), Some(99), Some(4))
+        );
+        let remove = remove_role_request(7, 99, 4);
+        assert_eq!(
+            (remove.chat_group_id, remove.steamid, remove.role_id),
+            (Some(7), Some(99), Some(4))
+        );
     }
     fn info(clan: Option<u32>, rooms: usize) -> GroupInfo {
         GroupInfo {

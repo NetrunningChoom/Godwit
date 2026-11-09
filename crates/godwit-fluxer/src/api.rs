@@ -52,6 +52,31 @@ pub struct Api {
     token: RwLock<String>,
 }
 
+// Ten files per message and the `IS_SPOILER` attachment flag (bit 3):
+// https://docs.fluxer.com/http-api/messages/
+const MAX_FILES_PER_MESSAGE: usize = 10;
+const ATTACHMENT_FLAG_IS_SPOILER: u64 = 1 << 3;
+
+fn message_body(content: &str, nonce: &str, files: &[godwit_core::application::Outgoing]) -> Value {
+    let mut body = json!({"content": content, "nonce": nonce});
+    if !files.is_empty() {
+        body["attachments"] = Value::Array(
+            files
+                .iter()
+                .enumerate()
+                .map(|(id, file)| {
+                    let mut attachment = json!({"id": id, "filename": file.name.as_ref()});
+                    if file.spoiler {
+                        attachment["flags"] = json!(ATTACHMENT_FLAG_IS_SPOILER);
+                    }
+                    attachment
+                })
+                .collect(),
+        );
+    }
+    body
+}
+
 /// A refusal: its status and Fluxer's error body (`{code, message}`, and
 /// for a CAPTCHA its challenge), shown as Fluxer words it.
 #[derive(Debug)]
@@ -234,7 +259,7 @@ impl Api {
         reply: Option<&str>,
         files: &[godwit_core::application::Outgoing],
     ) -> Result<Value> {
-        let mut body = json!({"content": content, "nonce": nonce});
+        let mut body = message_body(content, nonce, files);
         if let Some(reply) = reply {
             body["message_reference"] = json!({"channel_id": channel, "message_id": reply, "type": 0});
         }
@@ -242,16 +267,9 @@ impl Api {
         if files.is_empty() {
             return self.send(request.json(&body)).await;
         }
-        if files.len() > 10 {
+        if files.len() > MAX_FILES_PER_MESSAGE {
             bail!("Attach at most ten files at once.");
         }
-        body["attachments"] = Value::Array(
-            files
-                .iter()
-                .enumerate()
-                .map(|(id, file)| json!({"id":id,"filename":file.name.as_ref()}))
-                .collect(),
-        );
         let mut form = reqwest::multipart::Form::new().text("payload_json", body.to_string());
         let mut total = 0u64;
         for (id, file) in files.iter().enumerate() {
@@ -301,6 +319,150 @@ impl Api {
         self.send(self.request(Method::POST, &path).json(&json!({"mention_count": 0})))
             .await
             .map(drop)
+    }
+
+    /// Fluxer's documented indexed-message search shape: https://docs.fluxer.com/http-api/search/.
+    pub async fn search(
+        &self,
+        channel: &str,
+        guild: Option<&str>,
+        query: &godwit_core::search::SearchQuery,
+        offset: usize,
+    ) -> Result<Value> {
+        use godwit_core::search::{SearchHas, SearchScope};
+        let page = (offset / 25 + 1).clamp(1, 400);
+        let mut body = json!({"scope":"current", "hits_per_page":25, "page":page});
+        if let Some(guild) = guild {
+            body["context_guild_id"] = json!(guild);
+        } else {
+            body["context_channel_id"] = json!(channel);
+        }
+        if !query.text.is_empty() {
+            body["content"] = json!(query.text);
+        }
+        if query.scope == SearchScope::Channel {
+            body["context_channel_id"] = json!(channel);
+        }
+        if let Some(user) = &query.from {
+            body["author_id"] = json!([user.raw.as_ref()]);
+        }
+        if let Some(user) = &query.mentions {
+            body["mentions"] = json!([user.raw.as_ref()]);
+        }
+        if query.pinned {
+            body["pinned"] = json!(true);
+        }
+        if let Some(room) = &query.in_room {
+            body["channel_ids"] = json!([room.raw.as_ref()]);
+        }
+        let mut has = Vec::new();
+        for item in &query.has {
+            has.push(match item {
+                SearchHas::Link => "link",
+                SearchHas::Embed => "embed",
+                SearchHas::File => "file",
+                SearchHas::Video => "video",
+                SearchHas::Image => "image",
+                SearchHas::Sound => "sound",
+                SearchHas::Sticker => "sticker",
+                SearchHas::Poll => "poll",
+                SearchHas::Forward => "snapshot",
+            });
+        }
+        if !has.is_empty() {
+            body["has"] = json!(has);
+        }
+        // Fluxer accepts snowflake bounds. Map local-day boundaries to millisecond snowflakes.
+        let after = query
+            .after
+            .map(|d| (d, true))
+            .into_iter()
+            .chain(query.during.map(|d| (d, false)));
+        let before = query
+            .before
+            .map(|d| (d, false))
+            .into_iter()
+            .chain(query.during.map(|d| (d, true)));
+        let min = after.filter_map(|(d, end)| Self::day_snowflake(d, end)).max();
+        let max = before.filter_map(|(d, end)| Self::day_snowflake(d, end)).min();
+        if let Some(id) = min {
+            body["min_id"] = json!(id);
+        }
+        if let Some(id) = max {
+            body["max_id"] = json!(id);
+        }
+        self.send(self.request(Method::POST, "/search/messages").json(&body))
+            .await
+    }
+
+    /// Converts a day boundary to Fluxer's documented snowflake epoch.
+    fn day_snowflake(d: godwit_core::search::SearchDate, next_day: bool) -> Option<String> {
+        let date = chrono::NaiveDate::from_ymd_opt(d.year, u32::from(d.month), u32::from(d.day))?;
+        let date = if next_day { date.succ_opt()? } else { date };
+        let millis = date.and_hms_opt(0, 0, 0)?.and_utc().timestamp_millis();
+        let delta = u64::try_from(millis.checked_sub(1_420_070_400_000)?).ok()?;
+        Some((delta.checked_shl(22)?).to_string())
+    }
+
+    /// Lists pins: https://docs.fluxer.com/http-api/messages/.
+    pub async fn pins(&self, channel: &str) -> Result<Value> {
+        self.send(self.request(Method::GET, &format!("/channels/{channel}/messages/pins?limit=50")))
+            .await
+    }
+
+    pub async fn set_pinned(&self, channel: &str, message: &str, pinned: bool) -> Result<()> {
+        let method = if pinned { Method::PUT } else { Method::DELETE };
+        self.send(self.request(method, &format!("/channels/{channel}/pins/{message}")))
+            .await
+            .map(drop)
+    }
+
+    /// Fluxer instance GIF provider endpoints: https://docs.fluxer.com/http-api/gifs/.
+    pub async fn gif_featured(&self) -> Result<Value> {
+        self.send(self.request(Method::GET, "/gifs/featured")).await
+    }
+    pub async fn gif_trending(&self) -> Result<Value> {
+        self.send(self.request(Method::GET, "/gifs/trending")).await
+    }
+    pub async fn gif_search(&self, query: &str) -> Result<Value> {
+        self.send(self.request(
+            Method::GET,
+            &format!("/gifs/search?q={}", godwit_core::encoding::encode_uri_component(query)),
+        ))
+        .await
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    fn outgoing(name: &str, spoiler: bool) -> godwit_core::application::Outgoing {
+        godwit_core::application::Outgoing {
+            path: PathBuf::from(name),
+            name: Arc::from(name),
+            size: 1,
+            spoiler,
+        }
+    }
+
+    #[test]
+    fn message_body_maps_text_file_order_and_spoiler_flag() {
+        let body = message_body("hello", "nonce", &[outgoing("a.png", true), outgoing("b.txt", false)]);
+        assert_eq!(body["content"], "hello");
+        assert_eq!(body["nonce"], "nonce");
+        assert_eq!(
+            body["attachments"][0],
+            json!({"id": 0, "filename": "a.png", "flags": 8})
+        );
+        assert_eq!(body["attachments"][1], json!({"id": 1, "filename": "b.txt"}));
+    }
+
+    #[test]
+    fn message_body_omits_attachments_without_files() {
+        assert_eq!(message_body("hello", "n", &[]), json!({"content":"hello", "nonce":"n"}));
     }
 }
 
@@ -388,6 +550,33 @@ mod tests {
         let error = refused(json!({"code": "INVALID_FORM_BODY", "message": "Too short"}));
         assert!(challenge_of(&error).is_none());
         assert_eq!(error.to_string(), "Too short (INVALID_FORM_BODY)");
+    }
+
+    #[test]
+    fn fluxer_search_days_become_snowflake_bounds() {
+        let day = godwit_core::search::SearchDate {
+            year: 2025,
+            month: 1,
+            day: 2,
+        };
+        let start = Api::day_snowflake(day, false)
+            .expect("day start")
+            .parse::<u64>()
+            .expect("snowflake");
+        let end = Api::day_snowflake(day, true)
+            .expect("next day")
+            .parse::<u64>()
+            .expect("snowflake");
+        assert!(end > start);
+        assert_eq!(start & ((1 << 22) - 1), 0);
+    }
+
+    #[test]
+    fn gif_search_query_is_url_encoded() {
+        assert_eq!(
+            godwit_core::encoding::encode_uri_component("cats & dogs"),
+            "cats%20%26%20dogs"
+        );
     }
 
     #[test]

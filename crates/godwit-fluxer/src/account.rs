@@ -68,6 +68,13 @@ pub struct FluxerAccount {
     list_ranges: HashMap<String, Vec<[usize; 2]>>,
     /// Friends, requests and blocked users as last sent to the core.
     relationships: godwit_core::relationships::RelationshipLists,
+    /// The channel whose pins were last asked for: only its pin updates are
+    /// fetched again, not every channel's.
+    pins_shown: Option<String>,
+    /// The instance's origin: the kept sign-in's, or the official one.
+    origin: String,
+    /// The sign-in form's server field, sent with the credentials.
+    server_input: String,
 }
 
 /// A snowflake's time.
@@ -83,6 +90,7 @@ impl FluxerAccount {
     pub fn new(slot: u32, wake: backend::Waker) -> std::io::Result<Self> {
         let (net, events) = backend::spawn(wake)?;
         let saved = session::load(slot);
+        let origin = saved.as_ref().map(|s| s.origin.clone());
         let status = if saved.is_some() {
             Status::Connecting
         } else {
@@ -91,12 +99,19 @@ impl FluxerAccount {
         if let Some(saved) = saved {
             net.send(Cmd::UseSession(saved));
         }
-        Ok(Self::with(slot, net, events, status, true))
+        let mut account = Self::with(slot, net, events, status, true);
+        if let Some(origin) = origin {
+            account.origin = origin;
+        }
+        Ok(account)
     }
 
     fn with(slot: u32, net: Handle, events: mpsc::Receiver<Ev>, status: Status, persist: bool) -> Self {
         Self {
             room_sync: Default::default(),
+            pins_shown: None,
+            origin: crate::discovery::OFFICIAL.to_owned(),
+            server_input: String::new(),
             slot,
             net,
             events,
@@ -126,10 +141,36 @@ impl FluxerAccount {
         &self.status
     }
 
-    /// Signs in on the official instance with an email (or username) and password.
+    /// Signs in with an email (or username) and password, on the instance in
+    /// the form's server field (empty: the official one).
     pub fn log_in(&mut self, login: String, password: String) {
+        let origin = match crate::discovery::origin(&self.server_input) {
+            Ok(origin) => origin,
+            Err(error) => {
+                self.status = Status::SignedOut { error: Some(error) };
+                return;
+            }
+        };
         self.status = Status::Connecting;
-        self.net.send(Cmd::Login { login, password });
+        self.net.send(Cmd::Login {
+            login,
+            password,
+            origin,
+        });
+    }
+
+    /// The sign-in form's server field.
+    pub fn set_server(&mut self, server: String) {
+        self.server_input = server;
+    }
+
+    /// Another instance's host, for the account list (none for the official one).
+    pub fn instance_host(&self) -> Option<String> {
+        if self.origin == crate::discovery::OFFICIAL {
+            return None;
+        }
+        let host = self.origin.strip_prefix("https://").unwrap_or(&self.origin);
+        Some(host.to_owned())
     }
 
     pub fn submit_code(&mut self, code: String) {
@@ -684,6 +725,17 @@ impl FluxerAccount {
                     }
                 }
             }
+            // Fluxer sends this after pin and unpin operations; refresh the visible pin list.
+            // https://docs.fluxer.com/gateway/events (CHANNEL_PINS_UPDATE).
+            "CHANNEL_PINS_UPDATE" => {
+                if let Some(channel) = d["channel_id"].as_str()
+                    && self.pins_shown.as_deref() == Some(channel)
+                {
+                    self.net.send(Cmd::Request(Request::Pins {
+                        channel: channel.to_owned(),
+                    }));
+                }
+            }
             "MESSAGE_DELETE" => {
                 if let (Some(room), Some(id)) = (
                     self.room_id(d["channel_id"].as_str().unwrap_or_default()),
@@ -743,6 +795,7 @@ impl FluxerAccount {
             }
             Ev::NeedsCode => self.status = Status::NeedsCode { error: None },
             Ev::SignedIn(saved) => {
+                self.origin = saved.origin.clone();
                 if self.persist {
                     session::save(self.slot, &saved);
                 }
@@ -769,7 +822,7 @@ impl FluxerAccount {
                     out.push(Event::Connection { account, online: false });
                 }
             }
-            Ev::Answer(answer) => self.answer(answer, out),
+            Ev::Answer(answer) => self.answer(*answer, out),
             Ev::LoggedOut => {
                 self.downloads.clear();
                 if self.persist {
@@ -842,6 +895,127 @@ impl FluxerAccount {
                     out.push(Event::Error(format!("Fluxer, {what}: {e}").into()));
                 }
             }
+            Answer::Search {
+                channel,
+                query,
+                offset,
+                result,
+            } => {
+                let Some(room) = self.room_id(&channel) else { return };
+                match result {
+                    Ok(v) if v["indexing"] == true => out.push(Event::SearchResults {
+                        room,
+                        query,
+                        offset,
+                        next_offset: None,
+                        total: None,
+                        notice: Some("Search index is being prepared".into()),
+                        rooms: Vec::new(),
+                        messages: None,
+                    }),
+                    Ok(v) => {
+                        let page = v["messages"].as_array().cloned().unwrap_or_default();
+                        for m in &page {
+                            if let Some(u) = m.get("author") {
+                                self.store.put_user(u);
+                            }
+                        }
+                        let mut messages: Vec<Message> = page.iter().filter_map(|m| self.message(m)).collect();
+                        messages.reverse();
+                        let total = v["total"].as_u64();
+                        // Pages are 25 hits (see Api::search), whatever we could show of them.
+                        let next = offset + 25;
+                        let next_offset =
+                            (next < usize::try_from(total.unwrap_or(0)).unwrap_or(usize::MAX)).then_some(next);
+                        out.push(Event::SearchResults {
+                            room,
+                            query,
+                            offset,
+                            next_offset,
+                            total,
+                            notice: None,
+                            rooms: Vec::new(),
+                            messages: Some(messages),
+                        });
+                    }
+                    Err(e) => out.push(Event::SearchResults {
+                        room,
+                        query,
+                        offset,
+                        next_offset: None,
+                        total: None,
+                        notice: Some(format!("Search failed: {e}")),
+                        rooms: Vec::new(),
+                        messages: None,
+                    }),
+                }
+            }
+            Answer::Pins { channel, result } => {
+                let Some(room) = self.room_id(&channel) else { return };
+                let messages = result.ok().map(|v| {
+                    let page = v["items"].as_array().or_else(|| v.as_array());
+                    let values = page.cloned().unwrap_or_default();
+                    for m in &values {
+                        if let Some(u) = m.get("author") {
+                            self.store.put_user(u);
+                        }
+                    }
+                    values.iter().filter_map(|m| self.message(m)).collect()
+                });
+                out.push(Event::Pins { room, messages });
+            }
+            Answer::Gifs { query, result } => match result {
+                Ok(v) if query.is_empty() => {
+                    let categories = v["categories"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|c| {
+                            Some(godwit_core::gifs::GifCategory {
+                                title: c["name"].as_str()?.into(),
+                                image: c["proxy_src"]
+                                    .as_str()
+                                    .filter(|s| !s.is_empty())
+                                    .or_else(|| c["src"].as_str())?
+                                    .into(),
+                            })
+                        })
+                        .collect();
+                    if let Some(account) = self.account.clone() {
+                        out.push(Event::GifCategories {
+                            account: account.clone(),
+                            categories,
+                        });
+                        out.push(Event::Gifs {
+                            account,
+                            query: godwit_core::gifs::TRENDING.into(),
+                            more: false,
+                            results: fluxer_gifs(&v["gifs"]),
+                            next: None,
+                        });
+                    }
+                }
+                Ok(v) => {
+                    if let Some(account) = self.account.clone() {
+                        out.push(Event::Gifs {
+                            account,
+                            query,
+                            more: false,
+                            results: fluxer_gifs(&v),
+                            next: None,
+                        });
+                    }
+                }
+                Err(error) => {
+                    if let Some(account) = self.account.clone() {
+                        out.push(Event::GifsFailed {
+                            account,
+                            query,
+                            error: error.into(),
+                        });
+                    }
+                }
+            },
         }
     }
 
@@ -861,6 +1035,54 @@ impl FluxerAccount {
             | Command::LeaveThread { .. } => {}
             // Fluxer has no channel webhook manager in this account.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
+            Command::LoadPins { room } => {
+                if let Some(channel) = self.channel_of(&room) {
+                    self.pins_shown = Some(channel.clone());
+                    req(&self.net, Request::Pins { channel });
+                }
+            }
+            Command::SetPinned { room, message, pinned } => {
+                if let Some(channel) = self.channel_of(&room) {
+                    req(
+                        &self.net,
+                        Request::SetPinned {
+                            channel,
+                            message: message.0.to_string(),
+                            pinned,
+                        },
+                    );
+                }
+            }
+            Command::SearchMessages { room, query, offset } => {
+                if let Some(channel) = self.channel_of(&room) {
+                    let guild = self.store.channels.get(&channel).and_then(|c| c.guild.clone());
+                    req(
+                        &self.net,
+                        Request::Search {
+                            channel,
+                            guild,
+                            query,
+                            offset,
+                        },
+                    );
+                }
+            }
+            Command::LoadGifCategories => req(&self.net, Request::GifCategories),
+            Command::SearchGifs { query, position: None } => req(&self.net, Request::Gifs { query }),
+            Command::SearchGifs {
+                query,
+                position: Some(_),
+            } => {
+                if let Some(account) = self.account.clone() {
+                    out.push(Event::Gifs {
+                        account,
+                        query,
+                        more: false,
+                        results: Vec::new(),
+                        next: None,
+                    });
+                }
+            }
             // A server channel opened: subscribed, as Fluxer's client does.
             Command::Focus { room } => {
                 let opened = room
@@ -1039,6 +1261,38 @@ impl FluxerAccount {
         }
         out
     }
+}
+
+/// Maps Fluxer's provider objects into the shared picker's page/media pair.
+fn fluxer_gifs(v: &Value) -> Vec<godwit_core::gifs::Gif> {
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|g| {
+            let media = &g["media"]["tinygif"];
+            let preview = media["proxy_src"]
+                .as_str()
+                .or_else(|| media["src"].as_str())
+                .or_else(|| g["proxy_src"].as_str())
+                .or_else(|| g["src"].as_str())?;
+            let width = media["width"]
+                .as_u64()
+                .or_else(|| g["width"].as_u64())
+                .and_then(|n| u32::try_from(n).ok())
+                .unwrap_or(0);
+            let height = media["height"]
+                .as_u64()
+                .or_else(|| g["height"].as_u64())
+                .and_then(|n| u32::try_from(n).ok())
+                .unwrap_or(0);
+            Some(godwit_core::gifs::Gif {
+                url: g["url"].as_str()?.into(),
+                preview: preview.into(),
+                width,
+                height,
+            })
+        })
+        .collect()
 }
 
 /// A notice's words, for message types that aren't text.
@@ -1249,6 +1503,84 @@ mod tests {
         (a, cmds, tx)
     }
 
+    #[test]
+    fn sign_in_goes_to_the_instance_in_the_server_field_and_keeps_it() {
+        let (mut a, mut cmds, _tx) = account();
+        assert_eq!(a.instance_host(), None);
+        a.log_in("ada".into(), "pw".into());
+        let Ok(Cmd::Login { origin, .. }) = cmds.try_recv() else {
+            panic!("no sign-in sent");
+        };
+        assert_eq!(origin, crate::discovery::OFFICIAL);
+
+        a.set_server("chat.example/app".into());
+        a.log_in("ada".into(), "pw".into());
+        let Ok(Cmd::Login { origin, .. }) = cmds.try_recv() else {
+            panic!("no sign-in sent");
+        };
+        assert_eq!(origin, "https://chat.example");
+        // Only a finished sign-in moves the account to the instance.
+        assert_eq!(a.instance_host(), None);
+        a.handle(
+            Ev::SignedIn(session::Saved {
+                user: "1".into(),
+                token: "fake-test-token".into(),
+                origin,
+            }),
+            &mut Vec::new(),
+        );
+        assert_eq!(a.instance_host().as_deref(), Some("chat.example"));
+
+        a.set_server("http://chat.example".into());
+        a.log_in("ada".into(), "pw".into());
+        assert!(cmds.try_recv().is_err());
+        assert!(matches!(a.status(), Status::SignedOut { error: Some(_) }));
+    }
+
+    #[test]
+    fn documented_pin_page_emits_shared_pins_event_and_live_update_refetches() {
+        let (mut a, mut cmds, _tx) = account();
+        a.dispatch("READY", &ready(), &mut Vec::new());
+        let channel = "12";
+        a.answer(
+            Answer::Pins {
+                channel: channel.into(),
+                result: Ok(json!({"items":[{
+                    "id":"1501320000000000002", "channel_id":channel,
+                    "author":{"id":"200","username":"ada"}, "content":"pinned", "type":0, "pinned":true,
+                    "attachments":[], "embeds":[], "reactions":[]
+                }]})),
+            },
+            &mut Vec::new(),
+        );
+        // Not shown: no fetch.
+        a.dispatch("CHANNEL_PINS_UPDATE", &json!({"channel_id":channel}), &mut Vec::new());
+        assert!(cmds.try_recv().is_err());
+        a.run(Command::LoadPins {
+            room: RoomId::new(a.id().unwrap().clone(), channel),
+        });
+        while cmds.try_recv().is_ok() {}
+        a.dispatch("CHANNEL_PINS_UPDATE", &json!({"channel_id":channel}), &mut Vec::new());
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Request(Request::Pins { channel: c })) if c == channel));
+    }
+
+    #[test]
+    fn fluxer_gif_objects_map_page_media_and_dimensions() {
+        let gifs = fluxer_gifs(
+            &json!([{"url":"https://provider/gif/id","src":"fallback", "width":10,"height":11,
+            "media":{"tinygif":{"proxy_src":"https://proxy/tiny.gif","width":20,"height":21}}}]),
+        );
+        assert_eq!(
+            gifs,
+            [godwit_core::gifs::Gif {
+                url: "https://provider/gif/id".into(),
+                preview: "https://proxy/tiny.gif".into(),
+                width: 20,
+                height: 21
+            }]
+        );
+    }
+
     /// A READY as docs.fluxer.com describes it (guild fields under `properties`).
     fn ready() -> Value {
         json!({
@@ -1312,6 +1644,11 @@ mod tests {
             panic!("{out:?}")
         };
         assert_eq!(&**display_name, "me");
+        assert!(
+            rooms
+                .iter()
+                .all(|r| r.capabilities.pins && r.capabilities.search && r.capabilities.gifs)
+        );
         let dm = rooms.iter().find(|r| &*r.id.raw == "20").expect("the DM");
         assert_eq!(&*dm.name, "Ada");
         assert_eq!(

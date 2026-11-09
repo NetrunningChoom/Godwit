@@ -221,6 +221,17 @@ pub enum Cmd {
         group: u64,
         name: String,
     },
+    GroupModerate {
+        group: u64,
+        action: GroupModeration,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum GroupModeration {
+    Kick(u64),
+    Ban(u64, bool),
+    Role(u64, u64, bool),
 }
 
 /// A friend's persona, as far as Steam said.
@@ -976,6 +987,18 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                     match crate::groups::rename(&conn, group, &name).await {
                         Ok(()) => fetch_groups(conn, out).await,
                         Err(error) => out.send(Ev::Notice(format!("Couldn't rename Steam group chat: {error}"))),
+                    }
+                });
+            }
+        }
+        Cmd::GroupModerate { group, action } => {
+            if let Some(conn) = st.conn.clone() {
+                let out = out.clone();
+                tokio::spawn(async move {
+                    let result = crate::groups::moderate(&conn, group, action).await;
+                    match result {
+                        Ok(()) => fetch_groups(conn, out).await,
+                        Err(error) => out.send(Ev::Notice(format!("Couldn't moderate Steam group member: {error}"))),
                     }
                 });
             }

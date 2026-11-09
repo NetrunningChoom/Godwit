@@ -479,6 +479,41 @@ impl NetworkAccount for SteamAccount {
                     self.net.send(Cmd::GroupLeave { group });
                 }
             }
+            Command::ServerAdmin { server, op } => {
+                use godwit_core::server_settings::ServerAdmin as A;
+                let Some(group) = server.raw.strip_prefix('g').and_then(|v| v.parse::<u64>().ok()) else {
+                    return out;
+                };
+                let Some(info) = self.groups.get(&group) else {
+                    return out;
+                };
+                let actions = info.actions_for(backend::account_id(self.me.unwrap_or_default()));
+                let action = match op {
+                    A::Kick(user) if actions.kick => {
+                        user.raw.parse::<u64>().ok().map(crate::backend::GroupModeration::Kick)
+                    }
+                    A::Ban { user, .. } if actions.ban => user
+                        .raw
+                        .parse::<u64>()
+                        .ok()
+                        .map(|id| crate::backend::GroupModeration::Ban(id, true)),
+                    A::Unban(user) if actions.ban => user
+                        .raw
+                        .parse::<u64>()
+                        .ok()
+                        .map(|id| crate::backend::GroupModeration::Ban(id, false)),
+                    A::SetMemberRole { user, role, on } if actions.change_user_roles => user
+                        .raw
+                        .parse::<u64>()
+                        .ok()
+                        .zip(role.parse::<u64>().ok())
+                        .map(|(user, role)| crate::backend::GroupModeration::Role(user, role, on)),
+                    _ => None,
+                };
+                if let Some(action) = action {
+                    self.net.send(Cmd::GroupModerate { group, action });
+                }
+            }
             // Steam has no channel webhook manager.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::SendFriendRequest { request, name } => self.net.send(Cmd::AddFriend {
@@ -1130,6 +1165,9 @@ mod tests {
             avatar_url: None,
             members: vec![1, 2, 3],
             ranks: std::collections::BTreeMap::new(),
+            roles: Vec::new(),
+            member_roles: std::collections::BTreeMap::new(),
+            role_actions: std::collections::BTreeMap::new(),
             default_chat: rooms[0].0,
             rooms: rooms
                 .iter()
@@ -1230,6 +1268,77 @@ mod tests {
         let events = a.poll();
         assert!(events.iter().any(|e| matches!(e, Event::RoomUpdated(room)
             if &*room.id.raw == "g20-200" && &*room.name == "Renamed group")));
+    }
+
+    #[test]
+    fn member_moderation_commands_dispatch_only_with_group_action_flags() {
+        use godwit_core::server_settings::ServerAdmin;
+        let (mut account, tx, mut commands) = ready_with_commands();
+        let mut info = group(10, Some(5), &[(100, "General", false)]);
+        info.role_actions.insert(
+            4,
+            crate::groups::ModerationActions {
+                kick: true,
+                ban: true,
+                change_user_roles: true,
+            },
+        );
+        info.member_roles.insert(1, vec![4]);
+        info.roles.push((4, "Helper".into()));
+        tx.send(Ev::Groups(vec![info])).unwrap();
+        account.poll();
+        while commands.try_recv().is_ok() {}
+        let server = ServerId::new(account.account.clone().unwrap(), "g10");
+        let target = UserId::new(account.account.clone().unwrap(), backend::steam_id(2).to_string());
+        account.run(Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::Kick(target.clone()),
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::GroupModerate { group: 10, action: crate::backend::GroupModeration::Kick(id) }) if id == backend::steam_id(2))
+        );
+        account.run(Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::Ban {
+                user: target.clone(),
+                reason: "".into(),
+                delete_seconds: 0,
+            },
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::GroupModerate { group: 10, action: crate::backend::GroupModeration::Ban(id, true) }) if id == backend::steam_id(2))
+        );
+        account.run(Command::ServerAdmin {
+            server: server.clone(),
+            op: ServerAdmin::SetMemberRole {
+                user: target,
+                role: "4".into(),
+                on: false,
+            },
+        });
+        assert!(
+            matches!(commands.try_recv(), Ok(Cmd::GroupModerate { group: 10, action: crate::backend::GroupModeration::Role(id, 4, false) }) if id == backend::steam_id(2))
+        );
+        let mut denied = group(10, Some(5), &[(100, "General", false)]);
+        denied.role_actions.insert(
+            9,
+            crate::groups::ModerationActions {
+                kick: true,
+                ..Default::default()
+            },
+        );
+        denied.member_roles.insert(1, vec![4]);
+        tx.send(Ev::Groups(vec![denied])).unwrap();
+        account.poll();
+        while commands.try_recv().is_ok() {}
+        account.run(Command::ServerAdmin {
+            server,
+            op: ServerAdmin::Kick(UserId::new(
+                account.account.clone().unwrap(),
+                backend::steam_id(2).to_string(),
+            )),
+        });
+        assert!(commands.try_recv().is_err());
     }
 
     #[test]
@@ -1504,6 +1613,30 @@ mod tests {
         };
         let total: usize = groups.iter().map(|g| g.members.len()).sum();
         assert_eq!(total, 3, "every member the group listed");
+    }
+
+    #[test]
+    fn group_member_refresh_replaces_the_open_member_list() {
+        let (net, _commands) = Handle::detached();
+        let (tx, events) = mpsc::channel();
+        let mut a = SteamAccount::with(0, net, events, Status::Connecting);
+        tx.send(Ev::Connected {
+            me: backend::steam_id(1),
+        })
+        .unwrap();
+        tx.send(Ev::ReadyDeadline).unwrap();
+        tx.send(Ev::Groups(vec![group(10, Some(5), &[(100, "General", false)])]))
+            .unwrap();
+        a.poll();
+        a.run(Command::LoadMembers {
+            room: RoomId::new(a.account.clone().unwrap(), "g10-100"),
+        });
+        let mut changed = group(10, Some(5), &[(100, "General", false)]);
+        changed.members = vec![1, 2];
+        tx.send(Ev::Groups(vec![changed])).unwrap();
+        let events = a.poll();
+        assert!(events.iter().any(|event| matches!(event, Event::Members { groups, .. }
+            if groups.iter().map(|g| g.members.len()).sum::<usize>() == 2)));
     }
 
     #[test]

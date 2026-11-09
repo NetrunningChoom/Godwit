@@ -52,13 +52,33 @@ pub enum Request {
         channel: String,
         message: String,
     },
+    Search {
+        channel: String,
+        guild: Option<String>,
+        query: godwit_core::search::SearchQuery,
+        offset: usize,
+    },
+    Pins {
+        channel: String,
+    },
+    SetPinned {
+        channel: String,
+        message: String,
+        pinned: bool,
+    },
+    GifCategories,
+    Gifs {
+        query: String,
+    },
 }
 
 pub enum Cmd {
-    /// Sign in with an email (or username) and password on the official instance.
+    /// Sign in with an email (or username) and password on the instance at
+    /// `origin` (see `discovery::origin`).
     Login {
         login: String,
         password: String,
+        origin: String,
     },
     /// The authenticator (or a backup) code after `Ev::NeedsCode`.
     Code(String),
@@ -87,6 +107,20 @@ pub enum Answer {
         what: &'static str,
         result: Result<(), String>,
     },
+    Search {
+        channel: String,
+        query: godwit_core::search::SearchQuery,
+        offset: usize,
+        result: Result<Value, String>,
+    },
+    Pins {
+        channel: String,
+        result: Result<Value, String>,
+    },
+    Gifs {
+        query: String,
+        result: Result<Value, String>,
+    },
 }
 
 #[derive(Debug)]
@@ -105,7 +139,7 @@ pub enum Ev {
         reason: String,
         signed_out: bool,
     },
-    Answer(Answer),
+    Answer(Box<Answer>),
     LoggedOut,
 }
 
@@ -128,8 +162,8 @@ use godwit_core::backend::error_text as text;
 #[derive(Default)]
 struct State {
     api: Option<Arc<Api>>,
-    /// Signing in: the ticket waiting for a code, and who.
-    ticket: Option<(Arc<Api>, String)>,
+    /// Signing in: the ticket waiting for a code, and the instance it is for.
+    ticket: Option<(Arc<Api>, String, String)>,
     gateway: Option<tmpsc::UnboundedSender<(u64, Value)>>,
     session: Option<tokio::task::JoinHandle<()>>,
     /// Finding the kept sign-in's instance (retrying while unreachable).
@@ -152,31 +186,35 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
             }
         };
         match cmd {
-            Cmd::Login { login, password } => {
+            Cmd::Login {
+                login,
+                password,
+                origin,
+            } => {
                 let result = async {
-                    let instance = Api::discover(crate::discovery::OFFICIAL).await?;
+                    let instance = Api::discover(&origin).await?;
                     let api = Arc::new(Api::new(instance, String::new())?);
                     let answer = api.login(&login, &password).await?;
                     anyhow::Ok((api, answer))
                 }
                 .await;
                 match result {
-                    Ok((_, Login::Token { token, user })) => sign_in(&mut st, &out, token, user).await,
+                    Ok((_, Login::Token { token, user })) => sign_in(&mut st, &out, token, user, origin).await,
                     Ok((api, Login::Mfa { ticket })) => {
-                        st.ticket = Some((api, ticket));
+                        st.ticket = Some((api, ticket, origin));
                         out.send(Ev::NeedsCode);
                     }
                     Err(e) => out.send(Ev::LoginFailed(text(e))),
                 }
             }
             Cmd::Code(code) => {
-                let Some((api, ticket)) = st.ticket.clone() else {
+                let Some((api, ticket, origin)) = st.ticket.clone() else {
                     continue;
                 };
                 match api.totp(&ticket, &code).await {
                     Ok(Login::Token { token, user }) => {
                         st.ticket = None;
-                        sign_in(&mut st, &out, token, user).await;
+                        sign_in(&mut st, &out, token, user, origin).await;
                     }
                     Ok(Login::Mfa { .. }) => out.send(Ev::NeedsCode),
                     Err(e) => out.send(Ev::LoginFailed(text(e))),
@@ -214,7 +252,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                 if let Some(api) = st.api.clone() {
                     let out = out.clone();
                     // One at a time is `Api`'s pace; answers come back in any order.
-                    tokio::spawn(async move { out.send(Ev::Answer(answer(&api, request).await)) });
+                    tokio::spawn(async move { out.send(Ev::Answer(Box::new(answer(&api, request).await))) });
                 }
             }
             Cmd::Gateway(op, data) => {
@@ -239,12 +277,8 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
     }
 }
 
-async fn sign_in(st: &mut State, out: &Out, token: String, user: String) {
-    let saved = Saved {
-        user,
-        token,
-        origin: crate::discovery::OFFICIAL.to_owned(),
-    };
+async fn sign_in(st: &mut State, out: &Out, token: String, user: String, origin: String) {
+    let saved = Saved { user, token, origin };
     match Api::discover(&saved.origin).await {
         Ok(instance) => {
             out.send(Ev::SignedIn(saved.clone()));
@@ -362,6 +396,45 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::Ack { channel, message } => Answer::Done {
             what: "marking read",
             result: api.ack(&channel, &message).await.map_err(text),
+        },
+        Request::Search {
+            channel,
+            guild,
+            query,
+            offset,
+        } => Answer::Search {
+            channel: channel.clone(),
+            query: query.clone(),
+            offset,
+            result: api
+                .search(&channel, guild.as_deref(), &query, offset)
+                .await
+                .map_err(text),
+        },
+        Request::Pins { channel } => Answer::Pins {
+            channel: channel.clone(),
+            result: api.pins(&channel).await.map_err(text),
+        },
+        Request::SetPinned {
+            channel,
+            message,
+            pinned,
+        } => Answer::Done {
+            what: "changing a pin",
+            result: api.set_pinned(&channel, &message, pinned).await.map_err(text),
+        },
+        Request::GifCategories => Answer::Gifs {
+            query: String::new(),
+            result: api.gif_featured().await.map_err(text),
+        },
+        Request::Gifs { query } => Answer::Gifs {
+            result: if query == godwit_core::gifs::TRENDING {
+                api.gif_trending().await
+            } else {
+                api.gif_search(&query).await
+            }
+            .map_err(text),
+            query,
         },
     }
 }

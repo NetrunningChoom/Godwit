@@ -42,6 +42,16 @@ impl SearchFilters {
     /// Everything but the server-only `in:` and the scope.
     pub const DIRECT: Self = Self(0x1ff & !SearchFilter::In.bit() & !SearchFilter::Scope.bit());
 
+    pub const fn new(values: &[SearchFilter]) -> Self {
+        let mut bits = 0;
+        let mut i = 0;
+        while i < values.len() {
+            bits |= values[i].bit();
+            i += 1;
+        }
+        Self(bits)
+    }
+
     pub const fn has(self, filter: SearchFilter) -> bool {
         self.0 & filter.bit() != 0
     }
