@@ -1015,6 +1015,7 @@ impl Application {
                     size: f.size,
                     dimensions: None,
                     original_url: None,
+                    spoiler: f.spoiler,
                 })
                 .collect(),
             components: None,

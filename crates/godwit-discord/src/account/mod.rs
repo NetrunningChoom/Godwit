@@ -1096,7 +1096,13 @@ impl NetworkAccount for DiscordAccount {
                         text,
                         nonce: ours,
                         reply: reply_to.map(|r| r.0.to_string()),
-                        files: files.into_iter().map(|f| (f.path, f.name.to_string())).collect(),
+                        files: files
+                            .into_iter()
+                            .map(|f| {
+                                let name = crate::api::upload_filename(&f.name, f.spoiler);
+                                (f.path, name)
+                            })
+                            .collect(),
                     },
                 );
             }

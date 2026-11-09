@@ -651,6 +651,8 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
                 anim,
                 width: w as f32,
                 height: h as f32,
+                spoiler: a.spoiler,
+                spoiler_revealed: false,
             }
         })
         .collect();

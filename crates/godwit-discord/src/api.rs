@@ -159,6 +159,15 @@ pub struct Upload {
     pub uploaded_filename: String,
 }
 
+/// Discord's upload API carries spoiler state in the multipart filename.
+pub fn upload_filename(name: &str, spoiler: bool) -> String {
+    if spoiler {
+        format!("SPOILER_{name}")
+    } else {
+        name.to_owned()
+    }
+}
+
 /// Which page of a channel's history.
 #[derive(Clone, Copy, Debug)]
 pub enum Span<'a> {
@@ -1573,6 +1582,28 @@ pub fn encode(segment: &str) -> String {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn spoiler_upload_filename_prefix_is_preserved_in_message_body() {
+        let upload = Upload {
+            filename: "SPOILER_image.png".into(),
+            uploaded_filename: "uploaded.png".into(),
+        };
+        let mut body = message_body("", "nonce");
+        body["attachments"] = vec![json!({
+            "id": "0",
+            "filename": upload.filename,
+            "uploaded_filename": upload.uploaded_filename,
+        })]
+        .into();
+        assert_eq!(body["attachments"][0]["filename"], "SPOILER_image.png");
+    }
+
+    #[test]
+    fn upload_filename_marks_only_selected_spoilers() {
+        assert_eq!(upload_filename("image.png", true), "SPOILER_image.png");
+        assert_eq!(upload_filename("image.png", false), "image.png");
+    }
 
     #[test]
     fn ignore_uses_discords_ignore_relationship_route() {

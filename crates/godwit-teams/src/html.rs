@@ -242,6 +242,7 @@ pub fn attachments(html: &str) -> Vec<godwit_core::message::Attachment> {
                 }
                 .into(),
                 original_url: Some(original.into()),
+                spoiler: false,
                 kind: if image {
                     AttachmentKind::Image
                 } else {
@@ -275,6 +276,7 @@ pub fn attachments(html: &str) -> Vec<godwit_core::message::Attachment> {
                 name: tag.attr("alt").filter(|v| !v.is_empty()).unwrap_or("image").into(),
                 url: url.into(),
                 original_url: None,
+                spoiler: false,
                 kind: AttachmentKind::Image,
                 size: 0,
                 dimensions: dim("width").zip(dim("height")),

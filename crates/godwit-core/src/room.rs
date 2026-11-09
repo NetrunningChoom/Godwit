@@ -53,6 +53,9 @@ pub struct Capabilities {
     pub attachments: bool,
     /// `||text||` hides text until clicked.
     pub spoilers: bool,
+    /// An attachment can be sent hidden until clicked.
+    #[serde(default)]
+    pub file_spoilers: bool,
     pub pins: bool,
     pub search: bool,
     /// Which filters its search takes (`from:`, `has:`, ...); only with `search`.
@@ -147,6 +150,9 @@ impl Capabilities {
             reply: true,
             attachments: true,
             spoilers: true,
+            // These networks mark file spoilers with a `SPOILER_` filename
+            // prefix (docs.discord.food Attachment Object; for-web de5379b).
+            file_spoilers: matches!(network, Network::Stoat | Network::Discord),
             pins: true,
             search: true,
             search_filters: crate::search::SearchFilters::NONE,

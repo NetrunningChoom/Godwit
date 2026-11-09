@@ -159,6 +159,7 @@ pub fn attachments(message: &proto::Message, media: &Media) -> Vec<Attachment> {
                     original_url: uploaded(upload, false)
                         .and_then(|u| media.address(ATTACHMENTS, &u))
                         .map(Into::into),
+                    spoiler: false,
                     kind: kind(upload.content_type()),
                     size: 0,
                     dimensions: None,
@@ -194,6 +195,7 @@ pub fn attachments(message: &proto::Message, media: &Media) -> Vec<Attachment> {
                 .into(),
                 url: url.into(),
                 original_url: None,
+                spoiler: false,
                 kind,
                 size: 0,
                 dimensions: u32::try_from(meta.int_image_width())
@@ -230,6 +232,7 @@ pub fn attachments(message: &proto::Message, media: &Media) -> Vec<Attachment> {
                 .into(),
                 url: url.into(),
                 original_url: None,
+                spoiler: false,
                 kind: if native {
                     AttachmentKind::File
                 } else {
@@ -289,6 +292,7 @@ fn push_image(out: &mut Vec<Attachment>, media: &Media, raw: &str, name: &str) {
         url: url.into(),
         kind: AttachmentKind::Image,
         original_url: None,
+        spoiler: false,
         size: 0,
         dimensions: None,
     });

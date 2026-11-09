@@ -1501,6 +1501,7 @@ mod tests {
             size: 1,
             dimensions: None,
             original_url: Some("https://cdn/a.png/original".into()),
+            spoiler: false,
         };
         assert_eq!(super::attachment_web_link(&a), Some("https://cdn/a.png/original"));
         a.original_url = None;

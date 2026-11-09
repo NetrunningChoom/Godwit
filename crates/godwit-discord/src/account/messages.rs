@@ -6,6 +6,24 @@
 
 use super::*;
 
+/// Discord and its web client mark attachment spoilers with this prefix
+/// (docs.discord.food, Attachment Object; stoatchat/for-web de5379b).
+fn is_spoiler_filename(filename: &str) -> bool {
+    filename.starts_with("SPOILER_")
+}
+
+#[cfg(test)]
+mod spoiler_tests {
+    use super::is_spoiler_filename;
+
+    #[test]
+    fn detects_spoiler_filename_prefix() {
+        assert!(is_spoiler_filename("SPOILER_image.png"));
+        assert!(!is_spoiler_filename("image_SPOILER.png"));
+        assert!(!is_spoiler_filename("spoiler_image.png"));
+    }
+}
+
 impl DiscordAccount {
     pub(super) fn names(&self, guild: Option<&str>) -> Names<'_> {
         Names {
@@ -84,13 +102,15 @@ impl DiscordAccount {
                     AttachmentKind::File
                 };
                 let size = |k: &str| a[k].as_u64().and_then(|v| u32::try_from(v).ok());
+                let name = a["filename"].as_str().unwrap_or("file");
                 Some(Attachment {
-                    name: a["filename"].as_str().unwrap_or("file").into(),
+                    name: name.into(),
                     url: a["url"].as_str()?.into(),
                     kind,
                     size: a["size"].as_u64().unwrap_or_default(),
                     dimensions: size("width").zip(size("height")),
                     original_url: None,
+                    spoiler: is_spoiler_filename(name),
                 })
             })
             .collect();

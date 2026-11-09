@@ -275,6 +275,8 @@ pub enum Action {
     AddFiles(Vec<Outgoing>),
     /// Drop one of the files waiting to be sent.
     RemoveFile(usize),
+    /// Toggle the spoiler flag on one queued attachment where supported.
+    ToggleFileSpoiler(usize),
     /// Show the friends list instead of a room.
     ShowFriends,
     /// Show People: everyone as one contact across networks.

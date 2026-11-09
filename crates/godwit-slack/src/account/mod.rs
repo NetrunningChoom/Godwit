@@ -796,6 +796,7 @@ mod tests {
             path: "never-open-this-test-path.png".into(),
             name: "image.png".into(),
             size: 42,
+            spoiler: false,
         };
         let events = a.run(Command::SendMessage {
             room,

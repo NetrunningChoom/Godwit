@@ -65,6 +65,7 @@ impl StoatAccount {
                         size: f.size,
                         dimensions: f.metadata.width.zip(f.metadata.height),
                         original_url: self.file_url(f).map(|u| format!("{u}/original").into()),
+                        spoiler: f.filename.starts_with("SPOILER_"),
                     })
                 })
                 .collect(),

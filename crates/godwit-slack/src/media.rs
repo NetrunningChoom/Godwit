@@ -43,6 +43,7 @@ pub fn attachments(message: &Value, media: &Media, team: &str) -> Vec<Attachment
                     size: file["size"].as_u64().unwrap_or(0),
                     dimensions: None,
                     original_url: None,
+                    spoiler: false,
                 });
             };
             let kind = kind(file["mimetype"].as_str().unwrap_or_default());
@@ -64,6 +65,7 @@ pub fn attachments(message: &Value, media: &Media, team: &str) -> Vec<Attachment
                 name: name.into(),
                 url: media.address(team, preview)?.into(),
                 original_url: media.address(team, original).map(Into::into),
+                spoiler: false,
                 kind,
                 size: file["size"].as_u64().unwrap_or(0),
                 dimensions: dim("original_w").zip(dim("original_h")),

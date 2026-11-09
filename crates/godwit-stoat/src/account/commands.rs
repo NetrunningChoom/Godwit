@@ -689,7 +689,12 @@ impl StoatAccount {
                     files: files
                         .into_iter()
                         .map(|f| Upload {
-                            name: f.name.to_string(),
+                            // for-web's de5379b sends spoiler uploads with this filename prefix.
+                            name: if f.spoiler {
+                                format!("SPOILER_{}", f.name)
+                            } else {
+                                f.name.to_string()
+                            },
                             size: f.size,
                             source: UploadSource::Path(f.path),
                         })

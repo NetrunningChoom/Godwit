@@ -148,6 +148,7 @@ export component Timeline inherits Rectangle {
     // false: nothing to attach, the text pastes as usual.
     callback paste-files() -> bool;
     callback remove-file(int);
+    callback toggle-file-spoiler(int);
     callback load-earlier();
     callback draft-edited(string);
     callback capture-composer(int, int);
@@ -1187,6 +1188,7 @@ export component Timeline inherits Rectangle {
                         Text { text: f.name; overflow: elide; color: Theme.on-surface; }
                         Text { text: f.detail; font-size: Theme.text-caption; color: Theme.outline; }
                     }
+                    if f.can-spoiler: IconButton { y: (parent.height - self.height) / 2; glyph: Icons.visibility; tint: f.spoiler ? Theme.primary : Theme.on-surface-variant; tooltip: f.spoiler ? "Spoiler: on" : "Mark as spoiler"; clicked => { root.toggle-file-spoiler(i); } }
                     IconButton { y: (parent.height - self.height) / 2; glyph: Icons.close; clicked => { root.remove-file(i); } }
                 }
             }

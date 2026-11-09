@@ -17,6 +17,8 @@ pub struct Outgoing {
     pub path: PathBuf,
     pub name: Arc<str>,
     pub size: u64,
+    /// Mark the uploaded filename as a spoiler where the network supports it.
+    pub spoiler: bool,
 }
 
 /// Someone the user knows on a network.

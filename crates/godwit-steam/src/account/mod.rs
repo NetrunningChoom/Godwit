@@ -1044,6 +1044,7 @@ fn images(list: Vec<(String, Option<(u32, u32)>)>) -> Vec<Attachment> {
             size: 0,
             dimensions,
             original_url: None,
+            spoiler: false,
         })
         .collect()
 }
@@ -1672,6 +1673,7 @@ mod tests {
                 path: std::path::PathBuf::from("image.png"),
                 name: "image.png".into(),
                 size: 4,
+                spoiler: false,
             }],
         });
         assert!(

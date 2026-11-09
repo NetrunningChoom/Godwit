@@ -567,6 +567,15 @@ impl Application {
                 }
                 Vec::new()
             }
+            Action::ToggleFileSpoiler(index) => {
+                if let Some(room) = self.state.selected.clone()
+                    && self.state.room(&room).is_some_and(|r| r.capabilities.file_spoilers)
+                    && let Some(file) = self.state.files.get_mut(&room).and_then(|list| list.get_mut(index))
+                {
+                    file.spoiler = !file.spoiler;
+                }
+                Vec::new()
+            }
             Action::ShowFriends => self.dispatch_show_friends(),
             Action::ShowPeople => self.show_page(super::Page::People),
             Action::ShowActive => self.show_page(super::Page::Active),

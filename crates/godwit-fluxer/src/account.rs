@@ -355,6 +355,7 @@ impl FluxerAccount {
                     size: a["size"].as_u64().unwrap_or(0),
                     dimensions: dim("width").zip(dim("height")),
                     original_url: None,
+                    spoiler: false,
                 })
             })
             .collect();
@@ -1195,6 +1196,7 @@ mod tests {
             path: "never-open-this-test-path.png".into(),
             name: "image.png".into(),
             size: 42,
+            spoiler: false,
         };
         let events = a.run(Command::SendMessage {
             room,

@@ -1193,6 +1193,8 @@ impl Presenter {
                     .map(|f| FileItem {
                         name: f.name.as_ref().into(),
                         detail: view::human_size(f.size).into(),
+                        spoiler: f.spoiler,
+                        can_spoiler: room.capabilities.file_spoilers,
                     })
                     .collect()
             })

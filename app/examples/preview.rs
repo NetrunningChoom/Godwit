@@ -1755,6 +1755,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     path: "/nonexistent/holiday.jpg".into(),
                     name: format!("{}.jpg", filler(41, 1).to_lowercase()).into(),
                     size: 2_400_000,
+                    spoiler: false,
                 }]));
                 app.dispatch(Action::SetDraft(filler(42, 5)));
                 Screen::Main
@@ -2449,6 +2450,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     path: "/nonexistent/notes.pdf".into(),
                     name: format!("{}.pdf", filler(43, 1).to_lowercase()).into(),
                     size: 640_000,
+                    spoiler: false,
                 }]));
                 app.dispatch(Action::SetDraft(filler(44, 4).to_lowercase()));
                 app.dispatch(Action::Send {

@@ -651,6 +651,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
         size: 2_480,
         dimensions: None,
         original_url: None,
+        spoiler: false,
     }];
     history.push(file);
     let mut photo = msg("09b", "u0", &p0, 15, &bogus.sentence(3).to_lowercase());
@@ -661,6 +662,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
         size: 1_800_000,
         dimensions: Some((1600, 900)),
         original_url: None,
+        spoiler: false,
     }];
     photo.embeds.push(Embed {
         title: Some("A landscape from the demo".into()),
@@ -2665,6 +2667,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                         size: f.size,
                         dimensions: None,
                         original_url: None,
+                        spoiler: f.spoiler,
                     })
                     .collect();
                 vec![Event::MessageConfirmed {

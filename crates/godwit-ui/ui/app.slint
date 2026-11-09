@@ -947,6 +947,7 @@ export component AppWindow inherits Window {
     callback people-search(string);
     callback people-filter(string);
     callback remove-file(int);
+    callback toggle-file-spoiler(int);
     callback show-friends();
     callback toggle-group-person(int);
     callback select-group-account(string);
@@ -1516,6 +1517,7 @@ export component AppWindow inherits Window {
                                         attach => { root.attach(); }
                                         paste-files => { return root.paste-files(); }
                                         remove-file(i) => { root.remove-file(i); }
+                                        toggle-file-spoiler(i) => { root.toggle-file-spoiler(i); }
                                         draft <=> root.draft;
                                         capture-composer(anchor, cursor) => {
                                             root.composer-anchor = anchor;

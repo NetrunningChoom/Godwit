@@ -44,6 +44,9 @@ pub struct Attachment {
     /// (Stoat's `/original`): what the image viewer shows.
     #[serde(default)]
     pub original_url: Option<Arc<str>>,
+    /// Hidden until the user reveals it (for example, a Discord `SPOILER_` filename).
+    #[serde(default)]
+    pub spoiler: bool,
 }
 
 /// One emoji's reactions on a message.

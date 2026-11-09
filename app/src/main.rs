@@ -986,6 +986,11 @@ fn connect_callbacks(ui: &AppWindow) {
             sh.act(ui, Action::RemoveFile(i));
         }
     });
+    callback!(ui.on_toggle_file_spoiler(i) => |sh, ui| {
+        if let Ok(i) = usize::try_from(i) {
+            sh.act(ui, Action::ToggleFileSpoiler(i));
+        }
+    });
     callback!(ui.on_join_call() => |sh, ui| {
         if let Some(room) = sh.selected_room() {
             sh.act(ui, Action::JoinCall(room));

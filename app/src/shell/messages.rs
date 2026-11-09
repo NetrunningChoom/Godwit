@@ -376,6 +376,7 @@ impl Shell {
                     path,
                     name: name.into(),
                     size: meta.len(),
+                    spoiler: false,
                 })
             })
             .collect();

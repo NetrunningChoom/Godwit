@@ -67,6 +67,7 @@ pub fn attachments(content: &str, files: &[Value], media: Option<&Media>) -> Vec
             name: name.into(),
             url: url.into(),
             original_url: None,
+            spoiler: false,
             kind: kind(
                 file["contentType"]
                     .as_str()

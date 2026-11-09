@@ -2668,6 +2668,7 @@ fn file(name: &str) -> Outgoing {
         path: PathBuf::from(format!("/tmp/{name}")),
         name: name.into(),
         size: 3,
+        spoiler: false,
     }
 }
 
@@ -2685,6 +2686,20 @@ fn files_go_with_the_next_message_even_without_text() {
     assert!(app.state().files.is_empty());
     let pending = app.state().timeline(&id).unwrap().messages.last().unwrap().clone();
     assert_eq!(&*pending.attachments[0].name, "b.txt");
+}
+
+#[test]
+fn attachment_spoiler_toggle_is_gated_by_room_capability_and_sent() {
+    let (mut app, id) = open_dm(&[]);
+    app.dispatch(Action::AddFiles(vec![file("a.png")]));
+    app.dispatch(Action::ToggleFileSpoiler(0));
+    let effects = app.dispatch(Action::Send { now_ms: 1 });
+    let [Command::SendMessage { files, .. }] = &commands(&effects)[..] else {
+        panic!("expected a send, got {effects:?}");
+    };
+    assert!(files[0].spoiler);
+    let pending = app.state().timeline(&id).unwrap().messages.last().unwrap().clone();
+    assert!(pending.attachments[0].spoiler);
 }
 
 #[test]

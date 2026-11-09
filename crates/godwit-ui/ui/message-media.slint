@@ -8,6 +8,7 @@ import { Avatar, Button, EmojiText } from "widgets.slint";
 
 export component AttachmentView inherits Rectangle {
     in property <AttachmentItem> item;
+    property <bool> spoiler-revealed: item.spoiler-revealed;
     callback open();
     callback context-menu(length, length);
     // Images: the preview at its size; everything else: a file card.
@@ -22,6 +23,11 @@ export component AttachmentView inherits Rectangle {
         height: parent.height;
         source: item.anim >= 0 ? Anim.frames[item.anim] : item.image;
         image-fit: contain;
+        visible: !item.spoiler || root.spoiler-revealed;
+    }
+    if item.spoiler && !root.spoiler-revealed: Button {
+        text: "Click to reveal spoiler";
+        clicked => { root.spoiler-revealed = true; }
     }
     if item.kind != 0: HorizontalLayout {
         padding: Theme.gap-md;
