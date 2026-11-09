@@ -717,7 +717,12 @@ pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, 
                     Some(1) => 1,
                     Some(2..=6) => 2,
                     Some(7..=30) => 3,
-                    _ => 4,
+                    // Within a year, then older, so an online old DM cannot
+                    // outrank a quieter one from this year; unknown activity
+                    // (no timestamp reported) is last of all.
+                    Some(31..=365) => 4,
+                    Some(_) if ms > 0 => 5,
+                    _ => 6,
                 }
             };
             entries.sort_by(|a, b| match (pin(&a.2), pin(&b.2)) {
@@ -845,6 +850,48 @@ mod multi_tests {
     use super::*;
     use godwit_core::application::Action;
     use godwit_core::contacts::Contacts;
+
+    /// Order of two fresh DMs in the list, given their activity and presence.
+    fn dm_order(first: (i64, Option<Presence>), second: (i64, Option<Presence>)) -> (usize, usize) {
+        let (mut app, _, _) = crate::demo::world(Contacts::default());
+        app.dispatch(Action::SelectServer(None));
+        let mut ids = Vec::new();
+        for (raw, (activity, presence)) in [("sortdm-a", first), ("sortdm-b", second)] {
+            let mut room = crate::demo::room(
+                raw,
+                raw,
+                godwit_core::room::RoomKind::Direct {
+                    with: crate::demo::user(raw),
+                },
+                false,
+                0,
+            );
+            room.last_activity = activity;
+            room.presence = presence;
+            ids.push(room.id.clone());
+            app.apply(godwit_core::application::Event::RoomUpdated(room));
+        }
+        let mut images = Images::offline();
+        let (_, _, listed, _, _) = rooms(app.state(), &mut images, "", "", &[]);
+        let at = |id: &RoomId| listed.iter().position(|l| l.as_ref() == Some(id)).expect("listed DM");
+        (at(&ids[0]), at(&ids[1]))
+    }
+
+    #[test]
+    fn an_online_old_dm_does_not_outrank_a_newer_offline_one() {
+        let now = Local::now().timestamp_millis();
+        let (newer, older) = dm_order(
+            (now - 90 * 86_400_000, None),
+            (1_660_000_000_000, Some(Presence::Online)),
+        );
+        assert!(newer < older, "recency must beat presence across years");
+    }
+
+    #[test]
+    fn unknown_dm_activity_sorts_after_known_old_conversations() {
+        let (known, unknown) = dm_order((1_600_000_000_000, None), (0, Some(Presence::Online)));
+        assert!(known < unknown, "unknown activity must sort last");
+    }
 
     #[test]
     fn a_folded_category_keeps_only_its_open_and_unread_channels() {
