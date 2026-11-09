@@ -440,20 +440,27 @@ impl Shell {
     /// The pointer moved over text: a hand over links.
     pub fn select_hover(&mut self, ui: &AppWindow, row: i32, block: i32, x: f32, y: f32) {
         use slint::ComponentHandle;
-        let on = if row == view::CARD_ROW {
+        let link = if row == view::CARD_ROW {
             usize::try_from(block)
-                .is_ok_and(|b| crate::selection::BlockSelection::on_link(&self.presenter.card_laid, b, x, y))
+                .ok()
+                .and_then(|b| crate::selection::BlockSelection::link_at(&self.presenter.card_laid, b, x, y))
         } else {
             let (Ok(r), Ok(b)) = (usize::try_from(row), usize::try_from(block)) else {
                 return;
             };
-            self.selection.on_link(&self.presenter.rows, r, b, x, y)
+            self.selection.link_at(&self.presenter.rows, r, b, x, y)
         };
         let select = ui.global::<crate::ui::Select>();
-        let (row, block) = if on { (row, block) } else { (-1, -1) };
+        let (row, block) = if link.is_some() { (row, block) } else { (-1, -1) };
         if select.get_link_row() != row || select.get_link_block() != block {
             select.set_link_row(row);
             select.set_link_block(block);
+        }
+        // What the right-click menu offers to open or copy: web links only
+        // (mentions, spoilers and the like are Godwit's own).
+        let url = link.as_deref().filter(|u| is_web_url(u)).unwrap_or_default();
+        if select.get_link_url() != url {
+            select.set_link_url(url.into());
         }
     }
 
@@ -631,6 +638,36 @@ impl Shell {
             save_and_open(fetch.clone(), network.to_owned(), whole, name.to_string(), kind);
         } else if url.starts_with("http://") || url.starts_with("https://") {
             open_external(&url);
+        }
+    }
+
+    /// An attachment's context menu: 0 opens it in the browser, 1 saves it,
+    /// 2 copies its address. As the image viewer's buttons do, for any file.
+    pub fn attachment_action(&mut self, row: i32, index: i32, action: i32) {
+        let Some(id) = self.message_at(row) else { return };
+        let Ok(index) = usize::try_from(index) else { return };
+        let Some(a) = self
+            .app
+            .state()
+            .selected_message(&id)
+            .and_then(|m| m.attachments.get(index))
+            .cloned()
+        else {
+            return;
+        };
+        let full = a.original_url.as_deref().unwrap_or(&a.url).to_owned();
+        match action {
+            0 => {
+                if let Some(link) = attachment_web_link(&a) {
+                    open_external(link);
+                }
+            }
+            1 => self.save_or_open(full, a.name.to_string(), a.kind, false),
+            _ => {
+                if let Some(link) = attachment_web_link(&a) {
+                    copy_to_clipboard(link.to_owned());
+                }
+            }
         }
     }
 

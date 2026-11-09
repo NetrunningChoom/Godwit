@@ -857,6 +857,7 @@ export component AppWindow inherits Window {
     callback close-picker();
     callback open-attachment(int, int);
     callback link-clicked(int, string);
+    callback attachment-action(int, int, int);
     callback play-inline(string, string);
     callback player-fullscreen(string);
     callback join-invite(string);
@@ -1509,6 +1510,8 @@ export component AppWindow inherits Window {
                                         close-picker => { root.close-picker(); }
                                         open-attachment(i, a) => { root.open-attachment(i, a); }
                                         link-clicked(i, url) => { root.link-clicked(i, url); }
+                                        copy-string(text) => { root.copy-string(text); }
+                                        attachment-action(i, a, action) => { root.attachment-action(i, a, action); }
                                         play-inline(url, kind) => { root.play-inline(url, kind); }
                                         player-fullscreen(url) => { root.player-fullscreen(url); }
                                         join-invite(code) => { root.join-invite(code); }

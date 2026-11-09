@@ -168,9 +168,9 @@ impl ChatSelection {
         true
     }
 
-    /// Whether (x, y) in a block is on a link (the pointer becomes a hand).
-    pub fn on_link(&self, rows: &[RowKey], row: usize, block: usize, x: f32, y: f32) -> bool {
-        layout(rows, row, block).is_some_and(|(laid, _)| laid.link_at(x, y).is_some())
+    /// The link at (x, y) in a block, if any (the pointer becomes a hand).
+    pub fn link_at(&self, rows: &[RowKey], row: usize, block: usize, x: f32, y: f32) -> Option<Arc<str>> {
+        layout(rows, row, block).and_then(|(laid, _)| laid.link_at(x, y))
     }
 
     /// The selection, start first, as rows and positions; None if empty or
@@ -433,8 +433,8 @@ impl BlockSelection {
         self.focus = Some((block, word.end));
     }
 
-    pub fn on_link(blocks: &[textlayout::Laid], block: usize, x: f32, y: f32) -> bool {
-        blocks.get(block).and_then(|l| l.link_at(x, y)).is_some()
+    pub fn link_at(blocks: &[textlayout::Laid], block: usize, x: f32, y: f32) -> Option<Arc<str>> {
+        blocks.get(block).and_then(|l| l.link_at(x, y))
     }
 
     /// Each selected block and its byte range, in order.

@@ -9,6 +9,7 @@ import { Avatar, Button, EmojiText } from "widgets.slint";
 export component AttachmentView inherits Rectangle {
     in property <AttachmentItem> item;
     callback open();
+    callback context-menu(length, length);
     // Images: the preview at its size; everything else: a file card.
     // Godwit's file card is a fixed width; its own preferred width is 0.
     width: item.kind == 0 ? item.width : 360px;
@@ -34,9 +35,13 @@ export component AttachmentView inherits Rectangle {
         if item.openable: Icon { text: Icons.open-in-new; color: Theme.on-surface-variant; width: Theme.icon-large; }
     }
     TouchArea {
-        enabled: item.openable;
         mouse-cursor: item.openable ? pointer : default;
-        clicked => { root.open(); }
+        clicked => { if item.openable { root.open(); } }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                root.context-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
     }
 }
 

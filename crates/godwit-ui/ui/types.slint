@@ -250,6 +250,9 @@ export global Select {
     // The block whose link is under the pointer (a hand cursor).
     in property <int> link-row: -1;
     in property <int> link-block: -1;
+    // The web address of that link ("" for none or a Godwit-internal one):
+    // what the message menu's "Open link" and "Copy link address" act on.
+    in property <string> link-url;
     callback down(int, int, length, length, bool);
     callback drag(int, int, length, length);
     callback up(int, int, length, length);

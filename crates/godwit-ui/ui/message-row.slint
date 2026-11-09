@@ -78,6 +78,9 @@ export component MessageRow inherits Rectangle {
 
     callback open-attachment(int);
     callback link-clicked(string);
+    callback copy-string(string);
+    // An attachment's menu: its index and 0 open in browser, 1 save, 2 copy address.
+    callback attachment-action(int, int);
     callback play-inline(string, string);
     callback player-fullscreen(string);
     callback typed(string);
@@ -105,7 +108,15 @@ export component MessageRow inherits Rectangle {
     // Godwit's hover: surface-container, 8 px corners.
     background: root.flash ? Theme.primary-container.with-alpha(0.5) : root.hovered ? Theme.surface : transparent;
     border-radius: Theme.radius-sm;
+    // What the menu was opened on: a link's address, or an attachment's index
+    // (set just before open-menu; both are taken and cleared there).
+    property <string> menu-link;
+    property <int> menu-attachment: -1;
+    property <int> next-attachment: -1;
     function open-menu(x: length, y: length) {
+        root.menu-link = Select.link-url;
+        root.menu-attachment = root.next-attachment;
+        root.next-attachment = -1;
         if !root.message.pending {
             root.menu-x = x - root.absolute-position.x;
             root.menu-y = y - root.absolute-position.y;
@@ -293,6 +304,7 @@ export component MessageRow inherits Rectangle {
                         if !att.has-video: AttachmentView {
                             item: att;
                             open => { root.open-attachment(i); }
+                            context-menu(x, y) => { root.next-attachment = i; root.open-menu(x, y); }
                         }
                         // A video file: the player, its name below to open or save it.
                         if att.has-video: VerticalLayout {
@@ -314,6 +326,12 @@ export component MessageRow inherits Rectangle {
                                 name-area := TouchArea {
                                     mouse-cursor: pointer;
                                     clicked => { root.open-attachment(i); }
+                                    pointer-event(e) => {
+                                        if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                                            root.next-attachment = i;
+                                            root.open-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -428,6 +446,15 @@ export component MessageRow inherits Rectangle {
         x: root.menu-x;
         y: root.menu-y;
         MenuPanel {
+            // On a link: open it (after the usual question) or copy its address.
+            if root.menu-link != "": MenuRow { glyph: Icons.open-in-new; label: "Open link"; clicked => { root.link-clicked(root.menu-link); } }
+            if root.menu-link != "": MenuRow { glyph: Icons.copy; label: "Copy link address"; clicked => { root.copy-string(root.menu-link); } }
+            if root.menu-link != "": MenuDivider { }
+            // On an attachment: as the picture viewer's buttons.
+            if root.menu-attachment >= 0: MenuRow { glyph: Icons.open-in-new; label: "Open in browser"; clicked => { root.attachment-action(root.menu-attachment, 0); } }
+            if root.menu-attachment >= 0: MenuRow { glyph: Icons.file; label: "Save"; clicked => { root.attachment-action(root.menu-attachment, 1); } }
+            if root.menu-attachment >= 0: MenuRow { glyph: Icons.copy; label: "Copy attachment link"; clicked => { root.attachment-action(root.menu-attachment, 2); } }
+            if root.menu-attachment >= 0: MenuDivider { }
             // Text selected: copy it, as a browser's menu offers first.
             if Select.active: MenuRow { glyph: Icons.copy; label: "Copy"; clicked => { Select.copy(); } }
             if Select.active: MenuDivider { }

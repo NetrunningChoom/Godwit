@@ -1252,6 +1252,20 @@ fn test_level_reader(test: &godwit_voice::mictest::MicTest) -> impl Fn() -> f32 
     move || f32::from_bits(level.load(std::sync::atomic::Ordering::Relaxed)).clamp(0.0, 1.0)
 }
 
+/// Whether `url` is a web address (the only kind the browser or the
+/// clipboard gets from a message's context menu).
+fn is_web_url(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
+/// The address a message attachment's menu opens in the browser and copies:
+/// the full file where the network serves a lighter preview, as the viewer
+/// does. None for files only a network's own fetcher can get.
+fn attachment_web_link(a: &godwit_core::message::Attachment) -> Option<&str> {
+    let url = a.original_url.as_deref().unwrap_or(&a.url);
+    is_web_url(url).then_some(url)
+}
+
 /// A picture the viewer can show: its address, name and pixel size, and for
 /// a GIF that is really a looping video (Discord's `gifv`), that video.
 type Picture = (
@@ -1414,6 +1428,26 @@ fn insert_at_selection(text: &str, anchor: i32, cursor: i32, insertion: &str) ->
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn menu_links_are_web_addresses_only() {
+        use godwit_core::message::{Attachment, AttachmentKind};
+        assert!(super::is_web_url("https://example.com/a"));
+        assert!(!super::is_web_url("godwit://user/1"));
+        let mut a = Attachment {
+            name: "a.png".into(),
+            url: "https://cdn/a.png".into(),
+            kind: AttachmentKind::Image,
+            size: 1,
+            dimensions: None,
+            original_url: Some("https://cdn/a.png/original".into()),
+        };
+        assert_eq!(super::attachment_web_link(&a), Some("https://cdn/a.png/original"));
+        a.original_url = None;
+        assert_eq!(super::attachment_web_link(&a), Some("https://cdn/a.png"));
+        a.url = "steam-media://x#thumb".into();
+        assert_eq!(super::attachment_web_link(&a), None);
+    }
+
     use super::*;
     #[test]
     fn picker_insertion_replaces_selections_without_splitting_utf8() {

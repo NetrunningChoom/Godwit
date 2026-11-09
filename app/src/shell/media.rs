@@ -285,7 +285,13 @@ impl Shell {
         }) else {
             return;
         };
-        let web = url.starts_with("https://") || url.starts_with("http://");
+        self.save_or_open(url, name, kind, external);
+    }
+
+    /// "Save" (to Downloads, then shown) or "Open in browser" for a file:
+    /// shared by the viewer and the attachments' context menu.
+    pub(super) fn save_or_open(&self, url: String, name: String, kind: AttachmentKind, external: bool) {
+        let web = is_web_url(&url);
         if external && web {
             open_external(&url);
         } else if let Some((scheme, fetch)) = self.media.iter().find(|(scheme, _)| url.starts_with(scheme.as_str())) {

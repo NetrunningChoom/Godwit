@@ -181,6 +181,8 @@ export component Timeline inherits Rectangle {
     callback close-picker();
     callback open-attachment(int, int);
     callback link-clicked(int, string);
+    callback copy-string(string);
+    callback attachment-action(int, int, int);
     callback play-inline(string, string);
     callback player-fullscreen(string);
     callback join-invite(string);
@@ -1118,6 +1120,8 @@ export component Timeline inherits Rectangle {
                     jump-to-reply => { root.jump-to-reply(i); }
                     open-attachment(a) => { root.open-attachment(i, a); }
                     link-clicked(url) => { root.link-clicked(i, url); }
+                    copy-string(text) => { root.copy-string(text); }
+                    attachment-action(a, action) => { root.attachment-action(i, a, action); }
                     play-inline(url, kind) => { root.play-inline(url, kind); }
                     player-fullscreen(url) => { root.player-fullscreen(url); }
                     join-invite(code) => { root.join-invite(code); }
