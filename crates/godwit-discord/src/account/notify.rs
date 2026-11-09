@@ -6,6 +6,35 @@ use super::*;
 use godwit_core::room::RoomNotifyChange;
 use serde_json::{Value, json};
 
+/// Thread member flags for the notification levels (docs.discord.food,
+/// [Thread Member Flags](https://docs.discord.food/resources/channel#thread-member-flags)).
+const THREAD_LEVEL_FLAGS: [u64; 3] = [1 << 1, 1 << 2, 1 << 3];
+
+/// The thread member settings for a change, keeping the flags that aren't
+/// levels (such as HAS_INTERACTED) as they are.
+pub(super) fn thread_notify_body(
+    change: RoomNotifyChange,
+    flags: u64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<Value> {
+    match change {
+        RoomNotifyChange::Level(Some(level)) => {
+            let bit = THREAD_LEVEL_FLAGS.get(usize::from(level))?;
+            let others = flags & !THREAD_LEVEL_FLAGS.iter().fold(0, |a, b| a | b);
+            Some(json!({"flags": others | bit}))
+        }
+        RoomNotifyChange::Level(None) => None,
+        RoomNotifyChange::Mute { seconds } => Some(json!({
+            "muted": true,
+            "mute_config": {
+                "selected_time_window": seconds.map_or(-1, i64::from),
+                "end_time": seconds.map(|s| (now + chrono::Duration::seconds(i64::from(s))).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+            }
+        })),
+        RoomNotifyChange::Unmute => Some(json!({"muted": false, "mute_config": null})),
+    }
+}
+
 /// The override's fields for a change, as the web client sends them: a mute
 /// carries its window in seconds (-1: until turned off) and its end time.
 pub(super) fn override_entry(change: RoomNotifyChange, now: chrono::DateTime<chrono::Utc>) -> Value {
@@ -54,6 +83,39 @@ impl DiscordAccount {
             return Vec::new();
         };
         let guild = c.guild.clone();
+        if c.thread() {
+            let now = chrono::Utc::now();
+            let Some(body) = thread_notify_body(change, c.thread_flags.unwrap_or(0), now) else {
+                return Vec::new();
+            };
+            // Shown at once; THREAD_MEMBER_UPDATE confirms it.
+            if let Some(flags) = body["flags"].as_u64()
+                && let Some(t) = self.store.channels.get_mut(&channel)
+            {
+                t.thread_flags = Some(flags);
+            }
+            match change {
+                RoomNotifyChange::Mute { seconds } => {
+                    let until = seconds.map(|s| now.timestamp() + i64::from(s));
+                    self.store.muted_channels.insert(channel.clone(), until);
+                }
+                RoomNotifyChange::Unmute => {
+                    self.store.muted_channels.remove(&channel);
+                }
+                RoomNotifyChange::Level(_) => {}
+            }
+            if self.demo.is_none() {
+                self.net.send(Cmd::Request(Request::ThreadNotify {
+                    channel: channel.clone(),
+                    body,
+                }));
+            }
+            let mut out = Vec::new();
+            if let Some(room) = self.room(&channel) {
+                out.push(Event::RoomUpdated(room));
+            }
+            return out;
+        }
         let previous = self.current_override(&channel);
         // The change laid over the whole override, and the whole override is
         // what we send: docs.discord.food (User Settings, Modify User Guild
@@ -121,6 +183,14 @@ mod tests {
         assert_eq!(
             override_entry(RoomNotifyChange::Unmute, now),
             json!({"muted": false, "mute_config": null})
+        );
+        assert_eq!(
+            thread_notify_body(RoomNotifyChange::Level(Some(1)), 1 | 2, now),
+            Some(json!({"flags":5}))
+        );
+        assert_eq!(
+            thread_notify_body(RoomNotifyChange::Unmute, 0, now),
+            Some(json!({"muted":false,"mute_config":null}))
         );
     }
 }

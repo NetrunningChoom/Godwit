@@ -1219,6 +1219,12 @@ impl Api {
         .await
     }
 
+    /// Set our thread notification options ([published endpoint](https://docs.discord.food/resources/channel#modify-thread-settings)).
+    pub async fn thread_notify(&self, thread: &str, body: &Value) -> Result<()> {
+        let path = format!("/channels/{thread}/thread-members/@me/settings");
+        self.empty(with_json(self.request(Method::PATCH, &path), body)).await
+    }
+
     /// Our notification level for a server, as the client's server menu sets
     /// it (`PATCH /users/@me/guilds/{g}/settings`).
     pub async fn guild_notify(&self, guild: &str, level: u8) -> Result<()> {

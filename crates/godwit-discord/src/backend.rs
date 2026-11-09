@@ -247,6 +247,10 @@ pub enum Request {
         channel: String,
         join: bool,
     },
+    ThreadNotify {
+        channel: String,
+        body: serde_json::Value,
+    },
     /// Modify Channel: the fields in `body` (name, topic, nsfw,
     /// rate_limit_per_user); answered with [`Answer::ChannelSaved`].
     ModifyChannel {
@@ -511,6 +515,10 @@ pub enum Answer {
     ThreadMembership {
         channel: String,
         join: bool,
+        result: Result<(), RequestError>,
+    },
+    ThreadNotify {
+        channel: String,
         result: Result<(), RequestError>,
     },
     ForumThreads {
@@ -1332,6 +1340,10 @@ async fn answer(api: &Api, request: Request) -> Answer {
             result: api.thread_membership(&channel, join).await.map_err(RequestError::from),
             channel,
             join,
+        },
+        Request::ThreadNotify { channel, body } => Answer::ThreadNotify {
+            result: api.thread_notify(&channel, &body).await.map_err(RequestError::from),
+            channel,
         },
         Request::ForumThreads {
             channel,

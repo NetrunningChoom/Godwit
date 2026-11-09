@@ -131,6 +131,8 @@ pub struct Channel {
     pub message_count: u32,
     /// Discord includes `member` on threads the current user has joined.
     pub joined: bool,
+    /// The current user's thread flags ([published thread member docs](https://docs.discord.food/resources/channel#thread-member-object)).
+    pub thread_flags: Option<u64>,
 }
 
 impl Channel {
@@ -177,12 +179,26 @@ impl Channel {
                 .collect(),
             message_count: v["message_count"].as_u64().and_then(|n| n.try_into().ok()).unwrap_or(0),
             joined: !v["member"].is_null(),
+            thread_flags: v["member"]["flags"].as_u64(),
         })
     }
 
     /// A thread (or a forum's post): its `parent` is the channel it's in.
     pub fn thread(&self) -> bool {
         matches!(self.kind, ANNOUNCEMENT_THREAD | PUBLIC_THREAD | PRIVATE_THREAD)
+    }
+
+    pub fn thread_notify_level(&self) -> Option<u8> {
+        let flags = self.thread_flags?;
+        if flags & (1 << 1) != 0 {
+            Some(0)
+        } else if flags & (1 << 2) != 0 {
+            Some(1)
+        } else if flags & (1 << 3) != 0 {
+            Some(2)
+        } else {
+            None
+        }
     }
 
     /// A forum: no messages of its own, its posts are threads.
@@ -342,6 +358,9 @@ pub struct Store {
     /// Our notification level per server, as `user_guild_settings` keeps it
     /// (0 all, 1 mentions, 2 nothing, 3 the server's default).
     pub guild_notify: HashMap<String, u8>,
+    /// Guild mention switches from [published user guild settings](https://docs.discord.food/resources/user-settings#user-guild-settings-object).
+    pub suppress_everyone: HashSet<String>,
+    pub suppress_roles: HashSet<String>,
     /// A channel's own level where we set one (0 all, 1 mentions, 2
     /// nothing; 3 or missing: the server's).
     pub channel_notify: HashMap<String, u8>,
@@ -366,6 +385,9 @@ impl Store {
             return level;
         }
         let Some(c) = self.channels.get(channel) else { return 1 };
+        if let Some(level) = c.thread_notify_level() {
+            return level;
+        }
         if let Some(parent) = c.parent.as_deref().filter(|p| *p != channel)
             && let Some(level @ 0..=2) = self.channel_notify.get(parent).copied()
         {
@@ -395,6 +417,20 @@ impl Store {
                 self.muted_guilds.insert(g.to_owned());
             } else if s.get("muted").is_some() {
                 self.muted_guilds.remove(g);
+            }
+            if s.get("suppress_everyone").is_some() {
+                if s["suppress_everyone"] == true {
+                    self.suppress_everyone.insert(g.to_owned());
+                } else {
+                    self.suppress_everyone.remove(g);
+                }
+            }
+            if s.get("suppress_roles").is_some() {
+                if s["suppress_roles"] == true {
+                    self.suppress_roles.insert(g.to_owned());
+                } else {
+                    self.suppress_roles.remove(g);
+                }
             }
         }
         let Some(overrides) = s["channel_overrides"].as_array() else {

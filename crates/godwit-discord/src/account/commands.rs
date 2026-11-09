@@ -466,6 +466,12 @@ impl DiscordAccount {
                     format!("Discord, {} thread: {e}", if join { "joining" } else { "leaving" }).into(),
                 )),
             },
+            Answer::ThreadNotify { channel: _, result } => match result {
+                Ok(()) => self.sync_rooms(out),
+                Err(e) => out.push(Event::Error(
+                    format!("Discord, thread notification setting: {e}").into(),
+                )),
+            },
             Answer::ForumThreads {
                 channel,
                 sort,

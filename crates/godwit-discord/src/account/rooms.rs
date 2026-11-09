@@ -182,7 +182,7 @@ impl DiscordAccount {
             // channel (threads have their own permissions).
             manage_channel: c.guild.is_some() && !c.thread() && can(p::MANAGE_CHANNELS),
             // Channel overrides in our guild settings; DMs take a mute only.
-            notify_settings: !c.thread(),
+            notify_settings: !c.thread() || c.joined,
             // The picker sends the GIF's link, which needs embedding.
             // Stickers: a server's own, in its channels (no Nitro, so no other
             // servers and no DMs); the same permission as any message.
@@ -202,7 +202,11 @@ impl DiscordAccount {
         };
         Some(Room {
             notify: godwit_core::room::RoomNotify {
-                level: self.store.channel_notify.get(channel).copied().filter(|l| *l <= 2),
+                level: if c.thread() {
+                    c.thread_notify_level()
+                } else {
+                    self.store.channel_notify.get(channel).copied().filter(|l| *l <= 2)
+                },
                 muted: self.store.channel_muted(channel),
             },
             id: RoomId::new(account, channel),

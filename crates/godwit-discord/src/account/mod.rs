@@ -3245,6 +3245,89 @@ mod tests {
     }
 
     #[test]
+    fn ready_settings_and_gateway_updates_keep_mention_suppression() {
+        let (mut a, _, _) = account();
+        let mut d = crate::store::test_ready();
+        d["user_guild_settings"]["entries"][0]["suppress_everyone"] = json!(true);
+        d["user_guild_settings"]["entries"][0]["suppress_roles"] = json!(true);
+        a.handle(Ev::Ready(Box::new(d)), &mut Vec::new());
+        assert!(a.store.suppress_everyone.contains("10"));
+        assert!(a.store.suppress_roles.contains("10"));
+        a.handle(
+            Ev::Dispatch(
+                "USER_GUILD_SETTINGS_UPDATE".into(),
+                json!({"guild_id":"10", "suppress_everyone":false}),
+            ),
+            &mut Vec::new(),
+        );
+        assert!(!a.store.suppress_everyone.contains("10"));
+        assert!(a.store.suppress_roles.contains("10"));
+    }
+
+    #[test]
+    fn suppressed_broad_mentions_do_not_alert_but_direct_mentions_still_do() {
+        let (mut a, _, _) = account();
+        ready(&mut a);
+        a.store.suppress_everyone.insert("10".into());
+        let mut out = Vec::new();
+        a.alert(
+            &json!({"channel_id":"13", "author":{"id":"200"}, "mention_everyone":true}),
+            true,
+            &mut out,
+        );
+        assert!(!out.iter().any(|e| matches!(e, Event::Alert { .. })));
+        a.alert(
+            &json!({"channel_id":"13", "author":{"id":"200"}, "mention_everyone":true, "mentions":[{"id":"100"}]}),
+            true,
+            &mut out,
+        );
+        assert!(out.iter().any(|e| matches!(e, Event::Alert { .. })));
+        a.store.suppress_roles.insert("10".into());
+        out.clear();
+        a.alert(
+            &json!({"channel_id":"13", "author":{"id":"200"}, "mention_roles":["11"]}),
+            true,
+            &mut out,
+        );
+        assert!(!out.iter().any(|e| matches!(e, Event::Alert { .. })));
+    }
+
+    #[test]
+    fn thread_notification_level_uses_member_flags_and_patches_settings_endpoint() {
+        use godwit_core::room::RoomNotifyChange as C;
+        let (mut a, mut cmds, _) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        a.handle(
+            Ev::Dispatch(
+                "THREAD_CREATE".into(),
+                json!({
+                    "id":"600", "type":11, "guild_id":"10", "parent_id":"13", "name":"T",
+                    "member":{"id":"600", "user_id":"100", "flags": 4}
+                }),
+            ),
+            &mut Vec::new(),
+        );
+        let room = a.room("600").expect("thread room");
+        assert_eq!(room.notify.level, Some(1));
+        assert!(room.capabilities.notify_settings);
+        let thread = a.store.channels.get_mut("600").expect("stored thread");
+        thread.thread_flags = Some(2);
+        assert_eq!(thread.thread_notify_level(), Some(0));
+        thread.thread_flags = Some(8);
+        assert_eq!(thread.thread_notify_level(), Some(2));
+        thread.thread_flags = Some(0);
+        assert_eq!(thread.thread_notify_level(), None);
+        let _ = a.run(Command::SetRoomNotify {
+            room: room.id,
+            change: C::Level(Some(0)),
+        });
+        assert!(
+            matches!(cmds.try_recv(), Ok(Cmd::Request(Request::ThreadNotify { channel, body })) if channel == "600" && body["flags"] == 2)
+        );
+    }
+
+    #[test]
     fn channel_notification_settings_send_overrides_and_show_on_the_room() {
         use godwit_core::room::RoomNotifyChange as C;
         let (mut a, mut cmds, _tx) = account();

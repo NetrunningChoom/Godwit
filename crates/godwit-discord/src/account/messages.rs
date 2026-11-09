@@ -261,9 +261,32 @@ impl DiscordAccount {
         } else {
             0
         };
+        // Message `mention_everyone`, `mention_roles`, and `mentions` carry
+        // the alert categories (docs.discord.food, [Message](https://docs.discord.food/resources/message#message-object));
+        // the allowed-mentions docs group @everyone and @here together.
+        let mention_alert = c.guild.as_ref().is_some_and(|g| {
+            let everyone = m["mention_everyone"] == true;
+            let me = self.store.me.as_ref().map(|u| u.id.as_str());
+            let direct = m["mentions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|u| u["id"].as_str() == me);
+            let my_roles = me.and_then(|user| self.store.members.get(&(g.clone(), user.to_owned())));
+            let role_mention = m["mention_roles"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .any(|role| my_roles.is_some_and(|member| member.roles.iter().any(|id| id == role)));
+            direct
+                || (everyone && !self.store.suppress_everyone.contains(g))
+                || (role_mention && !self.store.suppress_roles.contains(g))
+                || (!everyone && !m["mention_roles"].as_array().is_some_and(|roles| !roles.is_empty()) && mentioned)
+        }) || (c.guild.is_none() && mentioned);
         let wanted = match level {
-            0 => !muted || mentioned,
-            1 => mentioned,
+            0 => !muted || mention_alert,
+            1 => mention_alert,
             _ => false,
         };
         // The chat on screen is skipped by the app, only while its window

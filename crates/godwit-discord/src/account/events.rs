@@ -473,6 +473,20 @@ impl DiscordAccount {
                     && let Some(thread) = self.store.channels.get_mut(channel)
                 {
                     thread.joined = !d["member"].is_null();
+                    // The payload is the thread member object itself.
+                    if let Some(flags) = d["flags"].as_u64().or(d["member"]["flags"].as_u64()) {
+                        thread.thread_flags = Some(flags);
+                    }
+                    if d["muted"] == true {
+                        let until = chrono::DateTime::parse_from_rfc3339(
+                            d["mute_config"]["end_time"].as_str().unwrap_or_default(),
+                        )
+                        .ok()
+                        .map(|t| t.timestamp());
+                        self.store.muted_channels.insert(channel.to_owned(), until);
+                    } else if d["muted"] == false {
+                        self.store.muted_channels.remove(channel);
+                    }
                     self.sync_rooms(out);
                 }
             }
