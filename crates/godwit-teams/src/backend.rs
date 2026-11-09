@@ -39,6 +39,18 @@ pub enum Request {
         conversation: String,
         message: String,
     },
+    Edit {
+        conversation: String,
+        message: String,
+        html: String,
+        my_name: String,
+    },
+    React {
+        conversation: String,
+        message: String,
+        key: String,
+        add: bool,
+    },
     Typing {
         conversation: String,
     },
@@ -602,6 +614,24 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::Delete { conversation, message } => {
             done("deleting a message", api.delete_message(&conversation, &message).await)
         }
+        Request::Edit {
+            conversation,
+            message,
+            html,
+            my_name,
+        } => done(
+            "editing a message",
+            api.edit_message(&conversation, &message, &html, &my_name).await,
+        ),
+        Request::React {
+            conversation,
+            message,
+            key,
+            add,
+        } => done(
+            "reacting to a message",
+            api.react(&conversation, &message, &key, add).await,
+        ),
         Request::Typing { conversation } => done("typing", api.typing(&conversation).await),
         Request::Ack {
             conversation,

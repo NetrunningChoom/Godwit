@@ -5,8 +5,8 @@
 //! (HTML) into Godwit's, Trouter's news into events, and the core's
 //! commands into requests. First version: 1:1 and group chats and team
 //! channels (flat, replies shown as replies to their post), sending,
-//! deleting, read state and typing. Editing, reactions, files and calls
-//! come later.
+//! editing, deleting, reactions, files, read state and typing. Calls are not
+//! available yet.
 
 mod commands;
 mod events;
@@ -551,6 +551,41 @@ mod tests {
             out.iter()
                 .any(|e| matches!(e, Event::MessageDeleted { room, .. } if *room.raw == thread_id))
         );
+    }
+
+    #[test]
+    fn edits_reactions_and_live_reaction_summaries() {
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        let room = RoomId::new(a.id().unwrap().clone(), DM);
+        assert!(a.room(DM).unwrap().capabilities.edit);
+        assert!(a.room(DM).unwrap().capabilities.react);
+        a.run(Command::EditMessage {
+            room: room.clone(),
+            message: MessageId("1760346100000".into()),
+            text: "changed".into(),
+        });
+        assert!(
+            matches!(cmds.try_recv(), Ok(Cmd::Request(Request::Edit { conversation, message, html, .. })) if conversation == DM && message == "1760346100000" && html.contains("changed"))
+        );
+        a.run(Command::React {
+            room,
+            message: MessageId("1760346100000".into()),
+            emoji: "👍".into(),
+            add: true,
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Request(Request::React { key, add: true, .. })) if key == "like"));
+
+        let mut events = Vec::new();
+        a.handle(Ev::News(json!({"resourceType":"MessageUpdate","resource":{"conversationid":CHANNEL,"id":"1760346100000","from":BEA,"content":"hello","messagetype":"Text","annotationsSummary":{"emotions":{"like":2,"heart":1}}}})), &mut events);
+        let Some(Event::MessageUpdated { message, .. }) =
+            events.iter().find(|e| matches!(e, Event::MessageUpdated { .. }))
+        else {
+            panic!("expected update")
+        };
+        assert_eq!(message.reactions.len(), 2);
+        assert!(message.reactions.iter().any(|r| &*r.emoji == "👍" && r.count == 2));
     }
 
     #[test]

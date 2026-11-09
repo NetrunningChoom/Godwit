@@ -401,6 +401,41 @@ impl Api {
         self.send(self.chat(Method::DELETE, &path)?).await.map(drop)
     }
 
+    /// Edits a message using the published msteams-mcp edit shape: PUT a
+    /// Message with its id, conversation, content and display name.
+    /// Source: docs/protocol-references/godwit-teams-messaging.ts (`editMessage`)
+    /// and https://github.com/hickeroar/msteams-mcp.
+    pub async fn edit_message(&self, conversation: &str, message: &str, html: &str, my_name: &str) -> Result<()> {
+        let path = format!(
+            "/v1/users/ME/conversations/{}/messages/{}",
+            seg(conversation),
+            seg(message)
+        );
+        let body = json!({"id":message,"type":"Message","conversationid":conversation,
+            "content":html,"messagetype":"RichText/Html","contenttype":"text","imdisplayname":my_name});
+        self.send(self.chat(Method::PUT, &path)?.json(&body)).await.map(drop)
+    }
+
+    /// Teams stores reactions as an emotion key property. The shape and
+    /// method come from docs/protocol-references/godwit-teams-api-reference.md
+    /// and https://github.com/hickeroar/msteams-mcp.
+    pub async fn react(&self, conversation: &str, message: &str, key: &str, add: bool) -> Result<()> {
+        let method = if add { Method::PUT } else { Method::DELETE };
+        let path = format!(
+            "/v1/users/ME/conversations/{}/messages/{}/properties?name=emotions",
+            seg(conversation),
+            seg(message)
+        );
+        let emotions = if add {
+            json!({"key":key,"value":now_ms()})
+        } else {
+            json!({"key":key})
+        };
+        self.send(self.chat(method, &path)?.json(&json!({"emotions":emotions})))
+            .await
+            .map(drop)
+    }
+
     pub async fn typing(&self, conversation: &str) -> Result<()> {
         let path = format!("/v1/users/ME/conversations/{}/messages", seg(conversation));
         let body = json!({"content": "", "messagetype": "Control/Typing", "contenttype": "Application/Message"});

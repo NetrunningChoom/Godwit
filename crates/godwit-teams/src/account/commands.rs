@@ -341,6 +341,39 @@ impl TeamsAccount {
                     );
                 }
             }
+            Command::EditMessage { room, message, text } => {
+                if let Some(conversation) = self.conversation_of_room(&room) {
+                    req(
+                        &self.net,
+                        Request::Edit {
+                            conversation,
+                            message: message.0.to_string(),
+                            html: html::from_text(&text),
+                            my_name: self.my_name.clone(),
+                        },
+                    );
+                }
+            }
+            Command::React {
+                room,
+                message,
+                emoji,
+                add,
+            } => {
+                if let Some(conversation) = self.conversation_of_room(&room)
+                    && let Some(key) = crate::emoji::key_for(&emoji)
+                {
+                    req(
+                        &self.net,
+                        Request::React {
+                            conversation,
+                            message: message.0.to_string(),
+                            key,
+                            add,
+                        },
+                    );
+                }
+            }
             Command::Typing { room } => {
                 if let Some(conversation) = self.conversation_of_room(&room) {
                     let now = Instant::now();

@@ -52,6 +52,23 @@ pub fn for_key(key: &str) -> Option<String> {
         .filter(|s| !s.is_ascii())
 }
 
+/// Teams emotion key for an emoji (standard keys are names such as `like`,
+/// per msteams-mcp's API reference, Reactions & Emoji).
+pub fn key_for(emoji: &str) -> Option<String> {
+    let normalized = emoji.replace('\u{fe0f}', "");
+    if normalized == "👍" {
+        return Some("like".into());
+    }
+    let mut matches: Vec<(&str, usize)> = table()
+        .iter()
+        .filter_map(|(key, value)| (value.replace('\u{fe0f}', "") == normalized).then_some((*key, key.len())))
+        .collect();
+    matches.sort_by_key(|(key, len)| (*len, *key != "like", *key));
+    // Only keys from the table: the reference names no key form for other
+    // Unicode emoji, so those are not sent.
+    matches.first().map(|(key, _)| (*key).to_owned())
+}
+
 /// Teams' hooks for godwit-core (registered at startup): its own emoji set.
 pub fn hooks() -> godwit_core::hooks::Hooks {
     godwit_core::hooks::Hooks {

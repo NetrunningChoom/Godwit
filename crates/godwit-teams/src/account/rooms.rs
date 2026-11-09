@@ -264,6 +264,8 @@ impl TeamsAccount {
                 _ => None,
             },
             capabilities: Capabilities {
+                edit: true,
+                react: true,
                 attachments: matches!(&c.kind, Kind::Direct(_)),
                 threads: matches!(c.kind, Kind::Channel(_)) && c.parent.is_none(),
                 max_upload: godwit_core::media::MAX_UPLOAD,

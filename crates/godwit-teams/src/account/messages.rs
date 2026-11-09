@@ -133,7 +133,9 @@ impl TeamsAccount {
             }
         };
         let attachments = crate::media::attachments(content, &json_list(&props["files"]), self.media.as_ref());
-        let reactions = json_list(&props["emotions"])
+        // Message payloads carry users in properties.emotions; some updates
+        // only include counts in annotationsSummary.emotions (API reference §Reactions).
+        let mut reactions: Vec<Reaction> = json_list(&props["emotions"])
             .iter()
             .filter_map(|e| {
                 let key = e["key"].as_str().filter(|k| !k.is_empty())?;
@@ -148,6 +150,22 @@ impl TeamsAccount {
                 })
             })
             .collect();
+        if reactions.is_empty()
+            && let Some(summary) = m["annotationsSummary"]["emotions"].as_object()
+        {
+            reactions = summary
+                .iter()
+                .filter_map(|(key, count)| {
+                    let count = count.as_u64().and_then(|n| u32::try_from(n).ok()).unwrap_or(0);
+                    (count > 0).then(|| Reaction {
+                        emoji: reaction_emoji(key).into(),
+                        image_url: None,
+                        count,
+                        me: false,
+                    })
+                })
+                .collect();
+        }
         let thread_root = conversation_of(m)
             .and_then(|(_, root)| root)
             .or_else(|| m["rootMessageId"].as_str().map(str::to_owned))
