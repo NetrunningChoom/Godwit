@@ -1,6 +1,6 @@
 # Builds the release binaries for a pushed vX.Y.Z tag with tools/release.sh
-# (the same container the maintainer builds them in locally) and publishes a
-# draft release: dist/ is checked before it goes public.
+# (the same container release.sh uses locally), checks dist/ (signatures,
+# xz copies, checksums) and publishes the release.
 #
 # Needs one repository secret:
 #   GODWIT_SIGNING_KEY  the Ed25519 private key (PEM); without it the binaries
@@ -49,9 +49,28 @@ jobs:
         run: |
           export GODWIT_SIGNING_KEY="$HOME/godwit-signing.pem"
           tools/release.sh --container
-      - name: Publish a draft release
+      # Installed copies update themselves from the latest release, so nothing
+      # is published unless every file checks out.
+      - name: Check the release files
+        run: |
+          set -euo pipefail
+          cd dist
+          openssl pkey -in "$HOME/godwit-signing.pem" -pubout -out "$RUNNER_TEMP/update-key.pem"
+          for f in godwit-linux-x86_64 godwit-windows-x86_64.exe; do
+              test -s "$f"
+              test -s "$f.sig"
+              python3 -c 'import sys; sys.stdout.buffer.write(bytes.fromhex(open(sys.argv[1]).read().strip()))' "$f.sig" >"$RUNNER_TEMP/$f.sig.bin"
+              openssl pkeyutl -verify -pubin -inkey "$RUNNER_TEMP/update-key.pem" -rawin \
+                  -in "$f" -sigfile "$RUNNER_TEMP/$f.sig.bin"
+              xz -t "$f.xz"
+              xz -dc "$f.xz" | cmp - "$f"
+          done
+          file godwit-linux-x86_64 | grep -q 'ELF 64-bit'
+          file godwit-windows-x86_64.exe | grep -q 'PE32+'
+          sha256sum -c SHA256SUMS
+      - name: Publish the release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" --draft --title "Godwit $TAG" --generate-notes dist/*
+          gh release create "$TAG" --latest --title "Godwit $TAG" --generate-notes dist/*
