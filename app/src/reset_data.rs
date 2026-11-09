@@ -95,7 +95,7 @@ fn remove_below(path: &Path, device: Option<u64>) -> io::Result<()> {
         };
     }
     if !metadata.is_dir() {
-        return std::fs::remove_file(path);
+        return remove_file(path, &metadata);
     }
     let here = device_of(&metadata);
     if let (Some(root), Some(here)) = (device, here)
@@ -110,6 +110,22 @@ fn remove_below(path: &Path, device: Option<u64>) -> io::Result<()> {
         remove_below(&entry?.path(), device.or(here))?;
     }
     std::fs::remove_dir(path)
+}
+
+/// Windows refuses to delete a read-only file; Godwit's own files may carry
+/// the attribute, so it is cleared on that one file (never on a link: links
+/// were handled before this) and the delete tried once more.
+fn remove_file(path: &Path, metadata: &std::fs::Metadata) -> io::Result<()> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied && metadata.permissions().readonly() => {
+            let mut permissions = metadata.permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
+            permissions.set_readonly(false);
+            std::fs::set_permissions(path, permissions)?;
+            std::fs::remove_file(path)
+        }
+        other => other,
+    }
 }
 
 #[cfg(unix)]
@@ -144,6 +160,20 @@ pub fn reset(
     clear_sessions(store, accounts)?;
     for root in [config, data, cache] {
         remove_tree(root)?;
+    }
+    // Windows keeps `config` and `data` inside `%APPDATA%\godwit` and `cache`
+    // inside `%LOCALAPPDATA%\godwit`: remove those `godwit` folders too, but
+    // only when empty (`remove_dir` refuses otherwise), so nothing else in them
+    // goes.
+    for root in [config, data, cache] {
+        if let Some(parent) = root.parent()
+            && parent
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("godwit"))
+            && std::fs::symlink_metadata(parent).is_ok_and(|m| m.is_dir())
+        {
+            let _ = std::fs::remove_dir(parent);
+        }
     }
     Ok(())
 }
@@ -213,21 +243,69 @@ mod tests {
 
     #[test]
     fn only_godwit_folders_count_as_roots() {
-        assert!(is_godwit_root(Path::new("/srv/u/.config/godwit")));
-        assert!(is_godwit_root(Path::new("/srv/u/AppData/Roaming/godwit/config")));
-        assert!(is_godwit_root(Path::new("/Users/u/Library/Caches/Godwit")));
-        assert!(!is_godwit_root(Path::new("/")));
+        // `R` is an absolute prefix on this OS: a drive on Windows, `/` elsewhere.
+        #[cfg(windows)]
+        const R: &str = "C:\\";
+        #[cfg(not(windows))]
+        const R: &str = "/";
+        let p = |rest: &str| std::path::PathBuf::from(format!("{R}{rest}"));
+        assert!(is_godwit_root(&p("srv/u/.config/godwit")));
+        assert!(is_godwit_root(&p("Users/u/AppData/Roaming/godwit/config")));
+        assert!(is_godwit_root(&p("Users/u/AppData/Local/godwit/cache")));
+        assert!(is_godwit_root(&p("Users/u/Library/Caches/Godwit")));
+        assert!(!is_godwit_root(&p("")));
         assert!(!is_godwit_root(Path::new("godwit")));
-        assert!(!is_godwit_root(Path::new("/srv/u/.config")));
-        assert!(!is_godwit_root(Path::new("/srv/u/Documents")));
-        assert!(!is_godwit_root(Path::new("/srv/u/godwit-notes")));
-        assert!(!is_godwit_root(Path::new("/srv/u/godwit/Documents")));
+        assert!(!is_godwit_root(&p("srv/u/.config")));
+        assert!(!is_godwit_root(&p("srv/u/Documents")));
+        assert!(!is_godwit_root(&p("srv/u/godwit-notes")));
+        assert!(!is_godwit_root(&p("srv/u/godwit/Documents")));
         if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf()) {
             assert!(!is_godwit_root(&home));
             if let Some(parent) = home.parent() {
                 assert!(!is_godwit_root(parent));
             }
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_forms_are_handled() {
+        assert!(is_godwit_root(Path::new(r"C:\Users\u\AppData\Roaming\GODWIT\Config")));
+        assert!(is_godwit_root(Path::new(r"\\?\C:\Users\u\AppData\Local\godwit\cache")));
+        assert!(!is_godwit_root(Path::new(r"C:\")));
+        assert!(!is_godwit_root(Path::new(r"C:godwit")));
+        assert!(!is_godwit_root(Path::new(r"\\?\C:\")));
+        assert!(!is_godwit_root(Path::new(r"\\server\share")));
+    }
+
+    #[test]
+    fn reset_clears_read_only_files_and_empty_parents() {
+        let temp = Temp::new();
+        let parent = temp.0.join("godwit");
+        let roots = ["config", "data", "cache"].map(|r| parent.join(r));
+        for root in &roots {
+            std::fs::create_dir_all(root).unwrap();
+        }
+        let file = roots[0].join("locked");
+        std::fs::write(&file, b"x").unwrap();
+        let mut permissions = std::fs::metadata(&file).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&file, permissions).unwrap();
+        std::fs::write(temp.0.join("neighbour"), b"keep").unwrap();
+        reset(&roots[0], &roots[1], &roots[2], &[], &Memory::default()).unwrap();
+        assert!(!parent.exists());
+        assert!(temp.0.join("neighbour").exists());
+    }
+
+    #[test]
+    fn a_godwit_parent_with_other_files_stays() {
+        let temp = Temp::new();
+        let parent = temp.0.join("godwit");
+        let roots = ["config", "data", "cache"].map(|r| parent.join(r));
+        std::fs::create_dir_all(&roots[0]).unwrap();
+        std::fs::write(parent.join("not-ours"), b"keep").unwrap();
+        reset(&roots[0], &roots[1], &roots[2], &[], &Memory::default()).unwrap();
+        assert!(parent.join("not-ours").exists());
     }
 
     #[test]
