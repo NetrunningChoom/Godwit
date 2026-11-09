@@ -577,6 +577,13 @@ export struct MemberItem {
     status: string,
 }
 
+export struct AutocompleteItem {
+    kind: int,
+    id: string,
+    name: string,
+    detail: string,
+}
+
 // A row of a profile's Mutual servers or Mutual friends (an icon or avatar,
 // the name, and for a server the person's nickname there).
 export struct MutualItem {

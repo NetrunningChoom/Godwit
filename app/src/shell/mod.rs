@@ -96,6 +96,10 @@ pub struct Shell {
     crop: Option<crate::cropper::Crop>,
     /// The message a thread is being started from (the dialog's).
     thread_from: Option<MessageId>,
+    /// Trigger and ranked rows currently shown for the composer.
+    autocomplete: Vec<godwit_core::autocomplete::Candidate>,
+    autocomplete_trigger: Option<godwit_core::autocomplete::Trigger>,
+    autocomplete_room: Option<RoomId>,
     /// The tags picked in the new-post dialog, by id.
     post_tags: Vec<std::sync::Arc<str>>,
     /// The forum list as last shown, so a refresh that changed nothing
@@ -425,6 +429,9 @@ impl Shell {
             viewer_anim: None,
             crop: None,
             thread_from: None,
+            autocomplete: Vec::new(),
+            autocomplete_trigger: None,
+            autocomplete_room: None,
             post_tags: Vec::new(),
             forum_shown: std::cell::RefCell::new(None),
             mic_test: None,

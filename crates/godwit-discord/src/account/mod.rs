@@ -690,6 +690,13 @@ impl crate::markdown::Names for Names<'_> {
 }
 
 impl NetworkAccount for DiscordAccount {
+    fn autocomplete_text(&self, kind: godwit_core::autocomplete::TriggerKind, id: &str, name: &str) -> String {
+        match kind {
+            godwit_core::autocomplete::TriggerKind::Person => format!("<@{id}>"),
+            godwit_core::autocomplete::TriggerKind::Channel => format!("<#{id}>"),
+            godwit_core::autocomplete::TriggerKind::Emoji => format!("<:{name}:{id}>"),
+        }
+    }
     fn network(&self) -> Network {
         Network::Discord
     }

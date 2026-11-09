@@ -4,7 +4,188 @@
 
 use super::*;
 
+fn autocomplete_candidates(
+    state: &godwit_core::application::AppState,
+    room: &RoomId,
+    kind: godwit_core::autocomplete::TriggerKind,
+) -> Vec<godwit_core::autocomplete::Candidate> {
+    use godwit_core::autocomplete::{Candidate, CandidateId, TriggerKind};
+    use std::sync::Arc;
+    let mut out = Vec::new();
+    if kind == TriggerKind::Person {
+        if let Some(current) = state.room(room)
+            && let godwit_core::room::RoomKind::Direct { with } = &current.kind
+        {
+            let name = state
+                .profiles
+                .get(with)
+                .map(|profile| profile.name.as_ref())
+                .or_else(|| {
+                    state
+                        .friends
+                        .iter()
+                        .find(|person| &person.id == with)
+                        .map(|person| person.name.as_ref())
+                })
+                .unwrap_or(current.name.as_ref());
+            add_person_candidate(&mut out, with, name);
+        }
+        if let Some(groups) = state.members.get(room) {
+            for member in groups.iter().flat_map(|g| &g.members) {
+                add_person_candidate(&mut out, &member.user, &member.name);
+            }
+        }
+        if let Some(timeline) = state.timeline(room) {
+            for message in timeline.messages.iter().rev().take(100) {
+                add_person_candidate(&mut out, &message.author, &message.author_name);
+            }
+        }
+        for person in state.friends.iter().filter(|p| p.id.account == room.account) {
+            add_person_candidate(&mut out, &person.id, &person.name);
+        }
+        if let Some(people) = state.people_directory.get(&room.account) {
+            for person in people {
+                add_person_candidate(&mut out, &person.id, &person.name);
+            }
+        }
+    } else if kind == TriggerKind::Channel {
+        if let Some(server_id) = state.room(room).and_then(|r| match &r.kind {
+            godwit_core::room::RoomKind::Channel { server } => Some(server),
+            _ => None,
+        }) && let Some(server) = state.server(server_id)
+        {
+            for id in server.categories.iter().flat_map(|c| &c.rooms) {
+                if let Some(channel) = state.room(id) {
+                    out.push(Candidate {
+                        id: CandidateId::Channel(id.clone()),
+                        name: channel.name.clone(),
+                        detail: Arc::from("Channel"),
+                    });
+                }
+            }
+        }
+    } else {
+        for group in state.emoji_for(room) {
+            for emoji in &group.emoji {
+                let raw = emoji.reaction.rsplit(':').next().unwrap_or(emoji.reaction.as_ref());
+                out.push(Candidate {
+                    id: CandidateId::Emoji(Arc::from(raw)),
+                    name: emoji.name.clone(),
+                    detail: Arc::from("Custom emoji"),
+                });
+            }
+        }
+        for emoji in emojis::iter().filter(|e| crate::emoji::drawn(e)) {
+            if let Some(code) = emoji.shortcode() {
+                out.push(Candidate {
+                    id: CandidateId::Emoji(Arc::from(emoji.as_str())),
+                    name: Arc::from(code),
+                    detail: Arc::from(emoji.as_str()),
+                });
+            }
+        }
+    }
+    out
+}
+
+fn add_person_candidate(out: &mut Vec<godwit_core::autocomplete::Candidate>, id: &UserId, name: &str) {
+    use godwit_core::autocomplete::{Candidate, CandidateId};
+    let candidate = Candidate {
+        id: CandidateId::Person(id.clone()),
+        name: name.into(),
+        detail: "Person".into(),
+    };
+    if !out.iter().any(|c| c.id == candidate.id) {
+        out.push(candidate);
+    }
+}
+
 impl Shell {
+    /// Rebuilds suggestions only when the active token changes; cursor moves
+    /// within the same token update its replacement span without rescanning.
+    pub fn autocomplete_changed(&mut self, ui: &AppWindow, cursor: i32) {
+        use godwit_core::autocomplete::{self, CandidateId};
+        let text = ui.get_draft();
+        let Some(trigger) = autocomplete::trigger_at(text.as_str(), usize::try_from(cursor).unwrap_or(usize::MAX))
+        else {
+            self.autocomplete.clear();
+            self.autocomplete_trigger = None;
+            ui.set_autocomplete_rows(ModelRc::default());
+            return;
+        };
+        let Some(room) = self.app.state().selected.clone() else {
+            return;
+        };
+        let changed = self.autocomplete_trigger.as_ref().is_none_or(|old| {
+            old.kind != trigger.kind || old.query != trigger.query || self.autocomplete_room.as_ref() != Some(&room)
+        });
+        if changed {
+            let candidates = autocomplete_candidates(self.app.state(), &room, trigger.kind);
+            self.autocomplete = autocomplete::matches(&candidates, &trigger.query, 8)
+                .into_iter()
+                .cloned()
+                .collect();
+            self.autocomplete_room = Some(room);
+        }
+        self.autocomplete_trigger = Some(trigger);
+        let rows = self
+            .autocomplete
+            .iter()
+            .map(|c| {
+                let (kind, id) = match &c.id {
+                    CandidateId::Person(id) => (0, id.raw.to_string()),
+                    CandidateId::Channel(id) => (1, id.raw.to_string()),
+                    CandidateId::Emoji(id) => (2, id.to_string()),
+                };
+                crate::ui::AutocompleteItem {
+                    kind,
+                    id: id.into(),
+                    name: c.name.to_string().into(),
+                    detail: c.detail.to_string().into(),
+                }
+            })
+            .collect::<Vec<_>>();
+        ui.set_autocomplete_rows(ModelRc::new(VecModel::from(rows)));
+    }
+
+    pub fn autocomplete_pick(&mut self, ui: &AppWindow, row: i32) {
+        use godwit_core::autocomplete::{self, CandidateId};
+        if row == -2 {
+            self.autocomplete.clear();
+            self.autocomplete_trigger = None;
+            self.autocomplete_room = None;
+            ui.set_autocomplete_rows(ModelRc::default());
+            return;
+        }
+        let Some(index) = usize::try_from(row).ok() else { return };
+        let (Some(candidate), Some(trigger), Some(room)) = (
+            self.autocomplete.get(index),
+            self.autocomplete_trigger.as_ref(),
+            self.autocomplete_room.as_ref(),
+        ) else {
+            return;
+        };
+        let (kind, id, replacement) = match &candidate.id {
+            CandidateId::Person(id) => (trigger.kind, id.raw.as_ref(), None),
+            CandidateId::Channel(id) => (trigger.kind, id.raw.as_ref(), None),
+            CandidateId::Emoji(id) if !id.is_ascii() => (trigger.kind, id.as_ref(), Some(id.as_ref())),
+            CandidateId::Emoji(id) => (trigger.kind, id.as_ref(), None),
+        };
+        let rendered = replacement.map(str::to_owned).unwrap_or_else(|| {
+            self.account(&room.account)
+                .map(|a| a.autocomplete_text(kind, id, &candidate.name))
+                .unwrap_or_else(|| candidate.name.to_string())
+        });
+        let (draft, caret) = autocomplete::insert(ui.get_draft().as_str(), trigger, &rendered);
+        ui.set_draft(draft.as_str().into());
+        self.act(ui, Action::SetDraft(draft));
+        ui.set_composer_inserted_at(i32::try_from(caret).unwrap_or(i32::MAX));
+        ui.set_composer_insert_serial(ui.get_composer_insert_serial().wrapping_add(1));
+        self.autocomplete.clear();
+        self.autocomplete_trigger = None;
+        self.autocomplete_room = None;
+        ui.set_autocomplete_rows(ModelRc::default());
+    }
     /// Copies a message's text (as written) or its link to the clipboard.
     pub fn copy(&self, row: i32, link: bool) {
         let Some(id) = self.message_at(row) else { return };
@@ -490,5 +671,73 @@ impl Shell {
     pub fn close_reactors(&mut self, ui: &AppWindow) {
         self.act(ui, Action::CloseReactors);
         ui.set_reactors_open(false);
+    }
+}
+
+#[cfg(test)]
+mod autocomplete_tests {
+    use super::*;
+    use godwit_core::{
+        application::{AppState, Person},
+        ids::AccountId,
+        members::{Member, MemberGroup, Presence},
+        room::{Capabilities, Room, RoomEncryption, RoomKind, RoomNotify},
+    };
+    use std::sync::Arc;
+
+    #[test]
+    fn gathers_open_room_members_and_deduplicates_recent_authors() {
+        let account = AccountId::new(godwit_core::network::Network::ALL[0], "me");
+        let room_id = RoomId::new(account.clone(), "room");
+        let person_id = UserId::new(account.clone(), "person");
+        let mut state = AppState::default();
+        state.rooms.push(Arc::new(Room {
+            id: room_id.clone(),
+            name: Arc::from("chat"),
+            kind: RoomKind::Direct {
+                with: person_id.clone(),
+            },
+            icon_url: None,
+            capabilities: Capabilities::default(),
+            encryption: RoomEncryption::Unknown,
+            unread: false,
+            mentions: 0,
+            last_read: None,
+            invited_by: None,
+            presence: None,
+            status: None,
+            member_count: None,
+            last_activity: 0,
+            parent: None,
+            joined_thread: false,
+            notify: RoomNotify::default(),
+        }));
+        state.members.insert(
+            room_id.clone(),
+            Arc::new(vec![MemberGroup {
+                title: Arc::from("Members"),
+                members: vec![Member {
+                    user: person_id.clone(),
+                    name: Arc::from("Ada"),
+                    avatar_url: None,
+                    colour: None,
+                    presence: Presence::Unknown,
+                    status: None,
+                }],
+            }]),
+        );
+        state.friends.push(Person {
+            id: person_id.clone(),
+            name: Arc::from("Ada"),
+            avatar_url: None,
+            online: false,
+        });
+        let candidates = autocomplete_candidates(&state, &room_id, godwit_core::autocomplete::TriggerKind::Person);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].name.as_ref(), "Ada");
+        assert_eq!(
+            candidates[0].id,
+            godwit_core::autocomplete::CandidateId::Person(person_id)
+        );
     }
 }

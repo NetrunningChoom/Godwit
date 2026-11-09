@@ -7,6 +7,7 @@
 
 pub mod account;
 pub mod application;
+pub mod autocomplete;
 pub mod autodelete;
 pub mod cache;
 pub mod call;

@@ -14,7 +14,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, LabelRun, Anim, Players, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem
 } from "types.slint";
 export { Anim, Players, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -681,6 +681,7 @@ export component AppWindow inherits Window {
     in-out property <int> composer-cursor;
     in property <int> composer-inserted-at;
     in property <int> composer-insert-serial;
+    in property <[AutocompleteItem]> autocomplete-rows;
     in property <string> nudge;
 
     // Settings.
@@ -817,6 +818,8 @@ export component AppWindow inherits Window {
     in property <bool> history-failed;
     in property <string> room-offline;
     callback draft-edited(string);
+    callback composer-cursor-changed(int);
+    callback autocomplete-picked(int);
     callback send();
     callback dismiss-nudge(bool);
     callback reply(int);
@@ -1445,6 +1448,9 @@ export component AppWindow inherits Window {
                                         }
                                         inserted-at: root.composer-inserted-at;
                                         insert-serial: root.composer-insert-serial;
+                                        autocomplete-rows: root.autocomplete-rows;
+                                        composer-cursor-changed(i) => { root.composer-cursor-changed(i); }
+                                        autocomplete-picked(i) => { root.autocomplete-picked(i); }
                                         nudge: root.nudge;
                                         load-earlier => { root.load-earlier(); }
                                         visible-rows(t, b) => { root.visible-rows(t, b); }

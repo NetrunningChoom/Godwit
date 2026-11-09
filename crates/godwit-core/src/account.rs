@@ -21,6 +21,15 @@ pub type MediaFetch = Arc<dyn Fn(&str) -> Result<Vec<u8>, crate::media::MediaErr
 
 pub trait NetworkAccount {
     fn network(&self) -> Network;
+    /// Text inserted when a composer suggestion is picked. Names are supplied
+    /// by core; the account owns the network-specific wire spelling.
+    fn autocomplete_text(&self, kind: crate::autocomplete::TriggerKind, _id: &str, name: &str) -> String {
+        match kind {
+            crate::autocomplete::TriggerKind::Person => format!("@{name}"),
+            crate::autocomplete::TriggerKind::Channel => format!("#{name}"),
+            crate::autocomplete::TriggerKind::Emoji => format!(":{name}:"),
+        }
+    }
     /// Who we're signed in as, once we are.
     fn id(&self) -> Option<&AccountId>;
     /// Which account commands for this one go to. Usually [`id`](Self::id), but a

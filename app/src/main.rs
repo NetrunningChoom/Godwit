@@ -712,7 +712,13 @@ fn connect_callbacks(ui: &AppWindow) {
         let text = if sh.convert_emoticons() { godwit_core::emoticons::convert_completed(&text) } else { text.to_string() };
         if text.as_str() != ui.get_draft().as_str() { ui.set_draft(text.as_str().into()); }
         sh.act(ui, Action::SetDraft(text));
+        sh.autocomplete_changed(ui, ui.get_composer_cursor());
     });
+    callback!(ui.on_composer_cursor_changed(cursor) => |sh, ui| {
+        ui.set_composer_cursor(cursor);
+        sh.autocomplete_changed(ui, cursor);
+    });
+    callback!(ui.on_autocomplete_picked(row) => |sh, ui| sh.autocomplete_pick(ui, row));
     // The timeline's text selection (selection.rs), through its global.
     {
         let select = ui.global::<godwit::ui::Select>();

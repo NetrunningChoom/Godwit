@@ -3,7 +3,7 @@
 
 import { Slider, ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
-import { Anim, Players, CallFrames, Select, BlockItem, MessageItem, AttachmentItem, EmbedItem, InviteItem, ReactionItem, FileItem, CallMemberItem, EmojiRowItem, StreamItem } from "types.slint";
+import { Anim, Players, CallFrames, Select, BlockItem, MessageItem, AttachmentItem, EmbedItem, InviteItem, ReactionItem, FileItem, CallMemberItem, EmojiRowItem, StreamItem, AutocompleteItem } from "types.slint";
 import { CallVideoItem, ForumPostItem, ForumTagItem } from "types.slint";
 import { ForumView } from "forum-view.slint";
 import { EmojiPicker } from "picker.slint";
@@ -151,6 +151,11 @@ export component Timeline inherits Rectangle {
     callback load-earlier();
     callback draft-edited(string);
     callback capture-composer(int, int);
+    callback composer-cursor-changed(int);
+    callback autocomplete-picked(int);
+    in property <[AutocompleteItem]> autocomplete-rows;
+    property <int> autocomplete-index: 0;
+    changed autocomplete-rows => { autocomplete-index = 0; }
     in property <int> inserted-at;
     in property <int> insert-serial;
     changed insert-serial => {
@@ -1214,6 +1219,35 @@ export component Timeline inherits Rectangle {
                     MenuRow { glyph: Icons.notes; label: "Create poll"; clicked => { root.create-poll(); } }
                 }
             }
+            autocomplete-menu := PopupWindow {
+                // Matches the composer suggestions in stoatchat/for-web's text editor; keeping this
+                // popup above the input also leaves the chat's newest message visible.
+                x: Theme.gap-lg;
+                y: -min(220px, 40px * root.autocomplete-rows.length + Theme.gap-md);
+                width: min(320px, root.width - Theme.gap-lg * 2);
+                height: min(220px, 40px * root.autocomplete-rows.length + Theme.gap-md);
+                visible: root.autocomplete-rows.length > 0;
+                Rectangle {
+                    background: Theme.surface-high;
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        padding: Theme.space-1;
+                        for item[i] in root.autocomplete-rows: Rectangle {
+                            height: 38px;
+                            border-radius: Theme.radius-sm;
+                            background: i == root.autocomplete-index ? Theme.secondary-container : transparent;
+                            HorizontalLayout {
+                                padding-left: Theme.space-3;
+                                spacing: Theme.space-3;
+                                Text { text: item.kind == 0 ? "@" : (item.kind == 1 ? "#" : ":"); color: Theme.primary; }
+                                Text { text: item.name; color: Theme.on-surface; overflow: elide; horizontal-stretch: 1; }
+                                Text { text: item.detail; color: Theme.on-surface-variant; font-size: Theme.text-caption; }
+                            }
+                            TouchArea { mouse-cursor: pointer; clicked => { root.autocomplete-picked(i); } }
+                        }
+                    }
+                }
+            }
             composer := HorizontalLayout {
                 padding-left: Theme.gap-lg;
                 padding-right: Theme.gap-lg;
@@ -1260,6 +1294,7 @@ export component Timeline inherits Rectangle {
                         // Keep the cursor in view while typing past the cap,
                         // as Slint's own TextEdit does.
                         cursor-position-changed(pos) => {
+                            root.composer-cursor-changed(self.cursor-position-byte-offset);
                             if self.y + pos.y + draft-scroll.content-y < 0 {
                                 draft-scroll.content-y = min(0px, -pos.y);
                             } else if self.y + pos.y + self.font-size * 1.5 + draft-scroll.content-y > draft-scroll.visible-height {
@@ -1280,6 +1315,15 @@ export component Timeline inherits Rectangle {
                         // Enter sends; Shift+Enter makes a new line; Escape
                         // drops a reply or edit.
                         key-pressed(event) => {
+                            if root.autocomplete-rows.length > 0 {
+                                if event.text == Key.Escape { root.autocomplete-picked(-2); return accept; }
+                                if event.text == Key.UpArrow { root.autocomplete-index = max(0, root.autocomplete-index - 1); return accept; }
+                                if event.text == Key.DownArrow { root.autocomplete-index = min(root.autocomplete-rows.length - 1, root.autocomplete-index + 1); return accept; }
+                                if event.text == Key.Tab || event.text == "\n" {
+                                    root.autocomplete-picked(root.autocomplete-index);
+                                    return accept;
+                                }
+                            }
                             // Ctrl+C with chat text selected and none here: the chat's.
                             if event.modifiers.control && (event.text == "c" || event.text == "C") && Select.active
                                 && self.anchor-position-byte-offset == self.cursor-position-byte-offset {
