@@ -838,6 +838,7 @@ fn selecting_a_channel_selects_its_server() {
         rights: Default::default(),
         scheduled_events: false,
         scheduled_event_count: 0,
+        edit_own_profile: false,
     };
     app.apply(Event::AccountReady {
         account: account(Network::Stoat),
@@ -877,6 +878,7 @@ fn scheduled_events_are_gated_and_interest_updates_neutral_state() {
         folder: None,
         scheduled_events: true,
         scheduled_event_count: 1,
+        edit_own_profile: false,
     };
     app.apply(Event::AccountReady {
         account: account(Network::Discord),
@@ -1456,6 +1458,7 @@ fn picking_a_server_opens_its_last_or_first_text_channel_and_home_its_last_dm() 
             rights: Default::default(),
             scheduled_events: false,
             scheduled_event_count: 0,
+            edit_own_profile: false,
         }],
     });
     let id = |raw: &str| Some(RoomId::new(account(n), raw));
@@ -1575,6 +1578,7 @@ fn a_servers_directory_loads_once_and_rooms_can_be_joined() {
         rights: Default::default(),
         scheduled_events: false,
         scheduled_event_count: 0,
+        edit_own_profile: false,
     };
     app.apply(Event::ServersChanged {
         account: account(Network::Discord),
@@ -1840,6 +1844,68 @@ fn profile_editor_serializes_requests_and_preserves_loaded_data_after_failure() 
         !app.state().own_profiles.contains_key(&acc),
         "late responses must not restore a logged-out account"
     );
+}
+
+#[test]
+fn server_profile_actions_are_capability_gated_and_serialized() {
+    let mut app = Application::default();
+    let acc = account(Network::Discord);
+    app.apply(Event::AccountReady {
+        account: acc.clone(),
+        display_name: "Me".into(),
+        username: "me".into(),
+        avatar_url: None,
+        rooms: Vec::new(),
+        servers: vec![crate::server::Server {
+            id: ServerId::new(acc.clone(), "guild"),
+            name: "Guild".into(),
+            icon_url: None,
+            banner_url: None,
+            categories: Vec::new(),
+            muted: false,
+            folder: None,
+            scheduled_events: false,
+            scheduled_event_count: 0,
+            edit_own_profile: false,
+            rights: Default::default(),
+        }],
+    });
+    let server = ServerId::new(acc.clone(), "guild");
+    assert!(app.dispatch(Action::LoadServerProfile(server.clone())).is_empty());
+    app.apply(Event::ServersChanged {
+        account: acc.clone(),
+        servers: vec![crate::server::Server {
+            id: server.clone(),
+            name: "Guild".into(),
+            icon_url: None,
+            banner_url: None,
+            categories: Vec::new(),
+            muted: false,
+            folder: None,
+            scheduled_events: false,
+            scheduled_event_count: 0,
+            edit_own_profile: true,
+            rights: Default::default(),
+        }],
+    });
+    assert_eq!(app.dispatch(Action::LoadServerProfile(server.clone())).len(), 1);
+    assert!(app.dispatch(Action::LoadServerProfile(server.clone())).is_empty());
+    app.apply(Event::ServerProfileLoaded {
+        server: server.clone(),
+        result: Ok(OwnProfile::default()),
+    });
+    assert_eq!(
+        app.dispatch(Action::SaveServerProfile {
+            server: server.clone(),
+            edit: ProfileEdit {
+                bio: Some("updated".into()),
+                ..Default::default()
+            }
+        })
+        .len(),
+        1
+    );
+    assert!(app.dispatch(Action::LoadServerProfile(server.clone())).is_empty());
 }
 
 #[test]
@@ -2805,6 +2871,7 @@ fn a_created_server_opens_after_its_server_list_arrives() {
             folder: None,
             scheduled_events: false,
             scheduled_event_count: 0,
+            edit_own_profile: false,
         }],
     });
     app.apply(Event::ServerCreated(id.clone()));
@@ -2868,6 +2935,7 @@ fn profiles_open_load_and_ignore_stale_answers() {
         presence: Presence::Online,
         status: None,
         bio: None,
+        pronouns: None,
         profile_level: None,
         member_since: None,
         roles: Vec::new(),
@@ -3181,6 +3249,7 @@ fn server_settings_open(app: &mut Application) -> (ServerId, u64) {
             rights: Default::default(),
             scheduled_events: false,
             scheduled_event_count: 0,
+            edit_own_profile: false,
         }],
     });
     let effects = app.dispatch(Action::OpenServerSettings(server.clone()));
@@ -4163,6 +4232,7 @@ fn member_changes_need_the_open_card_and_its_powers() {
         presence: Presence::Online,
         status: None,
         bio: None,
+        pronouns: None,
         profile_level: None,
         member_since: None,
         roles: Vec::new(),
@@ -4268,6 +4338,7 @@ fn structured_server(app: &mut Application, rights: crate::server::ServerRights)
             rights,
             scheduled_events: false,
             scheduled_event_count: 0,
+            edit_own_profile: false,
         }],
     });
     server

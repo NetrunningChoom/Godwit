@@ -80,6 +80,11 @@ pub enum Action {
     },
     /// Invite a profile to this account's current activity, where its profile allows it.
     InviteToActivity(UserId),
+    LoadServerProfile(crate::ids::ServerId),
+    SaveServerProfile {
+        server: crate::ids::ServerId,
+        edit: ProfileEdit,
+    },
     /// Show a server's rooms, or (None) the direct messages.
     SelectServer(Option<ServerId>),
     /// Open a server's scheduled events (loads them on the first open).

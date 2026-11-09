@@ -291,6 +291,7 @@ impl FluxerAccount {
                     banner_url: None,
                     scheduled_events: false,
                     scheduled_event_count: 0,
+                    edit_own_profile: false,
                     categories,
                     muted: false,
                     folder: None,

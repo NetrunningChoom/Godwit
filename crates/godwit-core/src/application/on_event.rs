@@ -239,6 +239,7 @@ impl Application {
             self.state.webhooks = None;
         }
         self.state.own_profiles.remove(&account);
+        self.state.server_profiles.retain(|server, _| server.account != account);
         // Its friends and requests go with it (contacts stay, with any
         // merges, for when it signs in again; People hides them).
         self.state.friends.retain(|p| p.id.account != account);

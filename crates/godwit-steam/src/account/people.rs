@@ -186,6 +186,7 @@ impl SteamAccount {
             .unwrap_or(Presence::Unknown),
             status: persona.and_then(playing).map(Into::into),
             bio: self.profile_details.get(&id).and_then(|d| d.summary.clone()),
+            pronouns: None,
             profile_level: self.profile_details.get(&id).and_then(|d| d.level),
             member_since: self.profile_details.get(&id).and_then(|d| d.member_since.clone()),
             roles: Vec::new(),

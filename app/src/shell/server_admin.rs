@@ -5,6 +5,19 @@
 use super::*;
 
 impl Shell {
+    pub fn edit_server_profile(&mut self, ui: &AppWindow) {
+        let Some(server) = self.app.state().selected_server.clone() else {
+            return;
+        };
+        if !self.app.state().server(&server).is_some_and(|s| s.edit_own_profile) {
+            return;
+        }
+        if let Some(action) = self.profile_editor.select_server(ui, server) {
+            self.act(ui, action);
+        }
+        ui.set_server_profile_open(true);
+        self.show_own_profile(ui);
+    }
     pub fn open_server_events(&mut self, ui: &AppWindow) {
         if let Some(server) = self.app.state().selected_server.clone() {
             self.act(ui, Action::OpenServerEvents(server));

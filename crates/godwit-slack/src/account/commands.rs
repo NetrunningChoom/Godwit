@@ -527,6 +527,7 @@ impl SlackAccount {
             Command::CreateServer { .. }
             | Command::LoadServerEvents { .. }
             | Command::SetServerEventInterest { .. } => {}
+            Command::LoadServerProfile { .. } | Command::SaveServerProfile { .. } => {}
             // Slack has no separate ignore operation.
             Command::IgnoreUser { .. } | Command::UnignoreUser { .. } => {}
             _ => {}

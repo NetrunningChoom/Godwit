@@ -2,8 +2,8 @@
 // Copyright (C) 2026 Godwit contributors
 //! Steam Friends & Chat's web file upload flow.
 
-use sha1::{Digest, Sha1};
 use serde::Deserialize;
+use sha1::{Digest, Sha1};
 
 // Response shape of `beginfileupload` as in node-steamcommunity's
 // `sendImageToUser` (components/users.js).
@@ -148,7 +148,13 @@ pub(crate) async fn upload_image(
     // https://github.com/DoctorMcKay/node-steamcommunity/blob/master/components/users.js
     let (width, height, mime) = image_info(name, bytes)?;
     let digest = format!("{:x}", Sha1::digest(bytes));
-    let meta = Meta { name, sha: &digest, width, height, mime };
+    let meta = Meta {
+        name,
+        sha: &digest,
+        width,
+        height,
+        mime,
+    };
     let cookie = format!("sessionid={sessionid}; steamLoginSecure={steamid}||{access_token}");
     let begin: BeginResponse = http
         .post("https://steamcommunity.com/chat/beginfileupload/?l=english")
@@ -216,7 +222,13 @@ mod tests {
         .unwrap();
         let result = begin.result.as_ref().unwrap();
         assert_eq!(result.request_headers[0].name, "X-Test");
-        let meta = Meta { name: "a.png", sha: "s", width: 1, height: 2, mime: "image/png" };
+        let meta = Meta {
+            name: "a.png",
+            sha: "s",
+            width: 1,
+            height: 2,
+            mime: "image/png",
+        };
         let friend = commit_form(&begin, result, &meta, "sid", Target::Friend(42), false);
         assert!(friend.contains(&("friend_steamid", "42".into())));
         assert!(friend.contains(&("timestamp", "1".into())));

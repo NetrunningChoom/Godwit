@@ -348,6 +348,7 @@ impl TeamsAccount {
                 icon_url: None,
                 scheduled_events: false,
                 scheduled_event_count: 0,
+                edit_own_profile: false,
                 banner_url: None,
                 categories: vec![Category {
                     id: None,

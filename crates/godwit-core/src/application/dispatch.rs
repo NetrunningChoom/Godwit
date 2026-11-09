@@ -169,6 +169,8 @@ impl Application {
                     Vec::new()
                 }
             }
+            Action::LoadServerProfile(server) => self.dispatch_load_server_profile(server),
+            Action::SaveServerProfile { server, edit } => self.dispatch_save_server_profile(server, edit),
             Action::SelectServer(server) => self.dispatch_select_server(server),
             Action::OpenServerEvents(server) => {
                 let Some(info) = self.state.server(&server).filter(|s| s.scheduled_events) else {

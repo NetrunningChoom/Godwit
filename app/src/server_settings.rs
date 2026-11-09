@@ -565,6 +565,13 @@ impl ServerEditor {
         ui.set_server_menu(rights.is_some());
         let rights = rights.unwrap_or_default();
         ui.set_server_settings_available(rights.settings);
+        ui.set_can_edit_server_profile(
+            state
+                .selected_server
+                .as_ref()
+                .and_then(|id| state.server(id))
+                .is_some_and(|s| s.edit_own_profile),
+        );
         ui.set_server_can_invite(rights.invite);
         ui.set_server_notify_levels(rights.notify_levels);
         ui.set_server_notify(i32::from(rights.notify));

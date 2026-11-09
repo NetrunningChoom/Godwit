@@ -338,6 +338,31 @@ impl Application {
         }
     }
 
+    fn apply_server_profile(
+        &mut self,
+        server: crate::ids::ServerId,
+        result: Result<OwnProfile, Arc<str>>,
+        saved: bool,
+    ) {
+        if self.state.server(&server).is_none() {
+            return;
+        }
+        let state = self.state.server_profiles.entry(server).or_default();
+        state.loading = false;
+        state.saving = false;
+        state.saved = saved && result.is_ok();
+        match result {
+            Ok(profile) => {
+                state.error = None;
+                state.profile = Some(profile);
+            }
+            Err(error) => {
+                state.error = Some(error.clone());
+                self.state.errors.push(format!("Server profile: {error}").into());
+            }
+        }
+    }
+
     /// Whether an event still has an owner: results that arrive after their
     /// account signed out (or their room went away) must not bring its state
     /// back. Only [`Event::AccountReady`] creates an account.
@@ -783,6 +808,7 @@ impl Application {
             presence: Presence::Unknown,
             status: None,
             bio: None,
+            pronouns: None,
             profile_level: None,
             member_since: None,
             roles: Vec::new(),

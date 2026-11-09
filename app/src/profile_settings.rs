@@ -21,9 +21,22 @@ pub struct ProfileEditor {
     dirty: bool,
     saving: bool,
     error: Option<String>,
+    server: Option<godwit_core::ids::ServerId>,
 }
 
 impl ProfileEditor {
+    pub fn select_server(&mut self, ui: &AppWindow, server: godwit_core::ids::ServerId) -> Option<Action> {
+        self.server = Some(server.clone());
+        self.selected = Some(server.account.clone());
+        self.accounts = vec![server.account.clone()];
+        self.clear();
+        ui.set_edit_profile_accounts(ModelRc::new(VecModel::from(vec![
+            format!("{} — server", server.raw).into(),
+        ])));
+        ui.set_edit_profile_index(0);
+        ui.set_edit_profile_banner_allowed(true);
+        Some(Action::LoadServerProfile(server))
+    }
     pub fn populate(&mut self, ui: &AppWindow, state: &AppState, accounts: Vec<AccountId>) {
         if self.selected.as_ref().is_none_or(|id| !accounts.contains(id)) {
             self.selected = accounts.first().cloned();
@@ -69,7 +82,8 @@ impl ProfileEditor {
 
     pub fn select(&mut self, ui: &AppWindow, row: i32) -> Option<Action> {
         let account = usize::try_from(row).ok().and_then(|i| self.accounts.get(i))?.clone();
-        if self.selected.as_ref() == Some(&account) && self.original.is_some() {
+        let was_server_profile = self.server.take().is_some();
+        if self.selected.as_ref() == Some(&account) && self.original.is_some() && !was_server_profile {
             return None;
         }
         self.selected = Some(account.clone());
@@ -82,7 +96,11 @@ impl ProfileEditor {
     pub fn reload(&mut self) -> Option<Action> {
         let account = self.selected.clone()?;
         self.clear();
-        Some(Action::LoadOwnProfile(account))
+        Some(if let Some(server) = self.server.clone() {
+            Action::LoadServerProfile(server)
+        } else {
+            Action::LoadOwnProfile(account)
+        })
     }
 
     fn copy_profile(&mut self, ui: &AppWindow, profile: &OwnProfile) {
@@ -97,7 +115,13 @@ impl ProfileEditor {
         if let Some(profile) = self
             .selected
             .as_ref()
-            .and_then(|id| state.own_profiles.get(id))
+            .and_then(|id| {
+                if let Some(server) = &self.server {
+                    state.server_profiles.get(server)
+                } else {
+                    state.own_profiles.get(id)
+                }
+            })
             .and_then(|s| s.profile.as_ref())
         {
             self.copy_profile(ui, profile);
@@ -158,14 +182,24 @@ impl ProfileEditor {
         };
         self.saving = true;
         self.error = None;
-        Some(Action::SaveOwnProfile {
-            account: self.selected.clone()?,
-            edit,
+        Some(if let Some(server) = self.server.clone() {
+            Action::SaveServerProfile { server, edit }
+        } else {
+            Action::SaveOwnProfile {
+                account: self.selected.clone()?,
+                edit,
+            }
         })
     }
 
     pub fn show(&mut self, ui: &AppWindow, state: &AppState, images: &mut Images) {
-        let current = self.selected.as_ref().and_then(|id| state.own_profiles.get(id));
+        let current = self.selected.as_ref().and_then(|id| {
+            if let Some(server) = &self.server {
+                state.server_profiles.get(server)
+            } else {
+                state.own_profiles.get(id)
+            }
+        });
         let profile = current.and_then(|state| state.profile.as_ref());
         if let Some(profile) = profile
             && current.is_some_and(|s| !s.loading)

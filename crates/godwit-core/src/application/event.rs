@@ -86,6 +86,14 @@ pub enum Event {
         account: AccountId,
         result: Result<OwnProfile, Arc<str>>,
     },
+    ServerProfileLoaded {
+        server: ServerId,
+        result: Result<OwnProfile, Arc<str>>,
+    },
+    ServerProfileSaved {
+        server: ServerId,
+        result: Result<OwnProfile, Arc<str>>,
+    },
     /// Signed in and synced: the account's rooms and servers, in its order.
     AccountReady {
         account: AccountId,

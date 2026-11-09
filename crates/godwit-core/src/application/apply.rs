@@ -115,6 +115,14 @@ impl Application {
                 self.apply_own_profile(account, result, true);
                 Vec::new()
             }
+            Event::ServerProfileLoaded { server, result } => {
+                self.apply_server_profile(server, result, false);
+                Vec::new()
+            }
+            Event::ServerProfileSaved { server, result } => {
+                self.apply_server_profile(server, result, true);
+                Vec::new()
+            }
             Event::AccountIdentity {
                 account,
                 display_name,

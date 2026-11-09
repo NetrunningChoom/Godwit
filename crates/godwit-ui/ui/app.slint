@@ -107,6 +107,7 @@ export component AppWindow inherits Window {
     // Counts Home clicks while Home is open (the sidebar scrolls back up).
     property <int> home-scroll-reset;
     in property <bool> server-settings-available;
+    in property <bool> can-edit-server-profile;
     in property <bool> server-settings-open;
     // A server channel's settings (see channel-settings.slint).
     in property <bool> channel-settings-open;
@@ -175,7 +176,7 @@ export component AppWindow inherits Window {
     in-out property <int> server-edit-left;
     in-out property <int> server-edit-kicked;
     in-out property <int> server-edit-banned;
-    callback open-server-settings(); callback close-server-settings();
+    callback open-server-settings(); callback close-server-settings(); callback edit-server-profile();
     callback save-server-overview(); callback reset-server-overview(); callback reload-server-overview(); callback server-overview-edited();
     callback pick-server-image(bool); callback remove-server-image(bool);
     // Server settings' other pages (see server-settings.slint).
@@ -696,6 +697,7 @@ export component AppWindow inherits Window {
 
     // Settings.
     in-out property <bool> settings-open;
+    in-out property <bool> server-profile-open;
     in-out property <int> settings-section: 1;
     in-out property <int> settings-account: -1;
     in-out property <int> settings-account-tab: 0;
@@ -1154,6 +1156,8 @@ export component AppWindow inherits Window {
                             banner: root.sidebar-banner;
                             has-banner: root.sidebar-has-banner;
                             server-settings-available: root.server-settings-available;
+                            can-edit-server-profile: root.can-edit-server-profile;
+                            edit-server-profile => { root.edit-server-profile(); }
                             open-server-settings => { root.open-server-settings(); }
                             server-menu: root.server-menu;
                             room-menu(i, a) => { root.room-menu(i, a); }
@@ -2068,6 +2072,28 @@ export component AppWindow inherits Window {
         incoming-call-switches: root.incoming-call-switches;
     }
     ManagementDialogs {
+        server-profile-open <=> root.server-profile-open;
+        edit-profile-accounts: root.edit-profile-accounts;
+        edit-profile-index <=> root.edit-profile-index;
+        edit-profile-loaded: root.edit-profile-loaded;
+        edit-profile-busy: root.edit-profile-busy;
+        edit-profile-failed: root.edit-profile-failed;
+        edit-profile-status: root.edit-profile-status;
+        edit-profile-name <=> root.edit-profile-name;
+        edit-profile-pronouns <=> root.edit-profile-pronouns;
+        edit-profile-bio <=> root.edit-profile-bio;
+        edit-profile-avatar: root.edit-profile-avatar;
+        edit-profile-has-avatar: root.edit-profile-has-avatar;
+        edit-profile-avatar-label: root.edit-profile-avatar-label;
+        edit-profile-banner: root.edit-profile-banner;
+        edit-profile-has-banner: root.edit-profile-has-banner;
+        edit-profile-banner-label: root.edit-profile-banner-label;
+        reload-own-profile => { root.reload-own-profile(); }
+        reset-own-profile => { root.reset-own-profile(); }
+        save-own-profile => { root.save-own-profile(); }
+        own-profile-edited => { root.own-profile-edited(); }
+        pick-profile-image(v) => { root.pick-profile-image(v); }
+        remove-profile-image(v) => { root.remove-profile-image(v); }
         invite-open: root.invite-open;
         invite-link: root.invite-link;
         close-invite-link => { root.close-invite-link(); }

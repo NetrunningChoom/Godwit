@@ -212,6 +212,7 @@ impl SlackAccount {
                     banner_url: None,
                     scheduled_events: false,
                     scheduled_event_count: 0,
+                    edit_own_profile: false,
                     // Each channel, then its threads, the most recently active first.
                     categories: {
                         let mut relevant: Vec<_> = ws.threads.iter().filter(|(_, t)| t.subscribed).collect();

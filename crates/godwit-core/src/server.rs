@@ -48,6 +48,9 @@ pub struct Server {
     /// Known scheduled and active events for the Events entry's badge.
     #[serde(default)]
     pub scheduled_event_count: u32,
+    /// This account can edit its own profile as seen in this server.
+    #[serde(default)]
+    pub edit_own_profile: bool,
 }
 
 /// A scheduled or active event hosted by a server, independent of its network.

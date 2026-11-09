@@ -84,7 +84,7 @@ impl DiscordAccount {
     /// friends as mutuals, and a note (as the profile request and the note
     /// request would bring).
     fn demo_profile(&mut self, user: &str) {
-        if user == self.me() || self.profiles.contains_key(user) {
+        if user == self.me() || self.profiles.contains_key(&(user.to_owned(), None)) {
             return;
         }
         let guilds: Vec<Value> = self
@@ -113,7 +113,7 @@ impl DiscordAccount {
             })
             .collect();
         self.profiles.insert(
-            user.to_owned(),
+            (user.to_owned(), None),
             json!({"user": {"id": user}, "mutual_guilds": guilds, "mutual_friends": friends}),
         );
         self.notes

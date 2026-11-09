@@ -100,6 +100,7 @@ pub fn profile(user: UserId, name: &str) -> godwit_core::members::Profile {
         presence: Presence::Online,
         status: None,
         bio: Some("Made up for the demo.".into()),
+        pronouns: None,
         profile_level: None,
         member_since: None,
         roles: Vec::new(),
@@ -443,6 +444,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             muted: false,
             scheduled_events: true,
             scheduled_event_count: 2,
+            edit_own_profile: true,
             // Ours to run: every entry in its menu.
             folder: None,
             rights: godwit_core::server::ServerRights {
@@ -465,6 +467,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             muted: false,
             scheduled_events: false,
             scheduled_event_count: 0,
+            edit_own_profile: true,
             folder: None,
             rights: godwit_core::server::ServerRights {
                 invite: true,
@@ -481,6 +484,7 @@ pub fn world(contacts: Contacts) -> (Application, RoomId, RoomId) {
             muted: false,
             scheduled_events: false,
             scheduled_event_count: 0,
+            edit_own_profile: false,
             folder: None,
             rights: godwit_core::server::ServerRights {
                 invite: true,
@@ -2270,6 +2274,7 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     folder: None,
                     scheduled_events: false,
                     scheduled_event_count: 0,
+                    edit_own_profile: false,
                 };
                 self.servers.push(server.clone());
                 vec![
@@ -2427,6 +2432,45 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 account: self.id.clone(),
                 result: Ok(self.own_profile.clone()),
             }],
+            Command::LoadServerProfile { server } => {
+                let profile = self.own_profile.clone();
+                vec![Event::ServerProfileLoaded {
+                    server,
+                    result: Ok(profile),
+                }]
+            }
+            Command::SaveServerProfile { server, edit } => {
+                use godwit_core::own_profile::ProfileImage;
+                let edit = *edit;
+                if let Some(name) = edit.display_name {
+                    self.own_profile.display_name = name.trim().into();
+                    self.own_profile.name = if name.trim().is_empty() {
+                        me().into()
+                    } else {
+                        name.trim().into()
+                    };
+                }
+                if let Some(pronouns) = edit.pronouns {
+                    self.own_profile.pronouns = pronouns.trim().into();
+                }
+                if let Some(bio) = edit.bio {
+                    self.own_profile.bio = bio;
+                }
+                for (choice, slot) in [
+                    (edit.avatar, &mut self.own_profile.avatar_url),
+                    (edit.banner, &mut self.own_profile.banner_url),
+                ] {
+                    match choice {
+                        ProfileImage::Keep => {}
+                        ProfileImage::Remove => *slot = None,
+                        ProfileImage::File { .. } => *slot = Some("preview://photo".into()),
+                    }
+                }
+                vec![Event::ServerProfileSaved {
+                    server,
+                    result: Ok(self.own_profile.clone()),
+                }]
+            }
             Command::SaveOwnProfile(edit) => {
                 use godwit_core::own_profile::ProfileImage;
                 if let Some(name) = edit.display_name {

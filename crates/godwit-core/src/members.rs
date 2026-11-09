@@ -79,6 +79,9 @@ pub struct Profile {
     pub status: Option<Arc<str>>,
     /// Rich text; None while it loads or if they have none.
     pub bio: Option<Arc<str>>,
+    /// Pronouns on the profile, if the network exposes them.
+    #[serde(default)]
+    pub pronouns: Option<Arc<str>>,
     /// The network's account level, when its profile exposes one.
     #[serde(default)]
     pub profile_level: Option<u32>,

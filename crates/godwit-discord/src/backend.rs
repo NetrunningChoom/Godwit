@@ -119,6 +119,9 @@ pub enum Request {
         user: String,
         guild: Option<String>,
     },
+    LoadServerProfile {
+        guild: String,
+    },
     /// Our private note on `user`, asked when their profile opens.
     Note {
         user: String,
@@ -135,6 +138,11 @@ pub enum Request {
         me: Option<Value>,
         avatar: Option<std::path::PathBuf>,
         profile: Option<Value>,
+    },
+    SaveServerProfile {
+        guild: String,
+        body: Value,
+        avatar: Option<std::path::PathBuf>,
     },
     AddFriend {
         user: String,
@@ -429,9 +437,18 @@ pub enum Answer {
     DmOpened(Result<Value, RequestError>),
     Profile {
         user: String,
+        guild: Option<String>,
         result: Result<Value, RequestError>,
     },
     ProfileSaved(Result<(), RequestError>),
+    ServerProfile {
+        guild: String,
+        result: Result<Value, RequestError>,
+    },
+    ServerProfileSaved {
+        guild: String,
+        result: Result<(), RequestError>,
+    },
     Note {
         user: String,
         result: Result<String, RequestError>,
@@ -1101,8 +1118,12 @@ async fn answer(api: &Api, request: Request) -> Answer {
         },
         Request::Profile { user, guild } => {
             let result = api.profile(&user, guild.as_deref()).await.map_err(RequestError::from);
-            Answer::Profile { user, result }
+            Answer::Profile { user, guild, result }
         }
+        Request::LoadServerProfile { guild } => Answer::ServerProfile {
+            guild: guild.clone(),
+            result: api.guild_member_profile(&guild).await.map_err(RequestError::from),
+        },
         Request::Note { user } => {
             let result = api.note(&user).await.map_err(RequestError::from);
             Answer::Note { user, result }
@@ -1129,6 +1150,22 @@ async fn answer(api: &Api, request: Request) -> Answer {
             .await
             .map_err(RequestError::from),
         ),
+        Request::SaveServerProfile { guild, body, avatar } => Answer::ServerProfileSaved {
+            guild: guild.clone(),
+            result: async {
+                let mut body = body;
+                let image_field = body
+                    .as_object_mut()
+                    .and_then(|m| m.remove("__image_field"))
+                    .and_then(|v| v.as_str().map(str::to_owned));
+                if let (Some(field), Some(path)) = (image_field, avatar) {
+                    body[&field] = avatar_uri(&path).await?.into();
+                }
+                api.edit_guild_member(&guild, &body).await.map(|_| ())
+            }
+            .await
+            .map_err(RequestError::from),
+        },
         Request::AddFriend { user } => Answer::Done {
             what: "adding a friend",
             result: api.add_friend(&user, "User Profile").await.map_err(RequestError::from),

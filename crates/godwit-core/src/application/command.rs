@@ -92,6 +92,13 @@ pub enum Command {
     },
     LoadOwnProfile,
     SaveOwnProfile(ProfileEdit),
+    LoadServerProfile {
+        server: ServerId,
+    },
+    SaveServerProfile {
+        server: ServerId,
+        edit: Box<ProfileEdit>,
+    },
     /// The room on screen, or none of this account's. Networks use it to
     /// mark live messages read and to keep that room's history fresh.
     Focus {

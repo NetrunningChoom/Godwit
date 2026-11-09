@@ -1995,6 +1995,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         rights: Default::default(),
                         scheduled_events: false,
                         scheduled_event_count: 0,
+                        edit_own_profile: false,
                     })
                     .collect();
                 servers.insert(
@@ -2015,6 +2016,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         rights: Default::default(),
                         scheduled_events: false,
                         scheduled_event_count: 0,
+                        edit_own_profile: false,
                     },
                 );
                 app.apply(Event::ServersChanged {
@@ -2067,6 +2069,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             rights: Default::default(),
                             scheduled_events: false,
                             scheduled_event_count: 0,
+                            edit_own_profile: false,
                         };
                     let (a, b) = (folder("fa", Some("Friends"), 0x5865f2), folder("fb", None, 0x3ba55d));
                     app.apply(Event::ServersChanged {

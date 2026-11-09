@@ -872,6 +872,7 @@ impl NetworkAccount for SteamAccount {
             Command::CreateServer { .. }
             | Command::LoadServerEvents { .. }
             | Command::SetServerEventInterest { .. } => {}
+            Command::LoadServerProfile { .. } | Command::SaveServerProfile { .. } => {}
             _ => {}
         }
         out

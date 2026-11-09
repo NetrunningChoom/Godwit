@@ -512,6 +512,8 @@ export component Sidebar inherits Rectangle {
     callback open-settings();
     in property <bool> server-settings-available;
     callback open-server-settings();
+    in property <bool> can-edit-server-profile;
+    callback edit-server-profile();
     // The server menu (the official ServerContextMenu), opened from the
     // header: each entry only with its permission.
     in property <bool> server-menu;
@@ -610,6 +612,7 @@ export component Sidebar inherits Rectangle {
                     if root.notify-levels: MenuRow { glyph: Icons.lock; label: (root.notify == 2 ? "✓ " : "") + "Notify: nothing"; clicked => { root.set-notify(2); } }
                     if root.notify-levels: MenuDivider { }
                     if root.can-create-channel: MenuRow { glyph: Icons.tag; label: "Create channel"; clicked => { root.create-channel(); } }
+                    if root.can-edit-server-profile: MenuRow { glyph: Icons.edit; label: "Edit server profile"; clicked => { root.edit-server-profile(); } }
                     if root.server-settings-available: MenuRow { glyph: Icons.settings; label: "Server settings"; clicked => { root.open-server-settings(); } }
                     if root.can-report: MenuDivider { }
                     if root.can-report: MenuRow { glyph: Icons.error; label: "Report server"; danger: true; clicked => { root.report-server(); } }

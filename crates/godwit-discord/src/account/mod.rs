@@ -150,13 +150,15 @@ pub struct DiscordAccount {
     pending: HashMap<String, Arc<str>>,
     /// The profile card on screen, and what Discord's profile said.
     profile_for: Option<(String, Option<String>)>,
-    profiles: HashMap<String, Value>,
+    profiles: HashMap<(String, Option<String>), Value>,
     /// Our private notes on people, by user id (asked when a profile opens,
     /// kept current by USER_NOTE_UPDATE); a person without one is absent.
     notes: HashMap<String, String>,
     /// Our own profile asked for (Settings → Profile): loading, or reloading
     /// after a save (true).
     own_profile: Option<bool>,
+    /// Guilds awaiting a post-save readback, so the core can mark the edit saved.
+    server_profile_saved: std::collections::HashSet<String>,
     /// The data-use consents as Discord last said (key → on), once asked.
     consents: Option<Vec<(String, bool)>>,
     /// The server whose Roles page is open, and the roles last sent.
@@ -243,6 +245,7 @@ impl DiscordAccount {
             profiles: HashMap::new(),
             notes: HashMap::new(),
             own_profile: None,
+            server_profile_saved: Default::default(),
             consents: None,
             roles_watch: None,
             member_search: Default::default(),
@@ -1296,6 +1299,26 @@ impl NetworkAccount for DiscordAccount {
                     }
                 }
             },
+            Command::LoadServerProfile { server } => req(
+                &self.net,
+                Request::LoadServerProfile {
+                    guild: server.raw.to_string(),
+                },
+            ),
+            Command::SaveServerProfile { server, edit } => match server_profile_request(*edit) {
+                Ok((body, avatar)) => req(
+                    &self.net,
+                    Request::SaveServerProfile {
+                        guild: server.raw.to_string(),
+                        body,
+                        avatar,
+                    },
+                ),
+                Err(error) => out.push(Event::ServerProfileSaved {
+                    server,
+                    result: Err(error.into()),
+                }),
+            },
             Command::LoadProfile { user, room } => {
                 let guild = room
                     .as_ref()
@@ -1308,7 +1331,7 @@ impl NetworkAccount for DiscordAccount {
                 if !self.notes.contains_key(&raw) && raw != self.me() {
                     req(&self.net, Request::Note { user: raw.clone() });
                 }
-                if !self.profiles.contains_key(&raw) {
+                if !self.profiles.contains_key(&(raw.clone(), guild.clone())) {
                     req(&self.net, Request::Profile { user: raw, guild });
                 }
             }
@@ -2554,6 +2577,7 @@ mod tests {
         a.answer(
             Answer::Profile {
                 user: "200".into(),
+                guild: None,
                 result: Ok(json!({
                     "user": {"id": "200", "username": "zarg"},
                     "mutual_guilds": [{"id": "10", "nick": "Z"}, {"id": "999", "nick": null}],
@@ -3718,6 +3742,83 @@ fn own_profile_request(edit: godwit_core::own_profile::ProfileEdit) -> Result<Re
     })
 }
 
+fn server_profile_request(
+    edit: godwit_core::own_profile::ProfileEdit,
+) -> Result<(Value, Option<std::path::PathBuf>), String> {
+    use godwit_core::own_profile::ProfileImage;
+    const MAX_NICK: usize = 32;
+    const MAX_PRONOUNS: usize = 40;
+    const MAX_BIO: usize = 190;
+    let mut body = serde_json::Map::new();
+    let check = |s: &str, max: usize, field: &str| {
+        if s.chars().count() > max {
+            Err(format!("The {field} can be at most {max} characters on Discord."))
+        } else {
+            Ok(())
+        }
+    };
+    if let Some(nick) = edit.display_name {
+        let nick = nick.trim();
+        check(nick, MAX_NICK, "nickname")?;
+        body.insert("nick".into(), if nick.is_empty() { Value::Null } else { json!(nick) });
+    }
+    if let Some(bio) = edit.bio {
+        check(&bio, MAX_BIO, "bio")?;
+        body.insert("bio".into(), json!(bio.as_ref()));
+    }
+    if let Some(pronouns) = edit.pronouns {
+        check(&pronouns, MAX_PRONOUNS, "pronouns")?;
+        body.insert("pronouns".into(), json!(pronouns.as_ref()));
+    }
+    let mut image = None;
+    for (field, change) in [("avatar", edit.avatar), ("banner", edit.banner)] {
+        match change {
+            ProfileImage::Keep => {}
+            ProfileImage::Remove => {
+                body.insert(field.into(), Value::Null);
+            }
+            ProfileImage::File { path, .. } => {
+                if image.replace((field, path)).is_some() {
+                    return Err("Choose either an avatar or a banner for each save.".into());
+                }
+            }
+        }
+    }
+    let (field, path) = image.map_or((None, None), |(field, path)| (Some(field), Some(path)));
+    if let Some(field) = field {
+        body.insert("__image_field".into(), json!(field));
+    }
+    Ok((Value::Object(body), path))
+}
+
+fn server_profile_of(v: &Value, guild: &str, store: &store::Store) -> godwit_core::own_profile::OwnProfile {
+    let member = &v["guild_member_profile"];
+    let user = &v["user"];
+    let name = member["nick"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .or_else(|| user["global_name"].as_str())
+        .or_else(|| store.me.as_ref().map(|m| m.username.as_str()))
+        .unwrap_or_default();
+    let image_url = |field: &str| {
+        member[field].as_str().filter(|s| !s.is_empty()).map(|hash| {
+            store::guild_member_profile_avatar_url(
+                guild,
+                store.me.as_ref().map(|m| m.id.as_str()).unwrap_or_default(),
+                hash,
+            )
+        })
+    };
+    godwit_core::own_profile::OwnProfile {
+        name: name.into(),
+        display_name: member["nick"].as_str().unwrap_or_default().into(),
+        pronouns: member["pronouns"].as_str().unwrap_or_default().into(),
+        bio: member["bio"].as_str().unwrap_or_default().into(),
+        avatar_url: image_url("avatar").map(Into::into),
+        banner_url: image_url("banner").map(Into::into),
+    }
+}
+
 #[cfg(test)]
 mod own_profile_tests {
     use super::*;
@@ -3749,6 +3850,76 @@ mod own_profile_tests {
         assert!(me["avatar"].is_null());
         assert!(avatar.is_none());
         assert_eq!(profile.unwrap()["pronouns"], "they/them");
+    }
+
+    #[test]
+    fn server_profile_body_omits_keep_and_nulls_removals() {
+        let edit = ProfileEdit {
+            display_name: Some("  Nick  ".into()),
+            bio: Some("hello".into()),
+            avatar: ProfileImage::Remove,
+            banner: ProfileImage::Remove,
+            ..ProfileEdit::default()
+        };
+        let (body, avatar) = server_profile_request(edit).unwrap();
+        assert_eq!(body["nick"], "Nick");
+        assert_eq!(body["bio"], "hello");
+        assert_eq!(body["avatar"], Value::Null);
+        assert_eq!(body["banner"], Value::Null);
+        assert!(body.get("pronouns").is_none());
+        assert!(avatar.is_none());
+        let (empty, _) = server_profile_request(ProfileEdit::default()).unwrap();
+        assert!(empty.as_object().is_some_and(serde_json::Map::is_empty));
+    }
+
+    #[test]
+    fn server_profile_images_choose_the_correct_patch_field() {
+        let edit = ProfileEdit {
+            avatar: ProfileImage::File {
+                path: "/tmp/a.png".into(),
+                size: 3,
+            },
+            ..ProfileEdit::default()
+        };
+        let (body, path) = server_profile_request(edit).unwrap();
+        assert_eq!(body["__image_field"], "avatar");
+        assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/a.png")));
+        let both = ProfileEdit {
+            avatar: ProfileImage::File {
+                path: "/tmp/a.png".into(),
+                size: 3,
+            },
+            banner: ProfileImage::File {
+                path: "/tmp/b.png".into(),
+                size: 3,
+            },
+            ..ProfileEdit::default()
+        };
+        assert!(server_profile_request(both).is_err());
+    }
+
+    #[test]
+    fn parses_guild_member_profile_and_uses_guild_cdn_paths() {
+        let value = json!({
+            "guild_member_profile": {"nick":"Local", "avatar":"hash-a", "banner":"hash-b", "bio":"Guild bio", "pronouns":"they/them"},
+            "user": {"global_name":"Global", "username":"user"}
+        });
+        let parsed = server_profile_of(&value, "123", &store::Store::default());
+        assert_eq!(parsed.display_name.as_ref(), "Local");
+        assert_eq!(parsed.bio.as_ref(), "Guild bio");
+        assert_eq!(parsed.pronouns.as_ref(), "they/them");
+        assert!(
+            parsed
+                .avatar_url
+                .as_deref()
+                .is_some_and(|u| u.contains("/guilds/123/users/"))
+        );
+        assert!(
+            parsed
+                .banner_url
+                .as_deref()
+                .is_some_and(|u| u.contains("/guilds/123/users/"))
+        );
     }
 }
 

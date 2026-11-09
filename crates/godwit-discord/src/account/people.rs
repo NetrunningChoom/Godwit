@@ -216,7 +216,9 @@ impl DiscordAccount {
 
     pub(super) fn profile(&self) -> Option<Profile> {
         let (user, guild) = self.profile_for.as_ref()?;
-        let fetched = self.profiles.get(user);
+        let fetched = self
+            .profiles
+            .get(&(user.to_owned(), guild.as_deref().map(str::to_owned)));
         let u = self.store.users.get(user);
         let roles = guild
             .as_deref()
@@ -237,13 +239,51 @@ impl DiscordAccount {
                 )
             })
             .unwrap_or_default();
-        let bio = fetched
-            .and_then(|f| f["user_profile"]["bio"].as_str().or_else(|| f["user"]["bio"].as_str()))
+        let member_profile = fetched
+            .and_then(|f| f.get("guild_member_profile"))
+            .or_else(|| fetched.and_then(|f| f.get("guild_member")));
+        let user_profile = fetched.and_then(|f| f.get("user_profile"));
+        let bio = member_profile
+            .and_then(|f| f["bio"].as_str())
+            .or_else(|| user_profile.and_then(|f| f["bio"].as_str()))
+            .or_else(|| fetched.and_then(|f| f["user"]["bio"].as_str()))
             .filter(|b| !b.trim().is_empty())
             .map(|b| crate::markdown::to_rich(b, &self.names(guild.as_deref())).into());
-        let banner = fetched
-            .and_then(|f| f["user"]["banner"].as_str())
-            .map(|h| format!("{}/banners/{user}/{h}.png?size=600", store::CDN).into());
+        let pronouns = member_profile
+            .and_then(|f| f["pronouns"].as_str())
+            .or_else(|| user_profile.and_then(|f| f["pronouns"].as_str()))
+            .filter(|p| !p.is_empty())
+            .map(Into::into);
+        let member_avatar = member_profile
+            .and_then(|f| f["avatar"].as_str())
+            .filter(|h| !h.is_empty())
+            .map(|h| {
+                Arc::<str>::from(store::guild_member_profile_avatar_url(
+                    guild.as_deref().unwrap_or_default(),
+                    user,
+                    h,
+                ))
+            });
+        let member_banner = member_profile
+            .and_then(|f| f["banner"].as_str())
+            .filter(|h| !h.is_empty())
+            .map(|h| {
+                Arc::<str>::from(store::guild_member_profile_avatar_url(
+                    guild.as_deref().unwrap_or_default(),
+                    user,
+                    h,
+                ))
+            });
+        let banner = member_banner.or_else(|| {
+            fetched
+                .and_then(|f| f["user"]["banner"].as_str())
+                .map(|h| Arc::<str>::from(format!("{}/banners/{user}/{h}.png?size=600", store::CDN)))
+        });
+        let name = member_profile
+            .and_then(|member| member["nick"].as_str())
+            .filter(|nick| !nick.is_empty())
+            .map(Arc::<str>::from)
+            .unwrap_or_else(|| self.store.display_name(user, guild.as_deref()).into());
         let relationship = match self.store.relationships.get(user) {
             Some(&store::FRIEND) => Relationship::Friend,
             Some(&store::INCOMING) => Relationship::Incoming,
@@ -253,13 +293,14 @@ impl DiscordAccount {
         };
         Some(Profile {
             user: self.user_id(user)?,
-            name: self.store.display_name(user, guild.as_deref()).into(),
+            name,
             username: u.map(|u| u.username.clone()).unwrap_or_default().into(),
-            avatar_url: Some(self.avatar(user, guild.as_deref()).into()),
+            avatar_url: Some(member_avatar.unwrap_or_else(|| Arc::<str>::from(self.avatar(user, guild.as_deref())))),
             banner_url: banner,
             presence: self.presence(user),
             status: None,
             bio,
+            pronouns,
             profile_level: None,
             member_since: None,
             roles,

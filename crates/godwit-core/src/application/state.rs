@@ -177,6 +177,7 @@ pub struct AppState {
     pub(super) server_settings_sequence: u64,
     pub(super) channel_settings_sequence: u64,
     pub own_profiles: HashMap<AccountId, OwnProfileState>,
+    pub server_profiles: HashMap<ServerId, OwnProfileState>,
     pub accounts: Vec<Account>,
     /// Every account's rooms; direct messages in each account's order.
     pub rooms: Vec<Arc<Room>>,

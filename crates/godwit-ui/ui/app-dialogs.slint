@@ -6,6 +6,7 @@ import { Screen, MemberRoleItem } from "types.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Dialog, ConfirmDialog, Button, TextField, TextArea, Select, Toggle } from "widgets.slint";
 import { ProfilesState } from "profiles-settings.slint";
+import { ProfileSettings } from "profile-settings.slint";
 
 // These stay below the fullscreen viewer, as in AppWindow's original stack.
 export component CallDialogs inherits Rectangle {
@@ -131,6 +132,24 @@ export component CallDialogs inherits Rectangle {
 
 // Server/account/message dialogs remain above the incoming-call card.
 export component ManagementDialogs inherits Rectangle {
+    in-out property <bool> server-profile-open;
+    in property <[string]> edit-profile-accounts;
+    in-out property <int> edit-profile-index;
+    in property <bool> edit-profile-loaded;
+    in property <bool> edit-profile-busy;
+    in property <bool> edit-profile-failed;
+    in property <string> edit-profile-status;
+    in-out property <string> edit-profile-name;
+    in-out property <string> edit-profile-pronouns;
+    in-out property <string> edit-profile-bio;
+    in property <image> edit-profile-avatar;
+    in property <bool> edit-profile-has-avatar;
+    in property <string> edit-profile-avatar-label;
+    in property <image> edit-profile-banner;
+    in property <bool> edit-profile-has-banner;
+    in property <string> edit-profile-banner-label;
+    callback reload-own-profile(); callback reset-own-profile(); callback save-own-profile(); callback own-profile-edited();
+    callback pick-profile-image(bool); callback remove-profile-image(bool);
     in property <bool> invite-open;
     in property <string> invite-link;
     callback close-invite-link();
@@ -451,5 +470,34 @@ export component ManagementDialogs inherits Rectangle {
         danger: true;
         cancelled => { root.confirm-delete = -1; }
         confirmed => { root.delete(root.confirm-delete); root.confirm-delete = -1; }
+    }
+    if root.server-profile-open: Dialog {
+        title: "Edit server profile";
+        dismissed => { root.server-profile-open = false; }
+        ProfileSettings {
+            accounts: root.edit-profile-accounts;
+            account-index <=> root.edit-profile-index;
+            loaded: root.edit-profile-loaded;
+            busy: root.edit-profile-busy;
+            failed: root.edit-profile-failed;
+            status: root.edit-profile-status;
+            display-name <=> root.edit-profile-name;
+            pronouns <=> root.edit-profile-pronouns;
+            bio <=> root.edit-profile-bio;
+            avatar: root.edit-profile-avatar;
+            has-avatar: root.edit-profile-has-avatar;
+            avatar-label: root.edit-profile-avatar-label;
+            banner: root.edit-profile-banner;
+            has-banner: root.edit-profile-has-banner;
+            banner-allowed: true;
+            banner-label: root.edit-profile-banner-label;
+            selected-account(_) => { }
+            save => { root.save-own-profile(); }
+            reset => { root.reset-own-profile(); }
+            reload => { root.reload-own-profile(); }
+            changed => { root.own-profile-edited(); }
+            pick-image(avatar) => { root.pick-profile-image(avatar); }
+            remove-image(avatar) => { root.remove-profile-image(avatar); }
+        }
     }
 }

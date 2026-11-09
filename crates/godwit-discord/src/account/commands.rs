@@ -282,6 +282,33 @@ impl DiscordAccount {
                     }
                 }
             },
+            Answer::ServerProfile { guild, result } => {
+                if let Some(account) = self.account.clone() {
+                    let result = result
+                        .map(|value| server_profile_of(&value, &guild, &self.store))
+                        .map_err(Into::into);
+                    let server = ServerId::new(account, guild.clone());
+                    if self.server_profile_saved.remove(&guild) {
+                        out.push(Event::ServerProfileSaved { server, result });
+                    } else {
+                        out.push(Event::ServerProfileLoaded { server, result });
+                    }
+                }
+            }
+            Answer::ServerProfileSaved { guild, result } => match result {
+                Ok(()) => {
+                    self.server_profile_saved.insert(guild.clone());
+                    self.net.send(Cmd::Request(Request::LoadServerProfile { guild }));
+                }
+                Err(error) => {
+                    if let Some(account) = self.account.clone() {
+                        out.push(Event::ServerProfileSaved {
+                            server: ServerId::new(account, guild),
+                            result: Err(error.into()),
+                        });
+                    }
+                }
+            },
             Answer::Note { user, result } => {
                 // A failed fetch leaves the field off (asked again on the next
                 // open); a late answer never overwrites a newer save or update.
@@ -299,7 +326,7 @@ impl DiscordAccount {
                     out.push(Event::Error(format!("Discord, saving a note: {e}").into()));
                 }
             }
-            Answer::Profile { user, result } => {
+            Answer::Profile { user, guild, result } => {
                 let mine = self.store.me.as_ref().is_some_and(|m| m.id == user);
                 if mine
                     && let Some(saved) = self.own_profile.take()
@@ -323,11 +350,11 @@ impl DiscordAccount {
                     // more), and the caches stay small: the shown profile and a
                     // few recent ones; the rest is asked for again when reopened.
                     if self.profiles.len() >= PROFILE_CACHE {
-                        let shown = self.profile_for.as_ref().map(|p| p.0.clone());
+                        let shown = self.profile_for.as_ref().map(|p| (p.0.clone(), p.1.clone()));
                         self.profiles.retain(|k, _| Some(k) == shown.as_ref());
-                        self.notes.retain(|k, _| Some(k) == shown.as_ref());
+                        self.notes.retain(|k, _| shown.as_ref().is_some_and(|s| &s.0 == k));
                     }
-                    self.profiles.insert(user, slim_profile(&v));
+                    self.profiles.insert((user, guild), slim_profile(&v));
                     self.sync_profile(out);
                 }
             }
@@ -567,7 +594,9 @@ fn slim_profile(v: &Value) -> Value {
         })
         .collect();
     json!({
-        "user_profile": {"bio": v["user_profile"]["bio"]},
+        "user_profile": {"bio": v["user_profile"]["bio"], "pronouns": v["user_profile"]["pronouns"]},
+        "guild_member_profile": v["guild_member_profile"],
+        "guild_member": v["guild_member"],
         "user": {"bio": v["user"]["bio"], "banner": v["user"]["banner"]},
         "mutual_guilds": v["mutual_guilds"],
         "mutual_friends": friends,

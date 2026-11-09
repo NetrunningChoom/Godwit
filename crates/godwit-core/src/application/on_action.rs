@@ -376,6 +376,47 @@ impl Application {
         }]
     }
 
+    pub(super) fn dispatch_load_server_profile(&mut self, server: ServerId) -> Vec<Effect> {
+        if !self.state.server(&server).is_some_and(|s| s.edit_own_profile) {
+            return Vec::new();
+        }
+        let state = self.state.server_profiles.entry(server.clone()).or_default();
+        if state.loading || state.saving {
+            return Vec::new();
+        }
+        state.loading = true;
+        state.error = None;
+        vec![Effect::Backend {
+            account: server.account.clone(),
+            command: Command::LoadServerProfile { server },
+        }]
+    }
+
+    pub(super) fn dispatch_save_server_profile(&mut self, server: ServerId, edit: ProfileEdit) -> Vec<Effect> {
+        if !self.state.server(&server).is_some_and(|s| s.edit_own_profile) {
+            return Vec::new();
+        }
+        let Some(state) = self.state.server_profiles.get_mut(&server) else {
+            return Vec::new();
+        };
+        if state.profile.is_none() || state.loading || state.saving {
+            return Vec::new();
+        }
+        if edit.is_empty() {
+            state.saved = true;
+            return Vec::new();
+        }
+        state.saving = true;
+        state.error = None;
+        vec![Effect::Backend {
+            account: server.account.clone(),
+            command: Command::SaveServerProfile {
+                server: server.clone(),
+                edit: Box::new(edit),
+            },
+        }]
+    }
+
     pub(super) fn dispatch_select_server(&mut self, server: Option<ServerId>) -> Vec<Effect> {
         self.state.showing_server_events = None;
         if server.as_ref().is_none_or(|s| self.state.server(s).is_some()) {

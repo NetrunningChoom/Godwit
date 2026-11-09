@@ -147,6 +147,7 @@ impl StoatAccount {
                     Err(error) => vec![Event::OwnProfileSaved { account, result: Err(error.into()) }],
                 }
             }
+            Command::LoadServerProfile { .. } | Command::SaveServerProfile { .. } => Vec::new(),
             // Stoat has no end-to-end encryption, so nothing to unlock.
             // Our status object keeps its text: the PATCH replaces it whole.
             Command::SetPresence(presence) => {

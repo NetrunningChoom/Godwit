@@ -66,6 +66,7 @@ impl StoatAccount {
                 .and_then(|p| p.content.as_deref())
                 .filter(|b| !b.trim().is_empty())
                 .map(|b| rich::to_rich(b, &names).into()),
+            pronouns: None,
             profile_level: None,
             member_since: None,
             roles,

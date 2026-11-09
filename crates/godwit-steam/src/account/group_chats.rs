@@ -110,6 +110,7 @@ impl SteamAccount {
                 banner_url: None,
                 scheduled_events: false,
                 scheduled_event_count: 0,
+                edit_own_profile: false,
                 categories: vec![Category {
                     id: None,
                     can_manage: false,

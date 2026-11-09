@@ -1161,6 +1161,10 @@ pub fn member_avatar_url(guild: &str, user: &str, hash: &str) -> String {
     format!("{CDN}/guilds/{guild}/users/{user}/avatars/{hash}.png?size={PICTURE}")
 }
 
+pub fn guild_member_profile_avatar_url(guild: &str, user: &str, hash: &str) -> String {
+    format!("{CDN}/guilds/{guild}/users/{user}/avatars/{hash}.png?size={PICTURE}")
+}
+
 /// Whether a guild object lists `feature`.
 fn has_feature(guild: &Value, feature: &str) -> bool {
     guild["features"]

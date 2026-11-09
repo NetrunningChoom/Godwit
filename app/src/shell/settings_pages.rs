@@ -480,7 +480,9 @@ impl Shell {
     }
 
     pub(super) fn show_own_profile(&mut self, ui: &AppWindow) {
-        if ui.get_settings_open() && ui.get_settings_section() == 10 && ui.get_settings_account_profile() {
+        if (ui.get_settings_open() && ui.get_settings_section() == 10 && ui.get_settings_account_profile())
+            || ui.get_server_profile_open()
+        {
             self.profile_editor.show(ui, self.app.state(), &mut self.images);
         }
     }

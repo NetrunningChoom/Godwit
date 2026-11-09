@@ -1090,6 +1090,7 @@ mod rail_tests {
             rights: Default::default(),
             scheduled_events: false,
             scheduled_event_count: 0,
+            edit_own_profile: false,
         };
         app.apply(Event::RoomUpdated(crate::demo::room(
             "fb-room",
