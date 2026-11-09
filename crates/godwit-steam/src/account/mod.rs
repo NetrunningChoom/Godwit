@@ -654,6 +654,26 @@ impl NetworkAccount for SteamAccount {
                 }
                 return out;
             }
+            Command::DeleteMessage { room, message } => {
+                if self.account.as_ref() != Some(&room.account) {
+                    return out;
+                }
+                let Some((group, chat)) = group_of(&room) else {
+                    return out;
+                };
+                let Some((time, ordinal)) = parse_message_id(&message) else {
+                    return out;
+                };
+                if !self.group_room(group, chat).is_some_and(|r| r.capabilities.delete) {
+                    return out;
+                }
+                self.net.send(Cmd::GroupDelete {
+                    group,
+                    chat,
+                    time,
+                    ordinal,
+                });
+            }
             Command::OpenDirect { user } => {
                 if let Ok(friend) = user.raw.parse::<u64>() {
                     self.chats.entry(friend).or_default();
@@ -1390,6 +1410,47 @@ mod tests {
         let caps = Capabilities::of(Network::Steam);
         assert!(!caps.react);
         assert!(!caps.reply);
+        assert!(!caps.delete);
+    }
+
+    #[test]
+    fn group_rooms_enable_documented_delete_and_map_delete_command() {
+        let (net, mut commands) = Handle::detached();
+        let (_tx, events) = mpsc::channel();
+        let mut a = SteamAccount::with(0, net, events, Status::Connecting);
+        a.account = Some(AccountId::new(Network::Steam, backend::steam_id(1).to_string()));
+        a.groups.insert(20, group(20, None, &[(200, "General", false)]));
+        let room = a.group_room_id(20, 200).unwrap();
+        assert!(a.group_room(20, 200).unwrap().capabilities.delete);
+        a.run(Command::DeleteMessage {
+            room,
+            message: message_id(71, 6),
+        });
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(Cmd::GroupDelete {
+                group: 20,
+                chat: 200,
+                time: 71,
+                ordinal: 6
+            })
+        ));
+    }
+
+    #[test]
+    fn group_delete_notification_maps_to_neutral_event() {
+        let (mut a, tx, _) = ready_with_commands();
+        tx.send(Ev::Groups(vec![group(20, None, &[(200, "", false)])])).unwrap();
+        tx.send(Ev::GroupDeleted {
+            group: 20,
+            chat: 200,
+            time: 71,
+            ordinal: 6,
+        })
+        .unwrap();
+        let events = a.poll();
+        assert!(events.iter().any(|e| matches!(e, Event::MessageDeleted { id, room }
+            if id == &message_id(71, 6) && &*room.raw == "g20-200")));
     }
 
     #[test]

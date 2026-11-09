@@ -12,7 +12,8 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use steam_vent::{Connection, ConnectionError, ConnectionTrait, LoginError, ServerList};
 use steam_vent_proto_steam::steammessages_chat_steamclient::{
-    CChatRoom_ChatRoomGroupRoomsChange_Notification, CChatRoom_ChatRoomHeaderState_Notification,
+    CChatRoom_ChatMessageModified_Notification, CChatRoom_ChatRoomGroupRoomsChange_Notification,
+    CChatRoom_ChatRoomHeaderState_Notification, CChatRoom_DeleteChatMessages_Request,
     CChatRoom_IncomingChatMessage_Notification, CChatRoom_MemberStateChange_Notification,
     CChatRoom_MessageReaction_Notification, ChatRoomClient_NotifyChatGroupUserStateChanged_Notification,
 };
@@ -191,6 +192,12 @@ pub enum Cmd {
         reaction: String,
         add: bool,
     },
+    GroupDelete {
+        group: u64,
+        chat: u64,
+        time: u32,
+        ordinal: u32,
+    },
     /// Join a group room's voice chat (ending any call first); `call` tags its events.
     GroupCall {
         call: u64,
@@ -248,6 +255,29 @@ pub struct LineReaction {
     pub reaction: String,
     pub count: u32,
     pub me: bool,
+}
+
+/// Builds the documented ChatRoom.DeleteChatMessages body. Steam identifies a
+/// message by its server timestamp and ordinal, not by message text.
+fn delete_chat_messages_request(
+    group: u64,
+    chat: u64,
+    ids: impl IntoIterator<Item = (u32, u32)>,
+) -> CChatRoom_DeleteChatMessages_Request {
+    use steam_vent_proto_steam::steammessages_chat_steamclient::cchat_room_delete_chat_messages_request::Message;
+    CChatRoom_DeleteChatMessages_Request {
+        chat_group_id: Some(group),
+        chat_id: Some(chat),
+        messages: ids
+            .into_iter()
+            .map(|(time, ordinal)| Message {
+                server_timestamp: Some(time),
+                ordinal: Some(ordinal),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    }
 }
 
 /// From the network thread to the account.
@@ -352,6 +382,12 @@ pub enum Ev {
         chat: u64,
         line: Line,
         mentioned: bool,
+    },
+    GroupDeleted {
+        group: u64,
+        chat: u64,
+        time: u32,
+        ordinal: u32,
     },
     GroupSent {
         nonce: String,
@@ -1063,6 +1099,21 @@ fn command(st: &mut State, cmd: Cmd, out: &Out, inner: &InnerSender) {
                 });
             }
         }
+        Cmd::GroupDelete {
+            group,
+            chat,
+            time,
+            ordinal,
+        } => {
+            if let Some(conn) = st.conn.clone() {
+                tokio::spawn(async move {
+                    let req = delete_chat_messages_request(group, chat, [(time, ordinal)]);
+                    if let Err(e) = conn.service_method(req).await {
+                        diag(&format!("Steam group message delete failed: {e}"));
+                    }
+                });
+            }
+        }
         Cmd::GroupCall {
             call,
             group,
@@ -1530,6 +1581,8 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
     let mut logged_off = conn.on::<CMsgClientLoggedOff>();
     let mut emoticon_lists = conn.on::<CMsgClientEmoticonList>();
     let mut group_messages = conn.on_notification::<CChatRoom_IncomingChatMessage_Notification>();
+    // ChatRoomClient.NotifyChatMessageModified reports deleted group messages.
+    let mut group_modified = conn.on_notification::<CChatRoom_ChatMessageModified_Notification>();
     let mut group_reactions = conn.on_notification::<CChatRoom_MessageReaction_Notification>();
     let mut group_rooms = conn.on_notification::<CChatRoom_ChatRoomGroupRoomsChange_Notification>();
     let mut group_headers = conn.on_notification::<CChatRoom_ChatRoomHeaderState_Notification>();
@@ -1618,6 +1671,27 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
             }
         }
     }).abort_handle());
+
+    let o = out.clone();
+    tasks.push(
+        tokio::spawn(async move {
+            while let Some(item) = group_modified.next().await {
+                if let Ok(notification) = item {
+                    for message in &notification.messages {
+                        if message.deleted() {
+                            o.send(Ev::GroupDeleted {
+                                group: notification.chat_group_id(),
+                                chat: notification.chat_id(),
+                                time: message.server_timestamp(),
+                                ordinal: message.ordinal(),
+                            });
+                        }
+                    }
+                }
+            }
+        })
+        .abort_handle(),
+    );
 
     // The emoticons and stickers we own (asked for below; Steam sends the
     // list again when it changes).
@@ -2100,6 +2174,18 @@ mod tests {
         assert_eq!(steam_id(account_id(id)), id);
         // A group's id isn't an individual's.
         assert!(!is_individual(103_582_791_429_521_408));
+    }
+
+    #[test]
+    fn delete_request_uses_group_room_and_stable_message_coordinates() {
+        let req = delete_chat_messages_request(7, 9, [(123, 4), (456, 5)]);
+        assert_eq!(req.chat_group_id, Some(7));
+        assert_eq!(req.chat_id, Some(9));
+        assert_eq!(req.messages.len(), 2);
+        assert_eq!(req.messages[0].server_timestamp, Some(123));
+        assert_eq!(req.messages[0].ordinal, Some(4));
+        assert_eq!(req.messages[1].server_timestamp, Some(456));
+        assert_eq!(req.messages[1].ordinal, Some(5));
     }
 
     #[test]

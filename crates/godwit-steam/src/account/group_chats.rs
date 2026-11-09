@@ -63,6 +63,7 @@ impl SteamAccount {
             },
             capabilities: Capabilities {
                 leave: !server,
+                delete: true,
                 // Steam rooms have text; voice only where the group allows it.
                 voice: r.voice_allowed,
                 voice_unavailable: false,

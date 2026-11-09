@@ -379,6 +379,19 @@ impl SteamAccount {
                     out.push(Event::MessageAdded { room: id, message });
                 }
             }
+            Ev::GroupDeleted {
+                group,
+                chat,
+                time,
+                ordinal,
+            } => {
+                if let Some(room) = self.group_room_id(group, chat) {
+                    out.push(Event::MessageDeleted {
+                        room,
+                        id: message_id(time, ordinal),
+                    });
+                }
+            }
             Ev::GroupSent {
                 nonce,
                 group,

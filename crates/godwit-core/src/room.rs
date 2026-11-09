@@ -247,6 +247,8 @@ impl Capabilities {
             },
             Network::Steam => Self {
                 edit: false,
+                // ChatRoom.DeleteChatMessages is published for group rooms;
+                // direct FriendMessages has no corresponding request.
                 delete: false,
                 // Steam's EMessageReactionType accepts emoticons/stickers, while the shared picker accepts arbitrary Unicode.
                 // Keep it hidden until the core can restrict it to Steam's accepted names (steam-vent friendmessages proto).
