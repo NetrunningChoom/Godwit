@@ -5,9 +5,7 @@
 // license; Godwit distributes it with its own (AGPL-3.0-only), the note kept.
 // Generated into OUT_DIR by build.rs; see src/proto.rs.
 
-
 syntax = "proto2";
-
 
 // Hand-coded reverse-engineered protobuf, based on info extracted from Android and iOS Gmail and Google Talk apps
 //
@@ -16,7 +14,6 @@ syntax = "proto2";
 // oneof's have been commented out because they're a pain in the butt with protobuf-c, but I've tried to keep them in there in case other non-silly protobuf libraries want to take advantage of them
 //
 // Feel free to use this .proto for whatever you want to, under whatever license you want.
-
 
 enum UserType {
 	HUMAN = 0;
@@ -89,15 +86,6 @@ message UserStatus {
 
 message UserStatusUpdatedEvent {
 	optional UserStatus user_status = 1;
-}
-
-message GetUserStatusRequest {
-	repeated UserId user_ids = 1;
-	optional RequestHeader request_header = 100;
-}
-
-message GetUserStatusResponse {
-	repeated UserStatus user_statuses = 1;
 }
 
 message GetSelfUserStatusRequest {
@@ -616,7 +604,6 @@ message JAddOnsWidget {
 		END = 3;
 	}
 
-
 	oneof Data {
 		JAddOnsTextWidget text_widget = 1;
 		JAddOnsLabelContentPairWidget label_content_pair_widget = 2;
@@ -636,7 +623,6 @@ message JAddOnsWidget {
 	optional HorizontalAlign horizontal_align = 15;
 
 }
-
 
 message JAddOnsFormAction {
 	message ActionParameter {
@@ -1109,10 +1095,6 @@ message RetentionSettings {
 	optional int64 expiry_timestamp = 2;
 }
 
-message GroupData {
-	optional RetentionSettings.RetentionState retention_state = 1;
-}
-
 message TopicId {
 	optional GroupId group_id = 3;
 	optional string topic_id = 2;
@@ -1222,88 +1204,6 @@ message InviteeInfo {
 	optional string email = 2;
 }
 
-message InviteeMemberInfo {
-	oneof Id {
-		InviteeInfo invitee_info = 1;
-		// RosterId roster_id = 2;
-	}
-}
-
-message SpaceCreationInfo {
-	optional string name = 1;
-	// optional GroupGuestAccessSettings group_guest_access_settings = 3;
-	optional GroupVisibility visibility = 4;
-
-	message FlatGroup {
-
-	}
-	optional FlatGroup flat_group = 5;
-
-	message ThreadedGroup {
-
-	}
-	optional ThreadedGroup threaded_group = 6;
-
-	optional bool has_server_generated_name = 7;
-	repeated InviteeMemberInfo invitee_member_infos = 8;
-	// optional RoomInviteNotificationSettings notification_settings = 9;
-	// optional AvatarInfo avatar_info = 10;
-
-	message SpaceType {
-
-	}
-	optional SpaceType space_type = 11;
-
-	// optional ?? space_details = 12;
-	optional SharedAttributeCheckerGroupType attribute_checker_group_type = 13;
-	optional string shared_drive_name = 14;
-}
-
-message CreateGroupRequest {
-	optional RequestHeader request_header = 100;
-	oneof CreationInfo {
-		SpaceCreationInfo space = 1;
-	}
-	optional string local_id = 3;
-	optional bool should_find_existing_space = 4;
-}
-
-message CreateMembershipResult {
-	optional Membership membership = 1;
-	// optional FailureReason reason = 2;
-	// repeated SupplementalReason supplemental_reasons = 3;
-}
-
-message CreateGroupResponse {
-	optional Group group = 1;
-	optional WriteRevision group_revision = 2;
-	optional WriteRevision user_revision = 3;
-	repeated CreateMembershipResult results = 4;
-	// optional Failure creator_membership_failure = 5;
-}
-
-message CreateDmRequest {
-	optional RequestHeader request_header = 100;
-	enum FetchOptions {
-		UNKNOWN = 0;
-		INCLUDE_BOT_MEMBERSHIPS_IN_RESPONSE = 1;
-	}
-	repeated FetchOptions fetch_options = 8;
-	repeated UserId members = 1;
-	repeated InviteeInfo invitees = 7;
-	// optional MessageCreationInfo message_creation_info = 2;
-	optional RetentionSettings retention_settings = 3;
-	optional string local_id = 4;
-	optional string topic_and_message_id = 5;
-}
-
-message CreateDmResponse {
-	optional Group dm = 1;
-	optional Topic topic = 2;
-	optional WriteRevision group_revision = 3;
-	repeated Membership memberships = 4;
-}
-
 message ListTopicsResponse {
 	repeated Topic topics = 1;
 	optional ReadRevision user_revision = 2;
@@ -1354,26 +1254,6 @@ message ListMessagesResponse {
 	optional ReadRevision group_revision = 2;
 	//optional bool contains_first_message = 3;
 	//optional bool contains_last_message = 4;
-}
-
-message ListMembersRequest {
-	optional RequestHeader request_header = 100;
-	optional SpaceId space_id = 1;
-	optional GroupId group_id = 5;
-	// repeated FetchOptions fetch_options = 2;
-	// optional Filter filter = 7;
-	optional int32 page_size = 3;
-	optional string page_token = 4;
-	optional ReferenceRevision not_older_than = 6;
-}
-
-message ListMembersResponse {
-	repeated Membership memberships = 1;
-	repeated Member members = 2;
-	repeated MemberId member_ids = 5;
-	optional string next_page_token = 3;
-	optional ReadRevision group_revision = 4;
-	repeated MemberId invited_member_ids = 6;
 }
 
 message ReadReceipt {
@@ -1431,7 +1311,6 @@ message MobileLocalNotification {
 	optional AndroidLocalNotification android_local_notification = 1;
 	optional IosLocalNotification ios_local_notification = 2;
 }
-
 
 message MessageEvent {
 	optional Message message = 1;
@@ -1515,128 +1394,12 @@ message WebPushNotificationEvent {
 	repeated EndpointType endpoint_types = 4;
 }
 
-
 // used in the /webchannel/events
-message StreamEventsRequest {
-	optional Platform platform = 4;
-	optional ClientInfo client_info = 5;
-	optional int64 client_session_id = 6;
-	optional string sample_id = 1;
-	repeated string sample_ids = 7;
-	optional PingEvent ping_event = 2;
-	optional ClockSyncRequest clock_sync_request = 3;
-	optional GroupSubscriptionEvent group_subscription_event = 8;
-	optional int64 test_user_gaia_id = 100;
-}
-
-enum EventOrigin {
-	ORIGIN_UNSPECIFIED = 0;
-	ANDROID = 100;
-	ANDROID_DEV = 101;
-	ANDROID_PRODTEST = 102;
-	ANDROID_STAGING = 103;
-	ANDROID_PROD = 104;
-	IOS = 110;
-	IOS_DEV = 111;
-	IOS_PRODTEST = 112;
-	IOS_STAGING = 113;
-	IOS_PROD = 114;
-	WEB_ORIGIN = 120;
-	WEB_DEV = 121;
-	WEB_PRODTEST = 122;
-	WEB_PROD = 123;
-	WEB_STAGING = 124;
-	DESKTOP_ORIGIN = 125;
-	DESKTOP_DEV = 126;
-	DESKTOP_PRODTEST = 127;
-	DESKTOP_STAGING = 128;
-	DESKTOP_PROD = 129;
-	COMPANION_ORIGIN = 130;
-	COMPANION_DEV = 131;
-	COMPANION_PRODTEST = 132;
-	COMPANION_STAGING = 133;
-	COMPANION_PROD = 134;
-	WEB_GMAIL_ORIGIN = 135;
-	WEB_GMAIL_DEV = 136;
-	WEB_GMAIL_PRODTEST = 137;
-	WEB_GMAIL_STAGING = 138;
-	WEB_GMAIL_PROD = 139;
-	WEB_PWA_ORIGIN = 140;
-	WEB_PWA_DEV = 141;
-	WEB_PWA_PRODTEST = 142;
-	WEB_PWA_STAGING = 143;
-	WEB_PWA_PROD = 144;
-}
-
-message ClientInfo {
-	optional Platform platform = 1;
-	optional EventOrigin origin = 2;
-	optional string source_machine = 3;
-}
-
-message ClientNotificationsState {
-	enum DeviceNotificationSettingState {
-		DEVICE_NOTIFICATION_SETTING_STATE_UNKNOWN = 0;
-		DEVICE_NOTIFICATIONS_ENABLED = 1;
-		DEVICE_NOTIFICATIONS_DISABLED = 2;
-	}
-	optional DeviceNotificationSettingState device_setting_state = 1;
-}
-
-message PingEvent {
-	enum State {
-		STATE_UNSPECIFIED = 0;
-		ACTIVE = 1;
-		INACTIVE = 2;
-	}
-	optional State state = 1;
-
-	enum ApplicationFocusState {
-		FOCUS_STATE_UNSPECIFIED = 0;
-		FOCUS_STATE_FOREGROUND = 1;
-		FOCUS_STATE_BACKGROUND = 2;
-	}
-	optional ApplicationFocusState application_focus_state = 3;
-
-	optional int64 last_interactive_time_ms = 4;
-
-	enum ClientInteractiveState {
-		UNKNOWN = 0;
-		INTERACTIVE = 1;
-		FOCUSED = 2;
-		VISIBLE = 3;
-		HIDDEN = 4;
-	}
-	optional ClientInteractiveState client_interactive_state = 5;
-
-	optional bool client_notifications_enabled = 6;
-
-	optional ClientNotificationsState notifications_state = 7;
-	optional bool pwa_dedupe_enabled = 8;
-
-	enum DeviceActiveState {
-		STATE_UNKNOWN = 0;
-		STATE_IDLE_LOCKED = 1;
-		STATE_IDLE_UNLOCKED = 2;
-		STATE_ACTIVE = 3;
-	}
-	optional DeviceActiveState device_active_state = 9;
-
-	// optional ??ComGoogleProtobufDuration web_inactivity_timeout = 10;
-}
-
-message ClockSyncRequest {
-	optional int64 origin_time_msec = 1;
-}
 
 message ClockSyncResponse {
 	optional int64 origin_time_msec = 1;
 	optional int64 receive_time_msec = 2;
 	optional int64 transmit_time_msec = 3;
-}
-
-message GroupSubscriptionEvent {
-	repeated GroupId group_ids = 1;
 }
 
 // echo "<base64 encoded stream response>" | base64 -d - | protoc --decode StreamEventsResponse googlechat.proto
@@ -1758,22 +1521,6 @@ message Event {
 			WriteRevision group_revision = 7;
 	}
 	repeated EventBody bodies = 8;  // This is the second and subsequent event bodies in this event
-}
-
-
-
-
-
-enum Platform {
-	UNDEFINED_PLATFORM = 0;
-	WEB = 1;
-	MOBILE = 2;
-	DRONE = 3;
-	INTEROP_PRESENCE = 4;
-	CLASSIC_DESKTOP = 5;
-	CLASSIC_PHONE = 6;
-	CLASSIC_UNKNOWN = 7;
-	WEB_GMAIL = 8;
 }
 
 message InviteType {
@@ -2077,45 +1824,12 @@ message GroupVisibility {
 	}
 }
 
-enum CallStatus {
-	UNKNOWN_CALL_STATUS = 0;
-	ACTIVE_CALL = 1;
-	ENDED_CALL = 2;
-}
-
-enum RingStatus {
-	UNKNOWN_RING_STATUS = 0;
-	RINGING = 1;
-	JOINED = 2;
-	MISSED = 3;
-}
-
-
-enum UserAccountState {
-	USER_ACCOUNT_STATE_UNKNOWN = 0;
-	ENABLED = 1;
-	DISABLED = 2;
-	DELETED = 3;
-	TEMPORARY_UNAVAILABLE = 4;
-}
-
-
 enum MembershipRole {
 	ROLE_UNKNOWN = 0;
 	ROLE_NONE = 1;
 	ROLE_INVITEE = 2;
 	ROLE_MEMBER = 3;
 	ROLE_OWNER = 4;
-}
-
-
-
-
-enum AppType {
-	APP_TYPE_UNSPECIFIED = 0;
-	APP = 1;
-	GSUITE_APP = 2;
-	INCOMING_WEBHOOK = 3;
 }
 
 enum MembershipState {
@@ -2131,80 +1845,7 @@ message ComGoogleProtobufTimestamp {
 	optional int32 nanos = 2;
 }
 
-message GetServerTimeRequest {
-	optional RequestHeader request_header = 100;
-}
-
-message GetServerTimeResponse {
-	optional ComGoogleProtobufTimestamp timestamp = 1;
-}
-
-
-message CatchUpRange {
-	optional int64 from_revision_timestamp = 1;
-	optional int64 to_revision_timestamp = 2;
-}
-
-message CatchUpGroupRequest {
-	optional RequestHeader request_header = 100;
-	optional GroupId group_id = 1;
-	optional CatchUpRange range = 2;
-	optional int32 page_size = 3;
-	optional int32 cutoff_size = 4;
-}
-
-message CatchUpUserRequest {
-	optional RequestHeader request_header = 100;
-	optional CatchUpRange range = 1;
-	optional int32 page_size = 2;
-	optional int32 cutoff_size = 3;
-}
-
 // Used by both CatchUpGroupRequest and CatchUpUserRequest
-message CatchUpResponse {
-	repeated Event events = 1;
-	enum ResponseStatus {
-		UNKNOWN = 0;
-		COMPLETED = 1;
-		PAGINATED = 2;
-		ABORTED_CUTOFF_EXCEEDED = 3;
-		ABORTED_CACHE_INVALIDATION = 4;
-		ABORTED_FROM_REVISION_TOO_OLD = 5;
-	}
-	optional ResponseStatus status = 2;
-	optional GroupData group_data = 3;
-}
-
-message GetGroupRequest {
-	optional RequestHeader request_header = 100;
-	optional GroupId group_id = 1;
-	enum FetchOptions {
-		MEMBERS = 0;
-		INVITEES = 1;
-		MEMBER_IDS_ONLY = 2;
-		PROFILE_IN_READ_RECEIPTS = 3;
-		INCLUDE_SNIPPET = 4;
-		INCLUDE_DYNAMIC_GROUP_NAME = 5;
-		INCLUDE_ACCOUNT_USER_CAPABILITIES = 6;
-	}
-	repeated FetchOptions fetch_options = 4;
-	optional ReferenceRevision user_not_older_than = 2;
-	optional ReferenceRevision group_not_older_than = 3;
-	optional bool include_invite_dms = 5;
-}
-
-message GetGroupResponse {
-	optional Group group = 1;
-	repeated Membership memberships = 4;
-	optional ReadRevision user_revision = 2;
-	optional ReadRevision group_revision = 3;
-	optional MembershipState membership_state = 6;
-	repeated MemberId joined_member_ids = 7;
-	repeated MemberId invited_member_ids = 8;
-	optional ReadReceiptSet read_receipt_set = 9;
-	optional Message snippet = 10;
-	// repeated ?? capabilities = 11;
-}
 
 message WorldSection {
 	enum WorldSectionType {
@@ -2389,64 +2030,6 @@ message PaginatedWorldResponse {
 	repeated WorldItemLite world_items = 4;
 }
 
-message RemoveMembershipsRequest {
-	optional RequestHeader request_header = 100;
-	repeated MemberId member_ids = 1;
-	optional GroupId group_id = 2;
-	optional MembershipState membership_state = 3;
-}
-
-message RemoveMembershipResult {
-	optional RequestHeader request_header = 100;
-	optional MemberId member_id = 1;
-	// optional FailureReason reason = 2;
-	// repeated RosterId attached_roster_ids = 3;
-	repeated string attached_roster_names = 4;
-}
-
-message RemoveMembershipsResponse {
-	repeated RemoveMembershipResult results = 1;
-	// repeated RosterId roster_ids_without_view_acls = 2;
-	optional RetentionSettings retention_settings = 3;
-	optional WriteRevision retention_settings_group_revision = 4;
-}
-
-
-message HideGroupRequest {
-	optional RequestHeader request_header = 100;
-	optional GroupId id = 1;
-	optional bool hide = 2;
-}
-
-message HideGroupResponse {
-	optional GroupReadState read_state = 1;
-	optional WriteRevision user_revision = 3;
-}
-
-message InviteNotificationSettings {
-	enum NotificationOption {
-		UNSPECIFIED = 0;
-		EMAIL_NOTIFICATION = 1;
-	}
-	repeated NotificationOption option = 1;
-}
-
-message CreateMembershipRequest {
-	optional RequestHeader request_header = 100;
-	repeated MemberId member_ids = 2;
-	repeated InviteeMemberInfo invitee_member_infos = 8;
-	optional MembershipState membership_state = 3;
-	optional GroupId group_id = 4;
-	optional InviteNotificationSettings notification_settings = 5;
-}
-
-message CreateMembershipResponse {
-	repeated CreateMembershipResult results = 2;
-	repeated WriteRevision group_revision = 4;
-	optional RetentionSettings retention_settings = 5;
-	optional WriteRevision retention_settings_group_revision = 6;
-}
-
 message MarkGroupReadstateRequest {
 	optional RequestHeader request_header = 100;
 	optional GroupId id = 1;
@@ -2485,44 +2068,6 @@ message SetDndDurationRequest {
 
 message SetDndDurationResponse {
 	optional UserStatus user_status = 1;
-	optional WriteRevision user_revision = 2;
-}
-
-message UpdateGroupRequest {
-	optional RequestHeader request_header = 100;
-	optional SpaceId space_id = 1;
-	enum UpdateMask {
-		UPDATE_MASK_UNSPECIFIED = 0;
-		NAME = 1;
-		VISIBILITY = 2;
-		AVATAR_INFO = 3;
-		SPACE_DETAILS = 4;
-		SHARED_DRIVE = 5;
-	}
-	repeated UpdateMask update_masks = 4;
-	optional string name = 2;
-	optional GroupVisibility visibility = 5;
-	// optional AvatarInfo avatar_info = 6;
-	// optional ?? space_details = 7;
-}
-
-message UpdateGroupResponse {
-	optional Group group = 1;
-	optional WriteRevision group_revision = 2;
-}
-
-message BlockEntityRequest {
-	optional RequestHeader request_header = 100;
-	oneof Entity {
-		UserId user_id = 1;
-		GroupId group_id = 2;
-	}
-	optional bool blocked = 3;
-	optional bool reported = 4;
-}
-
-message BlockEntityResponse {
-	optional GroupReadState read_state = 1;
 	optional WriteRevision user_revision = 2;
 }
 
