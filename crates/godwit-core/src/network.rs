@@ -15,7 +15,7 @@ use crate::members::Presence;
 pub const SECURITY_REVIEWED: &str = "2026-11";
 
 /// A chat network. The order is the order Godwit adds them in. Others
-/// (Matrix, Signal, WhatsApp) come back once these are done.
+/// (Matrix, Signal) come back once these are done; WhatsApp is ruled out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Network {
     Stoat,

@@ -2279,10 +2279,10 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                     }
                     godwit_core::folder_edit::FolderEdit::AddServer { folder, server, .. } => {
                         let value = servers.iter().find(|s| s.id == folder).and_then(|s| s.folder.clone());
-                        if let Some(value) = value {
-                            if let Some(s) = servers.iter_mut().find(|s| s.id == server) {
-                                s.folder = Some(value);
-                            }
+                        if let Some(value) = value
+                            && let Some(s) = servers.iter_mut().find(|s| s.id == server)
+                        {
+                            s.folder = Some(value);
                         }
                     }
                     godwit_core::folder_edit::FolderEdit::RemoveServer { server } => {
