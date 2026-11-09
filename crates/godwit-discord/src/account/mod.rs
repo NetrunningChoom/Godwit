@@ -3180,6 +3180,24 @@ mod tests {
     }
 
     #[test]
+    fn an_edit_without_author_changes_only_the_text_and_embeds() {
+        let (mut a, _cmds, _tx) = account();
+        ready(&mut a);
+        let mut out = Vec::new();
+        a.handle(
+            Ev::Dispatch(
+                "MESSAGE_UPDATE".into(),
+                json!({"id": "902", "channel_id": "13", "content": "**after**", "embeds": []}),
+            ),
+            &mut out,
+        );
+        assert!(
+            matches!(out.as_slice(), [Event::MessageEdited { id, source, .. }, Event::EmbedsUpdated { embeds, .. }] if &*id.0 == "902" && &**source == "**after**" && embeds.is_empty()),
+            "{out:?}"
+        );
+    }
+
+    #[test]
     fn a_channels_own_level_wins_and_threads_follow_their_channel() {
         let (mut a, _cmds, _tx) = account();
         ready(&mut a);

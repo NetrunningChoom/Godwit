@@ -353,14 +353,34 @@ impl DiscordAccount {
                     && let (Some(room), Some(message)) = (self.room_id(channel), self.message(d))
                 {
                     out.push(Event::MessageUpdated { room, message });
-                } else if let (Some(room), Some(id), Some(embeds)) =
-                    (self.room_id(channel), d["id"].as_str(), d["embeds"].as_array())
-                {
-                    out.push(Event::EmbedsUpdated {
-                        room,
-                        id: godwit_core::ids::MessageId(id.into()),
-                        embeds: embeds.iter().filter_map(super::embed).collect(),
-                    });
+                } else if let (Some(room), Some(id)) = (self.room_id(channel), d["id"].as_str()) {
+                    // MESSAGE_UPDATE may be partial
+                    // (https://docs.discord.food/topics/gateway-events#message-update):
+                    // without `author` the message can't be rebuilt, so the
+                    // fields that came are applied on their own and the
+                    // shown message keeps the rest.
+                    let id = godwit_core::ids::MessageId(id.into());
+                    if let Some(text) = d["content"].as_str() {
+                        let guild = d["guild_id"]
+                            .as_str()
+                            .map(str::to_owned)
+                            .or_else(|| self.store.channels.get(channel).and_then(|c| c.guild.clone()));
+                        let names = self.names(guild.as_deref());
+                        out.push(Event::MessageEdited {
+                            room: room.clone(),
+                            id: id.clone(),
+                            text: crate::markdown::to_rich(text, &names).into(),
+                            markup: Markup::Rich,
+                            source: text.into(),
+                        });
+                    }
+                    if let Some(embeds) = d["embeds"].as_array() {
+                        out.push(Event::EmbedsUpdated {
+                            room,
+                            id,
+                            embeds: embeds.iter().filter_map(super::embed).collect(),
+                        });
+                    }
                 }
             }
             // Someone voted or took a vote back: the counts change.
