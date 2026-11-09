@@ -637,7 +637,9 @@ impl Shell {
                 .map_or("network", |(_, name)| name.as_str());
             save_and_open(fetch.clone(), network.to_owned(), whole, name.to_string(), kind);
         } else if url.starts_with("http://") || url.starts_with("https://") {
-            open_external(&url);
+            // A file on the web leaves the app like any link: asked first,
+            // showing where it goes.
+            ui.set_confirm_link((&*url).into());
         }
     }
 
