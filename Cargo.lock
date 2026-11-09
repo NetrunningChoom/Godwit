@@ -3164,7 +3164,7 @@ dependencies = [
 
 [[package]]
 name = "godwit"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "arboard",
  "chrono",
@@ -3209,7 +3209,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-cache"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "blake3",
  "chacha20poly1305 0.11.0",
@@ -3220,7 +3220,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-core"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "bytes",
  "chrono",
@@ -3239,7 +3239,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-discord"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -3271,7 +3271,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-fluxer"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3294,7 +3294,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-gchat"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3312,7 +3312,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-media"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "cc",
  "webrtc-sys",
@@ -3322,7 +3322,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-player"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "gtk",
  "image",
@@ -3341,7 +3341,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-secrets"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "apple-native-keyring-store",
  "getrandom 0.3.4",
@@ -3352,7 +3352,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-slack"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "emojis",
@@ -3370,7 +3370,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-steam"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -3396,7 +3396,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-stoat"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3417,7 +3417,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-teams"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3437,7 +3437,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-ui"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "slint",
  "slint-build",
@@ -3445,7 +3445,7 @@ dependencies = [
 
 [[package]]
 name = "godwit-voice"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "async-trait",
