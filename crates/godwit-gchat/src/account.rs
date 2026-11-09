@@ -42,6 +42,7 @@ struct Conversation {
     /// The other person, in a DM.
     with: Option<String>,
     unread: bool,
+    mentions: u32,
     /// Microseconds, as Chat keeps time.
     sort_us: i64,
     icon: Option<String>,
@@ -73,6 +74,7 @@ pub struct GChatAccount {
     seen: HashSet<(String, String)>,
     seen_order: std::collections::VecDeque<(String, String)>,
     stream_connected: bool,
+    viewing: Option<String>,
     world_pending: bool,
     catchup: HashMap<String, i64>,
     history_pending: HashSet<String>,
@@ -122,6 +124,7 @@ impl GChatAccount {
             seen: HashSet::new(),
             seen_order: std::collections::VecDeque::new(),
             stream_connected: false,
+            viewing: None,
             world_pending: false,
             catchup: HashMap::new(),
             history_pending: HashSet::new(),
@@ -211,6 +214,7 @@ impl GChatAccount {
             name: title.clone(),
             with: None,
             unread: false,
+            mentions: 0,
             sort_us: m.create_time(),
             icon: None,
             parent: Some(group),
@@ -318,7 +322,7 @@ impl GChatAccount {
             },
             encryption: RoomEncryption::Unencrypted,
             unread: c.unread,
-            mentions: 0,
+            mentions: c.mentions,
             last_read: None,
             invited_by: None,
             presence: None,
@@ -417,6 +421,7 @@ impl GChatAccount {
                     },
                     with: if item.dm_members.is_some() { with } else { None },
                     unread: item.read_state.unread_message_count() > 0,
+                    mentions: 0,
                     sort_us: item.sort_timestamp(),
                     icon: crate::media::avatar(item.avatar_url()),
                     parent: None,
@@ -582,6 +587,7 @@ impl GChatAccount {
                                     .then(|| m.creator.user_id.id().to_owned())
                                     .filter(|id| id != &self.me),
                                 unread: false,
+                                mentions: 0,
                                 sort_us: 0,
                                 icon: None,
                                 parent: None,
@@ -636,6 +642,36 @@ impl GChatAccount {
                                 });
                             }
                         } else {
+                            let author = m.creator.user_id.id();
+                            let personal = crate::annotations::mentions_user(&m, &self.me);
+                            let open = self.viewing.as_deref() == Some(raw.as_str());
+                            if author != self.me {
+                                // Google Chat exposes no per-room level, so this follows
+                                // Slack's default: DMs alert, other rooms on a personal mention.
+                                let direct = self.conversations.get(&group).is_some_and(|c| c.with.is_some());
+                                if !open && (direct || personal) {
+                                    let title = format!(
+                                        "{} · {}",
+                                        message.author_name,
+                                        self.room(&raw)
+                                            .map_or_else(|| "Google Chat".to_owned(), |r| r.name.to_string())
+                                    );
+                                    let body: String = message.source.chars().take(200).collect();
+                                    out.push(Event::Alert {
+                                        room: room.clone(),
+                                        kind: godwit_core::application::AlertKind::Message,
+                                        from: Some(message.author.clone()),
+                                        title: title.into(),
+                                        body: body.into(),
+                                    });
+                                }
+                                if personal
+                                    && !open
+                                    && let Some(c) = self.conversations.get_mut(&group)
+                                {
+                                    c.mentions = c.mentions.saturating_add(1);
+                                }
+                            }
                             out.push(Event::MessageAdded { room, message });
                         }
                     }
@@ -775,6 +811,7 @@ impl GChatAccount {
                         for (id, c) in &mut self.conversations {
                             if (id == &group || c.parent.as_ref() == Some(&group)) && c.sort_us <= timestamp {
                                 c.unread = false;
+                                c.mentions = 0;
                             }
                         }
                         out.extend(
@@ -1144,6 +1181,9 @@ impl NetworkAccount for GChatAccount {
             // Google Chat has no channel webhook manager.
             Command::LoadWebhooks { .. } | Command::ChangeWebhook { .. } => {}
             Command::MarkRead { room, .. } | Command::MarkRoomRead { room } => self.mark_read(&room.raw),
+            // The room on screen alerts nothing; reading is marked by the
+            // core's own MarkRead.
+            Command::Focus { room } => self.viewing = room.map(|room| room.raw.to_string()),
             Command::CreateThread {
                 room,
                 name,
@@ -1333,15 +1373,26 @@ mod tests {
     }
 
     fn stream_message_from(m: proto::Message) -> proto::Event {
+        let group_id = m.id.parent_id.topic_id().group_id.clone();
         let mut post = proto::MessageEvent::new();
         post.message = Some(m).into();
         let mut body = proto::event::EventBody::new();
         body.set_message_posted(post);
         let mut event = proto::Event::new();
-        event.group_id = Some(api::group_id("space:2").unwrap()).into();
+        event.group_id = group_id;
         event.set_type(proto::event::EventType::MESSAGE_POSTED);
         event.body = Some(body).into();
         event
+    }
+
+    fn mention(message: &mut proto::Message, id: &str) {
+        let mut annotation = proto::Annotation::new();
+        annotation.set_type(proto::AnnotationType::USER_MENTION);
+        let mut metadata = proto::UserMentionMetadata::new();
+        metadata.set_type(proto::user_mention_metadata::Type::MENTION);
+        metadata.id.mut_or_insert_default().set_id(id.into());
+        annotation.set_user_mention_metadata(metadata);
+        message.annotations.push(annotation);
     }
 
     #[test]
@@ -1356,6 +1407,7 @@ mod tests {
                 name: "Team".into(),
                 with: None,
                 unread: false,
+                mentions: 0,
                 sort_us: 0,
                 icon: None,
                 parent: None,
@@ -1377,6 +1429,7 @@ mod tests {
                 name: "Team".into(),
                 with: None,
                 unread: false,
+                mentions: 0,
                 sort_us: 0,
                 icon: None,
                 parent: None,
@@ -1488,6 +1541,105 @@ mod tests {
             out.iter()
                 .any(|e| matches!(e, Event::MessageUpdated { message, .. } if &*message.source == "edited"))
         );
+    }
+
+    #[test]
+    fn live_dm_alerts_another_user_but_not_our_own_message() {
+        let (mut a, _) = account();
+        a.handle(
+            Ev::Ready {
+                me: "me".into(),
+                world: vec![world_item("dm:1", "", Some("ann"))],
+            },
+            &mut Vec::new(),
+        );
+        let mut out = Vec::new();
+        let mut incoming = chat_message_at("in", "hello", 42);
+        incoming.id = Some(
+            api::Target {
+                group: "dm:1".into(),
+                topic: "topic".into(),
+                message: "in".into(),
+                created: 42,
+            }
+            .id()
+            .unwrap(),
+        )
+        .into();
+        a.handle(Ev::Stream(Box::new(stream_message_from(incoming))), &mut out);
+        assert!(out.iter().any(|event| matches!(event, Event::Alert { .. })));
+        out.clear();
+        let mut own = chat_message_at("own", "hello", 43);
+        own.id = Some(
+            api::Target {
+                group: "dm:1".into(),
+                topic: "topic".into(),
+                message: "own".into(),
+                created: 43,
+            }
+            .id()
+            .unwrap(),
+        )
+        .into();
+        own.creator
+            .mut_or_insert_default()
+            .user_id
+            .mut_or_insert_default()
+            .set_id("me".into());
+        a.handle(Ev::Stream(Box::new(stream_message_from(own))), &mut out);
+        assert!(!out.iter().any(|event| matches!(event, Event::Alert { .. })));
+    }
+
+    #[test]
+    fn live_mention_increments_unread_room_and_read_ack_clears_it() {
+        let (mut a, _) = account();
+        a.handle(
+            Ev::Ready {
+                me: "me".into(),
+                world: vec![world_item("space:2", "Team", None)],
+            },
+            &mut Vec::new(),
+        );
+        let mut message = chat_message_at("mention", "hi", 42);
+        mention(&mut message, "me");
+        let mut out = Vec::new();
+        a.handle(Ev::Stream(Box::new(stream_message_from(message))), &mut out);
+        assert!(out.iter().any(|event| matches!(event, Event::Alert { .. })));
+        assert_eq!(a.room("space:2").unwrap().mentions, 1);
+        a.mark_read("space:2");
+        a.handle(
+            Ev::Read {
+                group: "space:2".into(),
+                timestamp: 42,
+                result: Ok(()),
+            },
+            &mut out,
+        );
+        assert_eq!(a.room("space:2").unwrap().mentions, 0);
+    }
+
+    #[test]
+    fn history_load_does_not_create_alerts() {
+        let (mut a, _) = account();
+        a.handle(
+            Ev::Ready {
+                me: "me".into(),
+                world: vec![world_item("space:2", "Team", None)],
+            },
+            &mut Vec::new(),
+        );
+        a.catchup.insert("space:2".into(), 1);
+        let mut message = chat_message_at("old", "hello", 42);
+        mention(&mut message, "me");
+        let mut out = Vec::new();
+        a.handle(
+            Ev::History {
+                group: "space:2".into(),
+                result: Ok((vec![message], None, true)),
+            },
+            &mut out,
+        );
+        assert!(!out.iter().any(|event| matches!(event, Event::Alert { .. })));
     }
 
     #[test]

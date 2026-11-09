@@ -62,7 +62,6 @@ pub fn outgoing(
     (body, annotations)
 }
 
-#[cfg(test)]
 pub fn mentions_user(message: &proto::Message, user_id: &str) -> bool {
     !user_id.is_empty()
         && message.annotations.iter().any(|annotation| {
