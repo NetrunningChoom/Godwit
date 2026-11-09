@@ -1823,6 +1823,29 @@ mod tests {
     }
 
     #[test]
+    fn call_started_system_messages_ring_until_the_finished_message() {
+        let (mut a, tx, _, _) = connected();
+        let mut start = message("CALL1", "D", "");
+        start["system"] = json!({"type": "call_started", "by": "ANN", "finished_at": null});
+        start["type"] = "Message".into();
+        tx.send(Ev::Event(start)).unwrap();
+        let events = a.poll();
+        assert!(events.iter().any(|e| matches!(e, Event::Alert { room: r, kind: godwit_core::application::AlertKind::Call, .. } if r == &room("D"))));
+
+        tx.send(Ev::Event(json!({
+            "type": "MessageUpdate", "id": "CALL1", "channel": "D",
+            "data": {"system": {"type": "call_started", "by": "ANN", "finished_at": "2026-11-10T10:00:00Z"}}
+        })))
+        .unwrap();
+        let events = a.poll();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::AlertDone { room: r } if r == &room("D")))
+        );
+    }
+
+    #[test]
     fn member_lists_group_by_hoisted_role_then_online_then_offline() {
         let (mut a, tx, mut cmds, _) = connected();
         let _ = (cmds.try_recv(), cmds.try_recv());

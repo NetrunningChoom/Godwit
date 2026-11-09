@@ -824,6 +824,14 @@ impl StoatAccount {
         let new_emoji = (kind == "EmojiCreate")
             .then(|| v.get("_id").and_then(Value::as_str).map(str::to_owned))
             .flatten();
+        // A DM call ends when its `call_started` message is updated with
+        // `finished_at` (stoat.js types/Message.ts). Read from the event itself:
+        // the message is only stored if its channel is open.
+        let call_ended = kind == "MessageUpdate"
+            && v.get("data").and_then(|d| d.get("system")).is_some_and(|s| {
+                s.get("type").and_then(Value::as_str) == Some("call_started")
+                    && s.get("finished_at").is_some_and(|f| !f.is_null())
+            });
         self.store.apply_event(v, self.viewing.as_deref());
 
         // A new emoji can be in messages already shown as its id.
@@ -835,6 +843,31 @@ impl StoatAccount {
                 if let Some(m) = new_message
                     && let Some(room) = self.room_id(&m.channel)
                 {
+                    // DM and group call notifications are system messages; the
+                    // official message schema marks an ended call with finished_at.
+                    if let Some(system) = m
+                        .system
+                        .as_ref()
+                        .filter(|s| s.get("type").and_then(Value::as_str) == Some("call_started"))
+                    {
+                        if system.get("finished_at").is_some_and(|v| !v.is_null()) {
+                            out.push(Event::AlertDone { room: room.clone() });
+                        } else if self.store.me.as_deref() != Some(m.author.as_str()) {
+                            let channel = self.store.channels.get(&m.channel);
+                            let server = channel.and_then(|c| c.server.as_deref());
+                            let title = channel.map_or_else(
+                                || self.store.display_name(&m.author, server),
+                                |c| self.store.channel_title(c),
+                            );
+                            out.push(Event::Alert {
+                                room: room.clone(),
+                                kind: AlertKind::Call,
+                                from: self.account.clone().map(|a| UserId::new(a, m.author.as_str())),
+                                title: title.into(),
+                                body: Arc::from(""),
+                            });
+                        }
+                    }
                     if let Some(alert) = self.notify(&m, &room) {
                         out.push(alert);
                     }
@@ -863,6 +896,9 @@ impl StoatAccount {
             // Append: link previews made after sending (a GIF from the picker
             // is a link until its embed comes this way).
             "MessageUpdate" | "MessageAppend" => {
+                if call_ended && let Some(room) = channel.as_deref().and_then(|c| self.room_id(c)) {
+                    out.push(Event::AlertDone { room });
+                }
                 if let (Some(channel), Some(id)) = (&channel, &id)
                     && let Some(room) = self.room_id(channel)
                     && let Some(m) = self.store.messages.get(channel).and_then(|c| c.messages.get(id))
