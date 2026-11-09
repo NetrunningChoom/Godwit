@@ -87,6 +87,7 @@ export component AppWindow inherits Window {
     callback login-copy(string);
     in property <bool> login-busy;
     in property <string> login-error;
+    in property <bool> login-custom-server;
     // A failed outgoing message stays visible long enough to read, then clears.
     in property <string> send-error;
     callback dismiss-send-error();
@@ -1041,6 +1042,7 @@ export component AppWindow inherits Window {
         mfa: root.screen == Screen.mfa;
         busy: root.login-busy;
         error: root.login-error;
+        custom-server: root.login-custom-server;
         can-cancel: root.login-can-cancel;
         qr: root.login-qr;
         has-qr: root.login-has-qr;

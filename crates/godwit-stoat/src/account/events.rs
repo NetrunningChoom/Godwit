@@ -8,6 +8,7 @@ use godwit_core::channel_settings::ChannelOverview;
 impl StoatAccount {
     pub(super) fn handle(&mut self, ev: Ev, out: &mut Vec<Event>) {
         match ev {
+            Ev::Instance(base) => self.instance_api = base,
             Ev::Email(email) => {
                 if let Some(account) = self.account.clone() {
                     let mut view = self.security_view.clone();
@@ -279,6 +280,10 @@ impl StoatAccount {
                 self.status = Status::NeedsMfa { error: None };
             }
             Ev::LoggedIn(session) => {
+                let mut session = session;
+                // Kept with the session so a restart talks to the same
+                // instance; none for the official one (older files have none).
+                session.instance_api = (self.instance_api != DEFAULT_API).then(|| self.instance_api.clone());
                 if self.persist_session {
                     session_file::save(self.slot, &session);
                 }

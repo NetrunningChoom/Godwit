@@ -576,6 +576,6 @@ impl StoatAccount {
         member
             .or_else(|| self.store.users.get(user).and_then(|u| u.avatar.clone()))
             .and_then(|a| self.file_url(&a))
-            .unwrap_or_else(|| format!("{DEFAULT_API}/users/{user}/default_avatar"))
+            .unwrap_or_else(|| format!("{}/users/{user}/default_avatar", self.instance_api))
     }
 }

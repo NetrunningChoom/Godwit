@@ -1135,6 +1135,12 @@ impl Shell {
             }
             _ => ui.set_login_error("".into()),
         }
+        let custom_server = self
+            .login_network
+            .and_then(|n| self.form(n))
+            .map(|a| a.login_view().custom_server)
+            .unwrap_or(false);
+        ui.set_login_custom_server(custom_server);
         if signed_in {
             self.empty_profile = false;
         }

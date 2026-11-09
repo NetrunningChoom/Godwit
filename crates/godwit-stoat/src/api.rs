@@ -197,6 +197,9 @@ pub struct Session {
     pub id: String,
     pub user_id: String,
     pub token: String,
+    /// REST endpoint for this slot; old saved sessions use the official endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_api: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

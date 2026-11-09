@@ -32,9 +32,15 @@ pub enum Cmd {
 }
 
 pub enum SessionCmd {
+    /// The account's API base (sent first, before anything else): the one
+    /// its saved session was made on, or the official one.
+    SetInstance(String),
     Login {
         email: String,
         password: String,
+        /// The sign-in form's server field (empty: the official instance).
+        /// Checked for a root config before the credentials are sent.
+        instance: String,
     },
     Mfa {
         ticket: String,
@@ -564,6 +570,8 @@ pub enum Ev {
     /// Time for the next auto-delete check (see [`Cmd::AutoDeleteWake`]).
     AutoDeleteTick,
     Config(RootConfig),
+    /// The API base a sign-in switched to (see [`SessionCmd::Login`]).
+    Instance(String),
     MfaRequired {
         ticket: String,
     },
@@ -929,6 +937,74 @@ impl Rest {
     }
 }
 
+/// Resolves an instance API endpoint and accepts it only if it returns a Stoat root config.
+async fn fetch_root(http: &reqwest::Client, base: &str) -> Result<(String, RootConfig), String> {
+    let candidates = if base.ends_with("/api") {
+        vec![base.to_owned()]
+    } else {
+        vec![base.to_owned(), format!("{base}/api")]
+    };
+    for candidate in candidates {
+        let url = if candidate.ends_with("/api") {
+            format!("{candidate}/")
+        } else {
+            format!("{}/", candidate.trim_end_matches('/'))
+        };
+        if let Ok(response) = http.get(url).send().await
+            && response.status().is_success()
+            && let Ok(config) = response.json::<RootConfig>().await
+        {
+            return Ok((candidate.trim_end_matches('/').to_owned(), config));
+        }
+    }
+    Err("This server did not return a Stoat server configuration.".into())
+}
+
+async fn resolve_instance(http: &reqwest::Client, input: &str) -> Result<(String, RootConfig), String> {
+    let base = validate_instance_url(input)?;
+    fetch_root(http, &base).await
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+
+    #[test]
+    fn url_policy_accepts_https_and_local_http_only() {
+        for (value, expected) in [
+            ("https://chat.example", "https://chat.example"),
+            ("https://chat.example/api/", "https://chat.example/api"),
+            ("http://localhost:8080", "http://localhost:8080"),
+        ] {
+            assert_eq!(validate_instance_url(value).as_deref(), Ok(expected), "{value}");
+        }
+        for value in [
+            "http://chat.example",
+            "ftp://chat.example",
+            "https://user:pass@chat.example",
+            "https://chat.example/?x=1",
+        ] {
+            assert!(validate_instance_url(value).is_err(), "{value}");
+        }
+    }
+}
+
+fn validate_instance_url(input: &str) -> Result<String, String> {
+    let input = input.trim();
+    let candidate = if input.is_empty() { DEFAULT_API } else { input };
+    let mut url = reqwest::Url::parse(candidate).map_err(|_| "Enter a valid server URL.".to_string())?;
+    let local = matches!(url.host_str().unwrap_or_default(), "localhost" | "127.0.0.1" | "::1");
+    if url.scheme() != "https" && !(url.scheme() == "http" && local) {
+        return Err("Use HTTPS for the server URL (HTTP is allowed for localhost).".into());
+    }
+    if !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {
+        return Err("Enter a server URL without credentials, query, or fragment.".into());
+    }
+    let path = url.path().trim_end_matches('/').to_owned();
+    url.set_path(&path);
+    Ok(url.to_string().trim_end_matches('/').to_owned())
+}
+
 /// Percent-encodes a query parameter (as `encodeURIComponent`).
 use crate::api::encode_uri_component as encode_query;
 
@@ -972,9 +1048,19 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Emitter) {
         Ok(http) => http,
         Err(e) => return out.error("starting the HTTP client", e.into()),
     };
+    // The account sends its base first; a saved one was checked when it was
+    // signed in on, so it's only normalised here (and falls back to the
+    // official instance if it no longer parses).
+    let base = match cmds.recv().await {
+        Some(Cmd::Session(SessionCmd::SetInstance(value))) => {
+            validate_instance_url(&value).unwrap_or_else(|_| DEFAULT_API.to_owned())
+        }
+        Some(_) => DEFAULT_API.to_owned(),
+        None => return,
+    };
     let rest = Rest {
         http,
-        base: DEFAULT_API.to_string(),
+        base,
         token: None,
     };
 
@@ -1055,7 +1141,26 @@ impl Backend {
             ..
         } = self;
         match cmd {
-            SessionCmd::Login { email, password } => {
+            SessionCmd::SetInstance(_) => {}
+            SessionCmd::Login {
+                email,
+                password,
+                instance,
+            } => {
+                // Another instance than the one this thread talks to: check it
+                // answers as Stoat first, and send the password nowhere else.
+                let wanted = validate_instance_url(&instance);
+                if wanted.as_deref() != Ok(rest.base.as_str()) {
+                    match resolve_instance(&rest.http, &instance).await {
+                        Ok((base, found)) => {
+                            rest.base = base.clone();
+                            *config = found.clone();
+                            out.emit(Ev::Config(found));
+                            out.emit(Ev::Instance(base));
+                        }
+                        Err(e) => return out.emit(Ev::Error(e)),
+                    }
+                }
                 let body = json!({ "email": email, "password": password, "friendly_name": friendly_name() });
                 let rb = rest.req(reqwest::Method::POST, "/auth/session/login").json(&body);
                 handle_login(rest, rb, out).await;

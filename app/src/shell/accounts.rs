@@ -123,10 +123,11 @@ impl Shell {
         self.live.insert(at, account);
     }
 
-    /// The sign-in form was sent (`server` isn't asked for by any network now).
-    pub fn log_in(&mut self, ui: &AppWindow, _server: String, user: String, password: String) {
+    /// The sign-in form was sent (`server`: empty unless the network takes one).
+    pub fn log_in(&mut self, ui: &AppWindow, server: String, user: String, password: String) {
         let network = self.login_network.unwrap_or_else(registry::default_network);
         if let Some(a) = self.signing(network) {
+            a.set_server(server);
             a.log_in(user, password);
         }
         self.refresh(ui);

@@ -7,7 +7,28 @@ use super::*;
 impl StoatAccount {
     pub fn log_in(&mut self, email: String, password: String) {
         self.status = Status::LoggingIn;
-        self.net.send(Cmd::Session(SessionCmd::Login { email, password }));
+        let instance = self.server_input.clone();
+        self.net.send(Cmd::Session(SessionCmd::Login {
+            email,
+            password,
+            instance,
+        }));
+    }
+
+    /// The sign-in form's server field (empty: the official instance).
+    pub fn set_server(&mut self, server: String) {
+        self.server_input = server;
+    }
+
+    /// A self-hosted instance's host, for the account list (none for the
+    /// official instance).
+    pub fn instance_host(&self) -> Option<String> {
+        if self.instance_api == crate::api::DEFAULT_API {
+            return None;
+        }
+        reqwest::Url::parse(&self.instance_api)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
     }
 
     /// Answers the two-factor prompt with an authenticator or recovery code.
@@ -65,5 +86,21 @@ impl StoatAccount {
                 reason: reason.into(),
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_self_hosted_instance_shows_its_host() {
+        let mut account = StoatAccount::inert();
+        assert_eq!(account.instance_host(), None);
+        account.instance_api = "https://chat.example/api".into();
+        assert_eq!(account.instance_host().as_deref(), Some("chat.example"));
+        account.set_server("https://other.example".into());
+        // The form's field is only sent with the credentials.
+        assert_eq!(account.instance_host().as_deref(), Some("chat.example"));
     }
 }

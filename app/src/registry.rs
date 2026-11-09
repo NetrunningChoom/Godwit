@@ -52,6 +52,8 @@ pub struct LoginView {
     pub link: String,
     /// A page the browser should open once (Discord's captcha).
     pub open_once: Option<String>,
+    /// The form can accept an optional server endpoint.
+    pub custom_server: bool,
 }
 
 /// An account as the shell drives it: the shared trait, plus signing in and
@@ -74,6 +76,8 @@ pub trait Account: NetworkAccount {
     /// window; `helper` is the sign-in window's binary where one is needed).
     fn begin_sign_in(&mut self, _helper: Option<PathBuf>) {}
     fn log_in(&mut self, _user: String, _password: String) {}
+    /// The sign-in form's server field, where `LoginView::custom_server`.
+    fn set_server(&mut self, _server: String) {}
     fn submit_code(&mut self, _code: String) {}
     fn cancel_sign_in(&mut self) {}
     fn set_voice_settings(&mut self, _settings: VoiceSettings) {}
@@ -249,8 +253,20 @@ impl Account for StoatAccount {
     fn signed_out(&self) -> bool {
         matches!(StoatAccount::status(self), StoatStatus::SignedOut { .. })
     }
+    fn login_view(&self) -> LoginView {
+        LoginView {
+            custom_server: true,
+            ..LoginView::default()
+        }
+    }
+    fn detail(&self) -> Option<String> {
+        StoatAccount::instance_host(self)
+    }
     fn log_in(&mut self, user: String, password: String) {
         StoatAccount::log_in(self, user, password);
+    }
+    fn set_server(&mut self, server: String) {
+        StoatAccount::set_server(self, server);
     }
     fn submit_code(&mut self, code: String) {
         self.submit_mfa(code);

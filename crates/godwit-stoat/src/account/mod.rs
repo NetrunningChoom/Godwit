@@ -76,6 +76,11 @@ pub struct StoatAccount {
     pub(super) security_view: godwit_core::account_security::SecurityView,
     /// Where its session is saved (`session_file`'s slot).
     slot: u32,
+    /// The API base this account talks to (`DEFAULT_API` unless signed in
+    /// on a self-hosted instance).
+    pub(super) instance_api: String,
+    /// The sign-in form's server field, sent with the credentials.
+    server_input: String,
     /// Auto-delete's rules, index and run (a Godwit extra, from Godwit).
     autodelete: autodelete_page::AutoDeleteRun,
     net: Handle,
@@ -492,8 +497,14 @@ impl StoatAccount {
     /// Starts the network thread and, if a session was saved in `slot`
     /// (see `session_file`), signs in with it.
     pub fn start(wake: Waker, slot: u32) -> std::io::Result<Self> {
+        let session = session_file::load(slot);
+        let instance_api = session
+            .as_ref()
+            .and_then(|s| s.instance_api.clone())
+            .unwrap_or_else(|| DEFAULT_API.into());
         let (net, events) = backend::spawn(wake)?;
-        let status = match session_file::load(slot) {
+        net.send(Cmd::Session(SessionCmd::SetInstance(instance_api.clone())));
+        let status = match session {
             Some(session) => {
                 net.send(Cmd::Session(SessionCmd::UseSession(session)));
                 Status::Connecting
@@ -503,6 +514,8 @@ impl StoatAccount {
         Ok(Self {
             security_view: Default::default(),
             slot,
+            instance_api,
+            server_input: String::new(),
             net,
             events,
             store: Store::default(),
@@ -560,6 +573,8 @@ impl StoatAccount {
         Self {
             security_view: Default::default(),
             slot: 0,
+            instance_api: DEFAULT_API.to_owned(),
+            server_input: String::new(),
             net,
             events,
             store: Store::default(),
@@ -724,6 +739,8 @@ mod tests {
         let account = StoatAccount {
             security_view: Default::default(),
             slot: 0,
+            instance_api: DEFAULT_API.to_owned(),
+            server_input: String::new(),
             net,
             events,
             store: Store::default(),

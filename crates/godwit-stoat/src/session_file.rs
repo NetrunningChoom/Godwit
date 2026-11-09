@@ -66,6 +66,7 @@ mod tests {
         let bytes = r#"{"_id":"test-session","user_id":"test-user","token":"fake-test-token"}"#;
         let saved: Session = serde_json::from_str(bytes).unwrap();
         assert_eq!(serde_json::to_string(&saved).unwrap(), bytes);
+        assert_eq!(saved.instance_api, None);
         assert_eq!(SESSIONS.name(0), NAME);
         assert_eq!(SESSIONS.name(3), format!("{NAME}-3"));
     }
@@ -78,12 +79,14 @@ mod tests {
             id: "test-session".into(),
             user_id: "test-user".into(),
             token: "fake-test-token".into(),
+            instance_api: Some("https://chat.example/api".into()),
         };
         assert!(SESSIONS.write_to(&store, 0, &session));
         let restored = SESSIONS.read_from(&store, 0).unwrap();
         assert_eq!(restored.id, session.id);
         assert_eq!(restored.user_id, session.user_id);
         assert_eq!(restored.token, session.token);
+        assert_eq!(restored.instance_api, session.instance_api);
         // Other slots are other accounts; slot 0 keeps the old name.
         assert!(SESSIONS.read_from(&store, 1).is_none());
         assert!(SESSIONS.write_to(&store, 3, &session));
@@ -100,6 +103,7 @@ mod tests {
             id: "test-session".into(),
             user_id: "test-user".into(),
             token: "fake-test-token".into(),
+            instance_api: None,
         };
         assert!(SESSIONS.write_to(&store, 12, &session));
         assert!(SESSIONS.read_from(&store, 12).is_some());
@@ -131,6 +135,7 @@ mod tests {
                 id: "test-session".into(),
                 user_id: "test-user".into(),
                 token: "fake-test-token".into(),
+                instance_api: None,
             }
         ));
     }

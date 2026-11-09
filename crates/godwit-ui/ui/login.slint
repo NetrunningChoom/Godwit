@@ -66,6 +66,7 @@ export component Login inherits Rectangle {
     in property <bool> mfa;
     in property <bool> busy;
     in property <string> error;
+    in property <bool> custom-server;
     // There's an account already, so this can be closed.
     in property <bool> can-cancel;
     // Steam: the QR code to scan with its mobile app, once it's there.
@@ -81,7 +82,7 @@ export component Login inherits Rectangle {
     callback copy(string);
     callback pick-network(int);
     callback back();
-    // The user and the password (`server` is kept for networks that ask which one).
+    // The server (where `custom-server`; empty: the network's default), the user and the password.
     callback log-in(string, string, string);
     callback submit-mfa(string);
 
@@ -262,6 +263,11 @@ export component Login inherits Rectangle {
                         placeholder: root.steam ? "Account name" : root.discord ? "Email or phone number" : "Email";
                         enabled: !root.busy;
                         edited(t) => { root.email = t; }
+                    }
+                    if root.custom-server && !root.mfa: TextField {
+                        placeholder: "Server (advanced, optional)";
+                        enabled: !root.busy;
+                        edited(t) => { root.server = t; }
                     }
                     if !root.mfa && !root.no-form: TextField {
                         placeholder: "Password";
