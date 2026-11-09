@@ -104,7 +104,7 @@ impl DiscordAccount {
         }
     }
 
-    pub(super) fn play_sound(&mut self, room: RoomId, sound: Arc<str>, _out: &mut Vec<Event>) {
+    pub(super) fn play_sound(&mut self, room: RoomId, sound: Arc<str>, out: &mut Vec<Event>) {
         let Some(call) = self.call.as_ref().filter(|c| c.room == room && c.connected) else {
             return;
         };
@@ -133,6 +133,19 @@ impl DiscordAccount {
             channel,
             sound: crate::soundboard::play_body(&metadata),
         }));
+        // The player hears their own sound at once, as in the official
+        // client; the gateway's effect for it is skipped below so it doesn't
+        // play twice. The list keeps no per-sound volume, so it plays at full.
+        if let Some(account) = self.account.clone() {
+            let me = self.me().to_owned();
+            out.push(Event::SoundPlayed {
+                room,
+                user: UserId::new(account, me),
+                url: crate::soundboard::audio_url(&metadata.id).map(Into::into),
+                sound: metadata.id.clone(),
+                volume: 1.0,
+            });
+        }
     }
 
     /// Op 4: into `channel`, or out of voice with None. Sending it again in
@@ -317,6 +330,7 @@ impl DiscordAccount {
     pub(super) fn voice_dispatch(&mut self, event: &str, d: &Value, out: &mut Vec<Event>) {
         if matches!(event, "VOICE_CHANNEL_EFFECT_SEND") {
             if let Some((channel, user, sound, volume)) = crate::soundboard::played(d)
+                && user != self.me()
                 && let Some(call) = self.call.as_ref().filter(|call| call.channel == channel)
                 && let Some(account) = self.account.clone()
             {
@@ -1037,6 +1051,8 @@ mod tests {
         let everyone = crate::permissions::VIEW_CHANNEL
             | crate::permissions::SEND_MESSAGES
             | crate::permissions::CONNECT
+            | crate::permissions::SPEAK
+            | crate::permissions::USE_SOUNDBOARD
             | crate::permissions::STREAM;
         ready["guilds"][0]["roles"][0]["permissions"] = json!(everyone.to_string());
         ready["guilds"][0]["voice_states"] = json!([{"user_id": "200", "channel_id": "15", "self_mute": true}]);
@@ -1098,6 +1114,35 @@ mod tests {
         let other = json!({"channel_id":"99","user_id":"200","sound_id":"77"});
         assert!(
             !dispatch(&mut a, "VOICE_CHANNEL_EFFECT_SEND", other)
+                .iter()
+                .any(|e| matches!(e, Event::SoundPlayed { .. }))
+        );
+
+        // Our own sound plays here at once, and its gateway echo doesn't
+        // play it a second time.
+        a.soundboard_known = vec![godwit_core::call::Sound {
+            id: "77".into(),
+            name: "quack".into(),
+            emoji: None,
+            source: None,
+        }];
+        let out = a.run(Command::PlaySound {
+            room: lounge.clone(),
+            sound: "77".into(),
+        });
+        assert!(
+            sent(&mut cmds)
+                .iter()
+                .any(|c| matches!(c, Cmd::Request(Request::PlaySoundboard { .. })))
+        );
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::SoundPlayed { room, user, sound, .. }
+            if *room == lounge && &*user.raw == a.me() && &**sound == "77"))
+        );
+        let echo = json!({"channel_id":"15","user_id":a.me(),"sound_id":"77"});
+        assert!(
+            !dispatch(&mut a, "VOICE_CHANNEL_EFFECT_SEND", echo)
                 .iter()
                 .any(|e| matches!(e, Event::SoundPlayed { .. }))
         );

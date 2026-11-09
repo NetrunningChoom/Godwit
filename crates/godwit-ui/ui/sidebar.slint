@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Godwit contributors
 
 
+import { ListView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { RoomItem, DirectoryItem, SoundItem } from "types.slint";
 import { Avatar, Badge, IconButton, Button, NetList, MenuPanel, MenuRow, MenuDivider, TextField, EmojiText, NetworkSelect } from "widgets.slint";
@@ -539,7 +540,6 @@ export component Sidebar inherits Rectangle {
     in property <[SoundItem]> call-sounds;
     callback load-call-sounds();
     callback play-call-sound(int);
-    property <bool> sound-picker-open;
 
     // Its width, as the user dragged it (see app.slint's handles).
     in property <length> panel-width: Theme.sidebar-width;
@@ -803,6 +803,61 @@ export component Sidebar inherits Rectangle {
         if root.in-call: Rectangle {
             border-radius: Theme.radius-lg;
             background: Theme.surface-high;
+            // A real popup, as the other menus: a click outside or Escape
+            // closes it without playing anything. It floats above the call
+            // panel, the list scrolling once it outgrows the panel's cap.
+            sound-picker := PopupWindow {
+                x: 0px;
+                y: -self.height - Theme.gap-md;
+                width: 280px;
+                height: min(320px, Theme.space-3 * 2 + 28px + Theme.space-2 + max(1, root.call-sounds.length) * 36px);
+                close-policy: close-on-click-outside;
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    background: Theme.surface-high;
+                    drop-shadow-blur: 12px;
+                    drop-shadow-color: Theme.shadow;
+                }
+                FocusScope {
+                    init => { self.focus(); }
+                    key-pressed(e) => {
+                        if e.text == Key.Escape { sound-picker.close(); return accept; }
+                        reject
+                    }
+                    VerticalLayout {
+                        padding: Theme.space-3;
+                        spacing: Theme.space-2;
+                        Text { height: 28px; text: "Soundboard"; font-size: Theme.text-title; color: Theme.on-surface; vertical-alignment: center; }
+                        if root.call-sounds.length == 0: Text {
+                            height: 36px;
+                            text: "No sounds";
+                            color: Theme.on-surface-variant;
+                            vertical-alignment: center;
+                        }
+                        ListView {
+                            vertical-stretch: 1;
+                            for sound[i] in root.call-sounds: Rectangle {
+                                height: 36px;
+                                border-radius: Theme.radius-sm;
+                                background: row.has-hover ? Theme.surface-highest : transparent;
+                                opacity: sound.cooldown ? 0.5 : 1.0;
+                                HorizontalLayout {
+                                    padding-left: Theme.space-2;
+                                    padding-right: Theme.space-2;
+                                    spacing: Theme.space-2;
+                                    Text { text: sound.emoji; color: Theme.on-surface; vertical-alignment: center; }
+                                    Text { text: sound.name; color: Theme.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                                }
+                                row := TouchArea {
+                                    enabled: !sound.cooldown;
+                                    mouse-cursor: sound.cooldown ? default : pointer;
+                                    clicked => { root.play-call-sound(i); sound-picker.close(); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             VerticalLayout {
                 padding: Theme.space-3;
                 spacing: Theme.space-2;
@@ -881,9 +936,9 @@ export component Sidebar inherits Rectangle {
                         clicked => { root.leave-call(); }
                     }
                     if root.call-soundboard: IconButton {
-                        glyph: Icons.graphic-eq;
+                        glyph: Icons.campaign;
                         tooltip: "Soundboard";
-                        clicked => { root.sound-picker-open = !root.sound-picker-open; if root.sound-picker-open { root.load-call-sounds(); } }
+                        clicked => { root.load-call-sounds(); sound-picker.show(); }
                     }
                 }
                 HorizontalLayout {
@@ -911,42 +966,6 @@ export component Sidebar inherits Rectangle {
                 }
             }
         }
-        // Zero-height anchor: the layout can't set the popup's own position,
-        // so it floats above this point.
-        if root.sound-picker-open: Rectangle { height: 0px; Rectangle {
-            x: 0px;
-            y: -self.height - Theme.gap-md;
-            width: 280px;
-            height: 240px;
-            border-radius: Theme.radius-md;
-            background: Theme.surface-high;
-            drop-shadow-blur: 12px;
-            drop-shadow-color: Theme.shadow;
-            TouchArea { }
-            VerticalLayout {
-                padding: Theme.space-3;
-                spacing: Theme.space-2;
-                Text { text: "Soundboard"; font-size: Theme.text-title; color: Theme.on-surface; }
-                Flickable {
-                    height: 196px;
-                    content-height: 196px;
-                    VerticalLayout {
-                        for sound[i] in root.call-sounds: Rectangle {
-                            height: 36px;
-                            background: row.has-hover ? Theme.surface-highest : transparent;
-                            opacity: sound.cooldown ? 0.5 : 1.0;
-                            HorizontalLayout {
-                                padding-left: Theme.space-2;
-                                spacing: Theme.space-2;
-                                Text { text: sound.emoji; color: Theme.on-surface; vertical-alignment: center; }
-                                Text { text: sound.name; color: Theme.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
-                            }
-                            row := TouchArea { enabled: !sound.cooldown; clicked => { root.play-call-sound(i); root.sound-picker-open = false; } }
-                        }
-                    }
-                }
-            }
-        } }
         if root.in-call: Rectangle { height: Theme.gap-md; }
         // Our account.
         Rectangle {
