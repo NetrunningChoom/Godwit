@@ -302,6 +302,9 @@ pub struct AppState {
     /// The last report's outcome (None while it is on its way, or none was
     /// sent since the last [`Action::Report`]); the report dialog shows it.
     pub report_outcome: Option<Result<(), Arc<str>>>,
+    /// Prompts for requests a network holds back until confirmed; the first
+    /// one shows.
+    pub step_up: Vec<crate::step_up::StepUpPrompt>,
     /// The pinned messages panel, for the selected room.
     pub pins: Option<Pins>,
     /// The post list of the selected forum (or of the forum a selected post is in).

@@ -19,6 +19,7 @@ use tokio::time::Instant;
 
 use crate::client;
 use crate::limits::{self, Limits, Refusals, Stopped};
+use crate::mfa;
 
 pub const API: &str = "https://discord.com/api/v9";
 
@@ -341,12 +342,37 @@ impl Api {
         if cross_origin {
             request = request.header(header::ORIGIN, "https://discord.com");
         }
+        // The one request that goes again after a confirmation carries its
+        // token (docs.discord.food, "Multi-Factor Authentication").
+        if let Some(confirmed) = mfa::token()
+            && let Ok(mut value) = header::HeaderValue::from_str(&confirmed)
+        {
+            value.set_sensitive(true);
+            request = request.header("x-discord-mfa-authorization", value);
+        }
         let token = self.token();
         if token.is_empty() {
             request
         } else {
             request.header(header::AUTHORIZATION, token)
         }
+    }
+
+    /// Turns a confirmation into the token a request held back for
+    /// two-factor authentication goes again with: `data` is the code, the
+    /// password or the backup code, by `method` (docs.discord.food,
+    /// "Multi-Factor Authentication": `POST /mfa/finish`).
+    pub(crate) async fn finish_mfa(&self, ticket: &str, method: mfa::Method, data: &str) -> Result<String> {
+        let answer = self
+            .json(with_json(
+                self.request(Method::POST, "/mfa/finish"),
+                &mfa_finish_body(ticket, method, data),
+            ))
+            .await?;
+        answer["token"]
+            .as_str()
+            .map(str::to_owned)
+            .context("Discord gave no token for the confirmation")
     }
 
     async fn json(&self, request: RequestBuilder) -> Result<Value> {
@@ -1492,13 +1518,21 @@ async fn body(response: Response) -> Value {
 }
 
 /// A refusal as an error a person can act on.
-fn refusal(status: StatusCode, body: &Value) -> anyhow::Error {
+pub(crate) fn refusal(status: StatusCode, body: &Value) -> anyhow::Error {
     // An hCaptcha (what Discord uses) is shown; any other kind can't be.
     if let Some(captcha) = crate::captcha::Captcha::from_body(body) {
         return anyhow!(captcha);
     }
     if body.get("captcha_key").is_some() {
         return anyhow!(CaptchaRequired);
+    }
+    // A request held back for two-factor authentication carries its ticket
+    // (docs.discord.food, "Multi-Factor Authentication").
+    if status == StatusCode::UNAUTHORIZED
+        && body["code"] == mfa::MFA_REQUIRED
+        && let Some(required) = mfa::Required::from_body(body)
+    {
+        return anyhow!(required);
     }
     if body.to_string().contains("ACCOUNT_LOGIN_VERIFICATION_EMAIL") {
         return anyhow!("Discord sent you an email to confirm this sign-in. Confirm it, then try again.");
@@ -1520,6 +1554,11 @@ fn refusal(status: StatusCode, body: &Value) -> anyhow::Error {
 /// official client sends it (docs.discord.food, Create Guild Emoji).
 pub(crate) fn emoji_create_body(name: &str, image: &str) -> Value {
     json!({"name": name, "image": image, "roles": []})
+}
+
+/// The `POST /mfa/finish` body (docs.discord.food, "Multi-Factor Authentication").
+pub(crate) fn mfa_finish_body(ticket: &str, method: mfa::Method, data: &str) -> Value {
+    json!({"ticket": ticket, "mfa_type": method.name(), "data": data})
 }
 
 /// The Modify Guild MFA Level body (docs.discord.food, Guild resource).
@@ -1626,6 +1665,31 @@ pub fn encode(segment: &str) -> String {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn the_finish_body_names_the_ticket_method_and_code() {
+        assert_eq!(
+            mfa_finish_body("t", mfa::Method::Backup, "abcd1234"),
+            json!({"ticket": "t", "mfa_type": "backup", "data": "abcd1234"})
+        );
+        assert_eq!(mfa_finish_body("t", mfa::Method::Totp, "123456")["mfa_type"], "totp");
+    }
+
+    #[tokio::test]
+    async fn only_the_confirmed_request_carries_the_mfa_header() {
+        let Ok(api) = Api::new("tok".into()) else {
+            panic!("client")
+        };
+        let plain = api.request(Method::POST, "/guilds/1/mfa").build().unwrap();
+        assert!(plain.headers().get("x-discord-mfa-authorization").is_none());
+        let carried = mfa::with_token_for_tests("mfa-token".into(), async {
+            api.request(Method::POST, "/guilds/1/mfa").build().unwrap()
+        })
+        .await;
+        let value = carried.headers().get("x-discord-mfa-authorization").unwrap();
+        assert_eq!(value, "mfa-token");
+        assert!(value.is_sensitive());
+    }
 
     #[test]
     fn spoiler_upload_filename_prefix_is_preserved_in_message_body() {

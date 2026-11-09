@@ -19,6 +19,7 @@ pub use profiles::ProfileInfo;
 mod report;
 mod server_admin;
 mod settings_pages;
+mod step_up;
 mod threads;
 
 use std::collections::{HashSet, VecDeque};
@@ -231,6 +232,8 @@ pub struct Shell {
     /// What the open report dialog is about, and whether it was sent.
     report: Option<godwit_core::report::ReportTarget>,
     report_submitted: bool,
+    /// The confirmation prompt on show, to tell a new one from a refreshed one.
+    step_up_shown: Option<(godwit_core::ids::AccountId, u64)>,
     /// The addresses behind the declined-report popup's link buttons.
     report_links: Vec<String>,
     /// The addresses behind the privacy overview's source buttons, per paragraph.
@@ -558,6 +561,7 @@ impl Shell {
             server_editor: crate::server_settings::ServerEditor::default(),
             report: None,
             report_submitted: false,
+            step_up_shown: None,
             report_links: Vec::new(),
             privacy_sources: Vec::new(),
             channel_editor: crate::channel_settings::ChannelEditor::default(),
@@ -1185,6 +1189,7 @@ impl Shell {
         self.account_pages.show(ui, self.app.state());
         self.show_profiles(ui);
         self.show_report(ui);
+        self.show_step_up(ui);
         self.show_report_entries(ui);
         self.show_devices(ui);
         let signed_in = !self.app.state().accounts.is_empty();

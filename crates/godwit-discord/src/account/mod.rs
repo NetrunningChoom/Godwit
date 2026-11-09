@@ -941,6 +941,20 @@ impl NetworkAccount for DiscordAccount {
                 self.net.send(Cmd::Request(Request::EditFolders { proto, folders }));
             }
             Command::AccountSecurity(_) => {}
+            Command::StepUpAnswer { id, method, code } => {
+                use godwit_core::step_up::StepUpMethod as M;
+                let method = match method {
+                    M::Authenticator => crate::mfa::Method::Totp,
+                    M::Recovery => crate::mfa::Method::Backup,
+                    M::Password => crate::mfa::Method::Password,
+                };
+                self.net.send(Cmd::StepUpAnswer {
+                    id,
+                    method,
+                    code: crate::backend::Secret(code.0),
+                });
+            }
+            Command::StepUpCancel { id } => self.net.send(Cmd::StepUpCancel { id }),
             Command::LoadReactors { room, message, emoji } => {
                 if !self.store.can(&room.raw, p::VIEW_CHANNEL | p::READ_MESSAGE_HISTORY) {
                     return vec![Event::Reactors {

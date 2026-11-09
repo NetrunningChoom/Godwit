@@ -223,6 +223,34 @@ impl Application {
                 }]
             }
             Action::ServerAdmin { server, op } => self.dispatch_server_admin(server, op),
+            Action::StepUpAnswer { method, code } => {
+                let Some(prompt) = self.state.step_up.first_mut().filter(|p| !p.busy) else {
+                    return Vec::new();
+                };
+                if !method.plausible(&code.0) || !prompt.methods.contains(&method) {
+                    return Vec::new();
+                }
+                prompt.busy = true;
+                prompt.error = None;
+                vec![Effect::Backend {
+                    account: prompt.account.clone(),
+                    command: Command::StepUpAnswer {
+                        id: prompt.id,
+                        method,
+                        code,
+                    },
+                }]
+            }
+            Action::StepUpCancel => {
+                if self.state.step_up.is_empty() {
+                    return Vec::new();
+                }
+                let prompt = self.state.step_up.remove(0);
+                vec![Effect::Backend {
+                    account: prompt.account,
+                    command: Command::StepUpCancel { id: prompt.id },
+                }]
+            }
             Action::CloseServerSettings => {
                 self.state.server_settings = None;
                 Vec::new()

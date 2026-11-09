@@ -402,6 +402,16 @@ pub enum Admin {
 
 #[derive(Debug)]
 pub enum Cmd {
+    /// Confirm the prompt `id` ([`Ev::StepUpRequired`]) with a code.
+    StepUpAnswer {
+        id: u64,
+        method: crate::mfa::Method,
+        code: Secret,
+    },
+    /// Give up the prompt `id`; its request fails.
+    StepUpCancel {
+        id: u64,
+    },
     /// Start signing in by QR code.
     Link,
     PasswordLogin {
@@ -619,6 +629,17 @@ pub enum AdminAnswer {
 
 #[derive(Debug)]
 pub enum Ev {
+    /// Discord holds an admin request back until the person confirms with
+    /// one of `methods`.
+    StepUpRequired {
+        id: u64,
+        methods: Vec<crate::mfa::Method>,
+    },
+    /// How an answer to prompt `id` went; the request goes again on `Ok`.
+    StepUpFinished {
+        id: u64,
+        result: Result<(), String>,
+    },
     LinkStep(Step),
     /// Signed in: the token to keep.
     Linked(String),
@@ -657,6 +678,15 @@ pub struct Secret(pub String);
 impl std::fmt::Debug for Secret {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("[redacted]")
+    }
+}
+
+/// What a refused confirmation says; Discord's own words are left out so
+/// nothing of the code can come back in them.
+fn step_up_error(error: &anyhow::Error) -> String {
+    match error.downcast_ref::<api::DiscordError>().and_then(|e| e.code) {
+        Some(crate::mfa::INVALID_MFA) => "That didn't work. Check it and try again.".to_owned(),
+        _ => "Discord couldn't verify that. Try again.".to_owned(),
     }
 }
 
@@ -700,6 +730,8 @@ struct State {
     offline: bool,
     /// The call under way.
     call: Option<tmpsc::UnboundedSender<CallCmd>>,
+    /// Admin requests waiting on the person to confirm.
+    step_up: Arc<crate::mfa::Prompts>,
 }
 
 async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
@@ -711,6 +743,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
         link: None,
         offline: false,
         call: None,
+        step_up: Arc::default(),
     };
     let (inner_tx, mut inner_rx) = tmpsc::unbounded_channel::<Inner>();
     loop {
@@ -826,8 +859,44 @@ fn handle(cmd: Cmd, state: &mut State, out: &Out, inner: &tmpsc::UnboundedSender
                 return;
             };
             let out = out.clone();
-            tokio::spawn(async move { out.send(Ev::Answer(answer(&api, request).await)) });
+            let prompts = state.step_up.clone();
+            tokio::spawn(async move {
+                let answered = match request {
+                    // Moderation Discord holds back for 2FA asks the person
+                    // and goes again once.
+                    Request::Admin { guild, op } => {
+                        let raise = |id, methods| out.send(Ev::StepUpRequired { id, methods });
+                        let result = crate::mfa::stepping_up(&prompts, raise, || admin(&api, &guild, op.clone()))
+                            .await
+                            .map_err(RequestError::from);
+                        Answer::Admin { guild, result }
+                    }
+                    other => answer(&api, other).await,
+                };
+                out.send(Ev::Answer(answered));
+            });
         }
+        Cmd::StepUpAnswer { id, method, code } => {
+            let Some(api) = state.api.clone() else {
+                return;
+            };
+            let out = out.clone();
+            let prompts = state.step_up.clone();
+            tokio::spawn(async move {
+                let result = match prompts.ticket(id) {
+                    None => Err("That confirmation expired. Close this and try again.".to_owned()),
+                    Some(ticket) => match api.finish_mfa(&ticket, method, &code.0).await {
+                        Ok(token) => {
+                            prompts.answer(id, crate::mfa::Answer::Token(token));
+                            Ok(())
+                        }
+                        Err(error) => Err(step_up_error(&error)),
+                    },
+                };
+                out.send(Ev::StepUpFinished { id, result });
+            });
+        }
+        Cmd::StepUpCancel { id } => state.step_up.answer(id, crate::mfa::Answer::Cancelled),
         Cmd::Offline(offline) => {
             state.offline = offline;
             if offline {

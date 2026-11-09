@@ -83,6 +83,13 @@ pub enum Action {
         server: ServerId,
         op: crate::server_settings::ServerAdmin,
     },
+    /// Answers the prompt showing ([`AppState::step_up`]) with `code`.
+    StepUpAnswer {
+        method: crate::step_up::StepUpMethod,
+        code: Secret,
+    },
+    /// Closes the prompt showing; the request waiting on it fails.
+    StepUpCancel,
     LoadOwnProfile(AccountId),
     SaveOwnProfile {
         account: AccountId,

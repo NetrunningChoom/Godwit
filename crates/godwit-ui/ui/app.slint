@@ -440,6 +440,16 @@ export component AppWindow inherits Window {
     callback open-privacy-overview();
     callback submit-report(int, string);
     callback close-report();
+    // The confirmation prompt for a request a network holds back (a code
+    // from an authenticator app, a backup code or the password).
+    in property <bool> step-up-open;
+    in property <[string]> step-up-methods;
+    in-out property <int> step-up-method;
+    in-out property <string> step-up-code;
+    in property <bool> step-up-busy;
+    in property <string> step-up-error;
+    callback step-up-answer(int, string);
+    callback step-up-cancel();
     // The Invite dialog: open, and its link once made ("" while it's made).
     in property <bool> invite-open;
     in property <string> invite-link;
@@ -2314,6 +2324,14 @@ export component AppWindow inherits Window {
         open-privacy-overview => { root.open-privacy-overview(); }
         submit-report(r, d) => { root.submit-report(r, d); }
         close-report => { root.close-report(); }
+        step-up-open: root.step-up-open;
+        step-up-methods: root.step-up-methods;
+        step-up-method <=> root.step-up-method;
+        step-up-code <=> root.step-up-code;
+        step-up-busy: root.step-up-busy;
+        step-up-error: root.step-up-error;
+        step-up-answer(m, c) => { root.step-up-answer(m, c); }
+        step-up-cancel => { root.step-up-cancel(); }
         confirm-delete <=> root.confirm-delete;
         delete(i) => { root.delete(i); }
     }

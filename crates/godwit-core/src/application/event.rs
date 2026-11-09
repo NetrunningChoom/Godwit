@@ -48,6 +48,21 @@ pub enum Event {
         server: ServerId,
         result: Result<crate::server_settings::ServerAdminResult, Arc<str>>,
     },
+    /// The network holds a request back until the person confirms with one
+    /// of `methods`; answered by [`Action::StepUpAnswer`] or
+    /// [`Action::StepUpCancel`].
+    StepUpRequired {
+        account: AccountId,
+        id: u64,
+        methods: Vec<crate::step_up::StepUpMethod>,
+    },
+    /// How an answer to prompt `id` went: taken (the prompt closes and the
+    /// request goes again), or why not (the prompt stays for another try).
+    StepUpFinished {
+        account: AccountId,
+        id: u64,
+        result: Result<(), Arc<str>>,
+    },
     /// The server's scheduled events, or a load/update error.
     ServerEvents {
         server: ServerId,

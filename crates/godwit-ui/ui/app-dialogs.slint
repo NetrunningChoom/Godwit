@@ -246,6 +246,14 @@ export component ManagementDialogs inherits Rectangle {
     callback open-privacy-overview();
     callback submit-report(int, string);
     callback close-report();
+    in property <bool> step-up-open;
+    in property <[string]> step-up-methods;
+    in-out property <int> step-up-method;
+    in-out property <string> step-up-code;
+    in property <bool> step-up-busy;
+    in property <string> step-up-error;
+    callback step-up-answer(int, string);
+    callback step-up-cancel();
     in-out property <int> confirm-delete: -1;
     callback delete(int);
 
@@ -487,6 +495,46 @@ export component ManagementDialogs inherits Rectangle {
                 danger: true;
                 enabled: root.report-reason >= 0 && root.report-status != 1;
                 clicked => { root.submit-report(root.report-reason, root.report-detail); }
+            }
+        }
+    }
+    // A request the network holds back until the person confirms. The code
+    // is hidden as it is typed, and the field is cleared by the shell once
+    // the prompt closes.
+    if root.step-up-open: Dialog {
+        title: "Confirm it's you";
+        card-width: 420px;
+        dismissed => { root.step-up-cancel(); }
+        Text {
+            text: "This needs your two-factor authentication. Choose how to confirm.";
+            wrap: word-wrap; color: Theme.on-surface-variant;
+        }
+        if root.step-up-methods.length > 1: Select {
+            model: root.step-up-methods;
+            current-index <=> root.step-up-method;
+            enabled: !root.step-up-busy;
+        }
+        TextField {
+            placeholder: root.step-up-methods[root.step-up-method];
+            password: true;
+            autofocus: true;
+            enabled: !root.step-up-busy;
+            text <=> root.step-up-code;
+            accepted => { root.step-up-answer(root.step-up-method, root.step-up-code); }
+        }
+        if root.step-up-error != "": Text {
+            text: root.step-up-error;
+            wrap: word-wrap; color: Theme.error;
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: Theme.gap-sm;
+            Button { text: "Cancel"; clicked => { root.step-up-cancel(); } }
+            Button {
+                text: root.step-up-busy ? "Confirming…" : "Confirm";
+                kind: "filled";
+                enabled: root.step-up-code != "" && !root.step-up-busy;
+                clicked => { root.step-up-answer(root.step-up-method, root.step-up-code); }
             }
         }
     }

@@ -745,6 +745,38 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::StepUpRequired { account, id, methods } => {
+                if !methods.is_empty() {
+                    self.state.step_up.push(crate::step_up::StepUpPrompt {
+                        account,
+                        id,
+                        methods,
+                        busy: false,
+                        error: None,
+                    });
+                }
+                Vec::new()
+            }
+            Event::StepUpFinished { account, id, result } => {
+                let at = self
+                    .state
+                    .step_up
+                    .iter()
+                    .position(|p| p.account == account && p.id == id);
+                if let Some(at) = at {
+                    match result {
+                        Ok(()) => {
+                            self.state.step_up.remove(at);
+                        }
+                        Err(e) => {
+                            let prompt = &mut self.state.step_up[at];
+                            prompt.busy = false;
+                            prompt.error = Some(e);
+                        }
+                    }
+                }
+                Vec::new()
+            }
             Event::Reported { result, .. } => {
                 if let Err(e) = &result {
                     self.state.errors.push(format!("Report failed: {e}").into());

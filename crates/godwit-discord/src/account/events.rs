@@ -225,6 +225,28 @@ impl DiscordAccount {
             }
             Ev::Answer(answer) => self.answer(answer, out),
             Ev::Call { call, event } => self.on_call(call, event, out),
+            Ev::StepUpRequired { id, methods } => {
+                use godwit_core::step_up::StepUpMethod as M;
+                let Some(account) = self.account.clone() else { return };
+                let methods = methods
+                    .into_iter()
+                    .filter_map(|m| match m {
+                        crate::mfa::Method::Totp => Some(M::Authenticator),
+                        crate::mfa::Method::Backup => Some(M::Recovery),
+                        crate::mfa::Method::Password => Some(M::Password),
+                        crate::mfa::Method::Webauthn | crate::mfa::Method::Sms => None,
+                    })
+                    .collect();
+                out.push(Event::StepUpRequired { account, id, methods });
+            }
+            Ev::StepUpFinished { id, result } => {
+                let Some(account) = self.account.clone() else { return };
+                out.push(Event::StepUpFinished {
+                    account,
+                    id,
+                    result: result.map_err(Into::into),
+                });
+            }
         }
     }
 

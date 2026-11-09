@@ -404,6 +404,8 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_open_privacy_overview() => |sh, ui| sh.open_privacy_overview(ui));
     callback!(ui.on_settings_open_source(p, s) => |sh, _ui| sh.open_privacy_source(p, s));
     callback!(ui.on_close_report() => |sh, ui| sh.close_report(ui));
+    callback!(ui.on_step_up_answer(method, code) => |sh, ui| sh.answer_step_up(ui, method, &code));
+    callback!(ui.on_step_up_cancel() => |sh, ui| sh.cancel_step_up(ui));
     callback!(ui.on_moderate_member(ban, reason, delete) => |sh, ui| sh.moderate_member(ui, ban, &reason, usize::try_from(delete).unwrap_or(0)));
     callback!(ui.on_toggle_member_role(i, on) => |sh, ui| sh.toggle_member_role(ui, usize::try_from(i).unwrap_or(usize::MAX), on));
     callback!(ui.on_timeout_member(i) => |sh, ui| {

@@ -38,6 +38,16 @@ pub enum Command {
         server: ServerId,
         op: crate::server_settings::ServerAdmin,
     },
+    /// Confirm prompt `id` ([`Event::StepUpRequired`]) with this answer.
+    StepUpAnswer {
+        id: u64,
+        method: crate::step_up::StepUpMethod,
+        code: Secret,
+    },
+    /// Give up prompt `id`; the request waiting on it fails.
+    StepUpCancel {
+        id: u64,
+    },
     /// Create a server with this name; success is [`Event::ServerCreated`].
     CreateServer {
         name: String,

@@ -172,6 +172,8 @@ impl StoatAccount {
             // Stoat keeps no game libraries.
             Command::LoadGameLibraries { .. } => Vec::new(),
             Command::ServerAdmin { server, op } => self.server_admin(server, op),
+            // Stoat never holds a request back for a confirmation.
+            Command::StepUpAnswer { .. } | Command::StepUpCancel { .. } => Vec::new(),
             Command::LoadChannelOverview { .. }
             | Command::SaveChannelOverview { .. }
             | Command::DeleteChannel { .. }

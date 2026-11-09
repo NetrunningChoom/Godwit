@@ -25,6 +25,7 @@ pub mod limits;
 pub mod markdown;
 pub mod member_list;
 pub mod member_search;
+pub(crate) mod mfa;
 pub mod permissions;
 pub mod remote_auth;
 pub mod search;

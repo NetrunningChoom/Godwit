@@ -5704,3 +5704,69 @@ fn folder_edits_are_gated_to_networks_with_folders_and_to_real_changes() {
         assert!(app.dispatch(foreign).is_empty(), "another account's server");
     }
 }
+
+#[test]
+fn a_held_back_request_prompts_and_a_wrong_code_leaves_the_prompt_open() {
+    use crate::step_up::StepUpMethod as M;
+    let mut app = Application::new(Default::default());
+    let me = account(Network::Discord);
+    app.apply(Event::StepUpRequired {
+        account: me.clone(),
+        id: 7,
+        methods: vec![M::Authenticator, M::Recovery],
+    });
+    assert_eq!(app.state().step_up.len(), 1);
+    let answer = |method, code: &str| Action::StepUpAnswer {
+        method,
+        code: Secret(code.into()),
+    };
+
+    // An implausible code or a method that wasn't offered is never sent.
+    assert!(app.dispatch(answer(M::Authenticator, "12")).is_empty());
+    assert!(app.dispatch(answer(M::Password, "hunter2")).is_empty());
+
+    let effects = app.dispatch(answer(M::Authenticator, "123456"));
+    assert!(matches!(
+        commands(&effects)[..],
+        [Command::StepUpAnswer {
+            id: 7,
+            method: M::Authenticator,
+            ..
+        }]
+    ));
+    assert!(!format!("{effects:?}").contains("123456"), "the code is redacted");
+    // Busy: a second answer isn't sent while the first is out.
+    assert!(app.dispatch(answer(M::Authenticator, "654321")).is_empty());
+
+    app.apply(Event::StepUpFinished {
+        account: me.clone(),
+        id: 7,
+        result: Err("That didn't work.".into()),
+    });
+    let prompt = &app.state().step_up[0];
+    assert!(!prompt.busy);
+    assert_eq!(prompt.error.as_deref(), Some("That didn't work."));
+
+    // Retrying is up to the person; nothing resends by itself.
+    assert_eq!(app.dispatch(answer(M::Recovery, "abcd-efgh")).len(), 1);
+    app.apply(Event::StepUpFinished {
+        account: me,
+        id: 7,
+        result: Ok(()),
+    });
+    assert!(app.state().step_up.is_empty());
+}
+
+#[test]
+fn cancelling_a_prompt_tells_the_network() {
+    use crate::step_up::StepUpMethod as M;
+    let mut app = Application::new(Default::default());
+    app.apply(Event::StepUpRequired {
+        account: account(Network::Discord),
+        id: 3,
+        methods: vec![M::Authenticator],
+    });
+    let effects = app.dispatch(Action::StepUpCancel);
+    assert!(matches!(commands(&effects)[..], [Command::StepUpCancel { id: 3 }]));
+    assert!(app.state().step_up.is_empty());
+}
