@@ -400,6 +400,30 @@ impl DiscordAccount {
                 deafened: state.deaf,
             })
             .filter(|v| v.any());
+            // "Move To": moving needs MOVE_MEMBERS and Connect on the
+            // channel they go to (Modify Guild Member, channel_id,
+            // docs.discord.food/resources/guild).
+            if m.voice.is_some_and(|v| v.disconnect) {
+                let need = p::VIEW_CHANNEL | p::CONNECT | p::MOVE_MEMBERS;
+                let mut rooms: Vec<&crate::store::Channel> = self
+                    .store
+                    .guilds
+                    .get(guild)
+                    .into_iter()
+                    .flat_map(|g| &g.channels)
+                    .filter(|id| **id != state.channel)
+                    .filter_map(|id| self.store.channels.get(id))
+                    .filter(|c| c.voice() && self.store.channel_permissions(&c.id) & need == need)
+                    .collect();
+                rooms.sort_by(|a, b| (a.position, &a.id).cmp(&(b.position, &b.id)));
+                m.move_to = rooms
+                    .into_iter()
+                    .map(|c| godwit_core::members::VoiceRoom {
+                        id: c.id.as_str().into(),
+                        name: c.name.as_str().into(),
+                    })
+                    .collect();
+            }
         }
         m.any().then_some(m)
     }

@@ -250,6 +250,7 @@ export component AppWindow inherits Window {
     in property <bool> card-can-server-deafen;
     in property <bool> card-server-deafened;
     in property <bool> card-can-disconnect-voice;
+    in property <[string]> card-voice-rooms;
     in property <bool> card-can-nickname;
     in property <string> card-nickname;
     in property <[MemberRoleItem]> card-member-roles;
@@ -1691,6 +1692,7 @@ export component AppWindow inherits Window {
         can-server-deafen: root.card-can-server-deafen;
         server-deafened: root.card-server-deafened;
         can-disconnect-voice: root.card-can-disconnect-voice;
+        voice-rooms: root.card-voice-rooms;
         voice-member(op) => { root.voice-member(op); }
         edit-nickname => { root.nickname-text = root.card-nickname; root.nickname-open = true; }
         can-remove-group-member: root.card-can-remove-group-member;

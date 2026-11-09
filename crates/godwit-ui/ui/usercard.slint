@@ -54,7 +54,10 @@ export component UserCard inherits Rectangle {
     in property <bool> can-server-deafen;
     in property <bool> server-deafened;
     in property <bool> can-disconnect-voice;
-    // 0 toggles server mute, 1 server deafen, 2 disconnects.
+    // Voice channels they can be moved to ("Move To").
+    in property <[string]> voice-rooms;
+    // 0 toggles server mute, 1 server deafen, 2 disconnects, 3 + n moves
+    // them to voice-rooms[n].
     callback voice-member(int);
     in property <bool> can-remove-group-member;
     in property <bool> can-add-group-member;
@@ -324,6 +327,14 @@ export component UserCard inherits Rectangle {
                     if root.can-server-mute: Button { text: root.server-muted ? "Server unmute" : "Server mute"; kind: "tonal"; clicked => { root.voice-member(0); } }
                     if root.can-server-deafen: Button { text: root.server-deafened ? "Server undeafen" : "Server deafen"; kind: "tonal"; clicked => { root.voice-member(1); } }
                     if root.can-disconnect-voice: Button { text: "Disconnect"; kind: "text"; danger: true; clicked => { root.voice-member(2); } }
+                }
+                if !root.me && root.voice-rooms.length > 0: VerticalLayout {
+                    spacing: Theme.space-1;
+                    Text { text: "Move to"; font-size: Theme.text-small; font-weight: 600; color: Theme.on-surface-variant; }
+                    for name[i] in root.voice-rooms: HorizontalLayout {
+                        alignment: start;
+                        Button { text: name; kind: "text"; clicked => { root.voice-member(3 + i); } }
+                    }
                 }
                 if !root.me && (root.can-kick || root.can-ban): HorizontalLayout {
                     spacing: Theme.space-3; alignment: start;

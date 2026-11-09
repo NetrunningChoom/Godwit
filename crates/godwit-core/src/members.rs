@@ -211,6 +211,16 @@ pub struct Moderation {
     /// What we may do to them in this server's call; None while they aren't in one.
     #[serde(default)]
     pub voice: Option<VoiceModeration>,
+    /// Voice channels we may move them to while they're in a call, in list order.
+    #[serde(default)]
+    pub move_to: Vec<VoiceRoom>,
+}
+
+/// A voice channel on the card's "Move to" list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceRoom {
+    pub id: std::sync::Arc<str>,
+    pub name: std::sync::Arc<str>,
 }
 
 /// A member's call controls on their card: server mute, server deafen and
@@ -245,7 +255,19 @@ impl Moderation {
             nickname: false,
             nick: None,
             voice: None,
+            move_to: Vec::new(),
         }
+    }
+
+    /// Whether this call control is one the card offers.
+    pub fn allows_voice(&self, op: &crate::server_settings::VoiceMemberOp) -> bool {
+        use crate::server_settings::VoiceMemberOp as Op;
+        self.voice.is_some_and(|v| match op {
+            Op::Mute(_) => v.mute,
+            Op::Deafen(_) => v.deafen,
+            Op::Disconnect => v.disconnect,
+            Op::Move(room) => self.move_to.iter().any(|r| r.id == *room),
+        })
     }
 
     /// Whether the card has anything to offer at all.

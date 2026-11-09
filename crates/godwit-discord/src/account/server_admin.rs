@@ -192,11 +192,7 @@ impl DiscordAccount {
         let allowed = self.moderation(guild, &user).is_some_and(|m| match op {
             ServerAdmin::SetMemberRole { role, .. } => m.roles.iter().any(|r| r.id == *role),
             ServerAdmin::Timeout { .. } => m.timeout,
-            ServerAdmin::VoiceMember { op, .. } => m.voice.is_some_and(|v| match op {
-                VoiceMemberOp::Mute(_) => v.mute,
-                VoiceMemberOp::Deafen(_) => v.deafen,
-                VoiceMemberOp::Disconnect => v.disconnect,
-            }),
+            ServerAdmin::VoiceMember { op, .. } => m.allows_voice(op),
             _ => m.nickname,
         });
         if allowed {
@@ -383,6 +379,7 @@ impl DiscordAccount {
                         VoiceMemberOp::Mute(on) => json!({"mute": on}),
                         VoiceMemberOp::Deafen(on) => json!({"deaf": on}),
                         VoiceMemberOp::Disconnect => json!({"channel_id": null}),
+                        VoiceMemberOp::Move(room) => json!({"channel_id": room.to_string()}),
                     },
                 },
                 ServerAdmin::SetServerNickname { user, nick } => Admin::ModifyMember {

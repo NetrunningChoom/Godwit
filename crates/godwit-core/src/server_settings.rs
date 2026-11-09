@@ -319,12 +319,14 @@ pub enum ServerAdmin {
 }
 
 /// A member card's call control.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VoiceMemberOp {
     Mute(bool),
     Deafen(bool),
     /// Takes them out of the call.
     Disconnect,
+    /// Moves them to this voice channel (raw id) of the same server.
+    Move(std::sync::Arc<str>),
 }
 
 /// What the Create channel dialog makes.

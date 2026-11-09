@@ -3985,7 +3985,7 @@ mod member_admin_tests {
             .roles
             .get_mut("11")
             .unwrap()
-            .permissions |= p::MUTE_MEMBERS | p::DEAFEN_MEMBERS | p::MOVE_MEMBERS;
+            .permissions |= p::MUTE_MEMBERS | p::DEAFEN_MEMBERS | p::MOVE_MEMBERS | p::CONNECT;
         let user = a.user_id("300").unwrap();
         let voice = |user: &UserId| ServerAdmin::VoiceMember {
             user: user.clone(),
@@ -3995,6 +3995,8 @@ mod member_admin_tests {
         assert!(a.moderation("10", "300").unwrap().voice.is_none());
         assert!(send(&mut a, &mut cmds, voice(&user)).is_none());
         let mut out = Vec::new();
+        let lounge = json!({"id": "15", "guild_id": "10", "type": 2, "name": "Lounge", "position": 0});
+        a.dispatch("CHANNEL_CREATE", &lounge, &mut out);
         let state = json!({"guild_id": "10", "user_id": "300", "channel_id": "13", "mute": true});
         a.dispatch("VOICE_STATE_UPDATE", &state, &mut out);
         while cmds.try_recv().is_ok() {}
@@ -4021,6 +4023,23 @@ mod member_admin_tests {
                 json!({"channel_id": null})
             ]
         );
+        let m = a.moderation("10", "300").unwrap();
+        let names: Vec<&str> = m.move_to.iter().map(|r| &*r.name).collect();
+        assert_eq!(names, ["Lounge"], "voice channels only, not the one they're in");
+        let moved = send(
+            &mut a,
+            &mut cmds,
+            ServerAdmin::VoiceMember {
+                user: user.clone(),
+                op: VoiceMemberOp::Move("15".into()),
+            },
+        );
+        assert!(matches!(moved, Some(Admin::ModifyMember { body, .. }) if body == json!({"channel_id": "15"})));
+        let elsewhere = ServerAdmin::VoiceMember {
+            user,
+            op: VoiceMemberOp::Move("14".into()),
+        };
+        assert!(send(&mut a, &mut cmds, elsewhere).is_none());
     }
 
     #[test]

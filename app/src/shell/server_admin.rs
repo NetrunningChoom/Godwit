@@ -226,7 +226,8 @@ impl Shell {
     }
 
     /// The card's call controls: 0 toggles server mute, 1 server deafen,
-    /// 2 disconnects them from voice.
+    /// 2 disconnects them from voice, 3 + n moves them to the card's n-th
+    /// voice channel.
     pub fn voice_member(&mut self, ui: &AppWindow, op: i32) {
         use godwit_core::server_settings::{ServerAdmin, VoiceMemberOp};
         self.member_change(ui, |user, m| {
@@ -235,6 +236,7 @@ impl Shell {
                 0 if v.mute => VoiceMemberOp::Mute(!v.muted),
                 1 if v.deafen => VoiceMemberOp::Deafen(!v.deafened),
                 2 if v.disconnect => VoiceMemberOp::Disconnect,
+                n if n >= 3 => VoiceMemberOp::Move(m.move_to.get(usize::try_from(n - 3).ok()?)?.id.clone()),
                 _ => return None,
             };
             Some(ServerAdmin::VoiceMember { user, op })

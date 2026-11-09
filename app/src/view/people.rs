@@ -616,6 +616,13 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
     ui.set_card_can_server_deafen(voice.deafen);
     ui.set_card_server_deafened(voice.deafened);
     ui.set_card_can_disconnect_voice(voice.disconnect);
+    let move_to: Vec<slint::SharedString> = p
+        .moderation
+        .iter()
+        .flat_map(|m| &m.move_to)
+        .map(|r| slint::SharedString::from(&*r.name))
+        .collect();
+    ui.set_card_voice_rooms(ModelRc::new(VecModel::from(move_to)));
     ui.set_card_can_nickname(p.moderation.as_ref().is_some_and(|m| m.nickname));
     ui.set_card_nickname(
         p.moderation
