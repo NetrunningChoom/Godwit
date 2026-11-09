@@ -24,6 +24,44 @@ pub struct ServerOverview {
     pub channels: Vec<(RoomId, Arc<str>)>,
     /// Joined, left, kicked, banned, in the official overview's order.
     pub system_channels: [Option<Arc<str>>; 4],
+    /// Safety setup, for networks that have one; None hides the section.
+    pub safety: Option<ServerSafety>,
+}
+
+/// One choice of a safety setting. `value` is the network's own number,
+/// handed back unchanged in an edit, so core never knows the network's enum.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SafetyOption {
+    pub value: u8,
+    pub label: Arc<str>,
+}
+
+/// A safety setting with a fixed list of choices.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SafetyChoices {
+    pub options: Vec<SafetyOption>,
+    /// The `value` of the chosen option.
+    pub selected: u8,
+}
+
+/// Whether moderators need two-factor authentication, and whether this
+/// account may change it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SafetyMfa {
+    pub on: bool,
+    /// Why it can't be changed, when it can't.
+    pub locked: Option<Arc<str>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ServerSafety {
+    /// What members must have done before they may talk.
+    pub verification: SafetyChoices,
+    /// Whose media the network scans.
+    pub content_filter: SafetyChoices,
+    /// Two-factor authentication for moderator actions; None when the
+    /// network has no such setting.
+    pub mod_mfa: Option<SafetyMfa>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -34,6 +72,10 @@ pub struct ServerOverviewEdit {
     pub banner: ProfileImage,
     /// None preserves the configuration; Some replaces all four assignments.
     pub system_channels: Option<[Option<Arc<str>>; 4]>,
+    /// The chosen `SafetyOption::value`s; None leaves a setting alone.
+    pub verification: Option<u8>,
+    pub content_filter: Option<u8>,
+    pub mod_mfa: Option<bool>,
 }
 impl ServerOverviewEdit {
     pub fn is_empty(&self) -> bool {
@@ -42,6 +84,9 @@ impl ServerOverviewEdit {
             && self.icon == ProfileImage::Keep
             && self.banner == ProfileImage::Keep
             && self.system_channels.is_none()
+            && self.verification.is_none()
+            && self.content_filter.is_none()
+            && self.mod_mfa.is_none()
     }
 }
 
@@ -443,6 +488,27 @@ impl ServerSettingsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_overview_edit_with_only_a_safety_choice_is_not_empty() {
+        assert!(ServerOverviewEdit::default().is_empty());
+        for edit in [
+            ServerOverviewEdit {
+                verification: Some(2),
+                ..Default::default()
+            },
+            ServerOverviewEdit {
+                content_filter: Some(0),
+                ..Default::default()
+            },
+            ServerOverviewEdit {
+                mod_mfa: Some(false),
+                ..Default::default()
+            },
+        ] {
+            assert!(!edit.is_empty());
+        }
+    }
 
     #[test]
     fn stoat_emoji_names_are_lowercase_words_up_to_32() {

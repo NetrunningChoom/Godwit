@@ -767,6 +767,9 @@ impl DiscordAccount {
                 self.store.put_user(d);
                 if d["id"].as_str() == Some(me.as_str()) {
                     self.store.me = store::User::from(d);
+                    if let Some(on) = d["mfa_enabled"].as_bool() {
+                        self.store.mfa_enabled = on;
+                    }
                 }
             }
             "MESSAGE_REACTION_ADD"

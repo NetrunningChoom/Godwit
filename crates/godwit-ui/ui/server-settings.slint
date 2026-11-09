@@ -44,6 +44,15 @@ export component ServerSettings inherits Rectangle {
     in-out property <int> left;
     in-out property <int> kicked;
     in-out property <int> banned;
+    in property <bool> has-safety;
+    in property <[string]> verification-options;
+    in-out property <int> verification;
+    in property <[string]> filter-options;
+    in-out property <int> content-filter;
+    in property <bool> has-mfa;
+    in-out property <bool> mod-mfa;
+    // Why the 2FA switch can't move; empty when it can.
+    in property <string> mfa-locked;
 
     in property <[ServerInviteItem]> invites;
     in property <[ModerationLogItem]> moderation-log;
@@ -166,6 +175,26 @@ export component ServerSettings inherits Rectangle {
                             Select { model: root.channels; current-index <=> root.kicked; enabled: root.allowed && !root.busy; selected(i) => { root.changed(); } }
                             Text { text: "User banned"; color: Theme.on-surface; }
                             Select { model: root.channels; current-index <=> root.banned; enabled: root.allowed && !root.busy; selected(i) => { root.changed(); } }
+                            if root.has-safety: VerticalLayout {
+                                spacing: Theme.space-4;
+                                Text { text: "Safety"; font-weight: 600; color: Theme.on-surface; }
+                                Text { text: "Verification level"; color: Theme.on-surface; }
+                                Text { text: "Members must meet this before they can send messages or talk."; wrap: word-wrap; color: Theme.on-surface-variant; }
+                                Select { model: root.verification-options; current-index <=> root.verification; enabled: root.allowed && !root.busy; selected(i) => { root.changed(); } }
+                                Text { text: "Explicit media content filter"; color: Theme.on-surface; }
+                                Text { text: "Automatically scan and delete media containing explicit content."; wrap: word-wrap; color: Theme.on-surface-variant; }
+                                Select { model: root.filter-options; current-index <=> root.content-filter; enabled: root.allowed && !root.busy; selected(i) => { root.changed(); } }
+                                if root.has-mfa: VerticalLayout {
+                                    spacing: Theme.space-3;
+                                    Text { text: "Require 2FA for moderator actions"; color: Theme.on-surface; }
+                                    Text { text: "Moderators need two-factor authentication on their account to kick, ban, time out, delete messages or change server settings."; wrap: word-wrap; color: Theme.on-surface-variant; }
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        Toggle { checked: root.mod-mfa; enabled: root.allowed && !root.busy && root.mfa-locked == ""; toggled(on) => { root.mod-mfa = on; root.changed(); } }
+                                    }
+                                    if root.mfa-locked != "": Text { text: root.mfa-locked; wrap: word-wrap; color: Theme.on-surface-variant; }
+                                }
+                            }
                         }
                     }
                 }

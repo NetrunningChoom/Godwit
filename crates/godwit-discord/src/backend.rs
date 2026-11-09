@@ -376,6 +376,8 @@ pub enum Admin {
     Leave,
     Delete,
     ModifyGuild(Value),
+    /// Modify Guild MFA Level: 0 or 1.
+    ModifyMfa(u8),
     /// The Emoji page's list.
     Emojis,
     /// Each change arrives as GUILD_EMOJIS_UPDATE.
@@ -1613,6 +1615,10 @@ async fn admin(api: &Api, guild: &str, op: Admin) -> anyhow::Result<AdminAnswer>
         }
         Admin::ModifyGuild(body) => {
             api.modify_guild(guild, &body).await?;
+            AdminAnswer::Done
+        }
+        Admin::ModifyMfa(level) => {
+            api.modify_guild_mfa(guild, level).await?;
             AdminAnswer::Done
         }
         Admin::Emojis => AdminAnswer::Emojis(api.guild_emojis(guild).await?),

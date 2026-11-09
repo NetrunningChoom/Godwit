@@ -189,6 +189,14 @@ export component AppWindow inherits Window {
     in-out property <int> server-edit-left;
     in-out property <int> server-edit-kicked;
     in-out property <int> server-edit-banned;
+    in property <bool> server-edit-has-safety;
+    in property <[string]> server-edit-verification-options;
+    in-out property <int> server-edit-verification;
+    in property <[string]> server-edit-filter-options;
+    in-out property <int> server-edit-filter;
+    in property <bool> server-edit-has-mfa;
+    in-out property <bool> server-edit-mfa;
+    in property <string> server-edit-mfa-locked;
     callback open-server-settings(); callback close-server-settings(); callback edit-server-profile();
     callback save-server-overview(); callback reset-server-overview(); callback reload-server-overview(); callback server-overview-edited();
     callback pick-server-image(bool); callback remove-server-image(bool);
@@ -1753,6 +1761,9 @@ export component AppWindow inherits Window {
         icon: root.server-edit-icon; has-icon: root.server-edit-has-icon; icon-label: root.server-edit-icon-label;
         banner: root.server-edit-banner; has-banner: root.server-edit-has-banner; banner-label: root.server-edit-banner-label;
         channels: root.server-edit-channels; joined <=> root.server-edit-joined; left <=> root.server-edit-left; kicked <=> root.server-edit-kicked; banned <=> root.server-edit-banned;
+        has-safety: root.server-edit-has-safety; verification-options: root.server-edit-verification-options; verification <=> root.server-edit-verification;
+        filter-options: root.server-edit-filter-options; content-filter <=> root.server-edit-filter;
+        has-mfa: root.server-edit-has-mfa; mod-mfa <=> root.server-edit-mfa; mfa-locked: root.server-edit-mfa-locked;
         close => { root.close-server-settings(); } save => { root.save-server-overview(); }
         reset => { root.reset-server-overview(); } reload => { root.reload-server-overview(); }
         changed => { root.server-overview-edited(); }

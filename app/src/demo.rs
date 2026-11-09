@@ -1451,6 +1451,7 @@ fn demo_overview(app: &Application, server: &Server, index: usize) -> godwit_cor
         owner: index == 0,
         channels,
         system_channels: [first.clone(), first, None, None],
+        safety: None,
     }
 }
 

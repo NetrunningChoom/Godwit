@@ -5,7 +5,42 @@
 //! A server's settings: overview, roles and admin commands.
 
 use super::*;
-use godwit_core::server_settings::VoiceMemberOp;
+use godwit_core::server_settings::{
+    SafetyChoices, SafetyMfa, SafetyOption, ServerOverviewEdit, ServerSafety, VoiceMemberOp,
+};
+
+/// Verification levels, 0 to 4, worded as the official client words them.
+const VERIFICATION: [(u8, &str); 5] = [
+    (0, "None: Unrestricted"),
+    (1, "Low: Must have a verified email address on their Discord account"),
+    (
+        2,
+        "Medium: Must also be registered on Discord for longer than 5 minutes",
+    ),
+    (
+        3,
+        "High: Must also be a member of this server for longer than 10 minutes",
+    ),
+    (4, "Highest: Must have a verified phone number on their Discord account"),
+];
+
+/// Explicit media content filter levels (values per
+/// https://docs.discord.food/resources/guild#explicit-content-filter-level).
+const CONTENT_FILTER: [(u8, &str); 3] = [
+    (0, "Don't scan any media content"),
+    (1, "Scan media content from members without roles"),
+    (2, "Scan media content from all members"),
+];
+
+/// A Community server can't have no verification.
+fn verification_offered(community: bool, level: u8) -> bool {
+    level <= 4 && (level > 0 || !community)
+}
+
+/// A Community server scans everyone's media.
+fn filter_offered(community: bool, level: u8) -> bool {
+    level <= 2 && (level == 2 || !community)
+}
 
 impl DiscordAccount {
     pub(super) fn overview(&self, guild: &str) -> Option<ServerOverview> {
@@ -31,7 +66,85 @@ impl DiscordAccount {
                 .collect(),
             // Discord has one system channel, for joins (and boosts).
             system_channels: [g.system_channel.as_deref().map(Into::into), None, None, None],
+            safety: Some(self.safety(g)),
         })
+    }
+
+    /// Safety Setup as the official client offers it. Verification levels
+    /// and filters: https://docs.discord.food/resources/guild
+    /// (Verification Level, Explicit Content Filter Level).
+    fn safety(&self, g: &store::Guild) -> ServerSafety {
+        let choices = |all: &[(u8, &str)], selected: u8, offered: &dyn Fn(u8) -> bool| SafetyChoices {
+            options: all
+                .iter()
+                .filter(|(value, _)| *value == selected || offered(*value))
+                .map(|(value, label)| SafetyOption {
+                    value: *value,
+                    label: (*label).into(),
+                })
+                .collect(),
+            selected,
+        };
+        ServerSafety {
+            verification: choices(&VERIFICATION, g.verification_level, &|l| {
+                verification_offered(g.community, l)
+            }),
+            content_filter: choices(&CONTENT_FILTER, g.content_filter, &|l| filter_offered(g.community, l)),
+            mod_mfa: Some(SafetyMfa {
+                on: g.mfa_level == 1,
+                locked: self.mfa_lock(g).map(Into::into),
+            }),
+        }
+    }
+
+    /// Why the two-factor switch can't move, as the official client says
+    /// it: only the owner changes it, and only with 2FA on their own
+    /// account (https://docs.discord.food/resources/guild, Modify Guild MFA
+    /// Level); a Discoverable server keeps it on.
+    fn mfa_lock(&self, g: &store::Guild) -> Option<&'static str> {
+        if g.mfa_level == 1 && g.discoverable {
+            Some("2FA is required while this server is in Server Discovery.")
+        } else if g.owner != self.me() {
+            Some("This setting can only be changed by a server owner with 2FA enabled on their account.")
+        } else if !self.store.mfa_enabled {
+            Some("To change this setting, first enable 2FA on your account.")
+        } else {
+            None
+        }
+    }
+
+    /// The `PATCH /guilds/{id}` fields and the `POST /guilds/{id}/mfa` level
+    /// an edit's safety choices need; only what changed, and an error for a
+    /// choice the server doesn't offer.
+    pub(super) fn safety_changes(
+        &self,
+        guild: &str,
+        edit: &ServerOverviewEdit,
+    ) -> Result<(serde_json::Map<String, Value>, Option<u8>), &'static str> {
+        let mut fields = serde_json::Map::new();
+        let Some(g) = self.store.guilds.get(guild) else {
+            return Err("This server is no longer available.");
+        };
+        if let Some(level) = edit.verification.filter(|l| *l != g.verification_level) {
+            if !verification_offered(g.community, level) {
+                return Err("This server doesn't offer that verification level.");
+            }
+            fields.insert("verification_level".into(), json!(level));
+        }
+        if let Some(level) = edit.content_filter.filter(|l| *l != g.content_filter) {
+            if !filter_offered(g.community, level) {
+                return Err("This server doesn't offer that media filter.");
+            }
+            fields.insert("explicit_content_filter".into(), json!(level));
+        }
+        let mfa = match edit.mod_mfa.map(u8::from).filter(|l| *l != g.mfa_level) {
+            Some(level) => match self.mfa_lock(g) {
+                Some(why) => return Err(why),
+                None => Some(level),
+            },
+            None => None,
+        };
+        Ok((fields, mfa))
     }
 
     pub(super) fn roles(&self, guild: &str) -> ServerRoles {
@@ -693,6 +806,125 @@ mod tests {
             Ok(Cmd::Request(Request::Admin { op, .. })) => Some(op),
             _ => None,
         })
+    }
+
+    fn safety_account(
+        owner: bool,
+        own_mfa: bool,
+        features: Value,
+    ) -> (DiscordAccount, tokio::sync::mpsc::UnboundedReceiver<Cmd>) {
+        let (net, mut cmds) = Handle::detached();
+        let (_tx, events) = mpsc::channel();
+        let mut a = DiscordAccount::with(u32::MAX, net, events, Status::Connecting);
+        let mut ready = crate::store::test_ready();
+        ready["user"]["mfa_enabled"] = json!(own_mfa);
+        let props = &mut ready["guilds"][0]["properties"];
+        props["owner_id"] = json!(if owner { "100" } else { "200" });
+        props["features"] = features;
+        props["verification_level"] = json!(1);
+        props["explicit_content_filter"] = json!(0);
+        props["mfa_level"] = json!(0);
+        ready["guilds"][0]["roles"][1]["permissions"] = json!(p::MANAGE_GUILD.to_string());
+        a.handle(Ev::Ready(Box::new(ready)), &mut Vec::new());
+        while cmds.try_recv().is_ok() {}
+        (a, cmds)
+    }
+
+    fn save(
+        a: &mut DiscordAccount,
+        cmds: &mut tokio::sync::mpsc::UnboundedReceiver<Cmd>,
+        edit: ServerOverviewEdit,
+    ) -> (Vec<Event>, Vec<Admin>) {
+        let server = ServerId::new(a.account.clone().unwrap(), "10");
+        let out = a.run(Command::SaveServerOverview {
+            server,
+            request: 1,
+            edit: Box::new(edit),
+        });
+        let mut sent = Vec::new();
+        while let Ok(Cmd::Request(Request::Admin { op, .. })) = cmds.try_recv() {
+            sent.push(op);
+        }
+        (out, sent)
+    }
+
+    #[test]
+    fn safety_patch_has_only_the_changed_fields() {
+        let (mut a, mut c) = safety_account(true, true, json!([]));
+        let (_, sent) = save(
+            &mut a,
+            &mut c,
+            ServerOverviewEdit {
+                verification: Some(3),
+                content_filter: Some(0),
+                ..Default::default()
+            },
+        );
+        assert!(matches!(&sent[..], [Admin::ModifyGuild(b)] if *b == json!({"verification_level": 3})));
+    }
+
+    #[test]
+    fn the_mfa_toggle_posts_its_own_request_for_the_owner_with_2fa() {
+        let (mut a, mut c) = safety_account(true, true, json!([]));
+        let (_, sent) = save(
+            &mut a,
+            &mut c,
+            ServerOverviewEdit {
+                mod_mfa: Some(true),
+                ..Default::default()
+            },
+        );
+        assert!(matches!(&sent[..], [Admin::ModifyMfa(1)]));
+        assert_eq!(crate::api::mfa_body(1), json!({"level": 1}));
+    }
+
+    #[test]
+    fn the_mfa_toggle_is_locked_unless_the_owner_has_2fa() {
+        for (owner, mfa) in [(false, true), (true, false)] {
+            let (mut a, mut c) = safety_account(owner, mfa, json!([]));
+            let safety = a.overview("10").and_then(|o| o.safety).unwrap();
+            assert!(safety.mod_mfa.unwrap().locked.is_some());
+            let (out, sent) = save(
+                &mut a,
+                &mut c,
+                ServerOverviewEdit {
+                    mod_mfa: Some(true),
+                    ..Default::default()
+                },
+            );
+            assert!(sent.is_empty());
+            assert!(matches!(out.last(), Some(Event::ServerOverview { result: Err(_), .. })));
+        }
+        let (a, _c) = safety_account(true, true, json!([]));
+        let mfa = a.overview("10").and_then(|o| o.safety).unwrap().mod_mfa.unwrap();
+        assert!(mfa.locked.is_none() && !mfa.on);
+    }
+
+    #[test]
+    fn a_community_server_does_not_offer_the_laxest_choices() {
+        let (mut a, mut c) = safety_account(true, true, json!(["COMMUNITY"]));
+        let safety = a.overview("10").and_then(|o| o.safety).unwrap();
+        assert!(safety.verification.options.iter().all(|o| o.value != 0));
+        // The current filter stays listed even though it is no longer offered.
+        assert_eq!(safety.content_filter.selected, 0);
+        let (out, sent) = save(
+            &mut a,
+            &mut c,
+            ServerOverviewEdit {
+                verification: Some(0),
+                ..Default::default()
+            },
+        );
+        assert!(sent.is_empty());
+        assert!(matches!(out.last(), Some(Event::ServerOverview { result: Err(_), .. })));
+    }
+
+    #[test]
+    fn a_discoverable_server_keeps_2fa_on() {
+        let (mut a, _c) = safety_account(true, true, json!(["DISCOVERABLE"]));
+        a.store.guilds.get_mut("10").unwrap().mfa_level = 1;
+        let mfa = a.overview("10").and_then(|o| o.safety).unwrap().mod_mfa.unwrap();
+        assert!(mfa.on && mfa.locked.is_some());
     }
 
     fn file(size: u64) -> EmojiFile {

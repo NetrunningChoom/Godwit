@@ -1865,7 +1865,17 @@ impl NetworkAccount for DiscordAccount {
                 });
             }
             Command::SaveServerOverview { server, request, edit } => {
-                let mut body = serde_json::Map::new();
+                let (mut body, mfa) = match self.safety_changes(&server.raw, &edit) {
+                    Ok(changes) => changes,
+                    Err(e) => {
+                        out.push(Event::ServerOverview {
+                            server,
+                            request,
+                            result: Err(e.into()),
+                        });
+                        return out;
+                    }
+                };
                 if let Some(name) = &edit.name {
                     body.insert("name".into(), json!(name.trim()));
                 }
@@ -1896,15 +1906,37 @@ impl NetworkAccount for DiscordAccount {
                         },
                     }
                 }
-                req(
-                    &self.net,
-                    Request::Admin {
-                        guild: server.raw.to_string(),
-                        op: Admin::ModifyGuild(Value::Object(body)),
-                    },
-                );
+                if !body.is_empty() {
+                    req(
+                        &self.net,
+                        Request::Admin {
+                            guild: server.raw.to_string(),
+                            op: Admin::ModifyGuild(Value::Object(body)),
+                        },
+                    );
+                }
+                if let Some(level) = mfa {
+                    req(
+                        &self.net,
+                        Request::Admin {
+                            guild: server.raw.to_string(),
+                            op: Admin::ModifyMfa(level),
+                        },
+                    );
+                }
                 // The change arrives as GUILD_UPDATE; the form shows it as saved.
                 if let Some(mut overview) = self.overview(&server.raw) {
+                    if let Some(safety) = &mut overview.safety {
+                        if let Some(v) = edit.verification {
+                            safety.verification.selected = v;
+                        }
+                        if let Some(v) = edit.content_filter {
+                            safety.content_filter.selected = v;
+                        }
+                        if let (Some(on), Some(mfa)) = (edit.mod_mfa, &mut safety.mod_mfa) {
+                            mfa.on = on;
+                        }
+                    }
                     if let Some(name) = &edit.name {
                         overview.name = name.trim().into();
                     }

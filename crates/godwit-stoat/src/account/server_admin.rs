@@ -746,6 +746,7 @@ impl StoatAccount {
                     .and_then(Value::as_str)
                     .map(Into::into)
             }),
+            safety: None,
         })
     }
 }

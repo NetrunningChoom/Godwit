@@ -271,6 +271,16 @@ pub struct Guild {
     pub default_notify: u8,
     /// The server turned forwarding its messages off (the `FORWARDING_DISABLED` feature).
     pub forwarding_disabled: bool,
+    /// Safety setup: 0 none to 4 a verified phone.
+    pub verification_level: u8,
+    /// 0 no one's media scanned, 1 members without roles, 2 everyone's.
+    pub content_filter: u8,
+    /// 1 when moderators need two-factor authentication.
+    pub mfa_level: u8,
+    /// The `COMMUNITY` feature: Discord takes away the laxest choices.
+    pub community: bool,
+    /// The `DISCOVERABLE` feature: it keeps two-factor authentication on.
+    pub discoverable: bool,
 }
 
 /// What limits a custom emoji's use: `available` false when the server lost
@@ -380,6 +390,8 @@ pub struct Store {
     /// Our Nitro (`premium_type`: 0 none, 1 Classic, 2 Nitro, 3 Basic): it
     /// sets how large an upload may be.
     pub premium_type: u8,
+    /// Whether our account has two-factor authentication (`mfa_enabled`).
+    pub mfa_enabled: bool,
 }
 
 impl Store {
@@ -488,6 +500,7 @@ impl Store {
             .as_u64()
             .and_then(|p| u8::try_from(p).ok())
             .unwrap_or(0);
+        self.mfa_enabled = d["user"]["mfa_enabled"] == true;
         for u in d["users"].as_array().into_iter().flatten() {
             self.put_user(u);
         }
@@ -735,6 +748,11 @@ impl Store {
                 .and_then(|t| u8::try_from(t).ok())
                 .unwrap_or(0),
             forwarding_disabled: has_feature(p, "FORWARDING_DISABLED") || has_feature(g, "FORWARDING_DISABLED"),
+            verification_level: small(&p["verification_level"]),
+            content_filter: small(&p["explicit_content_filter"]),
+            mfa_level: small(&p["mfa_level"]),
+            community: has_feature(p, "COMMUNITY") || has_feature(g, "COMMUNITY"),
+            discoverable: has_feature(p, "DISCOVERABLE") || has_feature(g, "DISCOVERABLE"),
             ..Default::default()
         };
         for r in g["roles"].as_array().into_iter().flatten() {
@@ -778,6 +796,17 @@ impl Store {
         guild.system_channel = g["system_channel_id"].as_str().map(str::to_owned);
         if g["features"].is_array() {
             guild.forwarding_disabled = has_feature(g, "FORWARDING_DISABLED");
+            guild.community = has_feature(g, "COMMUNITY");
+            guild.discoverable = has_feature(g, "DISCOVERABLE");
+        }
+        for (field, value) in [
+            (&mut guild.verification_level, &g["verification_level"]),
+            (&mut guild.content_filter, &g["explicit_content_filter"]),
+            (&mut guild.mfa_level, &g["mfa_level"]),
+        ] {
+            if let Some(n) = value.as_u64().and_then(|n| u8::try_from(n).ok()) {
+                *field = n;
+            }
         }
         if let Some(tier) = g["premium_tier"].as_u64().and_then(|t| u8::try_from(t).ok()) {
             guild.premium_tier = tier;
@@ -1238,6 +1267,11 @@ pub fn guild_member_profile_avatar_url(guild: &str, user: &str, hash: &str) -> S
 }
 
 /// Whether a guild object lists `feature`.
+/// A small number from JSON, 0 when absent.
+fn small(v: &Value) -> u8 {
+    v.as_u64().and_then(|n| u8::try_from(n).ok()).unwrap_or(0)
+}
+
 fn has_feature(guild: &Value, feature: &str) -> bool {
     guild["features"]
         .as_array()

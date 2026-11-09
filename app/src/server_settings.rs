@@ -9,8 +9,8 @@ use godwit_core::application::{Action, AppState};
 use godwit_core::ids::ServerId;
 use godwit_core::own_profile::ProfileImage;
 use godwit_core::server_settings::{
-    EmojiFile, RoleEdit, ServerAdmin, ServerEmojis, ServerOverview, ServerOverviewEdit, ServerPage, ServerRoles,
-    ServerSettingsState,
+    EmojiFile, RoleEdit, SafetyChoices, ServerAdmin, ServerEmojis, ServerOverview, ServerOverviewEdit, ServerPage,
+    ServerRoles, ServerSettingsState,
 };
 use slint::{ModelRc, VecModel};
 
@@ -115,6 +115,25 @@ impl ServerEditor {
         ui.set_server_edit_left(indices[1]);
         ui.set_server_edit_kicked(indices[2]);
         ui.set_server_edit_banned(indices[3]);
+        let safety = overview.safety.as_ref();
+        ui.set_server_edit_has_safety(safety.is_some());
+        let choice = |c: Option<&SafetyChoices>| {
+            let options: Vec<slint::SharedString> = c
+                .map(|c| c.options.iter().map(|o| o.label.as_ref().into()).collect())
+                .unwrap_or_default();
+            let index = c.and_then(|c| c.options.iter().position(|o| o.value == c.selected));
+            (ModelRc::new(VecModel::from(options)), index.map_or(0, |i| i as i32))
+        };
+        let (options, index) = choice(safety.map(|s| &s.verification));
+        ui.set_server_edit_verification_options(options);
+        ui.set_server_edit_verification(index);
+        let (options, index) = choice(safety.map(|s| &s.content_filter));
+        ui.set_server_edit_filter_options(options);
+        ui.set_server_edit_filter(index);
+        let mfa = safety.and_then(|s| s.mod_mfa.as_ref());
+        ui.set_server_edit_has_mfa(mfa.is_some());
+        ui.set_server_edit_mfa(mfa.is_some_and(|m| m.on));
+        ui.set_server_edit_mfa_locked(mfa.and_then(|m| m.locked.as_deref()).unwrap_or_default().into());
         self.original = Some(overview.clone());
         self.icon = ProfileImage::Keep;
         self.banner = ProfileImage::Keep;
@@ -189,7 +208,19 @@ impl ServerEditor {
                     .map(|(room, _)| room.raw.clone())
             }
         });
+        let chosen = |c: Option<&SafetyChoices>, index: i32| {
+            let c = c?;
+            let value = c.options.get(usize::try_from(index).ok()?)?.value;
+            (value != c.selected).then_some(value)
+        };
+        let safety = o.safety.as_ref();
         let edit = ServerOverviewEdit {
+            verification: chosen(safety.map(|s| &s.verification), ui.get_server_edit_verification()),
+            content_filter: chosen(safety.map(|s| &s.content_filter), ui.get_server_edit_filter()),
+            mod_mfa: safety
+                .and_then(|s| s.mod_mfa.as_ref())
+                .filter(|m| m.locked.is_none() && m.on != ui.get_server_edit_mfa())
+                .map(|_| ui.get_server_edit_mfa()),
             name: (name.trim() != o.name.trim()).then(|| name.trim().into()),
             description: (description.trim() != o.description.trim()).then(|| description.trim().into()),
             icon: self.icon.clone(),

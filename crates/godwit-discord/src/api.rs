@@ -1200,6 +1200,16 @@ impl Api {
         .await
     }
 
+    /// Modify Guild MFA Level (owner only, needs their own 2FA):
+    /// https://docs.discord.food/resources/guild
+    pub async fn modify_guild_mfa(&self, guild: &str, level: u8) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::POST, &format!("/guilds/{guild}/mfa")),
+            &mfa_body(level),
+        ))
+        .await
+    }
+
     /// Joins a server by invite code, as accepting an invite does.
     pub async fn join_invite(&self, code: &str) -> Result<Value> {
         let path = format!("/invites/{}", encode(code));
@@ -1499,6 +1509,11 @@ fn refusal(status: StatusCode, body: &Value) -> anyhow::Error {
 /// official client sends it (docs.discord.food, Create Guild Emoji).
 pub(crate) fn emoji_create_body(name: &str, image: &str) -> Value {
     json!({"name": name, "image": image, "roles": []})
+}
+
+/// The Modify Guild MFA Level body (docs.discord.food, Guild resource).
+pub(crate) fn mfa_body(level: u8) -> Value {
+    json!({"level": level})
 }
 
 fn with_json(request: RequestBuilder, body: &Value) -> RequestBuilder {
