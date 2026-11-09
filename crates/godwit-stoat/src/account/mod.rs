@@ -73,6 +73,7 @@ pub enum Status {
 }
 
 pub struct StoatAccount {
+    pub(super) security_view: godwit_core::account_security::SecurityView,
     /// Where its session is saved (`session_file`'s slot).
     slot: u32,
     /// Auto-delete's rules, index and run (a Godwit extra, from Godwit).
@@ -500,6 +501,7 @@ impl StoatAccount {
             None => Status::SignedOut { error: None },
         };
         Ok(Self {
+            security_view: Default::default(),
             slot,
             net,
             events,
@@ -556,6 +558,7 @@ impl StoatAccount {
         let (net, _) = Handle::detached();
         let (_, events) = mpsc::channel();
         Self {
+            security_view: Default::default(),
             slot: 0,
             net,
             events,
@@ -719,6 +722,7 @@ mod tests {
         let (net, cmds) = Handle::detached();
         let (tx, events) = mpsc::channel();
         let account = StoatAccount {
+            security_view: Default::default(),
             slot: 0,
             net,
             events,

@@ -128,6 +128,35 @@ impl AccountPages {
         ))));
         pages.set_sessions_loading(sessions.loading);
         pages.set_sessions_error(sessions.error.as_deref().unwrap_or_default().into());
+        let security = state.account_security.get(account).cloned().unwrap_or_default();
+        pages.set_security_email(security.email.into());
+        pages.set_security_totp(security.totp);
+        pages.set_security_mfa(security.totp);
+        pages.set_security_recovery(security.recovery);
+        pages.set_security_error(security.error.unwrap_or_default().into());
+        pages.set_security_message(security.message.unwrap_or_default().into());
+        pages.set_security_secret(
+            security
+                .pending_secret
+                .as_ref()
+                .map(|v| v.0.clone())
+                .unwrap_or_default()
+                .into(),
+        );
+        pages.set_security_qr(
+            security
+                .pending_secret
+                .as_ref()
+                .and_then(|secret| crate::qr::image(&format!("otpauth://totp/Godwit?secret={}&issuer=Stoat", secret.0)))
+                .unwrap_or_default(),
+        );
+        pages.set_recovery_codes(ModelRc::new(Rc::new(VecModel::from(
+            security
+                .recovery_codes
+                .into_iter()
+                .map(|v| v.0.into())
+                .collect::<Vec<_>>(),
+        ))));
     }
 }
 

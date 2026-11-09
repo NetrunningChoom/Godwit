@@ -153,6 +153,7 @@ pub struct GamesInCommon {
 /// Everything the UI shows. Plain data; the UI never mutates it directly.
 #[derive(Clone, Debug, Default)]
 pub struct AppState {
+    pub account_security: std::collections::HashMap<AccountId, crate::account_security::SecurityView>,
     /// Each account's privacy switches, as its network last sent them.
     pub privacy: HashMap<AccountId, crate::privacy::PrivacyView>,
     /// Each account's signed-in devices, as its network last listed them.

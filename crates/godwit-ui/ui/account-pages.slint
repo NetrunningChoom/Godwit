@@ -40,6 +40,61 @@ export global AccountPages {
     callback log-out-session(int);
     callback log-out-session-with-proof(int, int, string);
     callback submit-session-rename(int, string);
+    in property <string> security-email;
+    in property <bool> security-totp;
+    in property <bool> security-mfa;
+    in property <bool> security-recovery;
+    in property <string> security-error;
+    in property <string> security-message;
+    in property <string> security-secret;
+    in property <image> security-qr;
+    in property <[string]> recovery-codes;
+    in-out property <int> security-dialog: 0;
+    in-out property <string> security-value;
+    in-out property <string> security-second;
+    in-out property <string> security-proof-value;
+    in-out property <int> security-proof-kind: 1;
+    callback security-submit(int, string, string, int, string);
+}
+
+export component AccountSecurityPage inherits VerticalLayout {
+    spacing: Theme.space-4;
+    Text { text: "Change the credentials and two-factor protection for this account."; wrap: word-wrap; color: Theme.on-surface-variant; }
+    if AccountPages.security-email != "": Text { text: "Email · " + AccountPages.security-email; color: Theme.on-surface; }
+    if AccountPages.security-error != "": Text { text: AccountPages.security-error; wrap: word-wrap; color: Theme.error; }
+    if AccountPages.security-message != "": Text { text: AccountPages.security-message; color: Theme.on-surface-variant; }
+    Card { VerticalLayout { spacing: Theme.space-3;
+        Text { text: "Account credentials"; font-weight: 600; color: Theme.on-surface; }
+        HorizontalLayout { spacing: Theme.space-2;
+            Button { text: "Change username"; clicked => { AccountPages.security-dialog = 1; AccountPages.security-value = ""; AccountPages.security-second = ""; AccountPages.security-proof-value = ""; } }
+            Button { text: "Change email"; clicked => { AccountPages.security-dialog = 2; AccountPages.security-value = ""; AccountPages.security-second = ""; AccountPages.security-proof-value = ""; } }
+            Button { text: "Change password"; clicked => { AccountPages.security-dialog = 3; AccountPages.security-value = ""; AccountPages.security-second = ""; AccountPages.security-proof-value = ""; } }
+        }
+    } }
+    Card { VerticalLayout { spacing: Theme.space-3;
+        Text { text: "Two-factor authentication"; font-weight: 600; color: Theme.on-surface; }
+        Text { text: AccountPages.security-totp ? "Authenticator enabled" : "Authenticator not enabled"; color: Theme.on-surface-variant; }
+        HorizontalLayout { spacing: Theme.space-2;
+            if !AccountPages.security-totp: Button { text: "Set up authenticator"; clicked => { AccountPages.security-dialog = 4; AccountPages.security-value = ""; } }
+            if AccountPages.security-totp: Button { text: "Remove authenticator"; danger: true; clicked => { AccountPages.security-dialog = 8; AccountPages.security-value = ""; } }
+            if AccountPages.security-totp && AccountPages.security-recovery: Button { text: "View recovery codes"; clicked => { AccountPages.security-dialog = 6; AccountPages.security-value = ""; } }
+            if AccountPages.security-totp: Button { text: "Regenerate recovery codes"; clicked => { AccountPages.security-dialog = 7; AccountPages.security-value = ""; } }
+        }
+    } }
+    if AccountPages.security-secret != "": Card { VerticalLayout { Text { text: "Authenticator secret"; font-weight: 600; color: Theme.on-surface; } if AccountPages.security-qr.width > 0: Image { source: AccountPages.security-qr; width: 220px; height: 220px; image-fit: contain; image-rendering: pixelated; } Text { text: AccountPages.security-secret; color: Theme.on-surface; } Text { text: "Scan the code or enter this secret in your authenticator app, then confirm its current code."; wrap: word-wrap; color: Theme.on-surface-variant; } Button { text: "Confirm setup"; clicked => { AccountPages.security-dialog = 5; AccountPages.security-value = ""; AccountPages.security-second = ""; } } } }
+    if AccountPages.recovery-codes.length > 0: Card { VerticalLayout { Text { text: "Recovery codes · store these somewhere safe"; font-weight: 600; color: Theme.on-surface; } for code in AccountPages.recovery-codes: Text { text: code; color: Theme.on-surface; } } }
+    if AccountPages.security-dialog > 0: Card { VerticalLayout { spacing: Theme.space-3;
+        Text { text: AccountPages.security-dialog == 1 ? "Change username" : AccountPages.security-dialog == 2 ? "Change email" : AccountPages.security-dialog == 3 ? "Change password" : AccountPages.security-dialog == 4 ? "Set up authenticator" : AccountPages.security-dialog == 5 ? "Confirm authenticator" : AccountPages.security-dialog == 6 ? "View recovery codes" : AccountPages.security-dialog == 7 ? "Regenerate recovery codes" : "Remove authenticator"; font-weight: 600; color: Theme.on-surface; }
+        TextField { width: 360px; text <=> AccountPages.security-value; placeholder: AccountPages.security-dialog == 1 ? "New username" : AccountPages.security-dialog == 2 ? "New email" : "Password or authenticator code"; password: AccountPages.security-dialog != 1 && AccountPages.security-dialog != 2; }
+        if AccountPages.security-dialog == 1 || AccountPages.security-dialog == 2 || AccountPages.security-dialog == 3: TextField { width: 360px; text <=> AccountPages.security-second; placeholder: "Current password"; password: true; }
+        if AccountPages.security-dialog == 5: TextField { width: 360px; text <=> AccountPages.security-second; placeholder: "Authenticator code"; password: true; }
+        if AccountPages.security-dialog == 1 || AccountPages.security-dialog == 2 || AccountPages.security-dialog == 3 || AccountPages.security-dialog == 4 || AccountPages.security-dialog == 6 || AccountPages.security-dialog == 7 || AccountPages.security-dialog == 8: Select { width: 300px; model: ["Password", "Authenticator code", "Recovery code"]; current-index <=> AccountPages.security-proof-kind; }
+        if AccountPages.security-dialog == 1 || AccountPages.security-dialog == 2 || AccountPages.security-dialog == 3 || AccountPages.security-dialog == 4 || AccountPages.security-dialog == 6 || AccountPages.security-dialog == 7 || AccountPages.security-dialog == 8: TextField { width: 360px; text <=> AccountPages.security-proof-value; placeholder: "Password, authenticator code, or recovery code"; password: true; }
+        HorizontalLayout { spacing: Theme.space-2;
+            Button { text: "Cancel"; clicked => { AccountPages.security-dialog = 0; AccountPages.security-value = ""; AccountPages.security-second = ""; AccountPages.security-proof-value = ""; } }
+            Button { text: "Continue"; enabled: AccountPages.security-value != "" && ((AccountPages.security-dialog != 1 && AccountPages.security-dialog != 2 && AccountPages.security-dialog != 3 && AccountPages.security-dialog != 5) || AccountPages.security-second != "") && ((AccountPages.security-dialog == 5) || (!AccountPages.security-mfa && AccountPages.security-dialog <= 3) || AccountPages.security-proof-value != ""); clicked => { AccountPages.security-submit(AccountPages.security-dialog, AccountPages.security-value, AccountPages.security-second, AccountPages.security-proof-kind, AccountPages.security-proof-value); AccountPages.security-value = ""; AccountPages.security-second = ""; AccountPages.security-proof-value = ""; AccountPages.security-dialog = 0; } }
+        }
+    } }
 }
 
 export component PrivacyPage inherits VerticalLayout {

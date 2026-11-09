@@ -762,6 +762,7 @@ impl NetworkAccount for DiscordAccount {
         let mut out = Vec::new();
         let req = |net: &Handle, r: Request| net.send(Cmd::Request(r));
         match command {
+            Command::AccountSecurity(_) => {}
             Command::LoadReactors { room, message, emoji } => {
                 if !self.store.can(&room.raw, p::VIEW_CHANNEL | p::READ_MESSAGE_HISTORY) {
                     return vec![Event::Reactors {

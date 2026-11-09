@@ -6,6 +6,7 @@
 //! [`application::Effect`]s. See docs/design.md.
 
 pub mod account;
+pub mod account_security;
 pub mod application;
 pub mod autocomplete;
 pub mod autodelete;

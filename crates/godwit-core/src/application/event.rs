@@ -25,6 +25,10 @@ pub enum Event {
         account: AccountId,
         error: Arc<str>,
     },
+    AccountSecurity {
+        account: AccountId,
+        view: crate::account_security::SecurityView,
+    },
     /// An account's auto-delete page, after any change.
     AutoDelete {
         account: AccountId,

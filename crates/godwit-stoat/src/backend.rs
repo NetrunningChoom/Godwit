@@ -441,7 +441,7 @@ pub enum SettingsCmd {
     /// for the endpoints that require one when 2FA is on.
     ChangeAccount {
         change: AccountChange,
-        totp: Option<String>,
+        proof: Option<MfaResponse>,
     },
     /// `POST /safety/report` with a `DataReportContent` body.
     Report(Value),
@@ -503,6 +503,20 @@ pub enum AccountChange {
     Username { username: String, password: String },
     Email { email: String, current_password: String },
     Password { password: String, current_password: String },
+}
+
+impl std::fmt::Debug for AccountChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Username { .. } => "Username",
+            Self::Email { .. } => "Email",
+            Self::Password { .. } => "Password",
+        };
+        f.debug_tuple("AccountChange")
+            .field(&name)
+            .field(&"[redacted]")
+            .finish()
+    }
 }
 
 /// Friend and block actions from the official user menu.
@@ -853,6 +867,33 @@ impl Rest {
             r = r.header("X-Session-Token", t);
         }
         r
+    }
+
+    fn account_change_request(
+        change: AccountChange,
+        ticket: Option<&str>,
+    ) -> (reqwest::Method, &'static str, Value, Option<String>) {
+        let (path, body) = match change {
+            AccountChange::Username { username, password } => (
+                "/users/@me/username",
+                json!({ "username": username, "password": password }),
+            ),
+            AccountChange::Email {
+                email,
+                current_password,
+            } => (
+                "/auth/account/change/email",
+                json!({ "email": email, "current_password": current_password }),
+            ),
+            AccountChange::Password {
+                password,
+                current_password,
+            } => (
+                "/auth/account/change/password",
+                json!({ "password": password, "current_password": current_password }),
+            ),
+        };
+        (reqwest::Method::PATCH, path, body, ticket.map(str::to_owned))
     }
 
     async fn send<T: serde::de::DeserializeOwned>(&self, rb: reqwest::RequestBuilder) -> Result<T> {
@@ -2343,43 +2384,22 @@ impl Backend {
                     })));
                 });
             }
-            SettingsCmd::ChangeAccount { change, totp } => {
+            SettingsCmd::ChangeAccount { change, proof } => {
                 let rest = rest.clone();
                 let out = out.clone();
                 tokio::spawn(async move {
                     let result: Result<()> = async {
-                        let ticket = match totp {
-                            Some(code) => {
-                                let rb = rest
-                                    .req(reqwest::Method::PUT, "/auth/mfa/ticket")
-                                    .json(&json!({ "totp_code": code }));
+                        let ticket = match proof {
+                            Some(response) => {
+                                let rb = rest.req(reqwest::Method::PUT, "/auth/mfa/ticket").json(&response);
                                 Some(rest.send::<MfaTicket>(rb).await?.token)
                             }
                             None => None,
                         };
-                        let (path, body) = match change {
-                            AccountChange::Username { username, password } => (
-                                "/users/@me/username",
-                                json!({ "username": username, "password": password }),
-                            ),
-                            AccountChange::Email {
-                                email,
-                                current_password,
-                            } => (
-                                "/auth/account/change/email",
-                                json!({ "email": email, "current_password": current_password }),
-                            ),
-                            AccountChange::Password {
-                                password,
-                                current_password,
-                            } => (
-                                "/auth/account/change/password",
-                                json!({ "password": password, "current_password": current_password }),
-                            ),
-                        };
-                        let mut rb = rest.req(reqwest::Method::PATCH, path).json(&body);
-                        if let Some(t) = ticket {
-                            rb = rb.header("X-MFA-Ticket", t);
+                        let (method, path, body, _) = Rest::account_change_request(change, ticket.as_deref());
+                        let mut rb = rest.req(method, path).json(&body);
+                        if let Some(ticket) = ticket {
+                            rb = rb.header("X-MFA-Ticket", ticket);
                         }
                         rest.send_empty(rb).await
                     }
@@ -3173,6 +3193,43 @@ fn dispatch(v: Value, out: &Emitter) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn account_change_requests_match_each_route_and_attach_ticket() {
+        let cases = [
+            (
+                AccountChange::Username {
+                    username: "new".into(),
+                    password: "secret".into(),
+                },
+                "/users/@me/username",
+                json!({"username":"new","password":"secret"}),
+            ),
+            (
+                AccountChange::Email {
+                    email: "a@example.invalid".into(),
+                    current_password: "secret".into(),
+                },
+                "/auth/account/change/email",
+                json!({"email":"a@example.invalid","current_password":"secret"}),
+            ),
+            (
+                AccountChange::Password {
+                    password: "new-secret".into(),
+                    current_password: "secret".into(),
+                },
+                "/auth/account/change/password",
+                json!({"password":"new-secret","current_password":"secret"}),
+            ),
+        ];
+        for (change, path, body) in cases {
+            let (method, actual_path, actual_body, ticket) =
+                Rest::account_change_request(change, Some("ticket-secret"));
+            assert_eq!(method, reqwest::Method::PATCH);
+            assert_eq!(actual_path, path);
+            assert_eq!(actual_body, body);
+            assert_eq!(ticket.as_deref(), Some("ticket-secret"));
+        }
+    }
     #[test]
     fn auto_delete_failures_keep_status_and_existing_presentation() {
         let error = AutoDeleteError::Http {

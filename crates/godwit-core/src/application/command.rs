@@ -23,6 +23,7 @@ pub enum Command {
         session: Arc<str>,
         name: Arc<str>,
     },
+    AccountSecurity(crate::account_security::SecurityAction),
     /// Auto-delete's page for this account (networks that have it).
     AutoDelete(crate::autodelete::AutoDeleteCommand),
     StartScreenShare {

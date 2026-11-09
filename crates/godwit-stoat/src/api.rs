@@ -625,6 +625,38 @@ pub enum MfaResponse {
     Recovery(String),
 }
 
+impl std::fmt::Debug for MfaResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kind = match self {
+            Self::Password(_) => "Password",
+            Self::Totp(_) => "Totp",
+            Self::Recovery(_) => "Recovery",
+        };
+        f.debug_tuple("MfaResponse").field(&kind).field(&"[redacted]").finish()
+    }
+}
+
+#[cfg(test)]
+mod mfa_debug_tests {
+    use super::MfaResponse;
+    #[test]
+    fn response_debug_redacts_proofs() {
+        let value = format!("{:?}", MfaResponse::Totp("private-code".into()));
+        assert!(!value.contains("private-code"));
+    }
+    #[test]
+    fn account_change_debug_redacts_passwords() {
+        let value = format!(
+            "{:?}",
+            crate::backend::AccountChange::Username {
+                username: "name".into(),
+                password: "hunter-two".into()
+            }
+        );
+        assert!(!value.contains("hunter-two"));
+    }
+}
+
 /// `POST /servers/create` and joining a server invite both return the server with its channels.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerWithChannels {

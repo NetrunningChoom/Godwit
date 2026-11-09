@@ -5,6 +5,85 @@
 use super::*;
 
 impl StoatAccount {
+    fn security_command(&mut self, command: Command) -> Vec<Event> {
+        let Command::AccountSecurity(action) = command else {
+            return Vec::new();
+        };
+        use godwit_core::account_security::{ProofKind, SecurityAction as A};
+        let to_response = |(kind, secret): (ProofKind, godwit_core::application::Secret)| match kind {
+            ProofKind::Password => crate::api::MfaResponse::Password(secret.0),
+            ProofKind::Authenticator => crate::api::MfaResponse::Totp(secret.0),
+            ProofKind::Recovery => crate::api::MfaResponse::Recovery(secret.0),
+        };
+        let mut out = Vec::new();
+        match action {
+            A::Load => {
+                self.security_view.loading = true;
+                self.net.send(Cmd::Settings(SettingsCmd::FetchEmail));
+                self.net.send(Cmd::Settings(SettingsCmd::FetchMfaStatus));
+                if let Some(account) = self.account.clone() {
+                    out.push(Event::AccountSecurity {
+                        account,
+                        view: godwit_core::account_security::SecurityView {
+                            loading: true,
+                            ..Default::default()
+                        },
+                    });
+                }
+            }
+            A::ChangeUsername {
+                username,
+                password,
+                proof,
+            } => self.net.send(Cmd::Settings(SettingsCmd::ChangeAccount {
+                change: crate::backend::AccountChange::Username {
+                    username,
+                    password: password.0,
+                },
+                proof: proof.map(to_response),
+            })),
+            A::ChangeEmail {
+                email,
+                current_password,
+                proof,
+            } => self.net.send(Cmd::Settings(SettingsCmd::ChangeAccount {
+                change: crate::backend::AccountChange::Email {
+                    email,
+                    current_password: current_password.0,
+                },
+                proof: proof.map(to_response),
+            })),
+            A::ChangePassword {
+                password,
+                current_password,
+                proof,
+            } => self.net.send(Cmd::Settings(SettingsCmd::ChangeAccount {
+                change: crate::backend::AccountChange::Password {
+                    password: password.0,
+                    current_password: current_password.0,
+                },
+                proof: proof.map(to_response),
+            })),
+            A::BeginTotp { proof } => self.net.send(Cmd::Settings(SettingsCmd::MfaAction {
+                action: crate::backend::MfaAction::TotpSecret,
+                response: to_response(proof),
+            })),
+            A::ConfirmTotp { code } => self.net.send(Cmd::Settings(SettingsCmd::EnableTotp { code: code.0 })),
+            A::ViewRecovery { proof } => self.net.send(Cmd::Settings(SettingsCmd::MfaAction {
+                action: crate::backend::MfaAction::ViewRecovery,
+                response: to_response(proof),
+            })),
+            A::RegenerateRecovery { proof } => self.net.send(Cmd::Settings(SettingsCmd::MfaAction {
+                action: crate::backend::MfaAction::GenerateRecovery,
+                response: to_response(proof),
+            })),
+            A::RemoveTotp { proof } => self.net.send(Cmd::Settings(SettingsCmd::MfaAction {
+                action: crate::backend::MfaAction::RemoveTotp,
+                response: to_response(proof),
+            })),
+        }
+        out
+    }
     /// Block or unblock someone else (the server refuses ourselves anyway).
     fn relationship_command(&mut self, user: &UserId, action: RelationshipAction) -> Vec<Event> {
         if self.store.me.as_deref() != Some(user.raw.as_ref()) {
@@ -20,6 +99,7 @@ impl StoatAccount {
         match command {
             // Stoat does not provide message component buttons.
             Command::ActivateMessageButton { .. } => Vec::new(),
+            Command::AccountSecurity(_) => self.security_command(command),
             Command::CreateServer { name } => {
                 // The official for-web CreateServer modal follows DataCreateServer.name (1–32 characters):
                 // https://github.com/stoatchat/for-web/blob/main/packages/client/components/modal/modals/CreateServer.tsx

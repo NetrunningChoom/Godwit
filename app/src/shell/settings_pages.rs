@@ -277,10 +277,12 @@ impl Shell {
         let discord = pages.contains(&godwit_core::network::AccountPage::PrivacyAndSessions);
         ui.set_settings_account_discord(discord);
         let sessions = pages.contains(&godwit_core::network::AccountPage::Sessions);
+        let security = pages.contains(&godwit_core::network::AccountPage::Security);
+        ui.set_settings_account_security(security);
         ui.set_settings_account_sessions(sessions);
         ui.set_settings_account_rename_sessions(pages.contains(&godwit_core::network::AccountPage::RenameSessions));
         ui.set_settings_account_log_out_others(pages.contains(&godwit_core::network::AccountPage::LogOutOtherSessions));
-        self.account_pages.account = (discord || sessions).then(|| id.clone());
+        self.account_pages.account = (discord || sessions || security).then(|| id.clone());
         ui.set_settings_account_tab(if row.is_some() { 0 } else { 1 });
         if let Some(row) = row {
             self.select_profile_account(ui, i32::try_from(row).unwrap_or(0));
@@ -310,6 +312,73 @@ impl Shell {
         if let Some(action) = self.account_pages.open_sessions() {
             self.act(ui, action);
         }
+    }
+
+    pub fn open_security(&mut self, ui: &AppWindow) {
+        if let Some(account) = self.account_pages.account.clone() {
+            self.act(
+                ui,
+                Action::AccountSecurity(account, godwit_core::account_security::SecurityAction::Load),
+            );
+        }
+    }
+
+    pub fn account_security_submit(
+        &mut self,
+        ui: &AppWindow,
+        kind: i32,
+        first: &str,
+        second: &str,
+        proof_kind: i32,
+        proof_value: &str,
+    ) {
+        use godwit_core::{
+            account_security::{ProofKind, SecurityAction as A},
+            application::Secret,
+        };
+        let Some(account) = self.account_pages.account.clone() else {
+            return;
+        };
+        let proof = match proof_kind {
+            0 => ProofKind::Password,
+            1 => ProofKind::Authenticator,
+            2 => ProofKind::Recovery,
+            _ => return,
+        };
+        let action = match kind {
+            1 => A::ChangeUsername {
+                username: first.trim().to_owned(),
+                password: Secret(second.to_owned()),
+                proof: Some((proof, Secret(proof_value.to_owned()))),
+            },
+            2 => A::ChangeEmail {
+                email: first.trim().to_owned(),
+                current_password: Secret(second.to_owned()),
+                proof: Some((proof, Secret(proof_value.to_owned()))),
+            },
+            3 => A::ChangePassword {
+                password: Secret(first.to_owned()),
+                current_password: Secret(second.to_owned()),
+                proof: Some((proof, Secret(proof_value.to_owned()))),
+            },
+            4 => A::BeginTotp {
+                proof: (proof, Secret(proof_value.to_owned())),
+            },
+            5 => A::ConfirmTotp {
+                code: Secret(second.to_owned()),
+            },
+            6 => A::ViewRecovery {
+                proof: (proof, Secret(proof_value.to_owned())),
+            },
+            7 => A::RegenerateRecovery {
+                proof: (proof, Secret(proof_value.to_owned())),
+            },
+            8 => A::RemoveTotp {
+                proof: (proof, Secret(proof_value.to_owned())),
+            },
+            _ => return,
+        };
+        self.act(ui, Action::AccountSecurity(account, action));
     }
 
     pub fn toggle_privacy(&mut self, ui: &AppWindow, index: i32) {

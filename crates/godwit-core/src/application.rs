@@ -377,6 +377,11 @@ impl Application {
             | Event::Presences { account, .. }
             | Event::Activities { account, .. }
             | Event::FriendRequests { account, .. }
+            | Event::Privacy { account, .. }
+            | Event::Sessions { account, .. }
+            | Event::SessionActionPending { account }
+            | Event::SessionActionFailed { account, .. }
+            | Event::AccountSecurity { account, .. }
             | Event::GifCategories { account, .. }
             | Event::Gifs { account, .. }
             | Event::GifsFailed { account, .. }

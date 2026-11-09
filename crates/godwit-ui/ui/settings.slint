@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { AutoDeletePage, AdState } from "autodelete.slint";
-import { PrivacyPage, SessionsPage, DataPrivacyPage, AccountPages, PrivPara } from "account-pages.slint";
+import { PrivacyPage, SessionsPage, DataPrivacyPage, AccountSecurityPage, AccountPages, PrivPara } from "account-pages.slint";
 import { ProfilesPage, ProfilesState } from "profiles-settings.slint";
 import { ProfileSettings } from "profile-settings.slint";
 import { BrandBanner } from "brand-banner.slint";
@@ -93,6 +93,8 @@ export component Settings inherits Rectangle {
     // A Discord account: its Privacy and Sessions tabs.
     in property <bool> account-discord;
     in property <bool> account-sessions;
+    in property <bool> account-security;
+    callback open-security();
     in property <bool> account-rename-sessions;
     in property <bool> account-log-out-others;
     in property <bool> account-data;
@@ -336,6 +338,7 @@ export component Settings inherits Rectangle {
                             root.open-sessions();
                         }
                     }
+                    if root.account-security: Button { text: "Security"; kind: root.account-tab == 6 ? "tonal" : "text"; clicked => { root.account-tab = 6; root.open-security(); } }
                     if root.account-autodelete: Button {
                         text: "Auto-delete messages";
                         kind: root.account-tab == 2 ? "tonal" : "text";
@@ -355,6 +358,7 @@ export component Settings inherits Rectangle {
                     can-rename-session: root.account-rename-sessions;
                     requires-mfa: root.account-sessions;
                 }
+                if root.section == 10 && root.account-security && root.account-tab == 6: AccountSecurityPage { }
                 if root.section == 10 && root.account-data && root.account-tab == 5: DataPrivacyPage {
                     policy-url: root.data-policy-url;
                     policy-label: root.data-policy-label;

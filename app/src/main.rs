@@ -263,12 +263,14 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_open_settings_account(index) => |sh, ui| sh.open_settings_account(ui, index));
     callback!(ui.on_settings_open_privacy() => |sh, ui| sh.open_privacy(ui));
     callback!(ui.on_settings_open_sessions() => |sh, ui| sh.open_sessions(ui));
+    callback!(ui.on_settings_open_security() => |sh, ui| sh.open_security(ui));
     {
         let pages = ui.global::<godwit::ui::AccountPages>();
         callback!(pages.on_toggle_privacy(i) => |sh, ui| sh.toggle_privacy(ui, i));
         callback!(pages.on_log_out_session(i) => |sh, ui| sh.log_out_session(ui, i));
         callback!(pages.on_log_out_session_with_proof(i, method, value) => |sh, ui| sh.log_out_session_with_proof(ui, i, method, &value));
         callback!(pages.on_submit_session_rename(i, name) => |sh, ui| sh.rename_session(ui, i, &name));
+        callback!(pages.on_security_submit(kind, first, second, proof, proof_value) => |sh, ui| sh.account_security_submit(ui, kind, &first, &second, proof, &proof_value));
     }
     callback!(ui.on_switch_profile(row) => |sh, ui| sh.ask_switch_profile(ui, row));
     callback!(ui.on_confirm_profile_switch() => |sh, ui| sh.confirm_profile_switch(ui));

@@ -9,6 +9,24 @@ fn account(n: Network) -> AccountId {
     AccountId::new(n, "me")
 }
 
+#[test]
+fn account_security_dispatch_is_gated_to_capable_networks() {
+    let mut app = Application::new(Default::default());
+    let action = crate::account_security::SecurityAction::Load;
+    assert!(
+        app.dispatch(Action::AccountSecurity(account(Network::Discord), action.clone()))
+            .is_empty()
+    );
+    assert!(matches!(
+        app.dispatch(Action::AccountSecurity(account(Network::Stoat), action))
+            .as_slice(),
+        [Effect::Backend {
+            command: Command::AccountSecurity(crate::account_security::SecurityAction::Load),
+            ..
+        }]
+    ));
+}
+
 fn room(n: Network, raw: &str, kind: RoomKind) -> Room {
     Room {
         notify: Default::default(),
@@ -83,6 +101,7 @@ fn cache_models_round_trip_through_json() {
 fn a_failed_session_action_keeps_the_loaded_sessions_for_retry() {
     let mut app = Application::new(Contacts::default());
     let account = account(Network::Stoat);
+    ready(&mut app, Network::Stoat, Vec::new());
     app.state.sessions.insert(
         account.clone(),
         crate::privacy::SessionsView {

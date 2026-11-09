@@ -1068,6 +1068,7 @@ impl godwit_core::account::NetworkAccount for DemoSteam {
 
     fn run(&mut self, command: godwit_core::application::Command) -> Vec<Event> {
         match command {
+            godwit_core::application::Command::AccountSecurity(_) => Vec::new(),
             godwit_core::application::Command::LoadReactors { room, message, emoji } => vec![Event::Reactors {
                 room: room.clone(),
                 message: message.clone(),

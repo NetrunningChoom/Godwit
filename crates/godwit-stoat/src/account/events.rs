@@ -8,6 +8,97 @@ use godwit_core::channel_settings::ChannelOverview;
 impl StoatAccount {
     pub(super) fn handle(&mut self, ev: Ev, out: &mut Vec<Event>) {
         match ev {
+            Ev::Email(email) => {
+                if let Some(account) = self.account.clone() {
+                    let mut view = self.security_view.clone();
+                    view.email = email;
+                    self.security_view = view.clone();
+                    out.push(Event::AccountSecurity { account, view });
+                }
+            }
+            Ev::MfaStatus { totp, recovery } => {
+                if let Some(account) = self.account.clone() {
+                    let mut view = self.security_view.clone();
+                    view.totp = totp;
+                    view.recovery = recovery;
+                    view.loading = false;
+                    self.security_view = view.clone();
+                    out.push(Event::AccountSecurity { account, view });
+                }
+            }
+            Ev::MfaActionDone { action, result } => {
+                if let Some(account) = self.account.clone() {
+                    let mut view = self.security_view.clone();
+                    view.error = None;
+                    view.message = None;
+                    match result {
+                        Ok(value) => match action {
+                            // The old settings action only exposed `Value`; this follows the UI's
+                            // expected `secret` field and array response. Network access was
+                            // unavailable to verify against OpenAPI in this worktree.
+                            crate::backend::MfaAction::TotpSecret => {
+                                view.pending_secret = value
+                                    .get("secret")
+                                    .and_then(Value::as_str)
+                                    .map(|s| godwit_core::application::Secret(s.to_owned()))
+                            }
+                            crate::backend::MfaAction::ViewRecovery | crate::backend::MfaAction::GenerateRecovery => {
+                                view.recovery_codes = value
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .filter_map(Value::as_str)
+                                    .map(|s| godwit_core::application::Secret(s.to_owned()))
+                                    .collect()
+                            }
+                            crate::backend::MfaAction::RemoveTotp => view.totp = false,
+                            _ => {}
+                        },
+                        Err(_) => view.error = Some("That password or code didn't match.".to_owned()),
+                    }
+                    self.security_view = view.clone();
+                    out.push(Event::AccountSecurity { account, view });
+                }
+            }
+            Ev::TotpEnabled(result) => {
+                if let Some(account) = self.account.clone() {
+                    let mut view = self.security_view.clone();
+                    match result {
+                        Ok(()) => {
+                            view.message = Some("Saved.".to_owned());
+                            view.error = None;
+                            view.loading = false;
+                            view.totp = true;
+                            view.pending_secret = None;
+                        }
+                        Err(_) => {
+                            view.error = Some("That password or code didn't match.".to_owned());
+                            view.loading = false;
+                        }
+                    };
+                    self.security_view = view.clone();
+                    out.push(Event::AccountSecurity { account, view });
+                }
+            }
+            Ev::AccountChanged(result) => {
+                if let Some(account) = self.account.clone() {
+                    let mut view = self.security_view.clone();
+                    match result {
+                        Ok(()) => {
+                            view.message = Some("Saved.".to_owned());
+                            view.error = None;
+                            view.loading = false;
+                            view.recovery_codes.clear();
+                        }
+                        Err(_) => {
+                            view.error = Some("That password or code didn't match.".to_owned());
+                            view.loading = false;
+                        }
+                    }
+                    self.security_view = view.clone();
+                    out.push(Event::AccountSecurity { account, view });
+                }
+            }
             Ev::ServerCategoriesSaved { server, result } => {
                 self.sync_servers(out);
                 if let Some((room, request, name)) = self.category_pending.take() {

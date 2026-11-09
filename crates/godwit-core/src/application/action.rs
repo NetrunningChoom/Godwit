@@ -29,6 +29,7 @@ pub enum Action {
         session: Arc<str>,
         name: Arc<str>,
     },
+    AccountSecurity(AccountId, crate::account_security::SecurityAction),
     /// Auto-delete for an account: open its page, or change its rules.
     AutoDelete(AccountId, crate::autodelete::AutoDeleteCommand),
     StartScreenShare {

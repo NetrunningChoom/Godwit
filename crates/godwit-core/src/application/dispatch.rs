@@ -39,6 +39,20 @@ impl Application {
                 account,
                 command: Command::RenameSession { session, name },
             }],
+            Action::AccountSecurity(account, action) => {
+                if account
+                    .network
+                    .account_pages()
+                    .contains(&crate::network::AccountPage::Security)
+                {
+                    vec![Effect::Backend {
+                        account,
+                        command: Command::AccountSecurity(action),
+                    }]
+                } else {
+                    Vec::new()
+                }
+            }
             Action::AutoDelete(account, command) => vec![Effect::Backend {
                 account,
                 command: Command::AutoDelete(command),

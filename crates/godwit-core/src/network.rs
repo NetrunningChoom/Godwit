@@ -167,6 +167,7 @@ impl Network {
                 // Stoat's official Settings → Sessions page supports renaming each session.
                 AccountPage::RenameSessions,
                 AccountPage::LogOutOtherSessions,
+                AccountPage::Security,
             ],
             Self::Discord => &[AccountPage::PrivacyAndSessions],
             _ => &[],
@@ -481,6 +482,7 @@ pub enum AccountPage {
     RenameSessions,
     /// The official sessions page can revoke every other device at once.
     LogOutOtherSessions,
+    Security,
 }
 
 /// A picture someone uploads ([`Network::image_spec`]).
@@ -533,6 +535,7 @@ mod tests {
                 AccountPage::Sessions,
                 AccountPage::RenameSessions,
                 AccountPage::LogOutOtherSessions,
+                AccountPage::Security,
             ]
         );
         assert_eq!(Discord.account_pages(), [AccountPage::PrivacyAndSessions]);

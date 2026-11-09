@@ -714,6 +714,7 @@ export component AppWindow inherits Window {
     callback settings-open-autodelete();
     in property <bool> settings-account-discord;
     in property <bool> settings-account-sessions;
+    in property <bool> settings-account-security;
     in property <bool> settings-account-rename-sessions;
     in property <bool> settings-account-log-out-others;
     in property <string> settings-data-policy-url;
@@ -725,6 +726,7 @@ export component AppWindow inherits Window {
     callback settings-open-source(int, int);
     callback settings-open-privacy();
     callback settings-open-sessions();
+    callback settings-open-security();
     callback open-settings-account(int);
     in property <[AccountItem]> accounts;
     in property <[string]> edit-profile-accounts;
@@ -1757,6 +1759,7 @@ export component AppWindow inherits Window {
         open-autodelete => { root.settings-open-autodelete(); }
         account-discord: root.settings-account-discord;
         account-sessions: root.settings-account-sessions;
+        account-security: root.settings-account-security;
         account-rename-sessions: root.settings-account-rename-sessions;
         account-log-out-others: root.settings-account-log-out-others;
         account-data: true;
@@ -1770,6 +1773,7 @@ export component AppWindow inherits Window {
         open-source(p, s) => { root.settings-open-source(p, s); }
         open-privacy => { root.settings-open-privacy(); }
         open-sessions => { root.settings-open-sessions(); }
+        open-security => { root.settings-open-security(); }
         open-account(i) => { root.open-settings-account(i); }
         accounts: root.accounts;
         edit-profile-accounts : root.edit-profile-accounts;

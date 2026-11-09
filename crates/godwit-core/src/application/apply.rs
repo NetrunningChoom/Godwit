@@ -37,6 +37,10 @@ impl Application {
                 self.state.sessions.insert(account, view);
                 Vec::new()
             }
+            Event::AccountSecurity { account, view } => {
+                self.state.account_security.insert(account, view);
+                Vec::new()
+            }
             Event::SessionActionPending { account } => {
                 let view = self.state.sessions.entry(account).or_default();
                 view.loading = true;
