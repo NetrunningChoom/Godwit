@@ -638,13 +638,30 @@ impl Api {
         self.empty(self.request(method, &path)).await
     }
 
-    /// Discord's documented reaction users endpoint (docs.discord.food, Reactions).
+    /// Who reacted with `emoji`: the first page (100, the documented maximum)
+    /// of normal reactors, then of burst ("super") reactors, which the endpoint
+    /// lists separately (`type=0` and `type=1`; docs.discord.food, Get
+    /// Reactions: https://docs.discord.food/resources/message#get-reactions).
+    /// Someone can react both ways, so they're listed once.
     pub async fn reaction_users(&self, channel: &str, message: &str, emoji: &str) -> Result<Value> {
-        let path = format!(
-            "/channels/{channel}/messages/{message}/reactions/{}?limit=100&type=0",
-            encode(emoji)
-        );
-        self.json(self.request(Method::GET, &path)).await
+        let page = |kind: u8| {
+            format!(
+                "/channels/{channel}/messages/{message}/reactions/{}?limit=100&type={kind}",
+                encode(emoji)
+            )
+        };
+        let mut users = match self.json(self.request(Method::GET, &page(0))).await? {
+            Value::Array(users) => users,
+            other => return Ok(other),
+        };
+        if let Value::Array(burst) = self.json(self.request(Method::GET, &page(1))).await? {
+            for user in burst {
+                if !users.iter().any(|u| u["id"] == user["id"]) {
+                    users.push(user);
+                }
+            }
+        }
+        Ok(Value::Array(users))
     }
 
     pub async fn typing(&self, channel: &str) -> Result<()> {
@@ -1646,17 +1663,39 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut bytes = [0; 4096];
-            let n = socket.read(&mut bytes).await.unwrap();
-            let request = String::from_utf8_lossy(&bytes[..n]);
-            assert!(request.starts_with("GET /channels/1/messages/2/reactions/%F0%9F%91%8D?limit=100&type=0 "));
-            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 29\r\nConnection: close\r\n\r\n[{\"id\":\"7\",\"username\":\"Ada\"}]").await.unwrap();
+            // Normal reactors first, then burst ones; Ada reacted both ways.
+            let pages: [(&str, &[u8]); 2] = [
+                ("0", b"[{\"id\":\"7\",\"username\":\"Ada\"}]"),
+                (
+                    "1",
+                    b"[{\"id\":\"7\",\"username\":\"Ada\"},{\"id\":\"8\",\"username\":\"Bo\"}]",
+                ),
+            ];
+            for (kind, body) in pages {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = [0; 4096];
+                let n = socket.read(&mut bytes).await.unwrap();
+                let request = String::from_utf8_lossy(&bytes[..n]);
+                let want = format!("GET /channels/1/messages/2/reactions/%F0%9F%91%8D?limit=100&type={kind} ");
+                assert!(request.starts_with(&want), "{request}");
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                socket.write_all(head.as_bytes()).await.unwrap();
+                socket.write_all(body).await.unwrap();
+            }
         });
         let mut api = Api::anonymous().unwrap();
         api.base = base;
         let result = api.reaction_users("1", "2", "👍").await.unwrap();
-        assert_eq!(result[0]["username"], "Ada");
+        let names: Vec<_> = result
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|u| u["username"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["Ada", "Bo"]);
         server.await.unwrap();
     }
 
