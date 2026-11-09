@@ -8,8 +8,8 @@
 //! Fluxer's objects have Discord's shapes, so the state store, permissions
 //! and Markdown conversion come from `godwit-discord`; its requests,
 //! gateway and sign-in are Fluxer's own. Fluxer documents its API for
-//! third-party clients; Godwit says what it is, keeps far below
-//! its limits (a global denial signs the user out), and never polls.
+//! third-party clients; requests send `User-Agent: Godwit`, keep well below its
+//! limits (a global denial signs the user out), and never poll.
 
 pub mod account;
 pub mod api;

@@ -4,9 +4,10 @@
 //! with sources. Networks write their own; core never writes the wording. Each network lists
 //! its own official pages first, then third-party sources, each with why.
 
-/// One claim and where it comes from.
+/// One source, or one claim and where it comes from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivacyParagraph {
+    /// The claim; empty for a plain link (the UI then shows only `why` and the sources).
     pub text: String,
     /// One neutral line on why the sources are listed: what a reader learns there.
     pub why: String,
