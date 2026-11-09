@@ -291,6 +291,12 @@ pub struct AppState {
     /// The network's answer to the last member search: the room, the query
     /// it answered and who it found. Answers to older queries are dropped.
     pub member_found: Option<(RoomId, String, Arc<Vec<Member>>)>,
+    /// The prefix [`Action::LookUpPeople`] last asked about, kept so the same
+    /// one isn't asked twice in a row.
+    pub people_asked: Option<(RoomId, String)>,
+    /// The network's answer to that lookup (completions for @ mentions and
+    /// search filters); replaced by each newer answer, so it stays small.
+    pub people_found: Option<(RoomId, String, Arc<Vec<Member>>)>,
     /// Most recent last; the UI shows them until [`Action::ClearErrors`].
     pub errors: Vec<Arc<str>>,
     /// The last report's outcome (None while it is on its way, or none was

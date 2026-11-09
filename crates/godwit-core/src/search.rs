@@ -175,6 +175,35 @@ pub struct Suggestion {
     pub query: String,
 }
 
+/// The input split before its unfinished final token (a quoted value keeps
+/// its spaces).
+fn split_last_token(input: &str) -> (&str, &str) {
+    let mut split = 0;
+    let mut quoted = false;
+    for (i, c) in input.char_indices() {
+        if c == '"' {
+            quoted = !quoted;
+        } else if c.is_whitespace() && !quoted {
+            split = i + c.len_utf8();
+        }
+    }
+    input.split_at(split)
+}
+
+/// The name typed after a final `from:` or `mentions:`, when the network
+/// takes that filter: what to look up among members that aren't loaded.
+pub fn people_prefix(input: &str, supported: SearchFilters) -> Option<String> {
+    let (_, prefix) = split_last_token(input);
+    let (key, value) = prefix.split_once(':')?;
+    let filter = match key.to_ascii_lowercase().as_str() {
+        "from" => SearchFilter::From,
+        "mentions" => SearchFilter::Mentions,
+        _ => return None,
+    };
+    let name = value.trim_matches('"').trim_start_matches('@').trim();
+    (supported.has(filter) && !name.is_empty()).then(|| name.to_owned())
+}
+
 /// Suggest a filter, a locally known member, a channel, or a `has:` value.
 /// Candidates are supplied by the caller so this logic remains network-neutral
 /// and never performs a lookup while the user types.
@@ -185,17 +214,7 @@ pub fn suggestions(
     channels: &[(String, String)],
     has_values: &[&str],
 ) -> Vec<Suggestion> {
-    let mut split = 0;
-    let mut quoted = false;
-    for (i, c) in input.char_indices() {
-        if c == '"' {
-            quoted = !quoted;
-        } else if c.is_whitespace() && !quoted {
-            split = i + c.len_utf8();
-        }
-    }
-    let prefix = &input[split..];
-    let before = &input[..split];
+    let (before, prefix) = split_last_token(input);
     let (key, value) = prefix.split_once(':').unwrap_or((prefix, ""));
     let filter = match key.to_ascii_lowercase().as_str() {
         "from" => Some(SearchFilter::From),
@@ -606,6 +625,18 @@ mod tests {
         assert!(suggestions("in:", filters, &people, &[], &[]).is_empty());
         let result = suggestions("some words fro", filters, &people, &[], &[]);
         assert_eq!(result[0].query, "some words from:");
+    }
+
+    #[test]
+    fn people_prefix_is_the_name_after_a_final_person_filter() {
+        let all = SearchFilters::ALL;
+        assert_eq!(people_prefix("hi from:al", all).as_deref(), Some("al"));
+        assert_eq!(people_prefix("mentions:@bo", all).as_deref(), Some("bo"));
+        assert_eq!(people_prefix("from:\"Ann Le", all).as_deref(), Some("Ann Le"));
+        assert_eq!(people_prefix("from:al ", all), None, "token finished");
+        assert_eq!(people_prefix("from:", all), None, "nothing typed");
+        assert_eq!(people_prefix("in:gen", all), None, "not a person filter");
+        assert_eq!(people_prefix("from:al", SearchFilters::NONE), None, "unsupported");
     }
 
     #[test]

@@ -713,8 +713,17 @@ impl Application {
             Event::MemberSearch { room, query, members } => {
                 // Only the box's current text is still wanted: typing on
                 // makes an older answer stale.
+                let members = Arc::new(members);
+                if self
+                    .state
+                    .people_asked
+                    .as_ref()
+                    .is_some_and(|(r, q)| *r == room && *q == query)
+                {
+                    self.state.people_found = Some((room.clone(), query.clone(), members.clone()));
+                }
                 if self.state.member_filter.trim() == query && self.state.selected.as_ref() == Some(&room) {
-                    self.state.member_found = Some((room, query, Arc::new(members)));
+                    self.state.member_found = Some((room, query, members));
                 }
                 Vec::new()
             }

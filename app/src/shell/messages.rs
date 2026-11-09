@@ -36,6 +36,14 @@ fn autocomplete_candidates(
                 add_person_candidate(&mut out, &member.user, &member.name);
             }
         }
+        // Members the network found for the typed prefix (not in the loaded slice).
+        if let Some((found_room, _, found)) = &state.people_found
+            && found_room == room
+        {
+            for member in found.iter() {
+                add_person_candidate(&mut out, &member.user, &member.name);
+            }
+        }
         for person in state.friends.iter().filter(|p| p.id.account == room.account) {
             add_person_candidate(&mut out, &person.id, &person.name);
         }
@@ -138,6 +146,40 @@ impl Shell {
     /// Rebuilds suggestions only when the active token changes; cursor moves
     /// within the same token update its replacement span without rescanning.
     pub fn autocomplete_changed(&mut self, ui: &AppWindow, cursor: i32) {
+        self.complete(ui, cursor, false);
+    }
+
+    /// A lookup's answer arrived: the open completion list takes the new people.
+    pub(super) fn refresh_composer_completions(&mut self, ui: &AppWindow) {
+        let found = self.app.state().people_found.as_ref().map(|(_, _, m)| m.clone());
+        let same = match (&found, &self.people_seen) {
+            (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        if same {
+            return;
+        }
+        self.people_seen = found;
+        if self.autocomplete_trigger.is_some() {
+            self.complete(ui, self.autocomplete_cursor, true);
+        }
+    }
+
+    /// Asks the network for members matching the @ being typed (the caller
+    /// debounces); core skips rooms that can't and prefixes already asked.
+    pub fn look_up_composer_people(&mut self, ui: &AppWindow) {
+        use godwit_core::autocomplete::TriggerKind;
+        let (Some(trigger), Some(room)) = (self.autocomplete_trigger.as_ref(), self.autocomplete_room.clone()) else {
+            return;
+        };
+        if trigger.kind == TriggerKind::Person {
+            let query = trigger.query.to_string();
+            self.act(ui, Action::LookUpPeople { room, query });
+        }
+    }
+
+    fn complete(&mut self, ui: &AppWindow, cursor: i32, force: bool) {
         use godwit_core::autocomplete::{self, CandidateId};
         let text = ui.get_draft();
         let Some(trigger) = autocomplete::trigger_at(text.as_str(), usize::try_from(cursor).unwrap_or(usize::MAX))
@@ -150,9 +192,10 @@ impl Shell {
         let Some(room) = self.app.state().selected.clone() else {
             return;
         };
+        self.autocomplete_cursor = cursor;
         let changed = self.autocomplete_trigger.as_ref().is_none_or(|old| {
             old.kind != trigger.kind || old.query != trigger.query || self.autocomplete_room.as_ref() != Some(&room)
-        });
+        }) || force;
         if changed {
             let specials = self
                 .account(&room.account)

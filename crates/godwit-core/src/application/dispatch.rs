@@ -985,6 +985,22 @@ impl Application {
                     _ => Vec::new(),
                 }
             }
+            Action::LookUpPeople { room, query } => {
+                let query = query.trim().to_owned();
+                let asked = self
+                    .state
+                    .people_asked
+                    .as_ref()
+                    .is_some_and(|(r, q)| *r == room && *q == query);
+                if query.is_empty() || asked || !self.state.room(&room).is_some_and(|r| r.capabilities.member_search) {
+                    return Vec::new();
+                }
+                self.state.people_asked = Some((room.clone(), query.clone()));
+                vec![Effect::Backend {
+                    account: room.account.clone(),
+                    command: Command::SearchMembers { room, query },
+                }]
+            }
             Action::MemberRows { first, last } => match self.state.selected.clone() {
                 Some(room) if self.state.show_members && self.has_members(&room) => vec![Effect::Backend {
                     account: room.account.clone(),

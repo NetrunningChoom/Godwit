@@ -488,7 +488,19 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_thread_confirm() => |sh, ui| sh.thread_confirm(ui));
     callback!(ui.on_open_search() => |sh, ui| sh.act(ui, Action::Search(String::new())));
     callback!(ui.on_search(query) => |sh, ui| { sh.search_submitted(); sh.act(ui, Action::Search(query.to_string())) });
-    callback!(ui.on_search_edited(query) => |sh, ui| sh.search_suggestions(ui, &query));
+    // As the composer's: the filter's name is looked up once typing pauses.
+    ui.on_search_edited({
+        let (weak, timer) = (w.clone(), Rc::new(slint::Timer::default()));
+        move |query| {
+            with_shell(&weak, move |sh, ui| sh.search_suggestions(ui, &query));
+            let weak = weak.clone();
+            timer.start(
+                slint::TimerMode::SingleShot,
+                std::time::Duration::from_millis(300),
+                move || with_shell(&weak, |sh, ui| sh.look_up_search_people(ui)),
+            );
+        }
+    });
     callback!(ui.on_search_scope(server) => |sh, ui| {
         let scope = if server { godwit_core::search::SearchScope::Server } else { godwit_core::search::SearchScope::Channel };
         sh.act(ui, Action::SearchScope(scope));
@@ -744,15 +756,47 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_load_earlier() => |sh, ui| sh.act(ui, Action::LoadEarlier));
-    callback!(ui.on_draft_edited(text) => |sh, ui| {
-        let text = if sh.convert_emoticons() { godwit_core::emoticons::convert_completed(&text) } else { text.to_string() };
-        if text.as_str() != ui.get_draft().as_str() { ui.set_draft(text.as_str().into()); }
-        sh.act(ui, Action::SetDraft(text));
-        sh.autocomplete_changed(ui, ui.get_composer_cursor());
+    // Names the room's server holds but the client hasn't loaded are asked for
+    // once typing pauses (300 ms), not on each key: Discord paces these.
+    let composer_lookup = Rc::new(slint::Timer::default());
+    let schedule_composer_lookup = {
+        let (w, timer) = (w.clone(), composer_lookup.clone());
+        Rc::new(move || {
+            let w = w.clone();
+            timer.start(
+                slint::TimerMode::SingleShot,
+                std::time::Duration::from_millis(300),
+                move || with_shell(&w, |sh, ui| sh.look_up_composer_people(ui)),
+            );
+        })
+    };
+    ui.on_draft_edited({
+        let (weak, schedule) = (w.clone(), schedule_composer_lookup.clone());
+        move |text| {
+            with_shell(&weak, move |sh, ui| {
+                let text = if sh.convert_emoticons() {
+                    godwit_core::emoticons::convert_completed(&text)
+                } else {
+                    text.to_string()
+                };
+                if text.as_str() != ui.get_draft().as_str() {
+                    ui.set_draft(text.as_str().into());
+                }
+                sh.act(ui, Action::SetDraft(text));
+                sh.autocomplete_changed(ui, ui.get_composer_cursor());
+            });
+            schedule();
+        }
     });
-    callback!(ui.on_composer_cursor_changed(cursor) => |sh, ui| {
-        ui.set_composer_cursor(cursor);
-        sh.autocomplete_changed(ui, cursor);
+    ui.on_composer_cursor_changed({
+        let (weak, schedule) = (w.clone(), schedule_composer_lookup);
+        move |cursor| {
+            with_shell(&weak, move |sh, ui| {
+                ui.set_composer_cursor(cursor);
+                sh.autocomplete_changed(ui, cursor);
+            });
+            schedule();
+        }
     });
     callback!(ui.on_autocomplete_picked(row) => |sh, ui| sh.autocomplete_pick(ui, row));
     // The timeline's text selection (selection.rs), through its global.

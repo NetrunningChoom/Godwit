@@ -323,6 +323,8 @@ impl Application {
         // with its view), and taking an account out of the open profile must
         // not lose them; rows of an absent account are skipped, as at startup.
         st.member_found = st.member_found.take().filter(|(r, _, _)| r.account != *account);
+        st.people_found = st.people_found.take().filter(|(r, _, _)| r.account != *account);
+        st.people_asked = st.people_asked.take().filter(|(r, _)| r.account != *account);
         st.pins = st.pins.take().filter(|p| p.room.account != *account);
         st.forum = st.forum.take().filter(|f| f.room.account != *account);
         st.search = st.search.take().filter(|s| s.room.account != *account);
@@ -373,6 +375,8 @@ impl Application {
         st.jump = None;
         st.unread_from = None;
         st.member_found = None;
+        st.people_found = None;
+        st.people_asked = None;
         st.friend_request_status = None;
         st.report_outcome = None;
         // Settings pages and dialogs of a shared account stay otherwise.

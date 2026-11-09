@@ -103,6 +103,11 @@ pub struct Shell {
     autocomplete: Vec<godwit_core::autocomplete::Candidate>,
     autocomplete_trigger: Option<godwit_core::autocomplete::Trigger>,
     autocomplete_room: Option<RoomId>,
+    /// Where the composer's caret was at the last completion, to redo it when a
+    /// lookup's answer arrives.
+    autocomplete_cursor: i32,
+    /// The lookup answer the composer's completions last used.
+    people_seen: Option<std::sync::Arc<Vec<godwit_core::members::Member>>>,
     /// The text currently edited in the search box; core search state updates
     /// only on submit, so presentation refreshes must use this draft instead.
     search_draft: Option<String>,
@@ -478,6 +483,8 @@ impl Shell {
             autocomplete: Vec::new(),
             autocomplete_trigger: None,
             autocomplete_room: None,
+            autocomplete_cursor: 0,
+            people_seen: None,
             search_draft: None,
             post_tags: Vec::new(),
             forum_shown: std::cell::RefCell::new(None),
@@ -1117,6 +1124,7 @@ impl Shell {
     }
 
     pub fn refresh(&mut self, ui: &AppWindow) {
+        self.refresh_composer_completions(ui);
         ui.set_send_error(self.send_error.clone().into());
         ui.set_folders_enabled(
             self.app

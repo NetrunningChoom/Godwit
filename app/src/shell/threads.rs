@@ -17,6 +17,25 @@ impl Shell {
         self.update_search_suggestions(ui, input);
     }
 
+    /// Asks the network for members matching the `from:`/`mentions:` name
+    /// being typed (the caller debounces); core skips what can't be asked.
+    pub fn look_up_search_people(&mut self, ui: &AppWindow) {
+        let (Some(draft), Some(search)) = (self.search_draft.as_deref(), self.app.state().search.as_ref()) else {
+            return;
+        };
+        let supported = self
+            .app
+            .state()
+            .room(&search.room)
+            .map(|r| r.capabilities.search_filters)
+            .unwrap_or_default();
+        let Some(query) = godwit_core::search::people_prefix(draft, supported) else {
+            return;
+        };
+        let room = search.room.clone();
+        self.act(ui, Action::LookUpPeople { room, query });
+    }
+
     fn update_search_suggestions(&self, ui: &AppWindow, input: &str) {
         let Some(search) = self.app.state().search.as_ref() else {
             return;
@@ -35,6 +54,15 @@ impl Shell {
             );
         }
         if let Some((room, _, found)) = &state.member_found
+            && room == &search.room
+        {
+            for member in found.iter() {
+                if !people.iter().any(|(id, _)| id == &member.user.to_string()) {
+                    people.push((member.user.to_string(), member.name.to_string()));
+                }
+            }
+        }
+        if let Some((room, _, found)) = &state.people_found
             && room == &search.room
         {
             for member in found.iter() {

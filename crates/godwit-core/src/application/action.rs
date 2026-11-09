@@ -448,6 +448,15 @@ pub enum Action {
     SearchMembers {
         query: String,
     },
+    /// Someone typed a name in the composer's @ completion or a search's
+    /// `from:`/`mentions:` filter, once typing paused (the UI debounces): asks
+    /// `room`'s network for matching members that aren't loaded, where its
+    /// capabilities allow, and never twice for the same prefix. The answer
+    /// lands in `AppState::people_found`.
+    LookUpPeople {
+        room: RoomId,
+        query: String,
+    },
     /// The member list's rows `first` to `last` are on screen: networks that
     /// stream lists in ranges (Discord, Fluxer) ask for the ones around them.
     MemberRows {

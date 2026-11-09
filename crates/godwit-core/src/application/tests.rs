@@ -5427,6 +5427,41 @@ fn member_search_asks_only_where_the_room_can_and_drops_stale_answers() {
 }
 
 #[test]
+fn people_lookup_asks_once_per_prefix_and_keeps_only_the_answer_to_the_last_ask() {
+    let mut app = Application::new(Contacts::default());
+    let server = ServerId::new(account(Network::Discord), "S");
+    let mut ch = room(Network::Discord, "c1", RoomKind::Channel { server });
+    ch.capabilities.member_search = true;
+    let id = ch.id.clone();
+    ready(&mut app, Network::Discord, vec![ch]);
+    let asks = |effects: &[Effect]| {
+        commands(effects)
+            .iter()
+            .filter(|c| matches!(c, Command::SearchMembers { .. }))
+            .count()
+    };
+    let look = |app: &mut Application, q: &str| {
+        asks(&app.dispatch(Action::LookUpPeople {
+            room: id.clone(),
+            query: q.into(),
+        }))
+    };
+    assert_eq!(look(&mut app, " "), 0, "nothing typed");
+    assert_eq!(look(&mut app, "al"), 1);
+    assert_eq!(look(&mut app, "al "), 0, "the same prefix isn't asked twice");
+    assert_eq!(look(&mut app, "ali"), 1);
+    let found = |q: &str| Event::MemberSearch {
+        room: id.clone(),
+        query: q.into(),
+        members: Vec::new(),
+    };
+    app.apply(found("al"));
+    assert!(app.state().people_found.is_none(), "an older ask's answer is dropped");
+    app.apply(found("ali"));
+    assert!(app.state().people_found.is_some());
+}
+
+#[test]
 fn last_interactions_take_each_persons_newest_dm_and_calls_as_now() {
     let mut state = AppState::default();
     let mut a = dm(Network::Stoat, "d1", "ann");
