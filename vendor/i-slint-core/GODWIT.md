@@ -19,3 +19,9 @@ Changes from the published 1.18.1:
   keep the same byte offset (with another affinity) and read as "didn't
   move" — which broke CI, whose runners have no text font, only Noto
   Color Emoji, so the space's height is 0 there too.
+- `input.rs` (`latin_on_same_key`) and `window.rs` (`process_key_input`):
+  shortcuts on Cyrillic (ЙЦУКЕН) and Thai (Kedmanee) layouts. With Ctrl or
+  Cmd held and not Alt, a one-character key text from those layouts becomes
+  the character a US keyboard has on the same key, so Ctrl+ф acts as Ctrl+A.
+  Ported from Yapfast abc10aff and 29fd5f23 (GPL-3.0). The unit tests live
+  in `input.rs`; `app/tests/composer_keys.rs` exercises it end to end.

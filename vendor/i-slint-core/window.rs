@@ -1293,6 +1293,19 @@ impl WindowInner {
         internal_key_event.key_event.modifiers =
             self.context().0.modifiers.get().modifiers_for(&internal_key_event);
 
+        // Godwit: from Yapfast abc10aff and 29fd5f23. On a Cyrillic or Thai
+        // layout the key under A types "ф" or "ฟ", so Ctrl+A came as Ctrl+ф and
+        // no shortcut matched. With Ctrl or Cmd held, and not AltGr (Ctrl+Alt
+        // on Windows), which types characters, a letter of those layouts
+        // becomes what a US keyboard has on the same key.
+        let modifiers = internal_key_event.key_event.modifiers;
+        if (modifiers.control || modifiers.meta) && !modifiers.alt {
+            if let Some(latin) = crate::input::latin_on_same_key(&internal_key_event.key_event.text)
+            {
+                internal_key_event.key_event.text = latin.into();
+            }
+        }
+
         // Emulate macOS menubar behavior: The OS consumes the event before it reaches any
         // Slint widgets. Therefore we process the menubar shortcuts here first and abort event
         // propagation if a shortcut matches.

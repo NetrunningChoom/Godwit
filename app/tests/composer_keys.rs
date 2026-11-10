@@ -127,3 +127,58 @@ fn sent_text_stays_cleared() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(ui.get_draft(), "");
     Ok(())
 }
+
+// Ctrl plus the key under A on the Russian and Thai layouts selects all
+// (ported from Yapfast's `ctrl_shortcuts_work_on_cyrillic_and_thai_layouts`).
+#[test]
+fn ctrl_shortcuts_work_on_cyrillic_and_thai_layouts() -> Result<(), Box<dyn std::error::Error>> {
+    let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+    slint::platform::set_platform(Box::new(Offscreen(window.clone())))?;
+    let ui = AppWindow::new()?;
+    ui.set_screen(Screen::Main);
+    ui.set_has_room(true);
+    ui.set_can_send(true);
+    ui.show()?;
+    window.set_size(PhysicalSize::new(800, 600));
+    let mut pixels = vec![Rgb8Pixel::default(); 800 * 600];
+    let mut draw = || {
+        slint::platform::update_timers_and_animations();
+        window.request_redraw();
+        window.draw_if_needed(|r| {
+            r.render(&mut pixels, 800);
+        });
+    };
+    draw();
+    let position = LogicalPosition::new(450.0, 551.0);
+    let button = PointerEventButton::Left;
+    window.dispatch_event(WindowEvent::PointerPressed { position, button });
+    window.dispatch_event(WindowEvent::PointerReleased { position, button });
+    draw();
+    let select_all = |letter: &str| {
+        window.dispatch_event(WindowEvent::KeyPressed {
+            text: Key::Control.into(),
+        });
+        key(&window, letter.into());
+        window.dispatch_event(WindowEvent::KeyReleased {
+            text: Key::Control.into(),
+        });
+    };
+    for (typed, a, next) in [("ฟห", "ฟ", "ก"), ("фы", "ф", "в")] {
+        for letter in typed.chars() {
+            key(&window, letter.to_string().into());
+        }
+        draw();
+        assert_eq!(ui.get_draft(), typed);
+        select_all(a);
+        draw();
+        assert_eq!(ui.get_draft(), typed, "Ctrl and a letter types nothing");
+        key(&window, next.into());
+        draw();
+        assert_eq!(ui.get_draft(), next);
+        select_all(a);
+        key(&window, Key::Backspace.into());
+        draw();
+        assert_eq!(ui.get_draft(), "");
+    }
+    Ok(())
+}
