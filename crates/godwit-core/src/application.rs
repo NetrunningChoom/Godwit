@@ -439,6 +439,8 @@ impl Application {
             ServerPage::Invites => ServerAdmin::LoadInvites,
             ServerPage::Bans => ServerAdmin::LoadBans,
             ServerPage::ModerationLog => return Vec::new(),
+            ServerPage::Stickers => ServerAdmin::LoadExpressions(crate::server_settings::ExpressionKind::Sticker),
+            ServerPage::Sounds => ServerAdmin::LoadExpressions(crate::server_settings::ExpressionKind::Sound),
         };
         vec![Effect::Backend {
             account: s.server.account.clone(),
@@ -490,6 +492,10 @@ impl Application {
             Ok(ServerAdminResult::Roles(roles)) => s.roles = Some(roles),
             Ok(ServerAdminResult::RoleMembers(members)) => s.role_members = Some(members),
             Ok(ServerAdminResult::Emoji(emoji)) => s.emoji = Some(emoji),
+            Ok(ServerAdminResult::Expressions(kind, list)) => match kind {
+                crate::server_settings::ExpressionKind::Sticker => s.stickers = Some(list),
+                crate::server_settings::ExpressionKind::Sound => s.sounds = Some(list),
+            },
             Ok(ServerAdminResult::Done(message)) => {
                 s.admin_busy = false;
                 s.notice = Some(Ok(message));

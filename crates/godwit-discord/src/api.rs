@@ -1153,6 +1153,52 @@ impl Api {
             .await
     }
 
+    /// A server's stickers or soundboard sounds
+    /// (docs.discord.food, List Guild Stickers / List Guild Soundboard Sounds).
+    pub async fn guild_expressions(&self, guild: &str, kind: ExpressionKind) -> Result<Value> {
+        self.json(self.request(Method::GET, &expression_path(guild, kind, None)))
+            .await
+    }
+
+    /// Create Guild Sticker: a form (`name`, `tags`, `description`, `file`).
+    pub async fn create_sticker(
+        &self,
+        guild: &str,
+        fields: &[(&str, String)],
+        file: (&str, &str, &[u8]),
+    ) -> Result<Value> {
+        let (content_type, body) = crate::expressions::form(fields, file);
+        self.json(
+            self.request(Method::POST, &expression_path(guild, ExpressionKind::Sticker, None))
+                .header(header::CONTENT_TYPE, content_type)
+                .body(body),
+        )
+        .await
+    }
+
+    /// Create Guild Soundboard Sound: JSON with the sound as a data URI.
+    pub async fn create_sound(&self, guild: &str, body: &Value) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::POST, &expression_path(guild, ExpressionKind::Sound, None)),
+            body,
+        ))
+        .await
+    }
+
+    /// Modify Guild Sticker / Modify Guild Soundboard Sound.
+    pub async fn edit_expression(&self, guild: &str, kind: ExpressionKind, id: &str, body: &Value) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::PATCH, &expression_path(guild, kind, Some(id))),
+            body,
+        ))
+        .await
+    }
+
+    pub async fn delete_expression(&self, guild: &str, kind: ExpressionKind, id: &str) -> Result<()> {
+        self.empty(self.request(Method::DELETE, &expression_path(guild, kind, Some(id))))
+            .await
+    }
+
     pub async fn create_role(&self, guild: &str, body: &Value) -> Result<Value> {
         self.json(with_json(
             self.request(Method::POST, &format!("/guilds/{guild}/roles")),
@@ -1572,6 +1618,20 @@ pub(crate) fn refusal(status: StatusCode, body: &Value) -> anyhow::Error {
         code: body["code"].as_u64(),
         message: body["message"].as_str().unwrap_or_default().to_owned(),
     })
+}
+
+use godwit_core::server_settings::ExpressionKind;
+
+/// `/guilds/{id}/stickers[/{id}]` or `/guilds/{id}/soundboard-sounds[/{id}]`.
+pub(crate) fn expression_path(guild: &str, kind: ExpressionKind, id: Option<&str>) -> String {
+    let base = match kind {
+        ExpressionKind::Sticker => "stickers",
+        ExpressionKind::Sound => "soundboard-sounds",
+    };
+    match id {
+        Some(id) => format!("/guilds/{guild}/{base}/{id}"),
+        None => format!("/guilds/{guild}/{base}"),
+    }
 }
 
 /// Create Guild Emoji's body: usable by everyone (`roles` empty), as the

@@ -1448,6 +1448,8 @@ fn demo_overview(app: &Application, server: &Server, index: usize) -> godwit_cor
         can_manage_roles: index == 0,
         can_ban: index == 0,
         can_manage_emoji: index == 0,
+        can_manage_stickers: false,
+        can_manage_sounds: false,
         owner: index == 0,
         channels,
         system_channels: [first.clone(), first, None, None],
@@ -1523,6 +1525,7 @@ fn demo_admin(overview: &godwit_core::server_settings::ServerOverview, seed: u64
         limit: Some(20),
         max_file_bytes: Some(500_000),
         rules: Default::default(),
+        kind: None,
     };
     DemoAdmin {
         emoji,
@@ -1876,6 +1879,10 @@ impl DemoAccount {
                 e.name = name.trim().into();
                 R::Emoji(admin.emoji.clone())
             }
+            A::LoadExpressions(_)
+            | A::CreateExpression { .. }
+            | A::RenameExpression { .. }
+            | A::DeleteExpression { .. } => return Err("The demo has no stickers or sounds.".into()),
             A::DeleteEmoji(id) => {
                 admin.emoji.emoji.retain(|e| e.id != id);
                 R::Emoji(admin.emoji.clone())

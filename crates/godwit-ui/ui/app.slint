@@ -207,6 +207,10 @@ export component AppWindow inherits Window {
     in property <int> server-edit-page;
     in property <bool> server-edit-show-roles;
     in property <bool> server-edit-show-emoji;
+    in property <bool> server-edit-show-stickers;
+    in property <bool> server-edit-show-sounds;
+    in property <string> server-edit-expression-noun: "emoji";
+    in property <string> server-edit-expression-hint;
     in property <bool> server-edit-show-invites;
     in property <bool> server-edit-show-bans;
     in property <bool> server-edit-show-moderation-log;
@@ -1794,7 +1798,7 @@ export component AppWindow inherits Window {
         changed => { root.server-overview-edited(); }
         pick-image(icon) => { root.pick-server-image(icon); } remove-image(icon) => { root.remove-server-image(icon); }
         server-name: root.server-edit-server-name; page: root.server-edit-page;
-        show-roles: root.server-edit-show-roles; show-emoji: root.server-edit-show-emoji; show-invites: root.server-edit-show-invites; show-bans: root.server-edit-show-bans; show-moderation-log: root.server-edit-show-moderation-log;
+        show-roles: root.server-edit-show-roles; show-emoji: root.server-edit-show-emoji; show-stickers: root.server-edit-show-stickers; show-sounds: root.server-edit-show-sounds; expression-noun: root.server-edit-expression-noun; expression-hint: root.server-edit-expression-hint; show-invites: root.server-edit-show-invites; show-bans: root.server-edit-show-bans; show-moderation-log: root.server-edit-show-moderation-log;
         moderation-log: root.server-edit-moderation-log; moderation-log-loading: root.server-edit-moderation-log-loading; moderation-log-has-more: root.server-edit-moderation-log-has-more; moderation-log-error: root.server-edit-moderation-log-error;
         can-delete: root.server-edit-can-delete; admin-busy: root.server-edit-admin-busy;
         notice: root.server-edit-notice; notice-failed: root.server-edit-notice-failed;

@@ -3896,6 +3896,70 @@ fn emoji_changes_need_the_capability_and_valid_names() {
 }
 
 #[test]
+fn sound_changes_need_their_capability_and_the_file_rules() {
+    use crate::server_settings::{
+        EmojiFile, EmojiRules, ExpressionKind, ServerAdmin, ServerAdminResult, ServerEmojis, ServerPage,
+    };
+    let mut app = Application::default();
+    let (server, request) = server_settings_open(&mut app);
+    let mut o = overview(true);
+    o.can_manage_sounds = true;
+    app.apply(Event::ServerOverview {
+        server: server.clone(),
+        request,
+        result: Ok(o),
+    });
+    let effects = app.dispatch(Action::ServerSettingsPage(ServerPage::Sounds));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend {
+            command: Command::ServerAdmin {
+                op: ServerAdmin::LoadExpressions(ExpressionKind::Sound),
+                ..
+            },
+            ..
+        }]
+    ));
+    app.apply(Event::ServerAdmin {
+        server: server.clone(),
+        result: Ok(ServerAdminResult::Expressions(
+            ExpressionKind::Sound,
+            ServerEmojis {
+                max_file_bytes: Some(100),
+                rules: EmojiRules {
+                    min_len: 2,
+                    max_len: 32,
+                    uppercase: true,
+                    any_chars: true,
+                },
+                kind: Some(ExpressionKind::Sound),
+                ..Default::default()
+            },
+        )),
+    });
+    assert!(app.state().server_settings.as_ref().unwrap().sounds.is_some());
+    let create = |kind, name: &str, size| Action::ServerAdmin {
+        server: server.clone(),
+        op: ServerAdmin::CreateExpression {
+            kind,
+            name: name.into(),
+            file: EmojiFile {
+                path: "/x/a.mp3".into(),
+                size,
+            },
+        },
+    };
+    // Too big: refused with a notice naming the kind, nothing sent.
+    assert!(app.dispatch(create(ExpressionKind::Sound, "Air horn", 101)).is_empty());
+    let s = app.state().server_settings.as_ref().unwrap();
+    assert!(matches!(&s.notice, Some(Err(e)) if e.contains("sound")));
+    // Stickers were not granted.
+    assert!(app.dispatch(create(ExpressionKind::Sticker, "Wave", 10)).is_empty());
+    assert_eq!(app.dispatch(create(ExpressionKind::Sound, "Air horn", 100)).len(), 1);
+    assert!(app.state().server_settings.as_ref().unwrap().admin_busy);
+}
+
+#[test]
 fn the_invite_dialog_waits_for_its_link_and_closes_on_failure() {
     use crate::server_settings::{ServerAdmin, ServerAdminResult};
     let mut app = Application::default();

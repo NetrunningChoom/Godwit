@@ -611,14 +611,20 @@ fn connect_callbacks(ui: &AppWindow) {
                     return;
                 };
                 let chosen_for = token.clone();
+                let sound = sh.server_page_is_sounds();
                 let spawned = std::thread::Builder::new()
                     .name("emoji-file-picker".into())
                     .spawn(move || {
-                        let Some(path) = rfd::FileDialog::new()
-                            .set_title("Choose an emoji image")
-                            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp"])
-                            .pick_file()
-                        else {
+                        let dialog = if sound {
+                            rfd::FileDialog::new()
+                                .set_title("Choose a sound")
+                                .add_filter("Audio", &["mp3", "ogg", "oga"])
+                        } else {
+                            rfd::FileDialog::new()
+                                .set_title("Choose an image")
+                                .add_filter("Images", &["png", "apng", "jpg", "jpeg", "gif", "webp", "json"])
+                        };
+                        let Some(path) = dialog.pick_file() else {
                             return;
                         };
                         let result = std::fs::metadata(&path)

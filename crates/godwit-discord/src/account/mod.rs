@@ -170,6 +170,13 @@ pub struct DiscordAccount {
     member_search: crate::member_search::SearchGate,
     /// The server whose Emoji page is open, and the list last sent.
     emoji_page: Option<(String, godwit_core::server_settings::ServerEmojis)>,
+    /// The open Stickers or Sounds page's list (server, kind, item → uploader, list).
+    expression_owners: Option<(
+        String,
+        godwit_core::server_settings::ExpressionKind,
+        std::collections::HashMap<String, String>,
+        godwit_core::server_settings::ServerEmojis,
+    )>,
     /// The channel whose webhook list is open, with the list last answered
     /// (tokens included, never printed): the copied URL is built from it.
     webhooks: Option<(String, Vec<crate::webhooks::Hook>)>,
@@ -260,6 +267,7 @@ impl DiscordAccount {
             roles_watch: None,
             member_search: Default::default(),
             emoji_page: None,
+            expression_owners: None,
             opening_dm: false,
             renewals: 0,
             member_lists: crate::member_list::MemberLists::default(),

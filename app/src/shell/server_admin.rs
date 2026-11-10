@@ -421,6 +421,14 @@ impl Shell {
         self.server_editor.emoji_picked(token, result);
         self.show_server_settings(ui);
     }
+    /// Whether the open settings page takes a sound file (not an image).
+    pub fn server_page_is_sounds(&self) -> bool {
+        self.app
+            .state()
+            .server_settings
+            .as_ref()
+            .is_some_and(|s| s.page == godwit_core::server_settings::ServerPage::Sounds)
+    }
     pub fn server_emoji_name_edited(&mut self, ui: &AppWindow) {
         self.show_server_settings(ui);
     }

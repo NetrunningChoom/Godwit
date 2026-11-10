@@ -20,6 +20,10 @@ pub struct ServerOverview {
     pub can_ban: bool,
     /// Whether the Emoji page is offered (Stoat: Manage Customisation).
     pub can_manage_emoji: bool,
+    /// Whether the Stickers and Sounds pages are offered (Discord: either
+    /// expressions permission).
+    pub can_manage_stickers: bool,
+    pub can_manage_sounds: bool,
     pub owner: bool,
     pub channels: Vec<(RoomId, Arc<str>)>,
     /// Joined, left, kicked, banned, in the official overview's order.
@@ -100,6 +104,31 @@ pub enum ServerPage {
     Invites,
     Bans,
     ModerationLog,
+    Stickers,
+    Sounds,
+}
+
+/// The other things a server may carry beside emoji, managed on the same
+/// kind of page (list, add from a file, rename, delete).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExpressionKind {
+    Sticker,
+    Sound,
+}
+
+impl ExpressionKind {
+    pub fn noun(self) -> &'static str {
+        match self {
+            Self::Sticker => "sticker",
+            Self::Sound => "sound",
+        }
+    }
+    pub fn page(self) -> ServerPage {
+        match self {
+            Self::Sticker => ServerPage::Stickers,
+            Self::Sound => ServerPage::Sounds,
+        }
+    }
 }
 
 /// A network-neutral entry in a server's moderation log.
@@ -142,6 +171,8 @@ pub struct EmojiRules {
     pub max_len: usize,
     /// Letters may be upper case (Discord); Stoat takes `[a-z0-9_]` only.
     pub uppercase: bool,
+    /// Any characters may be used (stickers, sounds), not just identifiers.
+    pub any_chars: bool,
 }
 
 impl Default for EmojiRules {
@@ -151,6 +182,7 @@ impl Default for EmojiRules {
             min_len: 1,
             max_len: 32,
             uppercase: false,
+            any_chars: false,
         }
     }
 }
@@ -160,10 +192,10 @@ impl EmojiRules {
     pub fn validate_name(&self, name: &str) -> Result<(), String> {
         let count = name.chars().count();
         if count < self.min_len || count > self.max_len {
-            return Err(format!(
-                "An emoji name is {} to {} characters.",
-                self.min_len, self.max_len
-            ));
+            return Err(format!("A name is {} to {} characters.", self.min_len, self.max_len));
+        }
+        if self.any_chars {
+            return Ok(());
         }
         let ok = |c: char| {
             c.is_ascii_digit() || c == '_' || c.is_ascii_lowercase() || (self.uppercase && c.is_ascii_uppercase())
@@ -205,9 +237,14 @@ pub struct ServerEmojis {
     /// Largest upload, in bytes, when the network says.
     pub max_file_bytes: Option<u64>,
     pub rules: EmojiRules,
+    /// Which kind of expression this lists; None is emoji.
+    pub kind: Option<ExpressionKind>,
 }
 
 impl ServerEmojis {
+    fn noun(&self) -> &'static str {
+        self.kind.map_or("emoji", ExpressionKind::noun)
+    }
     pub fn slots_left(&self) -> Option<usize> {
         self.limit.map(|l| l.saturating_sub(self.emoji.len()))
     }
@@ -215,12 +252,25 @@ impl ServerEmojis {
     pub fn check_new(&self, name: &str, file_size: u64) -> Result<(), String> {
         self.rules.validate_name(name)?;
         if self.slots_left() == Some(0) {
-            return Err("This server has no emoji slots left.".into());
+            return Err(format!("This server has no {} slots left.", self.noun()));
         }
         if file_size == 0 || self.max_file_bytes.is_some_and(|m| file_size > m) {
-            return Err("The image is empty or larger than this network allows for emoji.".into());
+            return Err(format!(
+                "The file is empty or larger than this network allows for a {}.",
+                self.noun()
+            ));
         }
         Ok(())
+    }
+}
+
+impl ServerSettingsState {
+    /// The loaded list for a kind of expression.
+    pub fn expressions(&self, kind: ExpressionKind) -> Option<&ServerEmojis> {
+        match kind {
+            ExpressionKind::Sticker => self.stickers.as_ref(),
+            ExpressionKind::Sound => self.sounds.as_ref(),
+        }
     }
 }
 
@@ -339,6 +389,22 @@ pub enum ServerAdmin {
         name: Arc<str>,
     },
     DeleteEmoji(Arc<str>),
+    /// Stickers and sounds: the same four operations as emoji.
+    LoadExpressions(ExpressionKind),
+    CreateExpression {
+        kind: ExpressionKind,
+        name: Arc<str>,
+        file: EmojiFile,
+    },
+    RenameExpression {
+        kind: ExpressionKind,
+        id: Arc<str>,
+        name: Arc<str>,
+    },
+    DeleteExpression {
+        kind: ExpressionKind,
+        id: Arc<str>,
+    },
     Kick(UserId),
     Ban {
         user: UserId,
@@ -458,7 +524,12 @@ impl ServerAdmin {
     pub fn is_load(&self) -> bool {
         matches!(
             self,
-            Self::LoadInvites | Self::LoadBans | Self::LoadRoles | Self::LoadRoleMembers(_) | Self::LoadEmoji
+            Self::LoadInvites
+                | Self::LoadBans
+                | Self::LoadRoles
+                | Self::LoadRoleMembers(_)
+                | Self::LoadEmoji
+                | Self::LoadExpressions(_)
         )
     }
 }
@@ -471,6 +542,7 @@ pub enum ServerAdminResult {
     Roles(ServerRoles),
     RoleMembers(RoleMembers),
     Emoji(ServerEmojis),
+    Expressions(ExpressionKind, ServerEmojis),
     /// A change went through: what to tell the user.
     Done(Arc<str>),
     /// The server menu's Invite: the link to share.
@@ -491,6 +563,8 @@ pub struct ServerSettingsState {
     pub roles: Option<ServerRoles>,
     pub role_members: Option<RoleMembers>,
     pub emoji: Option<ServerEmojis>,
+    pub stickers: Option<ServerEmojis>,
+    pub sounds: Option<ServerEmojis>,
     /// A change is on its way; the page's buttons wait for it.
     pub admin_busy: bool,
     /// The last change's outcome: Ok is a confirmation, Err a failure.
@@ -512,6 +586,8 @@ impl ServerSettingsState {
             roles: None,
             role_members: None,
             emoji: None,
+            stickers: None,
+            sounds: None,
             admin_busy: false,
             notice: None,
         }
@@ -557,6 +633,7 @@ mod tests {
             min_len: 2,
             max_len: 32,
             uppercase: true,
+            any_chars: false,
         };
         assert!(d.validate_name("Parrot").is_ok());
         assert!(d.validate_name("a").is_err());

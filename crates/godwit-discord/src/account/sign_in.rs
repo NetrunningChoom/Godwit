@@ -620,6 +620,10 @@ impl DiscordAccount {
                         | godwit_core::server_settings::ServerAdmin::CreateEmoji { .. }
                         | godwit_core::server_settings::ServerAdmin::RenameEmoji { .. }
                         | godwit_core::server_settings::ServerAdmin::DeleteEmoji(_)
+                        | godwit_core::server_settings::ServerAdmin::LoadExpressions(_)
+                        | godwit_core::server_settings::ServerAdmin::CreateExpression { .. }
+                        | godwit_core::server_settings::ServerAdmin::RenameExpression { .. }
+                        | godwit_core::server_settings::ServerAdmin::DeleteExpression { .. }
                 ) =>
             {
                 return Some(self.server_admin(server.clone(), op.clone()));

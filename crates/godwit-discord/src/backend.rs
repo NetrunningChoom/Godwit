@@ -415,6 +415,24 @@ pub enum Admin {
         name: String,
     },
     DeleteEmoji(String),
+    /// The Stickers or Sounds page's list.
+    Expressions(godwit_core::server_settings::ExpressionKind),
+    /// Each change answers with the fresh list (sounds and stickers arrive
+    /// by the gateway too, but the page shows the answer at once).
+    CreateExpression {
+        kind: godwit_core::server_settings::ExpressionKind,
+        name: String,
+        path: std::path::PathBuf,
+    },
+    RenameExpression {
+        kind: godwit_core::server_settings::ExpressionKind,
+        id: String,
+        name: String,
+    },
+    DeleteExpression {
+        kind: godwit_core::server_settings::ExpressionKind,
+        id: String,
+    },
 }
 
 #[derive(Debug)]
@@ -644,6 +662,8 @@ pub enum AdminAnswer {
     Emojis(Value),
     /// The new emoji, as Discord answered the create.
     EmojiCreated(Value),
+    /// A page's list of stickers or sounds.
+    Expressions(godwit_core::server_settings::ExpressionKind, Value),
     InviteCreated(String),
     /// A role handed to or taken from these members.
     RoleMembers {
@@ -1809,6 +1829,44 @@ async fn admin(api: &Api, guild: &str, op: Admin) -> anyhow::Result<AdminAnswer>
         Admin::DeleteEmoji(id) => {
             api.delete_emoji(guild, &id).await?;
             AdminAnswer::Done
+        }
+        Admin::Expressions(kind) => AdminAnswer::Expressions(kind, api.guild_expressions(guild, kind).await?),
+        Admin::CreateExpression { kind, name, path } => {
+            use godwit_core::server_settings::ExpressionKind as K;
+            // Checked on the bytes read, so a file that grew after picking is caught.
+            if tokio::fs::metadata(&path).await?.len() > crate::expressions::max_bytes(kind) {
+                anyhow::bail!("That file is too large for a {}.", kind.noun());
+            }
+            let bytes = tokio::fs::read(&path).await?;
+            let mime = crate::expressions::check_file(kind, &bytes).map_err(|e| anyhow::anyhow!(e))?;
+            match kind {
+                K::Sound => {
+                    api.create_sound(guild, &crate::expressions::sound_body(&name, mime, &bytes))
+                        .await?;
+                }
+                K::Sticker => {
+                    let file_name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "sticker".into());
+                    api.create_sticker(
+                        guild,
+                        &crate::expressions::sticker_fields(&name),
+                        (&file_name, mime, &bytes),
+                    )
+                    .await?;
+                }
+            }
+            AdminAnswer::Expressions(kind, api.guild_expressions(guild, kind).await?)
+        }
+        Admin::RenameExpression { kind, id, name } => {
+            api.edit_expression(guild, kind, &id, &crate::expressions::rename_body(&name))
+                .await?;
+            AdminAnswer::Expressions(kind, api.guild_expressions(guild, kind).await?)
+        }
+        Admin::DeleteExpression { kind, id } => {
+            api.delete_expression(guild, kind, &id).await?;
+            AdminAnswer::Expressions(kind, api.guild_expressions(guild, kind).await?)
         }
     })
 }

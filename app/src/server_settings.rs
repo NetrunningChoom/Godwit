@@ -12,8 +12,8 @@ use godwit_core::application::{Action, AppState};
 use godwit_core::ids::{ServerId, UserId};
 use godwit_core::own_profile::ProfileImage;
 use godwit_core::server_settings::{
-    EmojiFile, RoleEdit, RoleMember, RoleMembers, SafetyChoices, ServerAdmin, ServerEmojis, ServerOverview,
-    ServerOverviewEdit, ServerPage, ServerRoles, ServerSettingsState,
+    EmojiFile, ExpressionKind, RoleEdit, RoleMember, RoleMembers, SafetyChoices, ServerAdmin, ServerEmojis,
+    ServerOverview, ServerOverviewEdit, ServerPage, ServerRoles, ServerSettingsState,
 };
 use slint::{ModelRc, VecModel};
 
@@ -45,6 +45,25 @@ pub struct ServerEditor {
     emoji_file: Option<EmojiFile>,
     emoji_error: Option<String>,
     emoji_creating: bool,
+    /// Which of the Emoji, Stickers and Sounds pages the form above belongs to.
+    expression_page: Option<ServerPage>,
+}
+
+/// Which expression kind a page manages; None is the Emoji page (or no such page).
+fn page_kind(page: ServerPage) -> Option<ExpressionKind> {
+    match page {
+        ServerPage::Stickers => Some(ExpressionKind::Sticker),
+        ServerPage::Sounds => Some(ExpressionKind::Sound),
+        _ => None,
+    }
+}
+
+/// The loaded list the Emoji, Stickers or Sounds page shows.
+fn page_list(s: &godwit_core::server_settings::ServerSettingsState) -> Option<&ServerEmojis> {
+    match page_kind(s.page) {
+        Some(kind) => s.expressions(kind),
+        None => s.emoji.as_ref(),
+    }
 }
 
 /// The core's page as the view's index, and back.
@@ -56,6 +75,8 @@ fn page_index(page: ServerPage) -> i32 {
         ServerPage::Invites => 3,
         ServerPage::Bans => 4,
         ServerPage::ModerationLog => 5,
+        ServerPage::Stickers => 6,
+        ServerPage::Sounds => 7,
     }
 }
 
@@ -66,6 +87,8 @@ pub fn page_from_index(i: i32) -> ServerPage {
         3 => ServerPage::Invites,
         4 => ServerPage::Bans,
         5 => ServerPage::ModerationLog,
+        6 => ServerPage::Stickers,
+        7 => ServerPage::Sounds,
         _ => ServerPage::Overview,
     }
 }
@@ -514,37 +537,42 @@ impl ServerEditor {
         let s = state.server_settings.as_ref()?;
         let file = self.emoji_file.clone()?;
         let name = ui.get_server_edit_emoji_new_name();
-        if !self.emoji_problem(s.emoji.as_ref(), &name).is_empty() || name.trim().is_empty() {
+        if !self.emoji_problem(page_list(s), &name).is_empty() || name.trim().is_empty() {
             return None;
         }
         self.emoji_creating = true;
+        let name: std::sync::Arc<str> = name.trim().into();
         Some(Action::ServerAdmin {
             server: s.server.clone(),
-            op: ServerAdmin::CreateEmoji {
-                name: name.trim().into(),
-                file,
+            op: match page_kind(s.page) {
+                Some(kind) => ServerAdmin::CreateExpression { kind, name, file },
+                None => ServerAdmin::CreateEmoji { name, file },
             },
         })
     }
 
     pub fn rename_emoji(&self, state: &AppState, row: i32, name: &str) -> Option<Action> {
         let s = state.server_settings.as_ref()?;
-        let emoji = s.emoji.as_ref()?.emoji.get(usize::try_from(row).ok()?)?;
-        (name.trim() != emoji.name.as_ref()).then(|| Action::ServerAdmin {
+        let emoji = page_list(s)?.emoji.get(usize::try_from(row).ok()?)?;
+        let (id, name): (std::sync::Arc<str>, std::sync::Arc<str>) = (emoji.id.clone(), name.trim().into());
+        (name.as_ref() != emoji.name.as_ref()).then(|| Action::ServerAdmin {
             server: s.server.clone(),
-            op: ServerAdmin::RenameEmoji {
-                id: emoji.id.clone(),
-                name: name.trim().into(),
+            op: match page_kind(s.page) {
+                Some(kind) => ServerAdmin::RenameExpression { kind, id, name },
+                None => ServerAdmin::RenameEmoji { id, name },
             },
         })
     }
 
     pub fn delete_emoji(&self, state: &AppState, row: i32) -> Option<Action> {
         let s = state.server_settings.as_ref()?;
-        let emoji = s.emoji.as_ref()?.emoji.get(usize::try_from(row).ok()?)?;
+        let id = page_list(s)?.emoji.get(usize::try_from(row).ok()?)?.id.clone();
         Some(Action::ServerAdmin {
             server: s.server.clone(),
-            op: ServerAdmin::DeleteEmoji(emoji.id.clone()),
+            op: match page_kind(s.page) {
+                Some(kind) => ServerAdmin::DeleteExpression { kind, id },
+                None => ServerAdmin::DeleteEmoji(id),
+            },
         })
     }
 
@@ -586,6 +614,11 @@ impl ServerEditor {
         ui.set_server_edit_moderation_log(ModelRc::new(VecModel::from(rows)));
         ui.set_server_edit_show_roles(o.is_some_and(|o| o.can_manage_roles));
         ui.set_server_edit_show_emoji(o.is_some_and(|o| o.can_manage_emoji));
+        ui.set_server_edit_show_stickers(o.is_some_and(|o| o.can_manage_stickers));
+        ui.set_server_edit_show_sounds(o.is_some_and(|o| o.can_manage_sounds));
+        if !matches!(s.page, ServerPage::Emoji | ServerPage::Stickers | ServerPage::Sounds) {
+            self.expression_page = None;
+        }
         ui.set_server_edit_show_invites(o.is_some_and(|o| o.can_manage));
         ui.set_server_edit_show_bans(o.is_some_and(|o| o.can_ban));
         ui.set_server_edit_show_moderation_log(
@@ -605,7 +638,27 @@ impl ServerEditor {
         let mut avatar = |url: Option<&str>| url.and_then(|u| images.get(u, AVATAR));
         match s.page {
             ServerPage::Overview => {}
-            ServerPage::Emoji => {
+            ServerPage::Emoji | ServerPage::Stickers | ServerPage::Sounds => {
+                // Each page starts with an empty form.
+                if self.expression_page != Some(s.page) {
+                    self.expression_page = Some(s.page);
+                    self.emoji_file = None;
+                    self.emoji_error = None;
+                    self.emoji_creating = false;
+                    ui.set_server_edit_emoji_new_name("".into());
+                }
+                let kind = page_kind(s.page);
+                let list = page_list(s);
+                let noun = kind.map_or("emoji", ExpressionKind::noun);
+                ui.set_server_edit_expression_noun(noun.into());
+                ui.set_server_edit_expression_hint(
+                    match kind {
+                        None => "Lowercase letters, numbers and underscores only.",
+                        Some(ExpressionKind::Sticker) => "PNG, APNG or GIF, up to 500 KB.",
+                        Some(ExpressionKind::Sound) => "MP3 or Ogg, up to 512 KB and 5.2 seconds.",
+                    }
+                    .into(),
+                );
                 // A finished create clears the form; a failed one keeps it to retry.
                 if self.emoji_creating && !s.admin_busy {
                     self.emoji_creating = false;
@@ -614,10 +667,14 @@ impl ServerEditor {
                         ui.set_server_edit_emoji_new_name("".into());
                     }
                 }
-                ui.set_server_edit_emoji_loaded(s.emoji.is_some());
-                ui.set_server_edit_emoji_can_create(o.is_some_and(|o| o.can_manage_emoji));
+                ui.set_server_edit_emoji_loaded(list.is_some());
+                ui.set_server_edit_emoji_can_create(o.is_some_and(|o| match kind {
+                    None => o.can_manage_emoji,
+                    Some(ExpressionKind::Sticker) => o.can_manage_stickers,
+                    Some(ExpressionKind::Sound) => o.can_manage_sounds,
+                }));
                 let name = ui.get_server_edit_emoji_new_name();
-                ui.set_server_edit_emoji_new_error(self.emoji_problem(s.emoji.as_ref(), &name).into());
+                ui.set_server_edit_emoji_new_error(self.emoji_problem(list, &name).into());
                 ui.set_server_edit_emoji_file_label(
                     self.emoji_file
                         .as_ref()
@@ -627,15 +684,12 @@ impl ServerEditor {
                         .into(),
                 );
                 ui.set_server_edit_emoji_slots(
-                    s.emoji
-                        .as_ref()
-                        .and_then(ServerEmojis::slots_left)
-                        .map(|n| format!("{n} emoji slots remaining"))
+                    list.and_then(ServerEmojis::slots_left)
+                        .map(|n| format!("{n} {noun} slots remaining"))
                         .unwrap_or_default()
                         .into(),
                 );
-                let rows: Vec<EmojiItem> = s
-                    .emoji
+                let rows: Vec<EmojiItem> = list
                     .iter()
                     .flat_map(|e| &e.emoji)
                     .map(|e| {
@@ -1023,6 +1077,9 @@ mod tests {
             ServerPage::Emoji,
             ServerPage::Invites,
             ServerPage::Bans,
+            ServerPage::ModerationLog,
+            ServerPage::Stickers,
+            ServerPage::Sounds,
         ] {
             assert_eq!(page_from_index(page_index(page)), page);
         }

@@ -56,6 +56,8 @@ impl DiscordAccount {
             can_manage_roles: perms & p::MANAGE_ROLES != 0,
             can_ban: perms & p::BAN_MEMBERS != 0,
             can_manage_emoji: perms & (p::MANAGE_GUILD_EXPRESSIONS | p::CREATE_GUILD_EXPRESSIONS) != 0,
+            can_manage_stickers: perms & (p::MANAGE_GUILD_EXPRESSIONS | p::CREATE_GUILD_EXPRESSIONS) != 0,
+            can_manage_sounds: perms & (p::MANAGE_GUILD_EXPRESSIONS | p::CREATE_GUILD_EXPRESSIONS) != 0,
             owner: g.owner == self.me(),
             channels: g
                 .channels
@@ -246,8 +248,46 @@ impl DiscordAccount {
                 min_len: 2,
                 max_len: 32,
                 uppercase: true,
+                any_chars: false,
             },
+            kind: None,
         }
+    }
+
+    /// The last fetched list of a kind for this page, empty before it loads.
+    fn expression_list(
+        &self,
+        kind: godwit_core::server_settings::ExpressionKind,
+    ) -> godwit_core::server_settings::ServerEmojis {
+        self.expression_owners
+            .as_ref()
+            .filter(|(_, k, _, _)| *k == kind)
+            .map(|(_, _, _, l)| l.clone())
+            .unwrap_or_default()
+    }
+
+    /// Whether we may rename or delete this sticker or sound: Manage
+    /// Expressions covers any, Create Expressions only our own. Ownership is
+    /// known from the fetched list (a Create-only account is shown uploaders).
+    pub(super) fn expression_change_allowed(
+        &self,
+        guild: &str,
+        kind: godwit_core::server_settings::ExpressionKind,
+        id: &str,
+    ) -> Result<(), &'static str> {
+        let perms = self.store.guild_permissions(guild);
+        let Some((_, _, owners, list)) = self
+            .expression_owners
+            .as_ref()
+            .filter(|(g, k, _, _)| g == guild && *k == kind)
+        else {
+            return Err("Open the page again to load the list first.");
+        };
+        if !list.emoji.iter().any(|e| e.id.as_ref() == id) {
+            return Err("That is no longer here.");
+        }
+        let own = owners.get(id).is_some_and(|u| u == self.me());
+        crate::expressions::change_allowed(perms, own)
     }
 
     /// Whether we may rename or delete this emoji: Manage Expressions covers
@@ -391,7 +431,11 @@ impl DiscordAccount {
             ServerAdmin::LoadEmoji
             | ServerAdmin::CreateEmoji { .. }
             | ServerAdmin::RenameEmoji { .. }
-            | ServerAdmin::DeleteEmoji(_) => {
+            | ServerAdmin::DeleteEmoji(_)
+            | ServerAdmin::LoadExpressions(_)
+            | ServerAdmin::CreateExpression { .. }
+            | ServerAdmin::RenameExpression { .. }
+            | ServerAdmin::DeleteExpression { .. } => {
                 if perms & (p::MANAGE_GUILD_EXPRESSIONS | p::CREATE_GUILD_EXPRESSIONS) == 0 {
                     return fail(server, "You need the Manage Expressions permission for this.");
                 }
@@ -497,6 +541,55 @@ impl DiscordAccount {
                         return out;
                     }
                     Admin::DeleteEmoji(id.to_string())
+                }
+                ServerAdmin::LoadExpressions(kind) => Admin::Expressions(kind),
+                ServerAdmin::CreateExpression { kind, name, file } => {
+                    let name = name.trim();
+                    let mut list = self.expression_list(kind);
+                    // The page's list is the only source of the kind's limits.
+                    list.max_file_bytes = Some(crate::expressions::max_bytes(kind));
+                    list.rules = crate::expressions::rules(kind);
+                    list.kind = Some(kind);
+                    if let Err(e) = list.check_new(name, file.size) {
+                        return fail(server, &e);
+                    }
+                    if self.demo.is_some() {
+                        return fail(server, "Stickers and sounds aren't available in the demo.");
+                    }
+                    Admin::CreateExpression {
+                        kind,
+                        name: name.to_owned(),
+                        path: file.path,
+                    }
+                }
+                ServerAdmin::RenameExpression { kind, id, name } => {
+                    let name = name.trim();
+                    if let Err(e) = crate::expressions::rules(kind).validate_name(name) {
+                        return fail(server, &e);
+                    }
+                    if let Err(e) = self.expression_change_allowed(&guild, kind, &id) {
+                        return fail(server, e);
+                    }
+                    if self.demo.is_some() {
+                        return fail(server, "Stickers and sounds aren't available in the demo.");
+                    }
+                    Admin::RenameExpression {
+                        kind,
+                        id: id.to_string(),
+                        name: name.to_owned(),
+                    }
+                }
+                ServerAdmin::DeleteExpression { kind, id } => {
+                    if let Err(e) = self.expression_change_allowed(&guild, kind, &id) {
+                        return fail(server, e);
+                    }
+                    if self.demo.is_some() {
+                        return fail(server, "Stickers and sounds aren't available in the demo.");
+                    }
+                    Admin::DeleteExpression {
+                        kind,
+                        id: id.to_string(),
+                    }
                 }
                 ServerAdmin::LoadBans => Admin::Bans,
                 ServerAdmin::Unban(user) => Admin::Unban(user.raw.to_string()),
@@ -806,6 +899,11 @@ impl DiscordAccount {
                 self.emoji_page = Some((guild.to_owned(), now.clone()));
                 Ok(ServerAdminResult::Emoji(now))
             }
+            Ok(AdminAnswer::Expressions(kind, value)) => {
+                let listed = crate::expressions::parse_list(kind, &value);
+                self.expression_owners = Some((guild.to_owned(), kind, listed.owners, listed.list.clone()));
+                Ok(ServerAdminResult::Expressions(kind, listed.list))
+            }
             Ok(AdminAnswer::EmojiCreated(e)) => {
                 // The POST answer names the uploader (us): the store takes it
                 // now, so a Create-only user may change it before the gateway repeats.
@@ -837,7 +935,10 @@ impl DiscordAccount {
         // A list after a change (revoke, unban) also finishes the change.
         let listed = matches!(
             result,
-            Ok(ServerAdminResult::Invites(_) | ServerAdminResult::Bans(_) | ServerAdminResult::RoleMembers(_))
+            Ok(ServerAdminResult::Invites(_)
+                | ServerAdminResult::Bans(_)
+                | ServerAdminResult::RoleMembers(_)
+                | ServerAdminResult::Expressions(..))
         );
         let failed = result.is_err();
         out.push(Event::ServerAdmin {
@@ -1069,6 +1170,65 @@ mod tests {
         ));
         assert!(admin(&mut a, &mut c, ServerAdmin::DeleteEmoji("1".into())).is_err());
         assert!(emoji_change_ok(p::CREATE_GUILD_EXPRESSIONS, false).is_err());
+    }
+
+    #[test]
+    fn sticker_and_sound_changes_follow_the_expressions_permissions() {
+        use godwit_core::server_settings::ExpressionKind as K;
+        let load = |a: &mut DiscordAccount, c: &mut tokio::sync::mpsc::UnboundedReceiver<Cmd>| {
+            admin(a, c, ServerAdmin::LoadExpressions(K::Sound))
+        };
+        let (mut a, mut c) = staffed(0);
+        assert!(load(&mut a, &mut c).is_err());
+        let (mut a, mut c) = staffed(p::CREATE_GUILD_EXPRESSIONS);
+        assert!(matches!(load(&mut a, &mut c), Ok(Some(Admin::Expressions(K::Sound)))));
+        let me = a.me().to_owned();
+        // Discord's answer: one sound of ours, one of someone else's.
+        let mut out = Vec::new();
+        a.admin_answer(
+            "10",
+            Ok(AdminAnswer::Expressions(
+                K::Sound,
+                json!({"items":[
+                    {"sound_id":"1","name":"Theirs","user":{"id":"other","username":"o"}},
+                    {"sound_id":"2","name":"Mine","user":{"id":me,"username":"me"}}
+                ]}),
+            )),
+            &mut out,
+        );
+        assert!(matches!(
+            &out[0],
+            Event::ServerAdmin { result: Ok(ServerAdminResult::Expressions(K::Sound, l)), .. } if l.emoji.len() == 2
+        ));
+        let del = |id: &str| ServerAdmin::DeleteExpression {
+            kind: K::Sound,
+            id: id.into(),
+        };
+        assert!(admin(&mut a, &mut c, del("1")).is_err());
+        assert!(matches!(
+            admin(&mut a, &mut c, del("2")),
+            Ok(Some(Admin::DeleteExpression { kind: K::Sound, id })) if id == "2"
+        ));
+        let rename = |name: &str| ServerAdmin::RenameExpression {
+            kind: K::Sound,
+            id: "2".into(),
+            name: name.into(),
+        };
+        assert!(admin(&mut a, &mut c, rename("x")).is_err());
+        assert!(matches!(
+            admin(&mut a, &mut c, rename(" New name ")),
+            Ok(Some(Admin::RenameExpression { name, .. })) if name == "New name"
+        ));
+        let create = |size| ServerAdmin::CreateExpression {
+            kind: K::Sound,
+            name: "Horn".into(),
+            file: file(size),
+        };
+        assert!(admin(&mut a, &mut c, create(512 << 10 | 1)).is_err());
+        assert!(matches!(
+            admin(&mut a, &mut c, create(100)),
+            Ok(Some(Admin::CreateExpression { .. }))
+        ));
     }
 
     #[test]

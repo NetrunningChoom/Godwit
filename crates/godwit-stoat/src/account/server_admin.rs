@@ -107,6 +107,12 @@ impl StoatAccount {
             | ServerAdmin::CreateEmoji { .. }
             | ServerAdmin::RenameEmoji { .. }
             | ServerAdmin::DeleteEmoji(_) => Some((p::MANAGE_CUSTOMISATION, "Manage Customisation")),
+            ServerAdmin::LoadExpressions(_)
+            | ServerAdmin::CreateExpression { .. }
+            | ServerAdmin::RenameExpression { .. }
+            | ServerAdmin::DeleteExpression { .. } => {
+                return fail(server, "This network has no stickers or sounds to manage.");
+            }
             ServerAdmin::CreateInvite => Some((p::INVITE_OTHERS, "Invite Others")),
             ServerAdmin::CreateChannel { .. } | ServerAdmin::MoveChannel { .. } => {
                 Some((p::MANAGE_CHANNEL, "Manage Channels"))
@@ -471,6 +477,12 @@ impl StoatAccount {
                 self.sync_servers(&mut out);
                 return out;
             }
+            ServerAdmin::LoadExpressions(_)
+            | ServerAdmin::CreateExpression { .. }
+            | ServerAdmin::RenameExpression { .. }
+            | ServerAdmin::DeleteExpression { .. } => {
+                return fail(server, "This network has no stickers or sounds to manage.");
+            }
             ServerAdmin::MarkRead => {
                 // Marked here at once, then one request for the whole server.
                 let marks: Vec<(String, String)> = self
@@ -608,6 +620,7 @@ impl StoatAccount {
             limit: limits.and_then(|l| l.global.as_ref()?.server_emoji),
             max_file_bytes: limits.and_then(|l| l.default.file_upload_size_limits.get("emojis").copied()),
             rules: godwit_core::server_settings::EmojiRules::default(),
+            kind: None,
         }
     }
 
@@ -734,6 +747,8 @@ impl StoatAccount {
             can_manage_emoji: self
                 .store
                 .can_in_server(&s.id, crate::permissions::MANAGE_CUSTOMISATION),
+            can_manage_stickers: false,
+            can_manage_sounds: false,
             owner: s.owner == *id.account.user,
             channels: s
                 .channels

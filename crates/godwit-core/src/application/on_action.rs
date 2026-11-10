@@ -301,6 +301,34 @@ impl Application {
                     return Vec::new();
                 }
             }
+            // Sticker and sound changes: the same checks, per kind.
+            let expression_check = match &op {
+                crate::server_settings::ServerAdmin::CreateExpression { kind, name, file } => Some((
+                    *kind,
+                    s.expressions(*kind)
+                        .map_or(Ok(()), |e| e.check_new(name.trim(), file.size)),
+                )),
+                crate::server_settings::ServerAdmin::RenameExpression { kind, name, .. } => Some((
+                    *kind,
+                    s.expressions(*kind)
+                        .map_or(Ok(()), |e| e.rules.validate_name(name.trim())),
+                )),
+                crate::server_settings::ServerAdmin::DeleteExpression { kind, .. } => Some((*kind, Ok(()))),
+                _ => None,
+            };
+            if let Some((kind, check)) = expression_check {
+                let offered = s.overview.as_ref().is_some_and(|o| match kind {
+                    crate::server_settings::ExpressionKind::Sticker => o.can_manage_stickers,
+                    crate::server_settings::ExpressionKind::Sound => o.can_manage_sounds,
+                });
+                if !offered {
+                    return Vec::new();
+                }
+                if let Err(e) = check {
+                    s.notice = Some(Err(e.into()));
+                    return Vec::new();
+                }
+            }
             // Handing a role to several members needs the Members tab: the
             // network's capability and a role of this server.
             if let crate::server_settings::ServerAdmin::SetRoleMembers { role, users, .. } = &op
