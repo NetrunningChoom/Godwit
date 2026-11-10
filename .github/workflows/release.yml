@@ -1,6 +1,7 @@
 # Builds the release binaries for a pushed vX.Y.Z tag with tools/release.sh
-# (the same container release.sh uses locally), checks dist/ (signatures,
-# xz copies, checksums) and publishes the release.
+# (the same container release.sh uses locally), one job per platform at the
+# same time, then checks the files together (signatures, xz copies,
+# checksums) and publishes the release.
 #
 # Needs one repository secret:
 #   GODWIT_SIGNING_KEY  the Ed25519 private key (PEM); without it the binaries
@@ -20,8 +21,14 @@ permissions:
 
 jobs:
   build:
+    name: Build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    strategy:
+      # One platform failing stops the other: nothing is published anyway.
+      fail-fast: true
+      matrix:
+        target: [linux, windows]
     steps:
       - uses: actions/checkout@v4
       - name: Write the signing key (GODWIT_SIGNING_KEY)
@@ -34,28 +41,54 @@ jobs:
           fi
           printf '%s' "$GODWIT_SIGNING_KEY" > "$HOME/godwit-signing.pem"
       # Cargo's downloads (LiveKit's prebuilt libwebrtc alone is a few hundred
-      # MB); the build itself runs in a fresh container each time.
+      # MB); the build itself runs in a fresh container each time. Per
+      # platform, since each job only fetches what its target needs.
       - name: Cache downloads
         uses: actions/cache@v4
         with:
           path: |
             .build-cache/registry
             .build-cache/git
-          key: godwit-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'tools/build/Dockerfile') }}
-          restore-keys: godwit-${{ runner.os }}-
+          key: godwit-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'tools/build/Dockerfile') }}
+          restore-keys: godwit-${{ runner.os }}-${{ matrix.target }}-
       - name: Build (tools/release.sh, in its container)
         env:
           GODWIT_JOBS: '4'
+          GODWIT_TARGETS: ${{ matrix.target }}
         run: |
           export GODWIT_SIGNING_KEY="$HOME/godwit-signing.pem"
           tools/release.sh --container
+      # SHA256SUMS is written again over both platforms' files when publishing.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: |
+            dist/godwit-*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Write the public key
+        env:
+          GODWIT_SIGNING_KEY: ${{ secrets.GODWIT_SIGNING_KEY }}
+        run: |
+          printf '%s' "$GODWIT_SIGNING_KEY" | openssl pkey -pubout -out "$RUNNER_TEMP/update-key.pem"
       # Installed copies update themselves from the latest release, so nothing
       # is published unless every file checks out.
       - name: Check the release files
         run: |
           set -euo pipefail
           cd dist
-          openssl pkey -in "$HOME/godwit-signing.pem" -pubout -out "$RUNNER_TEMP/update-key.pem"
+          sha256sum godwit-* >SHA256SUMS
           for f in godwit-linux-x86_64 godwit-windows-x86_64.exe; do
               test -s "$f"
               test -s "$f.sig"
@@ -68,9 +101,11 @@ jobs:
           file godwit-linux-x86_64 | grep -q 'ELF 64-bit'
           file godwit-windows-x86_64.exe | grep -q 'PE32+'
           sha256sum -c SHA256SUMS
+          ls -l
       - name: Publish the release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" --latest --title "Godwit $TAG" --generate-notes dist/*
