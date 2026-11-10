@@ -89,6 +89,10 @@ pub struct Capabilities {
     /// shows, disabled, with a note. Joining stays impossible (`voice` is false).
     #[serde(default)]
     pub voice_unavailable: bool,
+    /// A stage: its call has speakers and an audience, joined as audience
+    /// ([`crate::call::StageRole`]).
+    #[serde(default)]
+    pub stage: bool,
     pub typing: bool,
     /// Custom emoji from other servers may be used here.
     pub external_emoji: bool,
@@ -168,6 +172,7 @@ impl Capabilities {
             video: false,
             video_resolution: [1280, 720],
             voice_unavailable: false,
+            stage: false,
             typing: true,
             external_emoji: true,
             gifs: true,

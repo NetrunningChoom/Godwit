@@ -42,6 +42,8 @@ pub const MUTE_MEMBERS: u64 = 1 << 22;
 pub const DEAFEN_MEMBERS: u64 = 1 << 23;
 pub const MOVE_MEMBERS: u64 = 1 << 24;
 pub const SPEAK: u64 = 1 << 21;
+/// Ask to speak in a stage (docs.discord.food/topics/permissions).
+pub const REQUEST_TO_SPEAK: u64 = 1 << 32;
 /// Use Soundboard, from Discord's permission bitset.
 pub const USE_SOUNDBOARD: u64 = 1 << 42;
 /// Play another server's sound (Discord Soundboard resource).

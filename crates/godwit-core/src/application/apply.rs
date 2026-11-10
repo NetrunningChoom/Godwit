@@ -611,6 +611,12 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::CallStage { room, stage } => {
+                if let Some(call) = self.state.call.as_mut().filter(|c| c.room == room) {
+                    call.stage = stage;
+                }
+                Vec::new()
+            }
             Event::CallSounds { room, sounds } => {
                 if let Some(call) = self.state.call.as_mut().filter(|c| c.room == room) {
                     call.sounds = sounds;

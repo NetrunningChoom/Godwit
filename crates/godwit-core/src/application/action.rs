@@ -496,6 +496,12 @@ pub enum Action {
     ToggleDeafen,
     SetCamera(bool),
     SetScreenShare(bool),
+    /// Ask something on the stage we're in, about `user` (us for the
+    /// requests only we can make).
+    Stage {
+        user: UserId,
+        request: crate::call::StageRequest,
+    },
     /// Watch (or stop watching) someone's screen share in our call, where
     /// the network asks for it ([`crate::call::Call::streams`]).
     WatchStream {

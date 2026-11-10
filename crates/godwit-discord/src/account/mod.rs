@@ -2009,6 +2009,7 @@ impl NetworkAccount for DiscordAccount {
             Command::SetMuted(muted) => self.set_call_muted(Some(muted), None),
             Command::SetDeafened(deafened) => self.set_call_muted(None, Some(deafened)),
             Command::DeclineCall { room } => self.decline_call(room, &mut out),
+            Command::Stage { room, user, request } => self.stage_request(&room, &user, request),
             Command::SetCamera(on) => self.set_call_camera(on, &mut out),
             // Discord's free Go Live quality only (720p30): a higher choice
             // is never sent (no Nitro features).

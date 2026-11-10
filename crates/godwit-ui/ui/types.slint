@@ -88,6 +88,10 @@ export struct CallMemberItem {
     speaking: bool,
     muted: bool,
     deafened: bool,
+    // On a stage: "Speaker", "Audience" or "Hand raised"; empty elsewhere.
+    stage-label: string,
+    // What the member menu offers for them on a stage ("Invite to speak"); empty for nothing.
+    stage-action: string,
     // Us: no volume menu.
     me: bool,
     // How loud they play here (0..2, 1 as sent), and muted here only.

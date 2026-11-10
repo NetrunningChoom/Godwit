@@ -335,6 +335,9 @@ pub struct ReadState {
 
 #[derive(Default)]
 pub struct Store {
+    /// The topic of each live stage, by stage channel (docs.discord.food,
+    /// Stage Instance).
+    pub stage_topics: HashMap<String, String>,
     /// Whether the presence shares activities, as the settings last said.
     pub show_game: Option<bool>,
     /// Theme and emoticon conversion, as the settings last said them.
@@ -516,6 +519,9 @@ impl Store {
         let me = self.me.as_ref().map(|u| u.id.clone()).unwrap_or_default();
         for (i, g) in d["guilds"].as_array().into_iter().flatten().enumerate() {
             self.put_guild(g);
+            if let Some(id) = g["id"].as_str() {
+                self.put_stage_instances(id, &g["stage_instances"]);
+            }
             // merged_members[i] holds our member object in guild i.
             if let (Some(id), Some(members)) = (g["id"].as_str(), merged.and_then(|m| m.get(i))) {
                 for m in members.as_array().into_iter().flatten() {
@@ -726,6 +732,33 @@ impl Store {
 
     /// A guild object from READY or GUILD_CREATE (fields may sit under
     /// `properties` in READY's form).
+    /// A server's live stages from GUILD_CREATE's `stage_instances`.
+    pub fn put_stage_instances(&mut self, guild: &str, list: &Value) {
+        let channels = &self.channels;
+        self.stage_topics
+            .retain(|channel, _| channels.get(channel).is_none_or(|c| c.guild.as_deref() != Some(guild)));
+        for instance in list.as_array().into_iter().flatten() {
+            self.put_stage_instance(instance);
+        }
+    }
+
+    /// STAGE_INSTANCE_CREATE and _UPDATE.
+    pub fn put_stage_instance(&mut self, instance: &Value) {
+        if let Some(channel) = instance["channel_id"].as_str() {
+            self.stage_topics.insert(
+                channel.to_owned(),
+                instance["topic"].as_str().unwrap_or_default().to_owned(),
+            );
+        }
+    }
+
+    /// STAGE_INSTANCE_DELETE.
+    pub fn remove_stage_instance(&mut self, instance: &Value) {
+        if let Some(channel) = instance["channel_id"].as_str() {
+            self.stage_topics.remove(channel);
+        }
+    }
+
     pub fn put_guild(&mut self, g: &Value) {
         let Some(id) = g["id"].as_str() else { return };
         if g["unavailable"] == true {

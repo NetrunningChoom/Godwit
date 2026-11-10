@@ -140,15 +140,14 @@ impl DiscordAccount {
             external_emoji: false,
             attachments: can(p::ATTACH_FILES),
             delete_others: c.guild.is_some() && can(p::MANAGE_MESSAGES),
-            // Voice channels we may connect to, and calls in DMs and group
-            // DMs. Stage channels (speakers and an audience) aren't built:
-            // they show, disabled, with a note.
-            voice: c.private() || (c.kind == store::GUILD_VOICE && can(p::CONNECT)),
+            // Voice channels and stages we may connect to, and calls in DMs
+            // and group DMs. A stage is joined as audience.
+            voice: c.private() || (c.voice() && can(p::CONNECT)),
+            stage: c.kind == store::GUILD_STAGE_VOICE,
             soundboard: c.kind == store::GUILD_VOICE && can(p::CONNECT | p::SPEAK | p::USE_SOUNDBOARD),
             // READY leaves defaults out, so a voice channel without a
             // user_limit has none (0, unlimited); a missing one isn't unknown.
             voice_user_limit: c.voice().then(|| c.user_limit.unwrap_or(0)),
-            voice_unavailable: c.kind == store::GUILD_STAGE_VOICE,
             // Camera and Go Live: in DM calls, and in voice channels with
             // the Video permission. Discord's free quality only (720p30).
             video: c.private() || (c.kind == store::GUILD_VOICE && can(p::CONNECT) && can(p::STREAM)),
@@ -237,7 +236,13 @@ impl DiscordAccount {
                 .flatten()
                 .map(Into::into),
             presence: with.as_deref().map(|u| self.presence(u)),
-            status: None,
+            // A live stage's topic, under its name in the list.
+            status: self
+                .store
+                .stage_topics
+                .get(channel)
+                .filter(|t| !t.is_empty() && c.kind == store::GUILD_STAGE_VOICE)
+                .map(|t| Arc::from(t.as_str())),
             member_count: (c.kind == store::GROUP_DM)
                 .then(|| u32::try_from(c.recipients.len() + 1).unwrap_or(u32::MAX)),
             // The newest message's time, from its snowflake (or the DM's own).

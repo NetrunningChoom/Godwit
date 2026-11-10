@@ -45,6 +45,8 @@ pub(super) struct OurCall {
     ring: bool,
     muted: bool,
     deafened: bool,
+    /// In a stage and not allowed to speak: the microphone stays shut.
+    suppressed: bool,
     /// Who sounds like speech: us, and the others by user id.
     speaking: (bool, Vec<String>),
     /// Who has their camera on, as the media heard from the voice server.
@@ -169,8 +171,7 @@ impl DiscordAccount {
         let Some(c) = self.store.channels.get(&channel) else {
             return;
         };
-        let allowed =
-            c.private() || (c.kind == store::GUILD_VOICE && self.store.can(&channel, crate::permissions::CONNECT));
+        let allowed = c.private() || (c.voice() && self.store.can(&channel, crate::permissions::CONNECT));
         if !allowed {
             out.push(Event::CallEnded {
                 room,
@@ -183,6 +184,7 @@ impl DiscordAccount {
         eprintln!("note: discord: joining a call: {}", self.store.video_reason(&channel));
         let guild = c.guild.clone();
         let private = c.private();
+        let stage = c.kind == store::GUILD_STAGE_VOICE;
         if let Some(previous) = self.call.take() {
             self.stop_watching_all(&previous);
             self.net.send(Cmd::CallCmd(CallCmd::Leave));
@@ -197,11 +199,14 @@ impl DiscordAccount {
         }
         let alone = self.voice.in_channel(&channel).iter().all(|s| s.user == self.me());
         self.voice_state_update(guild.as_deref(), Some(&channel), false, false, false);
+        // A stage is joined as audience: the microphone stays shut until
+        // Discord says we may speak.
+        let suppressed = stage;
         self.next_call = self.next_call.wrapping_add(1);
         self.net.send(Cmd::Call {
             call: self.next_call,
             settings: Box::new(self.voice_settings.clone()),
-            muted: false,
+            muted: suppressed,
             deafened: false,
         });
         self.call = Some(OurCall {
@@ -216,6 +221,7 @@ impl DiscordAccount {
             ring: private && alone,
             muted: false,
             deafened: false,
+            suppressed,
             speaking: (false, Vec::new()),
             cameras: Vec::new(),
             watching: BTreeMap::new(),
@@ -227,6 +233,63 @@ impl DiscordAccount {
         self.soundboard_known.clear();
         self.soundboard_requested = false;
         self.call_visibility();
+        self.send_stage(out);
+    }
+
+    /// The stage of our call, if it is in a stage channel.
+    fn stage_of(&self, channel: &str) -> Option<godwit_core::call::CallStage> {
+        let c = self.store.channels.get(channel)?;
+        (c.kind == store::GUILD_STAGE_VOICE).then(|| godwit_core::call::CallStage {
+            topic: self.store.stage_topics.get(channel).map_or("", String::as_str).into(),
+            moderate: self.store.can(channel, crate::permissions::MUTE_MEMBERS),
+            may_request: self.store.can(channel, crate::permissions::REQUEST_TO_SPEAK),
+        })
+    }
+
+    pub(super) fn send_stage(&self, out: &mut Vec<Event>) {
+        if let Some(call) = &self.call
+            && let Some(stage) = self.stage_of(&call.channel)
+        {
+            out.push(Event::CallStage {
+                room: call.room.clone(),
+                stage: Some(stage),
+            });
+        }
+    }
+
+    /// A stage instance changed (STAGE_INSTANCE_*): our call shows it.
+    pub(super) fn stage_changed(&self, channel: Option<&str>, out: &mut Vec<Event>) {
+        if self.call.as_ref().is_some_and(|c| Some(c.channel.as_str()) == channel) {
+            self.send_stage(out);
+        }
+    }
+
+    /// A stage request from the call's panel: raise or lower our hand, let
+    /// someone speak or send them to the audience.
+    pub(super) fn stage_request(&mut self, room: &RoomId, user: &UserId, request: godwit_core::call::StageRequest) {
+        let Some(call) = self.call.as_ref().filter(|c| c.room == *room) else {
+            return;
+        };
+        let (Some(guild), channel) = (call.guild.clone(), call.channel.clone()) else {
+            return;
+        };
+        if self.stage_of(&channel).is_none() {
+            return;
+        }
+        let own = *user.raw == *self.me();
+        let needed = crate::stage::needed(request, own);
+        if !self.store.can(&channel, needed) {
+            return;
+        }
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let Some(body) = crate::stage::body(&channel, request, own, &now) else {
+            return;
+        };
+        self.net.send(Cmd::Request(Request::StageVoiceState {
+            guild,
+            user: (!own).then(|| user.raw.to_string()),
+            body,
+        }));
     }
 
     pub(super) fn leave_call(&mut self, out: &mut Vec<Event>) {
@@ -244,7 +307,7 @@ impl DiscordAccount {
         let Some(call) = self.call.as_mut() else { return };
         if let Some(muted) = muted {
             call.muted = muted;
-            self.net.send(Cmd::CallCmd(CallCmd::Muted(muted)));
+            self.net.send(Cmd::CallCmd(CallCmd::Muted(muted || call.suppressed)));
         }
         if let Some(deafened) = deafened {
             call.deafened = deafened;
@@ -477,6 +540,18 @@ impl DiscordAccount {
             // Another of our clients joined voice: Discord moves voice there.
             Some(_) if !ours => "you joined voice on another device.",
             Some(channel) if channel == call.channel => {
+                // On a stage, only a speaker's microphone is open.
+                let suppressed = d["suppress"].as_bool().unwrap_or(false);
+                if suppressed != call.suppressed
+                    && self
+                        .store
+                        .channels
+                        .get(channel)
+                        .is_some_and(|c| c.kind == store::GUILD_STAGE_VOICE)
+                {
+                    call.suppressed = suppressed;
+                    self.net.send(Cmd::CallCmd(CallCmd::Muted(call.muted || suppressed)));
+                }
                 call.session = d["session_id"].as_str().map(str::to_owned);
                 self.connect_call();
                 // A stream's server may have come before our voice session.
@@ -688,6 +763,11 @@ impl DiscordAccount {
         let guild = self.store.channels.get(channel).and_then(|c| c.guild.clone());
         let speaking = self.call.as_ref().filter(|c| c.channel == channel).map(|c| &c.speaking);
         let me = self.me();
+        let stage = self
+            .store
+            .channels
+            .get(channel)
+            .is_some_and(|c| c.kind == store::GUILD_STAGE_VOICE);
         self.voice
             .in_channel(channel)
             .into_iter()
@@ -702,6 +782,7 @@ impl DiscordAccount {
                 ),
                 muted: s.muted(),
                 deafened: s.deafened(),
+                stage: stage.then(|| s.stage_role()),
             })
             .collect()
     }
@@ -1146,6 +1227,85 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, Event::SoundPlayed { .. }))
         );
+    }
+
+    #[test]
+    fn stages_show_their_topic_join_as_audience_and_list_roles() {
+        use godwit_core::call::StageRole;
+        let (mut a, mut cmds, _) = account();
+        let mut out = dispatch(
+            &mut a,
+            "CHANNEL_CREATE",
+            json!({"id": "16", "guild_id": "10", "type": 13, "name": "Town hall", "position": 3, "parent_id": "12"}),
+        );
+        let caps = a.room("16").unwrap().capabilities;
+        assert!(caps.stage && caps.voice && !caps.voice_unavailable);
+        assert!(a.room("16").unwrap().status.is_none(), "no stage is live yet");
+        out.extend(dispatch(
+            &mut a,
+            "STAGE_INSTANCE_CREATE",
+            json!({"id": "900", "guild_id": "10", "channel_id": "16", "topic": "Q&A"}),
+        ));
+        assert_eq!(a.room("16").unwrap().status.as_deref(), Some("Q&A"));
+        dispatch(
+            &mut a,
+            "VOICE_STATE_UPDATE",
+            json!({"guild_id": "10", "user_id": "200", "channel_id": "16", "suppress": true,
+                   "request_to_speak_timestamp": "2026-01-01T00:00:00+00:00"}),
+        );
+        dispatch(
+            &mut a,
+            "VOICE_STATE_UPDATE",
+            json!({"guild_id": "10", "user_id": "201", "channel_id": "16", "suppress": false}),
+        );
+        let mut out = Vec::new();
+        a.join_call(room(&a, "16"), &mut out);
+        let sent_cmds = sent(&mut cmds);
+        assert!(
+            sent_cmds.iter().any(|c| matches!(c, Cmd::Call { muted: true, .. })),
+            "joined as audience, the microphone stays shut"
+        );
+        assert!(out.iter().any(
+            |e| matches!(e, Event::CallStage { stage: Some(s), .. } if &*s.topic == "Q&A" && !s.moderate && !s.may_request)
+        ));
+        let members = a.members_of("16");
+        let role = |name: &str| members.iter().find(|m| &*m.name == name).and_then(|m| m.stage);
+        assert_eq!(role("zarg"), Some(StageRole::HandRaised));
+        assert!(members.iter().any(|m| m.stage == Some(StageRole::Speaker)));
+        dispatch(
+            &mut a,
+            "STAGE_INSTANCE_DELETE",
+            json!({"id": "900", "guild_id": "10", "channel_id": "16", "topic": "Q&A"}),
+        );
+        assert!(a.room("16").unwrap().status.is_none());
+    }
+
+    #[test]
+    fn stage_requests_need_their_permissions_and_patch_the_voice_state() {
+        use godwit_core::call::StageRequest;
+        let (mut a, mut cmds, _) = account();
+        dispatch(
+            &mut a,
+            "CHANNEL_CREATE",
+            json!({"id": "16", "guild_id": "10", "type": 13, "name": "Town hall", "position": 3, "parent_id": "12"}),
+        );
+        a.join_call(room(&a, "16"), &mut Vec::new());
+        sent(&mut cmds);
+        let me = a.user_id(a.me()).unwrap();
+        let other = a.user_id("200").unwrap();
+        let r = room(&a, "16");
+        // Without Request to Speak or Mute Members nothing is sent.
+        a.stage_request(&r, &me, StageRequest::RequestToSpeak);
+        a.stage_request(&r, &other, StageRequest::InviteToSpeak);
+        assert!(sent(&mut cmds).iter().all(|c| !matches!(c, Cmd::Request(_))));
+        // Lowering a hand is always allowed.
+        a.stage_request(&r, &me, StageRequest::LowerHand);
+        let cmds_sent = sent(&mut cmds);
+        assert!(cmds_sent.iter().any(|c| matches!(
+            c,
+            Cmd::Request(Request::StageVoiceState { user: None, body, .. })
+                if body["request_to_speak_timestamp"].is_null() && body["channel_id"] == "16"
+        )));
     }
 
     #[test]

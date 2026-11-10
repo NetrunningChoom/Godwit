@@ -122,6 +122,12 @@ export component Timeline inherits Rectangle {
     callback stream-sound(int, float, bool, bool);
     // Someone's volume here (0..2) and whether they're muted here only.
     callback user-sound(int, float, bool, bool);
+    // A stage's topic, and what we can ask for ourselves ("Request to speak").
+    in property <string> call-stage-topic;
+    in property <string> call-stage-self;
+    callback stage-self();
+    // The stage action offered for call-members[i].
+    callback stage-member(int);
     property <int> sound-member: -1;
     property <length> sound-x;
     property <length> sound-y;
@@ -136,6 +142,7 @@ export component Timeline inherits Rectangle {
     property <length> call-panel-min:
         (root.call-extra-videos ? 140px : 0px)
         + min(root.call-extra-videos ? 136px : 288px, max(136px, ceil(root.call-members.length / max(1, floor((root.width - Theme.gap-md) / 176px))) * 124px + 12px))
+        + (root.call-stage-topic != "" ? Theme.row-header : 0px)
         + (root.call-streams.length > 0 ? Theme.row-header : 0px) + 72px;
     property <bool> has-screen-video: root.call-videos.length > 0 && root.screen-videos > 0;
     in property <int> screen-videos;
@@ -705,6 +712,19 @@ export component Timeline inherits Rectangle {
                 }
             }
         }
+        if root.call-here && root.call-stage-topic != "": Rectangle {
+            height: Theme.row-header;
+            background: Theme.surface-low;
+            Text {
+                x: Theme.gap-md;
+                width: parent.width - 2 * Theme.gap-md;
+                text: root.call-stage-topic;
+                font-weight: 600;
+                color: Theme.on-surface;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+        }
         // Wrap participants at the available width; larger calls scroll
         // vertically instead of pushing people beyond a fixed horizontal row.
         if root.call-here: participants := ScrollView {
@@ -749,6 +769,12 @@ export component Timeline inherits Rectangle {
                             // Muted here only: a speaker-off icon beside the others, as the
                             // official clients show it (a caption threw the row off).
                             if m.local-muted: Icon { text: Icons.volume-off; font-size: Theme.text-body; color: Theme.error; }
+                        }
+                        if m.stage-label != "": Text {
+                            text: m.stage-label;
+                            font-size: Theme.text-caption;
+                            color: Theme.on-surface-variant;
+                            horizontal-alignment: center;
                         }
                     }
                     // Right-click: their volume here, as the official clients' user menu.
@@ -811,6 +837,11 @@ export component Timeline inherits Rectangle {
                 enabled: root.call-can-video || root.call-screen-share;
                 fill: root.call-screen-share ? Theme.primary-container : Theme.surface-high;
                 clicked => { root.set-screen-share(!root.call-screen-share); }
+            }
+            if root.call-stage-self != "": Button {
+                text: root.call-stage-self;
+                kind: "tonal";
+                clicked => { root.stage-self(); }
             }
             Rectangle { width: Theme.space-3; }
             ImageIconButton {
@@ -1512,6 +1543,11 @@ export component Timeline inherits Rectangle {
                         released(v) => { root.user-sound(root.sound-member, v, root.call-members[root.sound-member].local-muted, true); }
                     }
                     Text { text: round(volume.value * 100) + "%"; width: 40px; horizontal-alignment: right; color: Theme.on-surface; vertical-alignment: center; }
+                }
+                if root.call-members[root.sound-member].stage-action != "": Button {
+                    text: root.call-members[root.sound-member].stage-action;
+                    kind: "tonal";
+                    clicked => { member-sound.close(); root.stage-member(root.sound-member); }
                 }
                 Button {
                     text: root.call-members[root.sound-member].local-muted ? "Unmute for me" : "Mute for me";

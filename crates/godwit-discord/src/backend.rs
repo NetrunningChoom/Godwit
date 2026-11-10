@@ -25,6 +25,12 @@ pub use godwit_core::backend::Waker;
 /// A request to Discord's HTTP API.
 #[derive(Debug, Clone)]
 pub enum Request {
+    /// Modify (`user`) or Modify Current User (None) Voice State on a stage.
+    StageVoiceState {
+        guild: String,
+        user: Option<String>,
+        body: Value,
+    },
     DefaultSoundboard {
         channel: String,
     },
@@ -1391,6 +1397,13 @@ async fn answer(api: &Api, request: Request) -> Answer {
         Request::AckBulk(reads) => Answer::Done {
             what: "marking read",
             result: api.ack_bulk(&reads).await.map_err(RequestError::from),
+        },
+        Request::StageVoiceState { guild, user, body } => Answer::Done {
+            what: "changing your place on the stage",
+            result: api
+                .modify_voice_state(&guild, user.as_deref(), &body)
+                .await
+                .map_err(RequestError::from),
         },
         Request::Typing { channel } => Answer::Done {
             what: "typing",

@@ -3519,6 +3519,7 @@ fn rooms_without_voice_cant_be_called_and_occupants_are_tracked() {
         speaking: false,
         muted: true,
         deafened: false,
+        stage: None,
     };
     app.apply(Event::VoiceOccupants {
         room: id.clone(),
@@ -5595,6 +5596,7 @@ fn last_interactions_take_each_persons_newest_dm_and_calls_as_now() {
             speaking: false,
             muted: false,
             deafened: false,
+            stage: None,
         }],
     );
     state.rooms = [a, a2, bob, cat, call].into_iter().map(Arc::new).collect();

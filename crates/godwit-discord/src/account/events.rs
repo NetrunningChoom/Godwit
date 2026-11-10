@@ -559,6 +559,15 @@ impl DiscordAccount {
                 self.sync_rooms(out);
                 self.sync_servers(out);
             }
+            "STAGE_INSTANCE_CREATE" | "STAGE_INSTANCE_UPDATE" | "STAGE_INSTANCE_DELETE" => {
+                if event == "STAGE_INSTANCE_DELETE" {
+                    self.store.remove_stage_instance(d);
+                } else {
+                    self.store.put_stage_instance(d);
+                }
+                self.sync_rooms(out);
+                self.stage_changed(d["channel_id"].as_str(), out);
+            }
             "CHANNEL_DELETE" => {
                 if let Some(id) = d["id"].as_str() {
                     self.store.remove_channel(id);
@@ -585,6 +594,7 @@ impl DiscordAccount {
                     for m in d["members"].as_array().into_iter().flatten() {
                         self.store.put_member(id, m);
                     }
+                    self.store.put_stage_instances(id, &d["stage_instances"]);
                     if let Some(entries) = d["guild_scheduled_events"].as_array() {
                         let events = entries.iter().filter_map(|v| self.parse_server_event(id, v)).collect();
                         self.scheduled_events.insert(id.to_owned(), events);

@@ -410,6 +410,11 @@ pub enum Event {
         room: RoomId,
         members: Vec<CallMember>,
     },
+    /// The stage of our call changed (None: no stage going on).
+    CallStage {
+        room: RoomId,
+        stage: Option<crate::call::CallStage>,
+    },
     /// The sounds offered by the call's soundboard.
     CallSounds {
         room: RoomId,

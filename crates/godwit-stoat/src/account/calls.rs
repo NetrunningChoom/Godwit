@@ -158,6 +158,7 @@ impl StoatAccount {
             speaking: false,
             muted: false,
             deafened: false,
+            stage: None,
         }
     }
 

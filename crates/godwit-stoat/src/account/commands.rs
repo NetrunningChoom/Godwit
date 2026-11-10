@@ -528,7 +528,7 @@ impl StoatAccount {
                 Vec::new()
             }
             Command::PlaySound { .. } => Vec::new(),
-            Command::LoadCallSounds { .. } => Vec::new(),
+            Command::LoadCallSounds { .. } | Command::Stage { .. } => Vec::new(),
             // Stoat calls don't ring: nothing to turn down.
             Command::DeclineCall { .. } => Vec::new(),
             // Stoat's pins aren't wired up (its rooms don't offer them).

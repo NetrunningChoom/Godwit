@@ -2,7 +2,67 @@
 // Copyright (C) 2026 Godwit contributors
 //! Call participants, connection labels and Active now rows.
 
+use godwit_core::call::{CallStage, StageRequest, StageRole};
+
 use super::*;
+
+/// What a stage offers for someone: the button's label and the request it
+/// makes. A person on the stage can step down or be moved to the audience;
+/// the audience asks to speak (or lowers a raised hand); moderators invite.
+pub fn stage_action(role: StageRole, me: bool, stage: &CallStage) -> Option<(&'static str, StageRequest)> {
+    match (role, me) {
+        (StageRole::Speaker, true) => Some(("Move to audience", StageRequest::MoveToAudience)),
+        (StageRole::HandRaised, true) => Some(("Lower hand", StageRequest::LowerHand)),
+        (StageRole::Audience, true) if stage.moderate => Some(("Become a speaker", StageRequest::InviteToSpeak)),
+        (StageRole::Audience, true) if stage.may_request => Some(("Request to speak", StageRequest::RequestToSpeak)),
+        (StageRole::Audience, true) => None,
+        (StageRole::Speaker, false) if stage.moderate => Some(("Move to audience", StageRequest::MoveToAudience)),
+        (StageRole::Audience | StageRole::HandRaised, false) if stage.moderate => {
+            Some(("Invite to speak", StageRequest::InviteToSpeak))
+        }
+        (_, false) => None,
+    }
+}
+
+#[cfg(test)]
+mod stage_tests {
+    use super::*;
+
+    fn stage(moderate: bool, may_request: bool) -> CallStage {
+        CallStage {
+            topic: "Topic".into(),
+            moderate,
+            may_request,
+        }
+    }
+
+    #[test]
+    fn the_audience_asks_and_moderators_invite() {
+        let guest = stage(false, true);
+        assert_eq!(
+            stage_action(StageRole::Audience, true, &guest),
+            Some(("Request to speak", StageRequest::RequestToSpeak))
+        );
+        assert_eq!(
+            stage_action(StageRole::HandRaised, true, &guest),
+            Some(("Lower hand", StageRequest::LowerHand))
+        );
+        assert_eq!(stage_action(StageRole::HandRaised, false, &guest), None);
+        let moderator = stage(true, true);
+        assert_eq!(
+            stage_action(StageRole::HandRaised, false, &moderator),
+            Some(("Invite to speak", StageRequest::InviteToSpeak))
+        );
+        assert_eq!(
+            stage_action(StageRole::Speaker, false, &moderator),
+            Some(("Move to audience", StageRequest::MoveToAudience))
+        );
+        assert_eq!(
+            stage_action(StageRole::Speaker, true, &guest),
+            Some(("Move to audience", StageRequest::MoveToAudience))
+        );
+    }
+}
 
 pub fn call_members(members: &[CallMember], images: &mut Images) -> Vec<CallMemberItem> {
     members
@@ -18,6 +78,13 @@ pub fn call_members(members: &[CallMember], images: &mut Images) -> Vec<CallMemb
                 speaking: m.speaking,
                 muted: m.muted,
                 deafened: m.deafened,
+                stage_label: match m.stage {
+                    Some(StageRole::Speaker) => "Speaker",
+                    Some(StageRole::Audience) => "Audience",
+                    Some(StageRole::HandRaised) => "Hand raised",
+                    None => "",
+                }
+                .into(),
                 volume: 1.0,
                 ..CallMemberItem::default()
             }

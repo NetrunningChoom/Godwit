@@ -26,6 +26,10 @@ pub struct VoiceState {
     /// Sharing their screen (Go Live), or their camera.
     pub self_stream: bool,
     pub self_video: bool,
+    /// In a stage: not allowed to speak (the audience).
+    pub suppress: bool,
+    /// When they asked to speak (an ISO 8601 time), if their hand is up.
+    pub request_to_speak: Option<String>,
 }
 
 impl VoiceState {
@@ -41,7 +45,23 @@ impl VoiceState {
             deaf: flag("deaf"),
             self_stream: flag("self_stream"),
             self_video: flag("self_video"),
+            suppress: flag("suppress"),
+            request_to_speak: state["request_to_speak_timestamp"].as_str().map(str::to_owned),
         })
+    }
+
+    /// Their part on a stage: a speaker isn't suppressed; the audience is,
+    /// with a hand up once they asked (docs.discord.food, Stage Instance:
+    /// a speaker has no request_to_speak_timestamp, suppress false).
+    pub fn stage_role(&self) -> godwit_core::call::StageRole {
+        use godwit_core::call::StageRole;
+        if !self.suppress {
+            StageRole::Speaker
+        } else if self.request_to_speak.is_some() {
+            StageRole::HandRaised
+        } else {
+            StageRole::Audience
+        }
     }
 
     pub fn muted(&self) -> bool {
@@ -178,6 +198,19 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn stage_roles_follow_suppress_and_the_raised_hand() {
+        use godwit_core::call::StageRole;
+        let role = |v: serde_json::Value| VoiceState::from(&v).unwrap().stage_role();
+        let base = json!({"user_id": "1", "channel_id": "2"});
+        assert_eq!(role(base.clone()), StageRole::Speaker);
+        let mut audience = base.clone();
+        audience["suppress"] = json!(true);
+        assert_eq!(role(audience.clone()), StageRole::Audience);
+        audience["request_to_speak_timestamp"] = json!("2026-01-01T00:00:00+00:00");
+        assert_eq!(role(audience), StageRole::HandRaised);
+    }
 
     #[test]
     fn follows_people_between_channels_and_out() {

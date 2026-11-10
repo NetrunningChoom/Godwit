@@ -324,6 +324,7 @@ mod tests {
                 speaking: false,
                 muted: false,
                 deafened: false,
+                stage: None,
             })
             .collect();
         room.capabilities.voice_user_limit = Some(20);

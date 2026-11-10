@@ -375,6 +375,12 @@ pub enum Command {
     SetDeafened(bool),
     SetCamera(bool),
     SetScreenShare(bool),
+    /// A stage request about `user` in our call in `room`.
+    Stage {
+        room: RoomId,
+        user: crate::ids::UserId,
+        request: crate::call::StageRequest,
+    },
     EditMessage {
         room: RoomId,
         message: MessageId,

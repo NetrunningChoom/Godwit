@@ -1126,6 +1126,22 @@ impl Application {
                     },
                 }]
             }
+            Action::Stage { user, request } => {
+                let Some(call) = self.state.call.as_ref() else {
+                    return Vec::new();
+                };
+                if call.status != CallStatus::Connected || call.stage.is_none() {
+                    return Vec::new();
+                }
+                vec![Effect::Backend {
+                    account: call.room.account.clone(),
+                    command: Command::Stage {
+                        room: call.room.clone(),
+                        user,
+                        request,
+                    },
+                }]
+            }
             Action::WatchStream { user, watch } => self.dispatch_watch_stream(user, watch),
             Action::ToggleMute => {
                 // Self-deafening also mutes the microphone. Keep that true

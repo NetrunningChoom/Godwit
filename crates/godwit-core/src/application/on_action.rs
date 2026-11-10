@@ -1277,6 +1277,7 @@ impl Application {
             screen_share: false,
             videos: Vec::new(),
             streams: Vec::new(),
+            stage: None,
             sounds: Vec::new(),
         });
         effects.push(Effect::Backend {

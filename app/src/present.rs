@@ -720,6 +720,11 @@ impl Presenter {
             for (item, member) in members.iter_mut().zip(&call.members) {
                 let user = member.user.raw.as_ref();
                 item.me = *member.user.raw == *call.room.account.user;
+                if let (Some(stage), Some(role)) = (&call.stage, member.stage) {
+                    item.stage_action = view::stage_action(role, item.me, stage)
+                        .map_or("", |(label, _)| label)
+                        .into();
+                }
                 item.volume = self.stream_sound.user_volume(user);
                 item.local_muted = self.stream_sound.muted_users.iter().any(|u| u == user);
                 item.video_index = videos
@@ -733,6 +738,17 @@ impl Presenter {
                     .and_then(|i| i32::try_from(i).ok())
                     .unwrap_or(-1);
             }
+            ui.set_call_stage_topic(call.stage.as_ref().map_or("", |s| s.topic.as_ref()).into());
+            ui.set_call_stage_self(
+                call.stage
+                    .as_ref()
+                    .and_then(|stage| {
+                        let mine = call.members.iter().find(|m| *m.user.raw == *call.room.account.user)?;
+                        view::stage_action(mine.stage?, true, stage)
+                    })
+                    .map_or("", |(label, _)| label)
+                    .into(),
+            );
             view::sync(&self.call_members, members);
             view::sync(&self.call_videos, videos);
             let streams: Vec<crate::ui::StreamItem> = call
@@ -776,6 +792,8 @@ impl Presenter {
         } else {
             ui.set_call_quality(-1);
             ui.set_call_latency(-1);
+            ui.set_call_stage_topic(Default::default());
+            ui.set_call_stage_self(Default::default());
             view::sync(&self.call_streams, Vec::new());
             self.call_video_images.clear();
             self.call_frame_sids.clear();

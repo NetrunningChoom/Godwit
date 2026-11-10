@@ -777,6 +777,14 @@ impl Api {
     }
 
     /// Rings everyone in a DM or group DM call who isn't in it yet.
+    /// PATCH /guilds/{guild}/voice-states/{@me|user}: a stage's raised hand,
+    /// invitation to speak or move to the audience (docs.discord.food,
+    /// resources/voice). Answers 204.
+    pub async fn modify_voice_state(&self, guild: &str, user: Option<&str>, body: &Value) -> Result<()> {
+        let path = format!("/guilds/{guild}/voice-states/{}", user.unwrap_or("@me"));
+        self.empty(with_json(self.request(Method::PATCH, &path), body)).await
+    }
+
     pub async fn ring(&self, channel: &str) -> Result<()> {
         let path = format!("/channels/{channel}/call/ring");
         let request = with_json(self.request(Method::POST, &path), &json!({"recipients": null}));

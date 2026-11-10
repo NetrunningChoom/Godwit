@@ -34,6 +34,7 @@ pub(crate) mod security;
 pub mod session;
 pub mod settings;
 pub(crate) mod soundboard;
+pub mod stage;
 pub mod store;
 pub mod voice;
 pub mod webhooks;

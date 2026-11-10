@@ -750,6 +750,10 @@ export component AppWindow inherits Window {
     callback toggle-card-favourite();
     in property <bool> call-here;
     in property <[CallMemberItem]> call-members;
+    in property <string> call-stage-topic;
+    in property <string> call-stage-self;
+    callback stage-self();
+    callback stage-member(int);
     in property <[StreamItem]> call-streams;
     callback watch-stream(int, bool);
     // Volume and mute for a stream or a person; `done` is false while a
@@ -1526,6 +1530,10 @@ export component AppWindow inherits Window {
                                         call-unavailable: root.call-unavailable;
                                         call-here: root.call-here;
                                         call-members: root.call-members;
+                                        call-stage-topic: root.call-stage-topic;
+                                        call-stage-self: root.call-stage-self;
+                                        stage-self() => { root.stage-self(); }
+                                        stage-member(i) => { root.stage-member(i); }
                                         call-streams: root.call-streams;
                                         watch-stream(i, on) => { root.watch-stream(i, on); }
                                         stream-sound(i, v, m, d) => { root.stream-sound(i, v, m, d); }

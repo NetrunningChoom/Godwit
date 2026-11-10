@@ -22,6 +22,41 @@ pub struct CallMember {
     pub muted: bool,
     /// Hears nothing (deafened themselves).
     pub deafened: bool,
+    /// Their part on a stage (speaker, audience, hand raised); None outside
+    /// stage rooms.
+    pub stage: Option<StageRole>,
+}
+
+/// Where someone stands on a stage: speakers talk, the audience listens and
+/// may raise a hand to be invited to speak.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StageRole {
+    Speaker,
+    Audience,
+    HandRaised,
+}
+
+/// What can be asked on a stage ([`crate::application::Action::Stage`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StageRequest {
+    /// Us, from the audience: ask to speak.
+    RequestToSpeak,
+    /// Us: take the raised hand back.
+    LowerHand,
+    /// A moderator lets someone speak.
+    InviteToSpeak,
+    /// A speaker steps down (us), or a moderator moves someone down.
+    MoveToAudience,
+}
+
+/// The stage going on in a stage room's call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallStage {
+    pub topic: Arc<str>,
+    /// We may invite people to speak and move them to the audience.
+    pub moderate: bool,
+    /// We may ask to speak.
+    pub may_request: bool,
 }
 
 /// The call we're in (one at a time, across every account).
@@ -41,6 +76,8 @@ pub struct Call {
     /// Go Live), and whether we do. Networks that send every screen share
     /// to everyone (LiveKit) leave this empty and list them in `videos`.
     pub streams: Vec<CallStream>,
+    /// The stage, in a stage room (see [`crate::room::Capabilities::stage`]).
+    pub stage: Option<CallStage>,
     /// The soundboard currently available in this call.
     pub sounds: Vec<Sound>,
 }

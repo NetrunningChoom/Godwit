@@ -480,6 +480,27 @@ fn connect_callbacks(ui: &AppWindow) {
             sh.act(ui, Action::WatchStream { user, watch });
         }
     });
+    callback!(ui.on_stage_self() => |sh, ui| {
+        let action = sh.app_state().call.as_ref().and_then(|call| {
+            let mine = call.members.iter().find(|m| *m.user.raw == *call.room.account.user)?;
+            let (_, request) = godwit::view::stage_action(mine.stage?, true, call.stage.as_ref()?)?;
+            Some(Action::Stage { user: mine.user.clone(), request })
+        });
+        if let Some(action) = action {
+            sh.act(ui, action);
+        }
+    });
+    callback!(ui.on_stage_member(i) => |sh, ui| {
+        let action = sh.app_state().call.as_ref().and_then(|call| {
+            let member = call.members.get(usize::try_from(i).ok()?)?;
+            let me = *member.user.raw == *call.room.account.user;
+            let (_, request) = godwit::view::stage_action(member.stage?, me, call.stage.as_ref()?)?;
+            Some(Action::Stage { user: member.user.clone(), request })
+        });
+        if let Some(action) = action {
+            sh.act(ui, action);
+        }
+    });
     callback!(ui.on_create_thread(row) => |sh, ui| sh.create_thread_from(ui, row));
     callback!(ui.on_new_post() => |sh, ui| sh.new_post(ui));
     callback!(ui.on_thread_toggle_tag(i) => |sh, ui| sh.thread_toggle_tag(ui, i));

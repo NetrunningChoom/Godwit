@@ -33,6 +33,7 @@ impl SteamAccount {
             speaking: member.speaking,
             muted: member.muted,
             deafened: member.deafened,
+            stage: None,
         }
     }
 
