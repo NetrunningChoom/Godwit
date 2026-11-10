@@ -1369,6 +1369,17 @@ mod tests {
     }
 
     #[test]
+    fn cancelling_a_send_aborts_it_by_nonce() {
+        let (mut a, _tx, mut cmds, _) = connected();
+        let _ = (cmds.try_recv(), cmds.try_recv());
+        a.run(Command::CancelSend {
+            room: room("C1"),
+            nonce: "n1".into(),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::Message(MessageCmd::CancelSend { nonce })) if nonce == "n1"));
+    }
+
+    #[test]
     fn sends_carry_their_nonce_both_ways() {
         let (mut a, tx, mut cmds, _) = connected();
         let _ = (cmds.try_recv(), cmds.try_recv());

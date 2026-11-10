@@ -1157,6 +1157,11 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_end_poll(row) => |sh, ui| sh.end_poll(ui, row));
+    callback!(ui.on_cancel_send(row) => |sh, ui| {
+        if let Some(id) = sh.message_at(row) {
+            sh.act(ui, Action::CancelSend(id));
+        }
+    });
     callback!(ui.on_create_poll() => |sh, ui| sh.open_poll(ui));
     callback!(ui.on_poll_question(t) => |sh, ui| sh.poll_question(ui, &t));
     callback!(ui.on_poll_answer(row, t) => |sh, ui| sh.poll_answer(ui, row, &t));

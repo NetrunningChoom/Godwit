@@ -94,6 +94,8 @@ export component MessageRow inherits Rectangle {
     callback mark-unread();
     callback forward();
     callback end-poll();
+    // Stop a message still uploading its files and drop it.
+    callback cancel-send();
     callback copy-text();
     callback copy-link();
     callback open-picker();
@@ -369,6 +371,11 @@ export component MessageRow inherits Rectangle {
                             player-pointer(u, x, y, d) => { root.player-pointer(u, x, y, d); }
                             player-move(u, x, y) => { root.player-move(u, x, y); }
                         }
+                    }
+                    // Only while files are uploading: a plain pending message is just faint.
+                    if message.pending && message.attachments.length > 0: HorizontalLayout {
+                        alignment: start;
+                        Button { text: "Cancel"; compact: true; danger: true; clicked => { root.cancel-send(); } }
                     }
                     for component_row in message.components: HorizontalLayout {
                         alignment: start;

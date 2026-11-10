@@ -208,6 +208,7 @@ export component Timeline inherits Rectangle {
     callback mark-unread(int);
     callback forward-message(int);
     callback end-poll(int);
+    callback cancel-send(int);
     // Polls can be created here: the attach button opens a menu with Create Poll.
     in property <bool> can-poll;
     callback create-poll();
@@ -1171,6 +1172,7 @@ export component Timeline inherits Rectangle {
                     mark-unread => { root.mark-unread(i); }
                     forward => { root.forward-message(i); }
                     end-poll => { root.end-poll(i); }
+                    cancel-send => { root.cancel-send(i); }
                     copy-text => { root.copy-text(i); }
                     copy-link => { root.copy-link(i); }
                     activate-component(custom-id) => { root.activate-message-button(i, custom-id); }

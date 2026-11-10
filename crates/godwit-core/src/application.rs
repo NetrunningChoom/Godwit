@@ -77,6 +77,9 @@ pub struct Application {
     state: AppState,
     /// Counter for pending messages' nonces.
     sent: u64,
+    /// Nonces of sends the user cancelled: a late answer for one is dropped
+    /// (cancelling is best effort once a network has posted). Cleared per run.
+    cancelled_sends: HashSet<Arc<str>>,
     /// Servers whose directory was asked for this session.
     directory_asked: HashSet<ServerId>,
     /// Rooms opened, most recent first (see `forget_old_timelines`).
@@ -107,6 +110,7 @@ impl Application {
                 ..AppState::default()
             },
             sent: 0,
+            cancelled_sends: HashSet::new(),
             directory_asked: HashSet::new(),
             recent: Vec::new(),
             last_room: HashMap::new(),
@@ -1053,6 +1057,27 @@ impl Application {
                 reply_to,
                 files,
             },
+        }]
+    }
+
+    /// Drops a pending message from the selected room and tells the network to
+    /// stop sending it. A real (confirmed) message is left alone.
+    fn cancel_send(&mut self, id: MessageId) -> Vec<Effect> {
+        let Some(room) = self.state.selected.clone() else {
+            return Vec::new();
+        };
+        let Some(t) = self.state.timelines.get_mut(&room) else {
+            return Vec::new();
+        };
+        let list = Arc::make_mut(&mut t.messages);
+        let Some(i) = list.iter().position(|m| m.pending && m.id == id) else {
+            return Vec::new();
+        };
+        list.remove(i);
+        self.cancelled_sends.insert(id.0.clone());
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::CancelSend { room, nonce: id.0 },
         }]
     }
 

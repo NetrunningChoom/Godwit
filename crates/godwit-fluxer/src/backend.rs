@@ -80,6 +80,9 @@ pub enum Request {
 }
 
 pub enum Cmd {
+    /// Aborts the in-flight `Request::Send` made with this nonce (uploads and
+    /// post), if it has not finished.
+    CancelSend(String),
     /// Sign in with an email (or username) and password on the instance at
     /// `origin` (see `discovery::origin`).
     Login {
@@ -175,6 +178,8 @@ struct State {
     session: Option<tokio::task::JoinHandle<()>>,
     /// Finding the kept sign-in's instance (retrying while unreachable).
     starting: Option<tokio::task::JoinHandle<()>>,
+    /// Sends in flight by nonce, so a cancel can abort the upload.
+    sends: std::collections::HashMap<String, tokio::task::AbortHandle>,
 }
 
 async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
@@ -259,7 +264,20 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                 if let Some(api) = st.api.clone() {
                     let out = out.clone();
                     // One at a time is `Api`'s pace; answers come back in any order.
-                    tokio::spawn(async move { out.send(Ev::Answer(Box::new(answer(&api, request).await))) });
+                    let send_nonce = match &request {
+                        Request::Send { nonce, .. } => Some(nonce.clone()),
+                        _ => None,
+                    };
+                    st.sends.retain(|_, h| !h.is_finished());
+                    let task = tokio::spawn(async move { out.send(Ev::Answer(Box::new(answer(&api, request).await))) });
+                    if let Some(nonce) = send_nonce {
+                        st.sends.insert(nonce, task.abort_handle());
+                    }
+                }
+            }
+            Cmd::CancelSend(nonce) => {
+                if let Some(handle) = st.sends.remove(&nonce) {
+                    handle.abort();
                 }
             }
             Cmd::Gateway(op, data) => {

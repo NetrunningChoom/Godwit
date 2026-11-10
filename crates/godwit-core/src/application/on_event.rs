@@ -534,6 +534,12 @@ impl Application {
     }
 
     pub(super) fn receive_message_confirmed(&mut self, room: RoomId, nonce: Arc<str>, message: Message) -> Vec<Effect> {
+        // Cancelled while sending but posted anyway: the answer is dropped, so
+        // it doesn't come back as a pending row's replacement. The network's
+        // live event for the real message still shows it, as it exists.
+        if self.cancelled_sends.remove(&nonce) {
+            return Vec::new();
+        }
         if self.state.room(&room).is_none() {
             return Vec::new();
         }
@@ -554,6 +560,10 @@ impl Application {
     }
 
     pub(super) fn receive_message_failed(&mut self, room: RoomId, nonce: Arc<str>, error: Arc<str>) -> Vec<Effect> {
+        // A cancelled send ending in an error (often the abort itself) is no news.
+        if self.cancelled_sends.remove(&nonce) {
+            return Vec::new();
+        }
         let mut unsent = None;
         if let Some(t) = self.state.timelines.get_mut(&room) {
             let messages = Arc::make_mut(&mut t.messages);

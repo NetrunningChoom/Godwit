@@ -1167,6 +1167,17 @@ impl NetworkAccount for DiscordAccount {
                     },
                 );
             }
+            Command::CancelSend { nonce, .. } => {
+                let ours = self
+                    .pending
+                    .iter()
+                    .find(|(_, core)| **core == nonce)
+                    .map(|(k, _)| k.clone());
+                if let Some(ours) = ours {
+                    self.pending.remove(&ours);
+                    self.net.send(Cmd::CancelSend(ours));
+                }
+            }
             Command::SendSticker {
                 room,
                 sticker,
@@ -3214,6 +3225,30 @@ mod tests {
             out.iter()
                 .any(|e| matches!(e, Event::Profile(p) if p.note.as_deref() == Some("changed")))
         );
+    }
+
+    #[test]
+    fn cancelling_a_send_aborts_its_request_and_forgets_the_nonce() {
+        let (mut a, mut cmds, _tx) = account();
+        ready(&mut a);
+        let _ = cmds.try_recv();
+        let room = a.room_id("13").unwrap();
+        a.run(Command::SendMessage {
+            room: room.clone(),
+            text: "hi".into(),
+            nonce: "core-1".into(),
+            reply_to: None,
+            files: Vec::new(),
+        });
+        let Ok(Cmd::Request(Request::Send { nonce: ours, .. })) = cmds.try_recv() else {
+            panic!("no send")
+        };
+        a.run(Command::CancelSend {
+            room,
+            nonce: "core-1".into(),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::CancelSend(n)) if n == ours));
+        assert!(a.pending.is_empty());
     }
 
     #[test]

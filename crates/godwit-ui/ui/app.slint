@@ -1066,6 +1066,7 @@ export component AppWindow inherits Window {
     callback mark-unread(int);
     callback forward-message(int);
     callback end-poll(int);
+    callback cancel-send(int);
     // The poll dialog (see PollDialog).
     in property <bool> can-poll;
     callback create-poll();
@@ -1652,6 +1653,7 @@ export component AppWindow inherits Window {
                                         mark-unread(i) => { root.mark-unread(i); }
                                         forward-message(i) => { root.forward-message(i); }
                                         end-poll(i) => { root.end-poll(i); }
+                                        cancel-send(i) => { root.cancel-send(i); }
                                         can-poll: root.can-poll;
                                         create-poll => { root.create-poll(); }
                                         copy-text(i) => { root.copy-text(i); }

@@ -550,6 +550,37 @@ fn sending_shows_a_pending_message_until_confirmed() {
 }
 
 #[test]
+fn cancelling_a_pending_send_drops_it_and_ignores_the_late_answer() {
+    let (mut app, id) = open_dm(&["m1"]);
+    let nonce = send(&mut app, "hello");
+    let effects = app.dispatch(Action::CancelSend(MessageId(nonce.clone())));
+    assert!(matches!(
+        commands(&effects)[..],
+        [Command::CancelSend { nonce: n, .. }] if *n == nonce
+    ));
+    assert_eq!(app.state().timeline(&id).unwrap().messages.len(), 1, "pending row gone");
+    // The send finished anyway: its answer must not bring the row back.
+    app.apply(Event::MessageConfirmed {
+        room: id.clone(),
+        nonce: nonce.clone(),
+        message: msg("m2"),
+    });
+    assert_eq!(app.state().timeline(&id).unwrap().messages.len(), 1);
+    // A failure for it raises no error and gives no draft back.
+    let nonce = send(&mut app, "again");
+    app.dispatch(Action::CancelSend(MessageId(nonce.clone())));
+    app.apply(Event::MessageFailed {
+        room: id.clone(),
+        nonce,
+        error: "aborted".into(),
+    });
+    assert!(app.state().errors.is_empty());
+    assert!(app.state().drafts.is_empty());
+    // Confirmed messages are not cancellable.
+    assert!(app.dispatch(Action::CancelSend(MessageId("m1".into()))).is_empty());
+}
+
+#[test]
 fn a_live_copy_before_the_confirmation_is_not_shown_twice() {
     let (mut app, id) = open_dm(&["m1"]);
     let nonce = send(&mut app, "hello");

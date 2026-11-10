@@ -3,6 +3,7 @@
 //! Network side: runs on a tokio runtime in a background thread. The UI sends
 //! `Cmd`s and receives `Ev`s; every event triggers a repaint.
 
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -104,6 +105,10 @@ pub enum MessageCmd {
         content: String,
         replies: Vec<ReplyIntent>,
         files: Vec<Upload>,
+        nonce: String,
+    },
+    /// Aborts the upload/post started by `Send` with this nonce.
+    CancelSend {
         nonce: String,
     },
     Edit {
@@ -1098,6 +1103,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Emitter) {
         out,
         ws_tx: None,
         ws_task: None,
+        sends: HashMap::new(),
         voice_node: Default::default(),
         voice_tx: None,
         voice_join_cancel: None,
@@ -1131,6 +1137,8 @@ struct Backend {
     // Sender into the currently running websocket task, if any.
     ws_tx: Option<tmpsc::UnboundedSender<Value>>,
     ws_task: Option<tokio::task::JoinHandle<()>>,
+    // Sends in flight by nonce, so a cancel can abort the upload.
+    sends: HashMap<String, tokio::task::AbortHandle>,
     // The voice node picked for this session (see `pick_voice_node`).
     voice_node: std::sync::Arc<tokio::sync::Mutex<Option<String>>>,
     // The current call, if any.
@@ -1389,9 +1397,15 @@ impl Backend {
             config,
             out,
             ws_tx,
+            sends,
             ..
         } = self;
         match cmd {
+            MessageCmd::CancelSend { nonce } => {
+                if let Some(handle) = sends.remove(&nonce) {
+                    handle.abort();
+                }
+            }
             MessageCmd::FetchMessages { channel, before } => {
                 let rest = rest.clone();
                 let out = out.clone();
@@ -1464,7 +1478,9 @@ impl Backend {
                 let rest = rest.clone();
                 let out = out.clone();
                 let autumn = config.features.autumn.url.clone();
-                tokio::spawn(async move {
+                sends.retain(|_, h| !h.is_finished());
+                let key = nonce.clone();
+                let task = tokio::spawn(async move {
                     let failed = |error: String| Ev::SendFailed {
                         channel: channel.clone(),
                         nonce: nonce.clone(),
@@ -1500,6 +1516,7 @@ impl Backend {
                         Err(e) => out.emit(failed(format!("sending message: {e:#}"))),
                     }
                 });
+                sends.insert(key, task.abort_handle());
             }
             MessageCmd::Edit { channel, id, content } => {
                 let rest = rest.clone();

@@ -1277,6 +1277,9 @@ impl FluxerAccount {
                     },
                 );
             }
+            Command::CancelSend { nonce, .. } => {
+                self.net.send(Cmd::CancelSend(nonce.to_string()));
+            }
             Command::EditMessage { room, message, text } => {
                 if let Some(channel) = self.channel_of(&room) {
                     req(
@@ -1971,6 +1974,11 @@ mod tests {
         assert!(
             matches!(cmds.try_recv(), Ok(Cmd::Request(Request::Send { channel, nonce, .. })) if channel == "20" && nonce == "n1")
         );
+        a.run(Command::CancelSend {
+            room: room.clone(),
+            nonce: "n1".into(),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::CancelSend(n)) if n == "n1"));
         let mut out = Vec::new();
         a.dispatch(
             "MESSAGE_CREATE",

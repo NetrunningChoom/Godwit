@@ -708,6 +708,12 @@ impl StoatAccount {
                 }));
                 Vec::new()
             }
+            Command::CancelSend { nonce, .. } => {
+                self.net.send(Cmd::Message(MessageCmd::CancelSend {
+                    nonce: nonce.to_string(),
+                }));
+                Vec::new()
+            }
             Command::EditMessage { room, message, text } => {
                 self.net.send(Cmd::Message(MessageCmd::Edit {
                     channel: room.raw.to_string(),

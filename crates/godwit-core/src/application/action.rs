@@ -250,6 +250,9 @@ pub enum Action {
     },
     /// Drop the reply or edit in progress (an edit also drops its text).
     CancelCompose,
+    /// Cancel a message still sending (its pending id) in the selected room;
+    /// drops it from the timeline and stops its upload where the network can.
+    CancelSend(MessageId),
     /// Delete a message in the selected room (the UI confirms first).
     Delete(MessageId),
     /// Delete this message and every newer loaded one in the selected room

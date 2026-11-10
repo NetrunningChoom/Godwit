@@ -133,6 +133,13 @@ pub enum Command {
         reply_to: Option<MessageId>,
         files: Vec<Outgoing>,
     },
+    /// The user cancelled the send made as `nonce`: stop uploading or posting
+    /// it if possible. Networks may ignore it; the core already dropped the
+    /// pending message and ignores a late answer for the nonce.
+    CancelSend {
+        room: RoomId,
+        nonce: Arc<str>,
+    },
     /// Send a sticker (a network's id from [`crate::stickers::Sticker`]) with
     /// no text; the message arrives like any other.
     SendSticker {

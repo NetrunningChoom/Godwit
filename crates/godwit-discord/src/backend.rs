@@ -454,6 +454,9 @@ pub enum Admin {
 
 #[derive(Debug)]
 pub enum Cmd {
+    /// Aborts the in-flight `Request::Send` made with this nonce (its uploads
+    /// and the post), if it has not finished.
+    CancelSend(String),
     /// Confirm the prompt `id` ([`Ev::StepUpRequired`]) with a code.
     StepUpAnswer {
         id: u64,
@@ -862,10 +865,13 @@ struct State {
     call: Option<tmpsc::UnboundedSender<CallCmd>>,
     /// Admin requests waiting on the person to confirm.
     step_up: Arc<crate::mfa::Prompts>,
+    /// Sends in flight by nonce, so a cancel can abort the upload.
+    sends: std::collections::HashMap<String, tokio::task::AbortHandle>,
 }
 
 async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
     let mut state = State {
+        sends: std::collections::HashMap::new(),
         api: None,
         token: None,
         session: None,
@@ -1002,7 +1008,12 @@ fn handle(cmd: Cmd, state: &mut State, out: &Out, inner: &tmpsc::UnboundedSender
             };
             let out = out.clone();
             let prompts = state.step_up.clone();
-            tokio::spawn(async move {
+            let send_nonce = match &request {
+                Request::Send { nonce, .. } => Some(nonce.clone()),
+                _ => None,
+            };
+            state.sends.retain(|_, h| !h.is_finished());
+            let task = tokio::spawn(async move {
                 let answered = match request {
                     // Moderation Discord holds back for 2FA asks the person
                     // and goes again once.
@@ -1021,6 +1032,14 @@ fn handle(cmd: Cmd, state: &mut State, out: &Out, inner: &tmpsc::UnboundedSender
                 };
                 out.send(Ev::Answer(answered));
             });
+            if let Some(nonce) = send_nonce {
+                state.sends.insert(nonce, task.abort_handle());
+            }
+        }
+        Cmd::CancelSend(nonce) => {
+            if let Some(handle) = state.sends.remove(&nonce) {
+                handle.abort();
+            }
         }
         Cmd::StepUpAnswer { id, method, code } => {
             let Some(api) = state.api.clone() else {

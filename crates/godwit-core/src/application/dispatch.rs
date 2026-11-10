@@ -407,6 +407,7 @@ impl Application {
             }
             Action::SetDraft(text) => self.dispatch_set_draft(text),
             Action::Send { now_ms } => self.send(now_ms),
+            Action::CancelSend(id) => self.cancel_send(id),
             Action::OpenGifs => {
                 let Some(room) = self.state.selected.clone().filter(|r| self.allows(r, |c| c.gifs)) else {
                     return Vec::new();
