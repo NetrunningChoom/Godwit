@@ -56,9 +56,14 @@ pub fn core_quality(quality: ScreenQuality) -> ScreenShareQuality {
 pub struct ShareDialog {
     pub room: RoomId,
     pub qualities: Vec<ScreenQuality>,
-    /// Windows: the screens and the apps' windows listed when it opened.
+    /// Windows: the screens and the apps' windows, once listed.
     #[cfg(windows)]
     pub sources: (Vec<godwit_voice::screen::Source>, Vec<godwit_voice::screen::Source>),
+    /// Windows: the listing on its way. Asking windows for their titles
+    /// waits on each app, so a hung one can't freeze the dialog.
+    #[cfg(windows)]
+    pub sources_rx:
+        Option<std::sync::mpsc::Receiver<(Vec<godwit_voice::screen::Source>, Vec<godwit_voice::screen::Source>)>>,
 }
 impl ShareDialog {
     pub fn new(state: &AppState) -> Option<Self> {
@@ -71,8 +76,24 @@ impl ShareDialog {
                 .filter(|q| q.allowed(room.capabilities.video_resolution))
                 .collect(),
             #[cfg(windows)]
-            sources: godwit_voice::screen::sources(),
+            sources: (Vec::new(), Vec::new()),
+            #[cfg(windows)]
+            sources_rx: None,
         })
+    }
+
+    /// Windows: starts listing what can be shared; `wake` runs when it's in.
+    #[cfg(windows)]
+    pub fn list_sources(&mut self, wake: impl Fn() + Send + 'static) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new().name("share-sources".into()).spawn(move || {
+            let _ = tx.send(godwit_voice::screen::sources());
+            wake();
+        });
+        match spawned {
+            Ok(_) => self.sources_rx = Some(rx),
+            Err(e) => eprintln!("error: listing screens and windows: {e}"),
+        }
     }
     pub fn current(&self, state: &AppState) -> bool {
         state

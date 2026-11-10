@@ -197,20 +197,16 @@ impl Shell {
         let Some(dialog) = crate::voice_ui::ShareDialog::new(self.app.state()) else {
             return;
         };
+        #[cfg(windows)]
+        let mut dialog = dialog;
         // Windows always asks: there's no system picker for the screen or window.
         if self.settings.voice.screen_quality_ask || godwit_voice::screen::LISTS_SOURCES {
             #[cfg(windows)]
             {
-                let titles = |list: &[godwit_voice::screen::Source]| {
-                    ModelRc::new(VecModel::from(
-                        list.iter()
-                            .map(|s| SharedString::from(s.title.as_str()))
-                            .collect::<Vec<_>>(),
-                    ))
-                };
+                let wake = self.inline_wake.clone();
+                dialog.list_sources(move || wake());
                 ui.set_share_pick_source(true);
-                ui.set_share_screens(titles(&dialog.sources.0));
-                ui.set_share_windows(titles(&dialog.sources.1));
+                set_share_sources(ui, &dialog.sources);
                 ui.set_share_source_tab(0);
                 ui.set_share_source_index(0);
             }
@@ -281,6 +277,14 @@ impl Shell {
     pub(super) fn show_share_dialog(&mut self, ui: &AppWindow) {
         if self.share_dialog.as_ref().is_some_and(|d| !d.current(self.app.state())) {
             self.share_dialog = None;
+        }
+        #[cfg(windows)]
+        if let Some(dialog) = self.share_dialog.as_mut()
+            && let Some(sources) = dialog.sources_rx.as_ref().and_then(|rx| rx.try_recv().ok())
+        {
+            dialog.sources = sources;
+            dialog.sources_rx = None;
+            set_share_sources(ui, &dialog.sources);
         }
         ui.set_share_dialog_open(self.share_dialog.is_some());
     }
@@ -427,4 +431,18 @@ impl Shell {
     pub fn call_room(&self) -> Option<RoomId> {
         self.app.state().call.as_ref().map(|c| c.room.clone())
     }
+}
+
+/// The share dialog's lists of screens and windows.
+#[cfg(windows)]
+fn set_share_sources(ui: &AppWindow, sources: &(Vec<godwit_voice::screen::Source>, Vec<godwit_voice::screen::Source>)) {
+    let titles = |list: &[godwit_voice::screen::Source]| {
+        ModelRc::new(VecModel::from(
+            list.iter()
+                .map(|s| SharedString::from(s.title.as_str()))
+                .collect::<Vec<_>>(),
+        ))
+    };
+    ui.set_share_screens(titles(&sources.0));
+    ui.set_share_windows(titles(&sources.1));
 }
