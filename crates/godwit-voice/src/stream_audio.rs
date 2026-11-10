@@ -22,6 +22,8 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::SyncSender;
+use std::time::Duration;
 
 use anyhow::Result;
 
@@ -52,18 +54,31 @@ pub fn target_for_share() -> Target {
     Target::AllButGodwit
 }
 
-/// A running capture; dropping it stops it and waits for its thread.
+/// A running capture; dropping it stops it and waits (bounded) for its
+/// thread: a sound server that stopped answering can't hold up the caller.
 pub struct Capture {
     stop: Arc<AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
+    done: std::sync::mpsc::Receiver<()>,
 }
+
+/// How long stopping waits for the capture thread.
+const STOP_WAIT: Duration = Duration::from_secs(2);
 
 impl Drop for Capture {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        if let Err(std::sync::mpsc::RecvTimeoutError::Timeout) = self.done.recv_timeout(STOP_WAIT) {
+            eprintln!("warning: stream audio did not stop within {STOP_WAIT:?}");
         }
+    }
+}
+
+/// Says the thread ended, however it ends.
+struct Done(SyncSender<()>);
+
+impl Drop for Done {
+    fn drop(&mut self) {
+        let _ = self.0.try_send(());
     }
 }
 
@@ -98,19 +113,24 @@ pub fn start(target: Target, frames: impl FnMut(&[i16]) + Send + 'static) -> Res
     let stop = Arc::new(AtomicBool::new(false));
     let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<Result<()>>(1);
     let flag = stop.clone();
-    let thread = std::thread::Builder::new()
-        .name("stream-audio".into())
-        .spawn(move || platform::run(target, flag, ready_tx, Framer::new(frames)))?;
-    match ready_rx.recv() {
-        Ok(Ok(())) => Ok(Capture {
-            stop,
-            thread: Some(thread),
-        }),
+    let (done_tx, done) = std::sync::mpsc::sync_channel(1);
+    let thread = std::thread::Builder::new().name("stream-audio".into()).spawn(move || {
+        let _done = Done(done_tx);
+        platform::run(target, flag, ready_tx, Framer::new(frames));
+    })?;
+    // Bounded too: connecting to a sound server that doesn't answer mustn't
+    // hold up starting the share; the thread is left to end by itself.
+    match ready_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(())) => Ok(Capture { stop, done }),
         Ok(Err(error)) => {
             let _ = thread.join();
             Err(error)
         }
-        Err(_) => {
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            stop.store(true, Ordering::Relaxed);
+            Err(anyhow::anyhow!("the sound server didn't answer"))
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
             let _ = thread.join();
             Err(anyhow::anyhow!("the stream audio thread ended"))
         }
@@ -494,8 +514,20 @@ mod platform {
                 framer.push(&frame);
             }
         }
-        for (_, (stream, _)) in streams.drain() {
-            let _ = futures_executor::block_on(stream.delete());
+        // Deleted off this thread: a server that stopped answering would
+        // otherwise hold stopping the share forever.
+        let left: Vec<pulseaudio::RecordStream> = streams.drain().map(|(_, (stream, _))| stream).collect();
+        if !left.is_empty() {
+            let spawned = std::thread::Builder::new()
+                .name("stream-audio-end".into())
+                .spawn(move || {
+                    for stream in left {
+                        let _ = futures_executor::block_on(stream.delete());
+                    }
+                });
+            if let Err(e) = spawned {
+                eprintln!("warning: stream audio cleanup: {e}");
+            }
         }
     }
 
@@ -511,10 +543,11 @@ mod platform {
             .filter(|index| !inputs.iter().any(|(i, _)| i == *index))
             .copied()
             .collect();
+        // The app's playback stream is gone (it quit or crashed), and the
+        // server ends a record stream on it by itself: waiting for its delete
+        // to be answered could wait forever.
         for index in gone {
-            if let Some((stream, _)) = streams.remove(&index) {
-                let _ = futures_executor::block_on(stream.delete());
-            }
+            streams.remove(&index);
         }
         for &(index, pid) in inputs {
             if streams.contains_key(&index) || !wanted(target, pid) {
