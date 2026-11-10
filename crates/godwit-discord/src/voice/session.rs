@@ -819,6 +819,14 @@ impl Media {
     /// shuts, as Discord's clients do. Each call is a tick.
     async fn send(&mut self, connection: &mut Connection, audio: &RawAudio, voice: bool) -> Result<()> {
         let playing = voice && self.live();
+        if playing && starved(audio.waiting()) {
+            // Less than a frame is waiting: send nothing rather than a frame
+            // padded with silence, which sounds chopped. Listeners conceal the
+            // missing packet and the audio waiting goes in the next one.
+            // Matches Yapfast 6a79cc89 (GPL-3.0), which sends only whole frames.
+            self.timestamp = self.timestamp.wrapping_add(FRAME as u32);
+            return Ok(());
+        }
         if playing {
             let count = audio.take(&mut self.mono);
             self.mono[count..].fill(0.0);
@@ -952,6 +960,11 @@ struct Speaker {
     /// What of `pcm` is still to play, 20 ms a tick.
     left: std::ops::Range<usize>,
     heard: std::time::Instant,
+}
+
+/// Whether `waiting` samples of microphone audio are less than a 20 ms frame.
+fn starved(waiting: usize) -> bool {
+    waiting < FRAME
 }
 
 /// The most samples an Opus packet decodes to: 120 ms.
@@ -1103,6 +1116,14 @@ mod tests {
         let played = std::iter::from_fn(|| speaker.next().map(|_| ())).count();
         assert_eq!(played, usize::from(GONE) - 1);
         assert!(speaker.next.is_none());
+    }
+
+    #[test]
+    fn a_tick_with_less_than_a_frame_of_microphone_sends_nothing() {
+        assert!(starved(0));
+        assert!(starved(FRAME - 1));
+        assert!(!starved(FRAME));
+        assert!(!starved(FRAME + 480));
     }
 
     #[test]
