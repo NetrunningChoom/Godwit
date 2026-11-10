@@ -26,6 +26,7 @@ pub(super) struct VoiceMessages {
     playing: bool,
     speed: usize,
     volume: f32,
+    muted: bool,
     timer: slint::Timer,
     loaded_tx: std::sync::mpsc::Sender<Loaded>,
     loaded: std::sync::mpsc::Receiver<Loaded>,
@@ -41,6 +42,7 @@ impl VoiceMessages {
             playing: false,
             speed: 0,
             volume: 1.0,
+            muted: false,
             timer: slint::Timer::default(),
             loaded_tx,
             loaded,
@@ -55,6 +57,18 @@ impl VoiceMessages {
         self.playing = false;
         self.timer.stop();
     }
+}
+
+/// Where a position along the bar (0 to 1, as the pointer gives it) lands in
+/// a recording of `duration_ms`; anything unusable clamps to the ends.
+fn seek_target_ms(at: f32, duration_ms: u64) -> u64 {
+    let at = if at.is_finite() { at.clamp(0.0, 1.0) } else { 0.0 };
+    ((f64::from(at) * duration_ms as f64) as u64).min(duration_ms)
+}
+
+/// The loudness the player gets: muted is silent, the slider keeps its place.
+fn effective_volume(volume: f32, muted: bool) -> f32 {
+    if muted { 0.0 } else { volume }
 }
 
 /// Splits a key into the message and the attachment's place in it.
@@ -125,15 +139,15 @@ impl Shell {
         self.voice_sync(ui);
     }
 
-    /// A click on the bar of the playing one: `at` is 0 to 1 along it.
+    /// A press or drag on the bar of the playing one: `at` is 0 to 1 along it.
+    /// The whole recording is in memory, so a seek is a position change.
     pub fn voice_seek(&mut self, ui: &AppWindow, key: String, at: f32) {
         let vm = &mut self.voice_messages;
         if vm.key != key {
             return;
         }
         let Some(p) = &vm.player else { return };
-        let at = if at.is_finite() { at.clamp(0.0, 1.0) } else { 0.0 };
-        p.seek_ms((at * p.duration_ms() as f32) as u64);
+        p.seek_ms(seek_target_ms(at, p.duration_ms()));
         // Seeking a finished one plays on from there.
         if !vm.playing && p.finished() {
             p.play();
@@ -158,8 +172,19 @@ impl Shell {
         } else {
             1.0
         };
+        // Moving the slider unmutes.
+        vm.muted = false;
         if let Some(p) = &vm.player {
             p.set_volume(vm.volume);
+        }
+        self.voice_sync(ui);
+    }
+
+    pub fn voice_mute(&mut self, ui: &AppWindow, muted: bool) {
+        let vm = &mut self.voice_messages;
+        vm.muted = muted;
+        if let Some(p) = &vm.player {
+            p.set_volume(effective_volume(vm.volume, muted));
         }
         self.voice_sync(ui);
     }
@@ -182,7 +207,13 @@ impl Shell {
                         wake();
                     };
                     let device = self.settings.voice.output_device.clone();
-                    match Player::start(clip, device, SPEEDS[vm.speed].0, vm.volume, failed) {
+                    match Player::start(
+                        clip,
+                        device,
+                        SPEEDS[vm.speed].0,
+                        effective_volume(vm.volume, vm.muted),
+                        failed,
+                    ) {
                         Ok(player) => {
                             vm.player = Some(player);
                             vm.playing = true;
@@ -243,6 +274,7 @@ impl Shell {
         global.set_time(time.into());
         global.set_speed(SPEEDS[vm.speed].1.into());
         global.set_volume(vm.volume);
+        global.set_muted(vm.muted);
         if state == 2 {
             let wake = self.wake.clone();
             // Already running: leave it be, so its beat stays steady.
@@ -257,7 +289,7 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_key;
+    use super::{effective_volume, parse_key, seek_target_ms};
 
     #[test]
     fn keys_split_into_message_and_place() {
@@ -266,5 +298,23 @@ mod tests {
         assert_eq!(parse_key("a:b:0"), Some(("a:b", 0)));
         assert_eq!(parse_key("nothing"), None);
         assert_eq!(parse_key("x:y"), None);
+    }
+
+    #[test]
+    fn seek_maps_the_bar_onto_the_recording() {
+        assert_eq!(seek_target_ms(0.0, 10_000), 0);
+        assert_eq!(seek_target_ms(0.5, 10_000), 5_000);
+        assert_eq!(seek_target_ms(1.0, 10_000), 10_000);
+        // A drag past the ends, or a bad value, stays inside.
+        assert_eq!(seek_target_ms(-0.3, 10_000), 0);
+        assert_eq!(seek_target_ms(1.7, 10_000), 10_000);
+        assert_eq!(seek_target_ms(f32::NAN, 10_000), 0);
+        assert_eq!(seek_target_ms(0.5, 0), 0);
+    }
+
+    #[test]
+    fn mute_silences_without_losing_the_level() {
+        assert_eq!(effective_volume(0.4, true), 0.0);
+        assert_eq!(effective_volume(0.4, false), 0.4);
     }
 }

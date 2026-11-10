@@ -61,33 +61,58 @@ component VoicePlayer inherits HorizontalLayout {
                 border-radius: Theme.space-1;
                 background: (i + 0.5) / item.wave.length <= root.progress ? Theme.primary : Theme.outline;
             }
-            TouchArea {
+            // A press or a drag along the bars of the playing one seeks (as
+            // Yapfast's 09496be3); one that isn't playing starts on a click.
+            bar-touch := TouchArea {
                 mouse-cursor: pointer;
                 pointer-event(e) => {
                     if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
                         root.context-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    } else if e.button == PointerEventButton.left && e.kind == PointerEventKind.down && root.active {
+                        VoicePlayback.seek(root.item.key, clamp(self.mouse-x / self.width, 0, 1));
+                    }
+                }
+                moved => {
+                    if self.pressed && root.active {
+                        VoicePlayback.seek(root.item.key, clamp(self.mouse-x / self.width, 0, 1));
                     }
                 }
                 clicked => {
-                    if root.active {
-                        VoicePlayback.seek(root.item.key, self.mouse-x / self.width);
-                    } else {
+                    if !root.active {
                         VoicePlayback.toggle(root.item.key);
                     }
                 }
             }
         }
     }
-    Text {
-        text: root.active ? VoicePlayback.time : item.length;
-        color: Theme.on-surface-variant;
-        font-size: Theme.text-small;
-        vertical-alignment: center;
+    // As wide as its widest text, so the row keeps its width while the time
+    // changes: 0 is the widest digit in the font.
+    Rectangle {
+        width: max(time-label.preferred-width, widest-time.preferred-width);
+        widest-time := Text {
+            visible: false;
+            font-size: Theme.text-small;
+            text: item.length.character-count > 5 ? "0:00:00 / 0:00:00" : item.length.character-count == 5 ? "00:00 / 00:00" : "0:00 / 0:00";
+        }
+        time-label := Text {
+            x: 0;
+            width: self.preferred-width;
+            text: root.active ? VoicePlayback.time : item.length;
+            color: Theme.on-surface-variant;
+            font-size: Theme.text-small;
+            vertical-alignment: center;
+        }
     }
     Rectangle {
-        width: speed-label.preferred-width + Theme.gap-md;
+        width: widest-speed.preferred-width + Theme.gap-md;
         border-radius: Theme.radius-sm;
         background: speed-touch.has-hover ? Theme.surface-highest : transparent;
+        widest-speed := Text {
+            visible: false;
+            text: "1.5x";
+            font-size: Theme.text-small;
+            font-weight: 600;
+        }
         speed-label := Text {
             text: VoicePlayback.speed;
             color: Theme.on-surface-variant;
@@ -101,6 +126,11 @@ component VoicePlayer inherits HorizontalLayout {
             clicked => { VoicePlayback.cycle-speed(); }
         }
     }
+    // Mute and unmute; the volume below stays where it is.
+    IconButton {
+        glyph: VoicePlayback.muted ? Icons.volume-off : Icons.volume-up;
+        clicked => { VoicePlayback.mute(!VoicePlayback.muted); }
+    }
     // Volume: a short track, the filled part its level.
     Rectangle {
         width: Theme.icon-large * 2;
@@ -110,7 +140,7 @@ component VoicePlayer inherits HorizontalLayout {
             border-radius: Theme.space-1;
             background: Theme.outline;
             Rectangle {
-                width: parent.width * VoicePlayback.volume;
+                width: parent.width * (VoicePlayback.muted ? 0 : VoicePlayback.volume);
                 border-radius: parent.border-radius;
                 background: Theme.on-surface-variant;
             }

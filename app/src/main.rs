@@ -863,6 +863,7 @@ fn connect_callbacks(ui: &AppWindow) {
         callback!(voice.on_seek(key, at) => |sh, ui| sh.voice_seek(ui, key.to_string(), at));
         callback!(voice.on_cycle_speed() => |sh, ui| sh.voice_cycle_speed(ui));
         callback!(voice.on_set_volume(volume) => |sh, ui| sh.voice_set_volume(ui, volume));
+        callback!(voice.on_mute(muted) => |sh, ui| sh.voice_mute(ui, muted));
     }
     // The GIF picker (gifs.rs), through its global.
     {

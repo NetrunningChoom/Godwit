@@ -751,10 +751,13 @@ export global VoicePlayback {
     in property <string> time;
     in property <string> speed: "1x";
     in property <float> volume: 1;
+    // Silenced; the volume stays to unmute to.
+    in property <bool> muted;
     callback toggle(string);
     callback seek(string, float);
     callback cycle-speed();
     callback set-volume(float);
+    callback mute(bool);
 }
 
 // The call's video pictures, by tile (call-videos' order): a new frame swaps
