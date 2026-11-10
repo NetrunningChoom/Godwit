@@ -1198,6 +1198,17 @@ impl NetworkAccount for DiscordAccount {
                     );
                 }
             }
+            Command::DeleteMessages { room, messages } => {
+                if let Some(channel) = self.channel_of(&room) {
+                    req(
+                        &self.net,
+                        Request::DeleteMany {
+                            channel,
+                            messages: messages.iter().map(|m| m.0.to_string()).collect(),
+                        },
+                    );
+                }
+            }
             Command::DeleteMessage { room, message } => {
                 if let Some(channel) = self.channel_of(&room) {
                     req(

@@ -4,8 +4,8 @@
 use crate::{
     images::{AVATAR, Fit, Images},
     ui::{
-        AdminRoleItem, AppWindow, BanItem, EmojiItem, ModerationLogItem, PermissionItem, RoleMemberItem,
-        ServerInviteItem,
+        AdminRoleItem, AppWindow, BanItem, EmojiItem, ModerationLogItem, ModerationRuleItem, PermissionItem,
+        RoleMemberItem, ServerInviteItem,
     },
 };
 use godwit_core::application::{Action, AppState};
@@ -77,6 +77,7 @@ fn page_index(page: ServerPage) -> i32 {
         ServerPage::ModerationLog => 5,
         ServerPage::Stickers => 6,
         ServerPage::Sounds => 7,
+        ServerPage::AutoMod => 8,
     }
 }
 
@@ -89,6 +90,7 @@ pub fn page_from_index(i: i32) -> ServerPage {
         5 => ServerPage::ModerationLog,
         6 => ServerPage::Stickers,
         7 => ServerPage::Sounds,
+        8 => ServerPage::AutoMod,
         _ => ServerPage::Overview,
     }
 }
@@ -620,6 +622,7 @@ impl ServerEditor {
             self.expression_page = None;
         }
         ui.set_server_edit_show_invites(o.is_some_and(|o| o.can_manage));
+        ui.set_server_edit_show_automod(o.is_some_and(|o| o.can_manage_automod));
         ui.set_server_edit_show_bans(o.is_some_and(|o| o.can_ban));
         ui.set_server_edit_show_moderation_log(
             state
@@ -722,6 +725,21 @@ impl ServerEditor {
                     })
                     .collect();
                 ui.set_server_edit_invites(ModelRc::new(VecModel::from(rows)));
+            }
+            ServerPage::AutoMod => {
+                ui.set_server_edit_automod_loaded(s.moderation_rules.is_some());
+                let rows: Vec<ModerationRuleItem> = s
+                    .moderation_rules
+                    .iter()
+                    .flatten()
+                    .map(|r| ModerationRuleItem {
+                        name: r.name.as_ref().into(),
+                        kind: r.kind.as_ref().into(),
+                        keywords: r.keywords.join(", ").into(),
+                        enabled: r.enabled,
+                    })
+                    .collect();
+                ui.set_server_edit_automod(ModelRc::new(VecModel::from(rows)));
             }
             ServerPage::ModerationLog => {}
             ServerPage::Bans => {
@@ -1080,6 +1098,7 @@ mod tests {
             ServerPage::ModerationLog,
             ServerPage::Stickers,
             ServerPage::Sounds,
+            ServerPage::AutoMod,
         ] {
             assert_eq!(page_from_index(page_index(page)), page);
         }

@@ -90,6 +90,7 @@ impl StoatAccount {
             leave: c.channel_type == "Group",
             reaction_users: true,
             delete_others: can(MANAGE_MESSAGES),
+            bulk_delete: can(MANAGE_MESSAGES),
             moderate_reactions: can(MANAGE_MESSAGES),
             // The pinned list is readable by anyone who reads the channel;
             // pinning takes Manage Messages in servers (anyone in DMs).

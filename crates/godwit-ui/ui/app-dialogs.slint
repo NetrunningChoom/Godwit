@@ -256,6 +256,8 @@ export component ManagementDialogs inherits Rectangle {
     callback step-up-cancel();
     in-out property <int> confirm-delete: -1;
     callback delete(int);
+    in-out property <int> confirm-delete-from: -1;
+    callback delete-from(int);
 
     // The official CreateInvite modal: the link, to copy.
     if root.invite-open: Dialog {
@@ -545,6 +547,14 @@ export component ManagementDialogs inherits Rectangle {
         danger: true;
         cancelled => { root.confirm-delete = -1; }
         confirmed => { root.delete(root.confirm-delete); root.confirm-delete = -1; }
+    }
+    if root.confirm-delete-from >= 0: ConfirmDialog {
+        title: "Delete messages";
+        message: "Delete this message and every newer one loaded here? This can't be undone.";
+        confirm-text: "Delete";
+        danger: true;
+        cancelled => { root.confirm-delete-from = -1; }
+        confirmed => { root.delete-from(root.confirm-delete-from); root.confirm-delete-from = -1; }
     }
     if root.server-profile-open: Dialog {
         title: "Edit server profile";

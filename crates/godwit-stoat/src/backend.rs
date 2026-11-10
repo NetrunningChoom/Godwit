@@ -77,6 +77,9 @@ pub enum VoiceCmd {
     ListAudioDevices,
 }
 
+/// Stoat's bulk delete only takes messages from the past week.
+const BULK_MAX_AGE_MS: i64 = 7 * 24 * 3600 * 1000;
+
 pub enum MessageCmd {
     FetchMessages {
         channel: String,
@@ -111,6 +114,11 @@ pub enum MessageCmd {
     Delete {
         channel: String,
         id: String,
+    },
+    /// Many messages: those under a week old in bulk calls, the rest one by one.
+    DeleteMany {
+        channel: String,
+        ids: Vec<String>,
     },
     React {
         channel: String,
@@ -1512,6 +1520,39 @@ impl Backend {
                     let rb = rest.req(reqwest::Method::DELETE, &format!("/channels/{channel}/messages/{id}"));
                     if let Err(e) = rest.send_empty(rb).await {
                         out.error("deleting message", e);
+                    }
+                });
+            }
+            MessageCmd::DeleteMany { channel, ids } => {
+                let rest = rest.clone();
+                let out = out.clone();
+                tokio::spawn(async move {
+                    // POST /channels/{id}/messages/bulk: 1-100 ids, each sent
+                    // within the past week (Stoat's OpenAPI spec).
+                    let times: Vec<(String, i64)> = ids
+                        .into_iter()
+                        .map(|id| {
+                            let at = ulid_timestamp_ms(&id).unwrap_or(0);
+                            (id, at)
+                        })
+                        .collect();
+                    let now = chrono::Utc::now().timestamp_millis();
+                    let plan = godwit_core::bulk::plan(&times, now, BULK_MAX_AGE_MS, 1, 100);
+                    for batch in plan.batches {
+                        let rb = rest
+                            .req(reqwest::Method::POST, &format!("/channels/{channel}/messages/bulk"))
+                            .json(&json!({ "ids": batch }));
+                        if let Err(e) = rest.send_empty(rb).await {
+                            out.error("deleting messages", e);
+                            return;
+                        }
+                    }
+                    for id in plan.singles {
+                        let rb = rest.req(reqwest::Method::DELETE, &format!("/channels/{channel}/messages/{id}"));
+                        if let Err(e) = rest.send_empty(rb).await {
+                            out.error("deleting messages", e);
+                            return;
+                        }
                     }
                 });
             }

@@ -441,6 +441,7 @@ impl Application {
             ServerPage::ModerationLog => return Vec::new(),
             ServerPage::Stickers => ServerAdmin::LoadExpressions(crate::server_settings::ExpressionKind::Sticker),
             ServerPage::Sounds => ServerAdmin::LoadExpressions(crate::server_settings::ExpressionKind::Sound),
+            ServerPage::AutoMod => ServerAdmin::LoadModerationRules,
         };
         vec![Effect::Backend {
             account: s.server.account.clone(),
@@ -488,6 +489,7 @@ impl Application {
         };
         match result {
             Ok(ServerAdminResult::Invites(list)) => s.invites = Some(list),
+            Ok(ServerAdminResult::ModerationRules(list)) => s.moderation_rules = Some(list),
             Ok(ServerAdminResult::Bans(list)) => s.bans = Some(list),
             Ok(ServerAdminResult::Roles(roles)) => s.roles = Some(roles),
             Ok(ServerAdminResult::RoleMembers(members)) => s.role_members = Some(members),

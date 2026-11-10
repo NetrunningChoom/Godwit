@@ -14,7 +14,7 @@ import { Theme, Icons } from "theme.slint";
 import {
     Screen, ServerItem, RoomItem, MessageItem, AttachmentItem, ReactionItem, PersonItem, ContactItem, IdentityItem, VerifyEmojiItem, DirectoryItem, FileItem,
     CallMemberItem, CallVideoItem, NetworkItem, AccountItem, PresenceChoice, MergeItem, TalkOnItem, BlockItem, MemberItem, RoleItem, MutualItem, MemberRoleItem, EmojiRowItem, EmojiCellItem, EmojiPackItem, SwitchItem,
-    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, VoicePlayback, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, BanItem, EmojiItem, AdminRoleItem, RoleMemberItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem, ModerationLogItem, SoundItem
+    ProblemItem, RequestItem, ActiveItem, NotificationItem, ThreadItem, ServerEventItem, LabelRun, Anim, Players, VoicePlayback, CallFrames, Select, SelRect, PieceItem, ServerInviteItem, ModerationRuleItem, BanItem, EmojiItem, AdminRoleItem, RoleMemberItem, OverridePermItem, PermissionItem, PinItem, SearchSuggestionItem, StreamItem, GroupPersonItem, GamesFriendItem, GameRowItem, WebhookItem, AutocompleteItem, ModerationLogItem, SoundItem
 } from "types.slint";
 export { Anim, Players, VoicePlayback, CallFrames, Select, SelRect, PieceItem }
 export { Gifs } from "gif-picker.slint";
@@ -213,6 +213,10 @@ export component AppWindow inherits Window {
     in property <string> server-edit-expression-noun: "emoji";
     in property <string> server-edit-expression-hint;
     in property <bool> server-edit-show-invites;
+    in property <bool> server-edit-show-automod;
+    in property <[ModerationRuleItem]> server-edit-automod;
+    in property <bool> server-edit-automod-loaded;
+    callback set-server-automod-rule(int, bool); callback delete-server-automod-rule(int);
     in property <bool> server-edit-show-bans;
     in property <bool> server-edit-show-moderation-log;
     in property <[ModerationLogItem]> server-edit-moderation-log;
@@ -523,6 +527,7 @@ export component AppWindow inherits Window {
     in property <bool> can-edit;
     in property <bool> can-delete;
     in property <bool> can-delete-others;
+    in property <bool> can-bulk-delete;
     in property <bool> can-moderate-reactions;
     in property <bool> can-show-reactors;
     in property <string> compose-label;
@@ -892,6 +897,7 @@ export component AppWindow inherits Window {
     property <bool> profile-open;
     // The message row waiting for "Delete message" (-1: none).
     in-out property <int> confirm-delete: -1;
+    in-out property <int> confirm-delete-from: -1;
     // Room for the member list beside the chat (it hides below this, and
     // comes back when the window widens).
     property <bool> wide: self.width >= 1100px;
@@ -938,6 +944,7 @@ export component AppWindow inherits Window {
     callback reply(int);
     callback edit(int);
     callback delete(int);
+    callback delete-from(int);
     callback react(int, int);
     callback open-picker(int);
     in property <bool> picker-open;
@@ -1508,6 +1515,7 @@ export component AppWindow inherits Window {
                                         messages: root.messages;
                                         loading: root.loading-history;
                                         confirm-delete <=> root.confirm-delete;
+                                        confirm-delete-from <=> root.confirm-delete-from;
                                     reached-start: root.reached-start;
                                     detached: root.detached;
                                     jump-to-present => { root.jump-to-present(); }
@@ -1520,6 +1528,7 @@ export component AppWindow inherits Window {
                                         can-edit: root.can-edit;
                                         can-delete: root.can-delete;
                                         can-delete-others: root.can-delete-others;
+                                        can-bulk-delete: root.can-bulk-delete;
                                         can-moderate-reactions: root.can-moderate-reactions;
                                         can-show-reactors: root.can-show-reactors;
                                         compose-label: root.compose-label;
@@ -1611,6 +1620,7 @@ export component AppWindow inherits Window {
                                         reply(i) => { root.reply(i); }
                                         edit(i) => { root.edit(i); }
                                         delete(i) => { root.delete(i); }
+                                        delete-from(i) => { root.delete-from(i); }
                                         react(i, r) => { root.react(i, r); }
                                         open-picker(i) => { root.open-picker(i); }
                                         picker-open: root.picker-open;
@@ -1808,7 +1818,7 @@ export component AppWindow inherits Window {
         changed => { root.server-overview-edited(); }
         pick-image(icon) => { root.pick-server-image(icon); } remove-image(icon) => { root.remove-server-image(icon); }
         server-name: root.server-edit-server-name; page: root.server-edit-page;
-        show-roles: root.server-edit-show-roles; show-emoji: root.server-edit-show-emoji; show-stickers: root.server-edit-show-stickers; show-sounds: root.server-edit-show-sounds; expression-noun: root.server-edit-expression-noun; expression-hint: root.server-edit-expression-hint; show-invites: root.server-edit-show-invites; show-bans: root.server-edit-show-bans; show-moderation-log: root.server-edit-show-moderation-log;
+        show-roles: root.server-edit-show-roles; show-emoji: root.server-edit-show-emoji; show-stickers: root.server-edit-show-stickers; show-sounds: root.server-edit-show-sounds; expression-noun: root.server-edit-expression-noun; expression-hint: root.server-edit-expression-hint; show-invites: root.server-edit-show-invites; show-automod: root.server-edit-show-automod; automod-rules: root.server-edit-automod; automod-loaded: root.server-edit-automod-loaded; show-bans: root.server-edit-show-bans; show-moderation-log: root.server-edit-show-moderation-log;
         moderation-log: root.server-edit-moderation-log; moderation-log-loading: root.server-edit-moderation-log-loading; moderation-log-has-more: root.server-edit-moderation-log-has-more; moderation-log-error: root.server-edit-moderation-log-error;
         can-delete: root.server-edit-can-delete; admin-busy: root.server-edit-admin-busy;
         notice: root.server-edit-notice; notice-failed: root.server-edit-notice-failed;
@@ -1834,6 +1844,7 @@ export component AppWindow inherits Window {
         rename-emoji(i, n) => { root.rename-server-emoji(i, n); } delete-emoji(i) => { root.delete-server-emoji(i); }
         select-page(i) => { root.server-settings-page(i); }
         load-more-moderation-log => { root.load-more-moderation-log(); }
+        set-automod-rule(i, on) => { root.set-server-automod-rule(i, on); } delete-automod-rule(i) => { root.delete-server-automod-rule(i); }
         delete-invite(i) => { root.delete-server-invite(i); } copy-invite(i) => { root.copy-server-invite(i); }
         unban(i) => { root.unban-server-user(i); }
         select-role(i) => { root.select-server-role(i); } create-role(n) => { root.create-server-role(n); }
@@ -2352,6 +2363,8 @@ export component AppWindow inherits Window {
         step-up-cancel => { root.step-up-cancel(); }
         confirm-delete <=> root.confirm-delete;
         delete(i) => { root.delete(i); }
+        confirm-delete-from <=> root.confirm-delete-from;
+        delete-from(i) => { root.delete-from(i); }
     }
     if root.send-error != "" && screen == Screen.main: Rectangle {
         x: (parent.width - self.width) / 2;

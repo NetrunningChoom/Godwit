@@ -58,6 +58,7 @@ impl DiscordAccount {
             can_manage_emoji: perms & (p::MANAGE_GUILD_EXPRESSIONS | p::CREATE_GUILD_EXPRESSIONS) != 0,
             can_manage_stickers: perms & (p::MANAGE_GUILD_EXPRESSIONS | p::CREATE_GUILD_EXPRESSIONS) != 0,
             can_manage_sounds: perms & (p::MANAGE_GUILD_EXPRESSIONS | p::CREATE_GUILD_EXPRESSIONS) != 0,
+            can_manage_automod: perms & p::MANAGE_GUILD != 0,
             owner: g.owner == self.me(),
             channels: g
                 .channels
@@ -412,7 +413,11 @@ impl DiscordAccount {
         let owner = g.owner == self.me();
         let perms = self.store.guild_permissions(&guild);
         let needed = match &op {
-            ServerAdmin::LoadInvites | ServerAdmin::DeleteInvite(_) => Some((p::MANAGE_GUILD, "Manage Server")),
+            ServerAdmin::LoadInvites
+            | ServerAdmin::DeleteInvite(_)
+            | ServerAdmin::LoadModerationRules
+            | ServerAdmin::SetModerationRuleEnabled { .. }
+            | ServerAdmin::DeleteModerationRule(_) => Some((p::MANAGE_GUILD, "Manage Server")),
             ServerAdmin::LoadBans | ServerAdmin::Unban(_) | ServerAdmin::Ban { .. } => {
                 Some((p::BAN_MEMBERS, "Ban Members"))
             }
@@ -471,6 +476,12 @@ impl DiscordAccount {
         };
         let admin =
             match op {
+                ServerAdmin::LoadModerationRules => Admin::AutomodRules,
+                ServerAdmin::SetModerationRuleEnabled { id, enabled } => Admin::AutomodEnable {
+                    id: id.to_string(),
+                    enabled,
+                },
+                ServerAdmin::DeleteModerationRule(id) => Admin::AutomodDelete(id.to_string()),
                 ServerAdmin::LoadInvites => Admin::Invites,
                 ServerAdmin::DeleteInvite(code) => Admin::RevokeInvite(code.to_string()),
                 ServerAdmin::LoadEmoji => {
@@ -873,6 +884,9 @@ impl DiscordAccount {
                     })
                     .collect(),
             )),
+            Ok(AdminAnswer::Automod(list)) => {
+                Ok(ServerAdminResult::ModerationRules(crate::automod::parse_rules(&list)))
+            }
             Ok(AdminAnswer::Bans(list)) => Ok(ServerAdminResult::Bans(
                 list.as_array()
                     .into_iter()
@@ -936,6 +950,7 @@ impl DiscordAccount {
         let listed = matches!(
             result,
             Ok(ServerAdminResult::Invites(_)
+                | ServerAdminResult::ModerationRules(_)
                 | ServerAdminResult::Bans(_)
                 | ServerAdminResult::RoleMembers(_)
                 | ServerAdminResult::Expressions(..))

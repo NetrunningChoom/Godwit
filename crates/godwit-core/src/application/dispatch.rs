@@ -601,6 +601,7 @@ impl Application {
                 Vec::new()
             }
             Action::Delete(message) => self.dispatch_delete(message),
+            Action::DeleteFrom(message) => self.dispatch_delete_from(message),
             Action::AddFiles(files) => self.dispatch_add_files(files),
             Action::RemoveFile(index) => {
                 if let Some(room) = self.state.selected.clone()

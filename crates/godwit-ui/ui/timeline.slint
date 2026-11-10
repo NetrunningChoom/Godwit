@@ -57,6 +57,7 @@ export component Timeline inherits Rectangle {
     in property <bool> can-edit;
     in property <bool> can-delete;
     in property <bool> can-delete-others;
+    in property <bool> can-bulk-delete;
     in-out property <string> draft;
     in property <string> nudge;
     in property <string> compose-label;
@@ -177,6 +178,7 @@ export component Timeline inherits Rectangle {
     callback reply(int);
     callback edit(int);
     callback delete(int);
+    callback delete-from(int);
     callback react(int, int);
     callback remove-reactions(int, int);
     callback remove-all-reactions(int);
@@ -258,6 +260,8 @@ export component Timeline inherits Rectangle {
     // The message waiting for "Delete message" (-1: none); the window shows
     // the dialog, so its scrim covers everything.
     in-out property <int> confirm-delete: -1;
+    // The message "Delete messages from here down" waits on (-1: none).
+    in-out property <int> confirm-delete-from: -1;
 
     // The keyboard scrolls the chat, as a browser scrolls a page: Page
     // Up/Down from anywhere (the composer passes them on), the arrows and
@@ -1131,6 +1135,7 @@ export component Timeline inherits Rectangle {
                     can-edit: root.can-edit;
                     can-delete: root.can-delete;
                     can-delete-others: root.can-delete-others;
+                    can-bulk-delete: root.can-bulk-delete;
                     can-pin: root.can-pin;
                     can-moderate-reactions: root.can-moderate-reactions;
                     can-show-reactors: root.can-show-reactors;
@@ -1142,6 +1147,7 @@ export component Timeline inherits Rectangle {
                     reply => { root.reply(i); }
                     edit => { root.edit(i); }
                     // Shift skips the question, as officially.
+                    delete-from => { root.confirm-delete-from = i; }
                     delete(skip) => { if skip { root.delete(i); } else { root.confirm-delete = i; } }
                     react(r) => { root.react(i, r); }
                     remove-reactions(r) => { root.remove-reactions(i, r); }

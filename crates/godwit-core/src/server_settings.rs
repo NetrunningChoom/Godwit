@@ -24,6 +24,8 @@ pub struct ServerOverview {
     /// expressions permission).
     pub can_manage_stickers: bool,
     pub can_manage_sounds: bool,
+    /// The network has automatic moderation rules this member may manage.
+    pub can_manage_automod: bool,
     pub owner: bool,
     pub channels: Vec<(RoomId, Arc<str>)>,
     /// Joined, left, kicked, banned, in the official overview's order.
@@ -106,6 +108,8 @@ pub enum ServerPage {
     ModerationLog,
     Stickers,
     Sounds,
+    /// Automatic moderation rules.
+    AutoMod,
 }
 
 /// The other things a server may carry beside emoji, managed on the same
@@ -284,6 +288,18 @@ pub struct ServerInvite {
     pub channel: Arc<str>,
 }
 
+/// An automatic moderation rule, as the settings page lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModerationRule {
+    pub id: Arc<str>,
+    pub name: Arc<str>,
+    pub enabled: bool,
+    /// What triggers it, in words ("Keywords", "Spam", ...).
+    pub kind: Arc<str>,
+    /// The blocked words, for a keyword rule.
+    pub keywords: Vec<Arc<str>>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerBan {
     pub user: UserId,
@@ -361,6 +377,12 @@ pub struct RoleEdit {
 pub enum ServerAdmin {
     LoadInvites,
     DeleteInvite(Arc<str>),
+    LoadModerationRules,
+    SetModerationRuleEnabled {
+        id: Arc<str>,
+        enabled: bool,
+    },
+    DeleteModerationRule(Arc<str>),
     LoadBans,
     Unban(UserId),
     LoadRoles,
@@ -525,6 +547,7 @@ impl ServerAdmin {
         matches!(
             self,
             Self::LoadInvites
+                | Self::LoadModerationRules
                 | Self::LoadBans
                 | Self::LoadRoles
                 | Self::LoadRoleMembers(_)
@@ -538,6 +561,7 @@ impl ServerAdmin {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ServerAdminResult {
     Invites(Vec<ServerInvite>),
+    ModerationRules(Vec<ModerationRule>),
     Bans(Vec<ServerBan>),
     Roles(ServerRoles),
     RoleMembers(RoleMembers),
@@ -559,6 +583,7 @@ pub struct ServerSettingsState {
     pub error: Option<Arc<str>>,
     pub page: ServerPage,
     pub invites: Option<Vec<ServerInvite>>,
+    pub moderation_rules: Option<Vec<ModerationRule>>,
     pub bans: Option<Vec<ServerBan>>,
     pub roles: Option<ServerRoles>,
     pub role_members: Option<RoleMembers>,
@@ -582,6 +607,7 @@ impl ServerSettingsState {
             error: None,
             page: ServerPage::Overview,
             invites: None,
+            moderation_rules: None,
             bans: None,
             roles: None,
             role_members: None,

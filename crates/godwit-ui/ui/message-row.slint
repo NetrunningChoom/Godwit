@@ -56,6 +56,7 @@ export component MessageRow inherits Rectangle {
     in property <bool> can-edit;
     in property <bool> can-delete;
     in property <bool> can-delete-others;
+    in property <bool> can-bulk-delete;
     in property <bool> can-pin;
     in property <bool> can-moderate-reactions;
     in property <bool> can-show-reactors;
@@ -68,6 +69,7 @@ export component MessageRow inherits Rectangle {
     callback reply();
     callback edit();
     callback delete(bool);
+    callback delete-from();
     callback react(int);
     callback remove-reactions(int);
     callback remove-all-reactions();
@@ -492,6 +494,7 @@ export component MessageRow inherits Rectangle {
             if !root.message.system && !root.message.mine && root.can-report: MenuRow { glyph: Icons.error; label: "Report message"; danger: true; clicked => { root.report(); } }
             if root.deletable: MenuDivider { }
             if root.deletable: MenuRow { glyph: Icons.delete; label: "Delete message"; danger: true; clicked => { root.delete(false); } }
+            if root.can-bulk-delete: MenuRow { glyph: Icons.delete; label: "Delete messages from here down"; danger: true; clicked => { root.delete-from(); } }
         }
     }
 }

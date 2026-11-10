@@ -107,6 +107,11 @@ impl StoatAccount {
             | ServerAdmin::CreateEmoji { .. }
             | ServerAdmin::RenameEmoji { .. }
             | ServerAdmin::DeleteEmoji(_) => Some((p::MANAGE_CUSTOMISATION, "Manage Customisation")),
+            ServerAdmin::LoadModerationRules
+            | ServerAdmin::SetModerationRuleEnabled { .. }
+            | ServerAdmin::DeleteModerationRule(_) => {
+                return fail(server, "This network has no AutoMod rules to manage.");
+            }
             ServerAdmin::LoadExpressions(_)
             | ServerAdmin::CreateExpression { .. }
             | ServerAdmin::RenameExpression { .. }
@@ -477,6 +482,11 @@ impl StoatAccount {
                 self.sync_servers(&mut out);
                 return out;
             }
+            ServerAdmin::LoadModerationRules
+            | ServerAdmin::SetModerationRuleEnabled { .. }
+            | ServerAdmin::DeleteModerationRule(_) => {
+                return fail(server, "This network has no AutoMod rules to manage.");
+            }
             ServerAdmin::LoadExpressions(_)
             | ServerAdmin::CreateExpression { .. }
             | ServerAdmin::RenameExpression { .. }
@@ -749,6 +759,7 @@ impl StoatAccount {
                 .can_in_server(&s.id, crate::permissions::MANAGE_CUSTOMISATION),
             can_manage_stickers: false,
             can_manage_sounds: false,
+            can_manage_automod: false,
             owner: s.owner == *id.account.user,
             channels: s
                 .channels

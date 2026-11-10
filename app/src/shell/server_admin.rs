@@ -115,6 +115,24 @@ impl Shell {
         }
     }
 
+    pub fn set_server_automod_rule(&mut self, ui: &AppWindow, row: i32, enabled: bool) {
+        if let Some(rule) = self.admin_row(row, |s| s.moderation_rules.as_ref()) {
+            self.server_admin(
+                ui,
+                godwit_core::server_settings::ServerAdmin::SetModerationRuleEnabled { id: rule.id, enabled },
+            );
+        }
+    }
+
+    pub fn delete_server_automod_rule(&mut self, ui: &AppWindow, row: i32) {
+        if let Some(rule) = self.admin_row(row, |s| s.moderation_rules.as_ref()) {
+            self.server_admin(
+                ui,
+                godwit_core::server_settings::ServerAdmin::DeleteModerationRule(rule.id),
+            );
+        }
+    }
+
     pub fn copy_server_invite(&mut self, row: i32) {
         if let Some(invite) = self.admin_row(row, |s| s.invites.as_ref()) {
             copy_to_clipboard(invite.link.to_string());

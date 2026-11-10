@@ -704,6 +704,17 @@ impl Api {
         }
     }
 
+    /// Deletes messages one at a time: `POST .../messages/bulk-delete` is not
+    /// usable by user accounts (docs.discord.food, Bulk Delete Messages), so
+    /// each delete goes through the usual per-route rate limits. Stops at the
+    /// first failure.
+    pub async fn delete_many(&self, channel: &str, messages: &[String]) -> Result<()> {
+        for message in messages {
+            self.delete(channel, message).await?;
+        }
+        Ok(())
+    }
+
     /// Marks a channel read up to `message`, as the web client does when a
     /// channel is on screen.
     pub async fn ack(&self, channel: &str, message: &str) -> Result<()> {
@@ -1150,6 +1161,32 @@ impl Api {
         let method = if interested { Method::PUT } else { Method::DELETE };
         self.empty(self.request(method, &format!("/guilds/{guild}/scheduled-events/{event}/users/@me")))
             .await
+    }
+
+    /// A guild's Auto Moderation rules (docs.discord.food, Auto Moderation;
+    /// needs MANAGE_GUILD).
+    pub async fn automod_rules(&self, guild: &str) -> Result<Value> {
+        self.json(self.request(Method::GET, &format!("/guilds/{guild}/auto-moderation/rules")))
+            .await
+    }
+
+    /// Turns a rule on or off (`PATCH .../auto-moderation/rules/{id}`).
+    pub async fn set_automod_rule_enabled(&self, guild: &str, rule: &str, enabled: bool) -> Result<()> {
+        let path = format!("/guilds/{guild}/auto-moderation/rules/{}", encode(rule));
+        self.json(with_json(
+            self.request(Method::PATCH, &path),
+            &json!({"enabled": enabled}),
+        ))
+        .await
+        .map(drop)
+    }
+
+    pub async fn delete_automod_rule(&self, guild: &str, rule: &str) -> Result<()> {
+        self.empty(self.request(
+            Method::DELETE,
+            &format!("/guilds/{guild}/auto-moderation/rules/{}", encode(rule)),
+        ))
+        .await
     }
 
     pub async fn revoke_invite(&self, code: &str) -> Result<()> {

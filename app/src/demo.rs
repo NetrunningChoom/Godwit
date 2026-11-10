@@ -1453,6 +1453,7 @@ fn demo_overview(app: &Application, server: &Server, index: usize) -> godwit_cor
         can_manage_emoji: index == 0,
         can_manage_stickers: false,
         can_manage_sounds: false,
+        can_manage_automod: false,
         owner: index == 0,
         channels,
         system_channels: [first.clone(), first, None, None],
@@ -1857,6 +1858,9 @@ impl DemoAccount {
             return Err("You need the Manage Server permission for this.".into());
         }
         Ok(match op {
+            A::LoadModerationRules | A::SetModerationRuleEnabled { .. } | A::DeleteModerationRule(_) => {
+                return Err("The demo has no AutoMod rules.".into());
+            }
             A::LoadInvites => R::Invites(admin.invites.clone()),
             A::LoadBans => R::Bans(admin.bans.clone()),
             A::LoadRoles => R::Roles(admin.roles.clone()),
@@ -2713,6 +2717,10 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 source: text.as_str().into(),
             }],
             Command::DeleteMessage { room, message } => vec![Event::MessageDeleted { room, id: message }],
+            Command::DeleteMessages { room, messages } => messages
+                .into_iter()
+                .map(|id| Event::MessageDeleted { room: room.clone(), id })
+                .collect(),
             Command::ActivateMessageButton { .. } => Vec::new(),
             // Every room's messages are there from the start.
             Command::LoadHistory { room, before } => {

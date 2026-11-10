@@ -390,6 +390,12 @@ pub enum Command {
         room: RoomId,
         message: MessageId,
     },
+    /// Delete many messages of one room (oldest first); the network batches
+    /// or paces them within its own limits.
+    DeleteMessages {
+        room: RoomId,
+        messages: Vec<MessageId>,
+    },
     React {
         room: RoomId,
         message: MessageId,

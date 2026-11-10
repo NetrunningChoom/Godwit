@@ -723,6 +723,13 @@ impl StoatAccount {
                 }));
                 Vec::new()
             }
+            Command::DeleteMessages { room, messages } => {
+                self.net.send(Cmd::Message(MessageCmd::DeleteMany {
+                    channel: room.raw.to_string(),
+                    ids: messages.iter().map(|m| m.0.to_string()).collect(),
+                }));
+                Vec::new()
+            }
             Command::React {
                 room,
                 message,

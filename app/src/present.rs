@@ -1171,6 +1171,7 @@ impl Presenter {
         ui.set_can_edit(room.capabilities.edit);
         ui.set_can_delete(room.capabilities.delete);
         ui.set_can_delete_others(room.capabilities.delete_others);
+        ui.set_can_bulk_delete(room.capabilities.bulk_delete && room.capabilities.delete_others);
         ui.set_can_moderate_reactions(room.capabilities.moderate_reactions);
         ui.set_can_show_reactors(room.capabilities.reaction_users);
         ui.set_has_pins(room.capabilities.pins);

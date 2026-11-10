@@ -4,7 +4,7 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons } from "theme.slint";
 import { Section } from "settings.slint";
-import { AdminRoleItem, BanItem, EmojiItem, PermissionItem, RoleMemberItem, ServerInviteItem, ModerationLogItem } from "types.slint";
+import { AdminRoleItem, BanItem, EmojiItem, PermissionItem, RoleMemberItem, ServerInviteItem, ModerationLogItem, ModerationRuleItem } from "types.slint";
 import { Avatar, Button, Checkbox, ConfirmDialog, Dialog, IconButton, Select, TextArea, TextField, Toggle, TriState } from "widgets.slint";
 
 // Server settings, as the official ServerSettings: a sidebar of pages
@@ -12,7 +12,7 @@ import { Avatar, Button, Checkbox, ConfirmDialog, Dialog, IconButton, Select, Te
 // needs, and Delete Server for the owner.
 export component ServerSettings inherits Rectangle {
     in property <string> server-name;
-    // 0 Overview, 1 Roles, 2 Emoji, 3 Invites, 4 Bans, 5 Moderation log, 6 Stickers, 7 Sounds.
+    // 0 Overview, 1 Roles, 2 Emoji, 3 Invites, 4 Bans, 5 Moderation log, 6 Stickers, 7 Sounds, 8 AutoMod.
     in property <int> page;
     in property <bool> show-roles;
     in property <bool> show-emoji;
@@ -22,6 +22,10 @@ export component ServerSettings inherits Rectangle {
     in property <string> expression-noun: "emoji";
     in property <string> expression-hint;
     in property <bool> show-invites;
+    in property <bool> show-automod;
+    in property <[ModerationRuleItem]> automod-rules;
+    in property <bool> automod-loaded;
+    callback set-automod-rule(int, bool); callback delete-automod-rule(int);
     in property <bool> show-bans;
     in property <bool> show-moderation-log;
     in property <bool> can-delete;
@@ -139,6 +143,7 @@ export component ServerSettings inherits Rectangle {
                     if root.show-sounds: Section { label: "Sounds"; selected: root.page == 7; clicked => { root.select-page(7); } }
                     if root.show-invites: Section { label: "Invites"; selected: root.page == 3; clicked => { root.select-page(3); } }
                     if root.show-bans: Section { label: "Bans"; selected: root.page == 4; clicked => { root.select-page(4); } }
+                    if root.show-automod: Section { label: "AutoMod"; selected: root.page == 8; clicked => { root.select-page(8); } }
                     if root.show-moderation-log: Section { label: "Moderation log"; selected: root.page == 5; clicked => { root.select-page(5); } }
                     if root.can-delete: Rectangle { height: 12px; }
                     if root.can-delete: Section { label: "Delete Server"; danger: true; clicked => { root.confirm-delete = true; } }
@@ -149,7 +154,7 @@ export component ServerSettings inherits Rectangle {
                 HorizontalLayout {
                     padding: Theme.space-5; spacing: Theme.space-4;
                     Text {
-                        text: root.page == 1 ? "Roles" : root.page == 2 ? "Emojis" : root.page == 3 ? "Invites" : root.page == 4 ? "Bans" : root.page == 5 ? "Moderation log" : root.page == 6 ? "Stickers" : root.page == 7 ? "Sounds" : "Overview";
+                        text: root.page == 1 ? "Roles" : root.page == 2 ? "Emojis" : root.page == 3 ? "Invites" : root.page == 4 ? "Bans" : root.page == 5 ? "Moderation log" : root.page == 6 ? "Stickers" : root.page == 7 ? "Sounds" : root.page == 8 ? "AutoMod" : "Overview";
                         font-size: Theme.text-large; font-weight: 600; color: Theme.on-surface; horizontal-stretch: 1; overflow: elide; vertical-alignment: center;
                     }
                     Button { text: "Close"; kind: "text"; clicked => { root.close(); } }
@@ -432,6 +437,27 @@ export component ServerSettings inherits Rectangle {
                             }
                             IconButton { y: 6px; glyph: Icons.copy; tooltip: "Copy link"; clicked => { root.copy-invite(i); } }
                             IconButton { y: 6px; glyph: Icons.delete; tooltip: "Delete invite"; enabled: !root.admin-busy; clicked => { root.delete-invite(i); } }
+                        }
+                    }
+                }
+
+                // AutoMod: each rule with its trigger, an on/off switch and delete.
+                if root.page == 8: automod-list := ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        width: min(automod-list.visible-width, 680px);
+                        padding: Theme.space-5; spacing: Theme.space-2; alignment: start;
+                        if !root.automod-loaded: Text { text: "Loading rules…"; color: Theme.on-surface-variant; }
+                        if root.automod-loaded && root.automod-rules.length == 0: Text { text: "No AutoMod rules."; color: Theme.outline; }
+                        for rule[i] in root.automod-rules: HorizontalLayout {
+                            spacing: Theme.space-4; height: 48px;
+                            VerticalLayout {
+                                horizontal-stretch: 1; alignment: center;
+                                Text { text: rule.name; color: Theme.on-surface; overflow: elide; }
+                                Text { text: rule.keywords == "" ? rule.kind : rule.kind + ": " + rule.keywords; font-size: Theme.text-small; color: Theme.on-surface-variant; overflow: elide; }
+                            }
+                            Toggle { y: 12px; checked: rule.enabled; enabled: !root.admin-busy; toggled(on) => { root.set-automod-rule(i, on); } }
+                            IconButton { y: 6px; glyph: Icons.delete; tooltip: "Delete rule"; enabled: !root.admin-busy; clicked => { root.delete-automod-rule(i); } }
                         }
                     }
                 }

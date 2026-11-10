@@ -252,6 +252,9 @@ pub enum Action {
     CancelCompose,
     /// Delete a message in the selected room (the UI confirms first).
     Delete(MessageId),
+    /// Delete this message and every newer loaded one in the selected room
+    /// (the UI confirms first); needs the `bulk_delete` capability.
+    DeleteFrom(MessageId),
     /// Mark the selected room unread from this message on.
     MarkUnread(MessageId),
     /// Forward a message of `room` to another room of the same account, with

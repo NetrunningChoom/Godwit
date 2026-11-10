@@ -140,6 +140,7 @@ impl DiscordAccount {
             external_emoji: false,
             attachments: can(p::ATTACH_FILES),
             delete_others: c.guild.is_some() && can(p::MANAGE_MESSAGES),
+            bulk_delete: c.guild.is_some() && can(p::MANAGE_MESSAGES),
             // Voice channels and stages we may connect to, and calls in DMs
             // and group DMs. A stage is joined as audience.
             voice: c.private() || (c.voice() && can(p::CONNECT)),

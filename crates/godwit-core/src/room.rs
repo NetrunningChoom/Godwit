@@ -29,6 +29,10 @@ pub struct Capabilities {
     /// Delete others' messages, including system messages, as a moderator.
     #[serde(default)]
     pub delete_others: bool,
+    /// "Delete messages from here down": many messages in one action
+    /// (needs `delete_others`; the network batches or paces them).
+    #[serde(default)]
+    pub bulk_delete: bool,
     /// Remove one or all reactions from a message as a moderator.
     #[serde(default)]
     pub moderate_reactions: bool,
@@ -147,6 +151,7 @@ impl Capabilities {
             edit: true,
             delete: true,
             delete_others: false,
+            bulk_delete: false,
             moderate_reactions: false,
             reaction_users: false,
             react: true,

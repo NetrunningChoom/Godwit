@@ -16,6 +16,7 @@
 
 pub mod account;
 pub mod api;
+pub mod automod;
 pub mod backend;
 pub mod captcha;
 pub mod client;

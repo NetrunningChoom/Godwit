@@ -5912,3 +5912,33 @@ fn cancelling_a_prompt_tells_the_network() {
     assert!(matches!(commands(&effects)[..], [Command::StepUpCancel { id: 3 }]));
     assert!(app.state().step_up.is_empty());
 }
+
+#[test]
+fn delete_from_collects_this_and_newer_messages_only_for_moderators() {
+    for allowed in [false, true] {
+        let mut app = Application::default();
+        let mut r = dm(Network::Stoat, "r1", "them");
+        r.capabilities.delete_others = allowed;
+        r.capabilities.bulk_delete = allowed;
+        let id = r.id.clone();
+        ready(&mut app, Network::Stoat, vec![r]);
+        app.dispatch(Action::SelectRoom(id.clone()));
+        app.apply(page(&id, None, &[], true));
+        for m in ["m1", "m2", "m3"] {
+            app.apply(Event::MessageAdded {
+                room: id.clone(),
+                message: mine(m),
+            });
+        }
+        let out = app.dispatch(Action::DeleteFrom(MessageId("m2".into())));
+        if allowed {
+            let cmds = commands(&out);
+            let [Command::DeleteMessages { messages, .. }] = &cmds[..] else {
+                panic!("expected one bulk delete");
+            };
+            assert_eq!(messages.iter().map(|m| m.0.as_ref()).collect::<Vec<_>>(), ["m2", "m3"]);
+        } else {
+            assert!(out.is_empty());
+        }
+    }
+}

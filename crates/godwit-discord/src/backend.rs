@@ -89,6 +89,11 @@ pub enum Request {
         channel: String,
         message: String,
     },
+    /// Many messages, one by one (the bulk-delete endpoint is for bots only).
+    DeleteMany {
+        channel: String,
+        messages: Vec<String>,
+    },
     React {
         channel: String,
         message: String,
@@ -359,6 +364,12 @@ pub enum Admin {
     },
     Invites,
     RevokeInvite(String),
+    AutomodRules,
+    AutomodEnable {
+        id: String,
+        enabled: bool,
+    },
+    AutomodDelete(String),
     Bans,
     Unban(String),
     Kick {
@@ -666,6 +677,7 @@ pub enum AdminAnswer {
         error: RequestError,
     },
     Invites(Value),
+    Automod(Value),
     Bans(Value),
     Emojis(Value),
     /// The new emoji, as Discord answered the create.
@@ -1367,6 +1379,10 @@ async fn answer(api: &Api, request: Request) -> Answer {
             what: "deleting a message",
             result: api.delete(&channel, &message).await.map_err(RequestError::from),
         },
+        Request::DeleteMany { channel, messages } => Answer::Done {
+            what: "deleting messages",
+            result: api.delete_many(&channel, &messages).await.map_err(RequestError::from),
+        },
         Request::React {
             channel,
             message,
@@ -1843,6 +1859,15 @@ async fn admin(api: &Api, guild: &str, op: Admin) -> anyhow::Result<AdminAnswer>
         Admin::DeleteWebhook { channel, id } => {
             api.delete_webhook(&id).await?;
             webhook_list(api, channel).await?
+        }
+        Admin::AutomodRules => AdminAnswer::Automod(api.automod_rules(guild).await?),
+        Admin::AutomodEnable { id, enabled } => {
+            api.set_automod_rule_enabled(guild, &id, enabled).await?;
+            AdminAnswer::Automod(api.automod_rules(guild).await?)
+        }
+        Admin::AutomodDelete(id) => {
+            api.delete_automod_rule(guild, &id).await?;
+            AdminAnswer::Automod(api.automod_rules(guild).await?)
         }
         Admin::Invites => AdminAnswer::Invites(api.guild_invites(guild).await?),
         Admin::RevokeInvite(code) => {

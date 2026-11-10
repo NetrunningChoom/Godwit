@@ -972,6 +972,37 @@ impl Application {
         }]
     }
 
+    /// The messages "delete from here down" removes: this one and every newer
+    /// loaded, sent, non-pending one (a moderator's action, capped at
+    /// `bulk::MAX_PER_ACTION`).
+    pub(super) fn dispatch_delete_from(&mut self, message: MessageId) -> Vec<Effect> {
+        let Some(room) = self.state.selected.clone() else {
+            return Vec::new();
+        };
+        if !self.allows(&room, |c| c.bulk_delete && c.delete_others) {
+            return Vec::new();
+        }
+        let Some(timeline) = self.state.timelines.get(&room) else {
+            return Vec::new();
+        };
+        let Some(start) = timeline.messages.iter().position(|m| m.id == message) else {
+            return Vec::new();
+        };
+        let messages: Vec<MessageId> = timeline.messages[start..]
+            .iter()
+            .filter(|m| !m.pending)
+            .take(crate::bulk::MAX_PER_ACTION)
+            .map(|m| m.id.clone())
+            .collect();
+        if messages.is_empty() {
+            return Vec::new();
+        }
+        vec![Effect::Backend {
+            account: room.account.clone(),
+            command: Command::DeleteMessages { room, messages },
+        }]
+    }
+
     pub(super) fn dispatch_remove_reactions(&mut self, message: MessageId, emoji: Option<Arc<str>>) -> Vec<Effect> {
         let Some(room) = self.state.selected.clone() else {
             return Vec::new();

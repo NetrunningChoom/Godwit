@@ -10,6 +10,7 @@ pub mod account_security;
 pub mod application;
 pub mod autocomplete;
 pub mod autodelete;
+pub mod bulk;
 pub mod cache;
 pub mod call;
 pub mod channel_settings;
