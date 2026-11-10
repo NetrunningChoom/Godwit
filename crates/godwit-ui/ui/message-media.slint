@@ -2,9 +2,126 @@
 // Copyright (C) 2026 Godwit contributors
 
 import { Theme, Icons, Icon } from "theme.slint";
-import { Anim, Players, AttachmentItem, EmbedItem, InviteItem } from "types.slint";
+import { Anim, Players, VoicePlayback, AttachmentItem, EmbedItem, InviteItem } from "types.slint";
 import { GifStar } from "gif-picker.slint";
-import { Avatar, Button, EmojiText } from "widgets.slint";
+import { Avatar, Button, EmojiText, IconButton } from "widgets.slint";
+
+// An audio attachment's player row: play or pause, the loudness bars (a plain
+// bar without them) that a click seeks on, the time, the speed and the volume.
+// Only the row whose key is playing follows the progress.
+component VoicePlayer inherits HorizontalLayout {
+    in property <AttachmentItem> item;
+    callback context-menu(length, length);
+    property <bool> active: VoicePlayback.key == item.key && VoicePlayback.state != 0;
+    property <float> progress: active ? VoicePlayback.progress : 0;
+    property <bool> shown-playing: active && VoicePlayback.state == 2;
+    padding: Theme.gap-md;
+    spacing: Theme.gap-md;
+    // The button: a play triangle, or two bars while playing.
+    Rectangle {
+        width: Theme.control-icon;
+        IconButton {
+            glyph: root.shown-playing ? "" : Icons.play;
+            tint: Theme.primary;
+            clicked => { VoicePlayback.toggle(root.item.key); }
+        }
+        if root.shown-playing: HorizontalLayout {
+            width: Theme.icon-small;
+            height: Theme.icon-small;
+            spacing: Theme.space-2;
+            alignment: center;
+            Rectangle { background: Theme.primary; width: Theme.space-3; border-radius: Theme.space-1; }
+            Rectangle { background: Theme.primary; width: Theme.space-3; border-radius: Theme.space-1; }
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        if !item.voice: Text { text: item.name; color: Theme.primary; overflow: elide; font-size: Theme.text-small; }
+        bar := Rectangle {
+            height: Theme.icon-medium;
+            // Loudness bars, or a track with the played part filled.
+            if item.wave.length == 0: Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: Theme.space-2;
+                border-radius: Theme.space-1;
+                background: Theme.outline;
+                Rectangle {
+                    width: parent.width * root.progress;
+                    border-radius: parent.border-radius;
+                    background: Theme.primary;
+                }
+            }
+            for level[i] in item.wave: Rectangle {
+                property <length> slot: bar.width / item.wave.length;
+                x: i * slot;
+                width: max(slot - Theme.space-1, Theme.space-1);
+                height: max(bar.height * level, Theme.space-2);
+                y: (bar.height - self.height) / 2;
+                border-radius: Theme.space-1;
+                background: (i + 0.5) / item.wave.length <= root.progress ? Theme.primary : Theme.outline;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                pointer-event(e) => {
+                    if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
+                        root.context-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    }
+                }
+                clicked => {
+                    if root.active {
+                        VoicePlayback.seek(root.item.key, self.mouse-x / self.width);
+                    } else {
+                        VoicePlayback.toggle(root.item.key);
+                    }
+                }
+            }
+        }
+    }
+    Text {
+        text: root.active ? VoicePlayback.time : item.length;
+        color: Theme.on-surface-variant;
+        font-size: Theme.text-small;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        width: speed-label.preferred-width + Theme.gap-md;
+        border-radius: Theme.radius-sm;
+        background: speed-touch.has-hover ? Theme.surface-highest : transparent;
+        speed-label := Text {
+            text: VoicePlayback.speed;
+            color: Theme.on-surface-variant;
+            font-size: Theme.text-small;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        speed-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { VoicePlayback.cycle-speed(); }
+        }
+    }
+    // Volume: a short track, the filled part its level.
+    Rectangle {
+        width: Theme.icon-large * 2;
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: Theme.space-2;
+            border-radius: Theme.space-1;
+            background: Theme.outline;
+            Rectangle {
+                width: parent.width * VoicePlayback.volume;
+                border-radius: parent.border-radius;
+                background: Theme.on-surface-variant;
+            }
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { VoicePlayback.set-volume(clamp(self.mouse-x / self.width, 0, 1)); }
+            moved => { if self.pressed { VoicePlayback.set-volume(clamp(self.mouse-x / self.width, 0, 1)); } }
+        }
+    }
+}
 
 export component AttachmentView inherits Rectangle {
     in property <AttachmentItem> item;
@@ -29,7 +146,7 @@ export component AttachmentView inherits Rectangle {
         text: "Click to reveal spoiler";
         clicked => { root.spoiler-revealed = true; }
     }
-    if item.kind != 0: HorizontalLayout {
+    if item.kind != 0 && item.key == "": HorizontalLayout {
         padding: Theme.gap-md;
         spacing: Theme.gap-md;
         Icon { text: Icons.file; font-size: Theme.text-display; color: Theme.on-surface-variant; width: 32px; }
@@ -40,14 +157,21 @@ export component AttachmentView inherits Rectangle {
         }
         if item.openable: Icon { text: Icons.open-in-new; color: Theme.on-surface-variant; width: Theme.icon-large; }
     }
+    // Players take their own clicks; a right click still opens the menu.
     TouchArea {
-        mouse-cursor: item.openable ? pointer : default;
-        clicked => { if item.openable { root.open(); } }
+        mouse-cursor: item.openable && item.key == "" ? pointer : default;
+        clicked => { if item.openable && item.key == "" { root.open(); } }
         pointer-event(e) => {
             if e.button == PointerEventButton.right && e.kind == PointerEventKind.down {
                 root.context-menu(self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
             }
         }
+    }
+    if item.key != "": VoicePlayer {
+        width: parent.width;
+        height: parent.height;
+        item: root.item;
+        context-menu(x, y) => { root.context-menu(x, y); }
     }
 }
 

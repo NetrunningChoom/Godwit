@@ -12,6 +12,52 @@ fn is_spoiler_filename(filename: &str) -> bool {
     filename.starts_with("SPOILER_")
 }
 
+/// The message flag for a voice message (docs.discord.food, Message Object,
+/// Message Flags: IS_VOICE_MESSAGE, 1 << 13).
+const IS_VOICE_MESSAGE: u64 = 1 << 13;
+
+/// A voice message's length and loudness curve: its attachment's
+/// `duration_secs` and base64 `waveform` (docs.discord.food, Attachment
+/// Object). None unless the message carries the voice-message flag.
+fn voice_clip(flags: u64, attachment: &serde_json::Value) -> Option<VoiceClip> {
+    if flags & IS_VOICE_MESSAGE == 0 {
+        return None;
+    }
+    let secs = attachment["duration_secs"]
+        .as_f64()
+        .filter(|s| s.is_finite() && *s >= 0.0)?;
+    let waveform = attachment["waveform"]
+        .as_str()
+        .and_then(|w| base64::Engine::decode(&base64::engine::general_purpose::STANDARD, w).ok())
+        .unwrap_or_default();
+    Some(VoiceClip {
+        duration_ms: (secs * 1000.0).min(f64::from(u32::MAX)) as u32,
+        waveform,
+    })
+}
+
+#[cfg(test)]
+mod voice_tests {
+    use super::voice_clip;
+    use serde_json::json;
+
+    #[test]
+    fn maps_flagged_attachment_with_waveform() {
+        let a = json!({"duration_secs": 2.5, "waveform": "AAH/"});
+        let clip = voice_clip(1 << 13, &a).unwrap();
+        assert_eq!(clip.duration_ms, 2500);
+        assert_eq!(clip.waveform, vec![0, 1, 255]);
+    }
+
+    #[test]
+    fn needs_flag_and_duration_and_tolerates_bad_waveform() {
+        let a = json!({"duration_secs": 1.0, "waveform": "!!"});
+        assert!(voice_clip(0, &a).is_none());
+        assert!(voice_clip(1 << 13, &json!({})).is_none());
+        assert!(voice_clip(1 << 13, &a).unwrap().waveform.is_empty());
+    }
+}
+
 #[cfg(test)]
 mod spoiler_tests {
     use super::is_spoiler_filename;
@@ -103,14 +149,20 @@ impl DiscordAccount {
                 };
                 let size = |k: &str| a[k].as_u64().and_then(|v| u32::try_from(v).ok());
                 let name = a["filename"].as_str().unwrap_or("file");
+                let flags = body["flags"].as_u64().unwrap_or_default();
                 Some(Attachment {
                     name: name.into(),
                     url: a["url"].as_str()?.into(),
-                    kind,
+                    kind: if kind == AttachmentKind::File && flags & IS_VOICE_MESSAGE != 0 {
+                        AttachmentKind::Audio
+                    } else {
+                        kind
+                    },
                     size: a["size"].as_u64().unwrap_or_default(),
                     dimensions: size("width").zip(size("height")),
                     original_url: None,
                     spoiler: is_spoiler_filename(name),
+                    voice: voice_clip(flags, a),
                 })
             })
             .collect();

@@ -47,6 +47,21 @@ pub struct Attachment {
     /// Hidden until the user reveals it (for example, a Discord `SPOILER_` filename).
     #[serde(default)]
     pub spoiler: bool,
+    /// Set when the network marks this audio as a voice message (Discord's
+    /// voice-message flag). Plain audio files play inline too, without it.
+    #[serde(default)]
+    pub voice: Option<VoiceClip>,
+}
+
+/// What a network knows about a voice message before it downloads: its
+/// length and a coarse loudness curve to draw.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceClip {
+    /// Length in milliseconds.
+    pub duration_ms: u32,
+    /// Loudness samples, 0 to 255 each, evenly spaced over the length; empty
+    /// when the network sends none (a plain bar is drawn then).
+    pub waveform: Vec<u8>,
 }
 
 /// One emoji's reactions on a message.

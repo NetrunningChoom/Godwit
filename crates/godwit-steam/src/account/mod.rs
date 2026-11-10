@@ -1114,6 +1114,7 @@ fn images(list: Vec<(String, Option<(u32, u32)>)>) -> Vec<Attachment> {
             dimensions,
             original_url: None,
             spoiler: false,
+            voice: None,
         })
         .collect()
 }

@@ -345,6 +345,14 @@ export struct AttachmentItem {
     height: length,
     // Its animation slot (Anim.frames), -1 when still.
     anim: int,
+    // An audio file plays inline (kind 2 and openable): `key` names it to
+    // VoicePlayback, `voice` marks a voice message (no file name shown),
+    // `wave` its loudness bars (0 to 1; empty: a plain bar) and `length`
+    // its duration, "" when unknown.
+    key: string,
+    voice: bool,
+    wave: [float],
+    length: string,
     // A video file plays inline: this is its media area (a bare video embed).
     has-video: bool,
     video: EmbedItem,
@@ -730,6 +738,23 @@ export global Anim {
 // a playing GIF or video swaps one picture, its row stays as it is.
 export global Players {
     in property <[image]> frames;
+}
+
+// The one audio attachment playing in the conversation view
+// (app/src/shell/voice_messages.rs): its key matches an AttachmentItem's,
+// and only that row follows the progress. state: 0 idle, 1 loading,
+// 2 playing, 3 paused.
+export global VoicePlayback {
+    in property <string> key;
+    in property <int> state;
+    in property <float> progress;
+    in property <string> time;
+    in property <string> speed: "1x";
+    in property <float> volume: 1;
+    callback toggle(string);
+    callback seek(string, float);
+    callback cycle-speed();
+    callback set-volume(float);
 }
 
 // The call's video pictures, by tile (call-videos' order): a new frame swaps

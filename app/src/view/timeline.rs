@@ -629,7 +629,8 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
         .attachments
         .iter()
         .zip(&videos)
-        .map(|(a, video)| {
+        .enumerate()
+        .map(|(index, (a, video))| {
             let kind = match a.kind {
                 AttachmentKind::Image => 0,
                 AttachmentKind::Video => 1,
@@ -643,6 +644,8 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
                 (no_image(), false, -1)
             };
             let uploading = a.url.is_empty();
+            // Audio plays in place (a `key` of "" means a plain file card).
+            let playable = kind == 2 && !uploading;
             let video = video.as_ref().and_then(|_| video_items.next());
             AttachmentItem {
                 kind,
@@ -665,6 +668,21 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
                 height: h as f32,
                 spoiler: a.spoiler,
                 spoiler_revealed: false,
+                key: if playable {
+                    format!("{}:{index}", m.id.0).into()
+                } else {
+                    "".into()
+                },
+                voice: a.voice.is_some(),
+                wave: ModelRc::new(VecModel::from(
+                    a.voice.as_ref().map(|v| wave_bars(&v.waveform, 40)).unwrap_or_default(),
+                )),
+                length: a
+                    .voice
+                    .as_ref()
+                    .map(|v| clock(u64::from(v.duration_ms)))
+                    .unwrap_or_default()
+                    .into(),
             }
         })
         .collect();

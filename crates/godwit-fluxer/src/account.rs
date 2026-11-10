@@ -400,6 +400,7 @@ impl FluxerAccount {
                     dimensions: dim("width").zip(dim("height")),
                     original_url: None,
                     spoiler: false,
+                    voice: None,
                 })
             })
             .collect();

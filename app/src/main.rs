@@ -854,6 +854,14 @@ fn connect_callbacks(ui: &AppWindow) {
             }
         });
     }
+    // Audio attachments' players (shell/voice_messages.rs), through their global.
+    {
+        let voice = ui.global::<godwit::ui::VoicePlayback>();
+        callback!(voice.on_toggle(key) => |sh, ui| sh.voice_toggle(ui, key.to_string()));
+        callback!(voice.on_seek(key, at) => |sh, ui| sh.voice_seek(ui, key.to_string(), at));
+        callback!(voice.on_cycle_speed() => |sh, ui| sh.voice_cycle_speed(ui));
+        callback!(voice.on_set_volume(volume) => |sh, ui| sh.voice_set_volume(ui, volume));
+    }
     // The GIF picker (gifs.rs), through its global.
     {
         let gifs = ui.global::<godwit::ui::Gifs>();

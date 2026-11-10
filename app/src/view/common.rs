@@ -272,6 +272,36 @@ pub fn human_size(bytes: u64) -> String {
     }
 }
 
+/// A voice message's loudness samples (0 to 255 each) as `bars` levels from 0
+/// to 1, each the loudest sample in its share of the message; empty when there
+/// are none (the player draws a plain bar).
+pub fn wave_bars(waveform: &[u8], bars: usize) -> Vec<f32> {
+    if waveform.is_empty() || bars == 0 {
+        return Vec::new();
+    }
+    (0..bars)
+        .map(|i| {
+            let from = i * waveform.len() / bars;
+            let to = ((i + 1) * waveform.len() / bars).clamp(from + 1, waveform.len());
+            let loudest = waveform[from.min(waveform.len() - 1)..to]
+                .iter()
+                .copied()
+                .max()
+                .unwrap_or(0);
+            f32::from(loudest) / 255.0
+        })
+        .collect()
+}
+
+/// A length of time as a clock: "0:07", "12:03", "1:02:03".
+pub fn clock(ms: u64) -> String {
+    let secs = ms / 1000;
+    match secs {
+        0..3600 => format!("{}:{:02}", secs / 60, secs % 60),
+        _ => format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60),
+    }
+}
+
 /// "Ann is typing…" for the names given.
 pub fn typing(names: &[Arc<str>]) -> String {
     match names {
@@ -283,6 +313,20 @@ pub fn typing(names: &[Arc<str>]) -> String {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wave_bars_take_the_loudest_sample_of_each_share() {
+        assert_eq!(super::wave_bars(&[0, 255, 51, 51], 2), vec![1.0, 0.2]);
+        assert_eq!(super::wave_bars(&[255], 3), vec![1.0, 1.0, 1.0]);
+        assert!(super::wave_bars(&[], 3).is_empty());
+    }
+
+    #[test]
+    fn clock_formats_minutes_and_hours() {
+        assert_eq!(super::clock(7_900), "0:07");
+        assert_eq!(super::clock(723_000), "12:03");
+        assert_eq!(super::clock(3_723_000), "1:02:03");
+    }
+
     use super::super::sidebar::room_row;
     use super::super::timeline::preview_size;
     use super::*;

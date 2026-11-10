@@ -203,6 +203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 dimensions: Some((800, 450)),
                 original_url: None,
                 spoiler: false,
+                voice: None,
             }];
             m
         })

@@ -169,6 +169,7 @@ fn measure(all: bool) -> Result<(f64, f64), Box<dyn std::error::Error>> {
                 dimensions: Some((1600, 900)),
                 original_url: None,
                 spoiler: false,
+                voice: None,
             }];
             m
         })

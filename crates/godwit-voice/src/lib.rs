@@ -17,4 +17,5 @@ pub mod stream_audio;
 mod sync;
 mod transport;
 pub mod video;
+pub mod voice_message;
 pub mod worker;

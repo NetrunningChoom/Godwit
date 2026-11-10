@@ -31,7 +31,9 @@ use godwit_core::ids::{AccountId, MessageId, RoomId, ServerId, UserId};
 use godwit_core::members::{
     Member, MemberGroup, Moderation, ModerationRole, MutualFriend, MutualServer, Presence, Profile, Relationship,
 };
-use godwit_core::message::{Attachment, AttachmentKind, Embed, EmbedStyle, InvitePreview, Markup, Message, Reaction};
+use godwit_core::message::{
+    Attachment, AttachmentKind, Embed, EmbedStyle, InvitePreview, Markup, Message, Reaction, VoiceClip,
+};
 use godwit_core::network::Network;
 use godwit_core::room::{Capabilities, Room, RoomEncryption, RoomKind};
 use godwit_core::server::{Category, Server as CoreServer, ServerRights};

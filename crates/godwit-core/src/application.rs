@@ -1026,6 +1026,7 @@ impl Application {
                     dimensions: None,
                     original_url: None,
                     spoiler: f.spoiler,
+                    voice: None,
                 })
                 .collect(),
             components: None,

@@ -21,6 +21,7 @@ mod server_admin;
 mod settings_pages;
 mod step_up;
 mod threads;
+mod voice_messages;
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -144,6 +145,7 @@ pub struct Shell {
     sound_cache_tx: std::sync::mpsc::Sender<(String, Vec<f32>)>,
     sound_play_done: std::sync::mpsc::Receiver<(RoomId, Vec<f32>, f32)>,
     sound_play_done_tx: std::sync::mpsc::Sender<(RoomId, Vec<f32>, f32)>,
+    voice_messages: voice_messages::VoiceMessages,
     images: Images,
     inline_players: InlinePlayers,
     fullscreen_player: Option<crate::player_window::FullscreenPlayer>,
@@ -504,6 +506,7 @@ impl Shell {
             sound_cache_tx,
             sound_play_done,
             sound_play_done_tx,
+            voice_messages: voice_messages::VoiceMessages::new(),
             demo_steam: demo_account.as_ref().map(|_| crate::demo::DemoSteam::default()),
             demo: demo_account,
             images,
@@ -645,6 +648,7 @@ impl Shell {
             self.finish_call_sound(&room, samples, volume);
             had_events = true;
         }
+        had_events |= self.poll_voice_messages(ui);
         self.collect_sound_cache(alerting::SOUND_CACHE_ENTRIES, alerting::SOUND_CACHE_BYTES);
         had_events |= self.app.expire_typing(std::time::Instant::now());
         // Nothing else may wake us when a notice runs out (no stop event, a
@@ -1572,6 +1576,7 @@ mod tests {
             dimensions: None,
             original_url: Some("https://cdn/a.png/original".into()),
             spoiler: false,
+            voice: None,
         };
         assert_eq!(super::attachment_web_link(&a), Some("https://cdn/a.png/original"));
         a.original_url = None;
