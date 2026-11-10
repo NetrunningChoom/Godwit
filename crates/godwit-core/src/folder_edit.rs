@@ -27,6 +27,10 @@ pub enum FolderEdit {
         folder: ServerId,
         colour: Option<u32>,
     },
+    /// Dissolve the folder; its servers stay, as plain ones, in place.
+    Ungroup {
+        folder: ServerId,
+    },
 }
 
 impl FolderEdit {
@@ -36,7 +40,7 @@ impl FolderEdit {
             Self::Create { servers } => servers.iter().collect(),
             Self::AddServer { folder, server, .. } => vec![folder, server],
             Self::RemoveServer { server } => vec![server],
-            Self::Rename { folder, .. } | Self::Recolour { folder, .. } => vec![folder],
+            Self::Rename { folder, .. } | Self::Recolour { folder, .. } | Self::Ungroup { folder } => vec![folder],
         }
     }
 
@@ -67,6 +71,7 @@ impl FolderEdit {
             Self::RemoveServer { server } => folder_of(server).is_some(),
             Self::Rename { folder, name } => folder_named(folder).is_some_and(|f| f.name.as_deref() != name.as_deref()),
             Self::Recolour { folder, colour } => folder_named(folder).is_some_and(|f| f.colour != *colour),
+            Self::Ungroup { folder } => folder_named(folder).is_some(),
         }
     }
 }
@@ -187,6 +192,14 @@ pub(crate) mod tests {
             }
             .changes(&servers)
         );
-        assert!(FolderEdit::Recolour { folder, colour: None }.changes(&servers));
+        assert!(
+            FolderEdit::Recolour {
+                folder: folder.clone(),
+                colour: None
+            }
+            .changes(&servers)
+        );
+        assert!(FolderEdit::Ungroup { folder }.changes(&servers));
+        assert!(!FolderEdit::Ungroup { folder: id("gone") }.changes(&servers));
     }
 }

@@ -492,6 +492,17 @@ fn edit_discord_folders(
                 },
             );
         }
+        E::Ungroup { folder } => {
+            let at = folders.iter().position(|f| f.id.as_deref() == Some(&*folder.raw))?;
+            let members = std::mem::take(&mut folders[at].guilds);
+            folders.splice(
+                at..=at,
+                members.into_iter().map(|g| Folder {
+                    guilds: vec![g],
+                    ..Default::default()
+                }),
+            );
+        }
         E::Rename { folder, name } => {
             folders.iter_mut().find(|f| f.id.as_deref() == Some(&*folder.raw))?.name =
                 name.clone().filter(|n| !n.trim().is_empty());
@@ -2185,6 +2196,11 @@ mod tests {
         })
         .unwrap();
         assert_eq!((recoloured[1].name.as_deref(), recoloured[1].colour), (Some("N"), None));
+        // Ungroup: the members stay, plain, where the folder was.
+        let ungrouped = edit(E::Ungroup { folder: id("50") }).unwrap();
+        assert_eq!(guilds(&ungrouped), ["1", "2", "3", "4", "5"]);
+        assert!(ungrouped.iter().all(|f| f.id.is_none() && f.name.is_none()));
+        assert!(edit(E::Ungroup { folder: id("51") }).is_none());
         assert!(
             edit(E::Rename {
                 folder: id("51"),

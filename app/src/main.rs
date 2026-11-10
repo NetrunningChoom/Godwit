@@ -1040,6 +1040,7 @@ fn connect_callbacks(ui: &AppWindow) {
         if let Ok(row) = usize::try_from(row) { sh.edit_folder(ui, row); }
     });
     callback!(ui.on_remove_from_folder(row) => |sh, ui| sh.remove_server_from_folder(ui, row));
+    callback!(ui.on_ungroup_folder(row) => |sh, ui| sh.ungroup_folder(ui, row));
     callback!(ui.on_save_folder_settings(name, colour) => |sh, ui| sh.save_folder_settings(ui, &name, colour));
     callback!(ui.on_close_folder_settings() => |sh, ui| sh.close_folder_settings(ui));
     callback!(ui.on_search_home(q) => |sh, ui| sh.search_home(ui, q.to_string()));

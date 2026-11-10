@@ -532,6 +532,7 @@ pub fn apply_folder_edit(list: &mut Vec<Value>, edit: &godwit_core::folder_edit:
             }
         }
         E::RemoveServer { server } => folder_remove_server(list, &server.raw),
+        E::Ungroup { folder } => list.retain(|f| f.get("id").and_then(Value::as_str) != Some(&*folder.raw)),
         E::Rename { folder, name } => {
             if let Some(i) = find(list, &folder.raw) {
                 list[i]["name"] = serde_json::json!(name.clone().unwrap_or_default());

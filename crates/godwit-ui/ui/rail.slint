@@ -154,6 +154,7 @@ export component Rail inherits Rectangle {
     callback toggle-folder(int);
     callback edit-folder(int);
     callback remove-from-folder(int);
+    callback ungroup-folder(int);
     callback drop-server(int, int, bool);
     callback join-server();
     // A server's right-click menu: move it (-1 up, 1 down, 0 to the top of
@@ -380,6 +381,7 @@ export component Rail inherits Rectangle {
             if root.menu-settings: MenuRow { glyph: Icons.settings; label: "Server settings"; clicked => { root.server-settings(); } }
             MenuDivider { }
             if root.folders-enabled && root.menu-folder-enabled && root.menu-row >= 0 && root.servers[root.menu-row].folder: MenuRow { glyph: Icons.settings; label: "Folder settings"; clicked => { root.edit-folder(root.menu-row); } }
+            if root.folders-enabled && root.menu-folder-enabled && root.menu-row >= 0 && root.servers[root.menu-row].folder: MenuRow { glyph: Icons.close; label: "Ungroup folder"; clicked => { root.ungroup-folder(root.menu-row); } }
             if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.move-server(root.menu-row, -1); } }
             if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.move-server(root.menu-row, 1); } }
             if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.arrow-forward; label: "Move to top"; clicked => { root.move-server(root.menu-row, 0); } }

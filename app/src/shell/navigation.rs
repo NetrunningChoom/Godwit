@@ -593,6 +593,22 @@ impl Shell {
         }
     }
 
+    /// A folder dissolved from its rail row's menu; its servers stay.
+    pub fn ungroup_folder(&mut self, ui: &AppWindow, row: i32) {
+        let Some(view::RailRow::Folder(account, folder)) = usize::try_from(row)
+            .ok()
+            .and_then(|r| self.presenter.server_rows.get(r))
+            .cloned()
+        else {
+            return;
+        };
+        let folder = ServerId::new(account.clone(), folder.to_string());
+        self.act(
+            ui,
+            Action::EditFolders(account, godwit_core::folder_edit::FolderEdit::Ungroup { folder }),
+        );
+    }
+
     pub fn drop_server(&mut self, ui: &AppWindow, row: i32, steps: i32, centre: bool) {
         let Some(source) = usize::try_from(row)
             .ok()

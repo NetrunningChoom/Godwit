@@ -2307,6 +2307,14 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                             s.folder = None;
                         }
                     }
+                    godwit_core::folder_edit::FolderEdit::Ungroup { folder } => {
+                        for s in servers
+                            .iter_mut()
+                            .filter(|s| s.folder.as_ref().is_some_and(|f| f.id == folder.raw))
+                        {
+                            s.folder = None;
+                        }
+                    }
                     godwit_core::folder_edit::FolderEdit::Rename { folder, name } => {
                         for s in servers
                             .iter_mut()

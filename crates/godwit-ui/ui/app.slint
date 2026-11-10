@@ -121,6 +121,7 @@ export component AppWindow inherits Window {
     callback close-folder-settings();
     callback edit-folder(int);
     callback remove-from-folder(int);
+    callback ungroup-folder(int);
     callback drop-server(int, int, bool);
     // A server channel's settings (see channel-settings.slint).
     in property <bool> channel-settings-open;
@@ -1214,6 +1215,7 @@ export component AppWindow inherits Window {
                 move-server(i, d) => { root.move-server(i, d); }
                 edit-folder(i) => { root.edit-folder(i); }
                 remove-from-folder(i) => { root.remove-from-folder(i); }
+                ungroup-folder(i) => { root.ungroup-folder(i); }
                 move-server-by(i, d) => { root.move-server-by(i, d); }
                 drop-server(i, d, centre) => { root.drop-server(i, d, centre); }
                 move-account-by(i, d) => { root.move-account-by(i, d); }
