@@ -68,6 +68,25 @@ impl std::fmt::Display for DiscordError {
 
 impl std::error::Error for DiscordError {}
 
+/// Adds the captcha solution a retried request carries (docs.discord.food,
+/// topics/captcha-handling): `X-Captcha-Key` and `X-Captcha-Rqtoken`.
+fn with_solution(mut request: RequestBuilder, solved: &Option<(crate::captcha::Captcha, String)>) -> RequestBuilder {
+    if let Some((captcha, solution)) = solved {
+        for (name, value) in captcha.headers(solution) {
+            request = request.header(name, value);
+        }
+    }
+    request
+}
+
+/// Shows a captcha's page in the browser when the helper window isn't
+/// installed.
+fn open_captcha(page: &str) {
+    if let Err(error) = open::that_detached(page) {
+        godwit_core::verbose!("discord: could not open the captcha page: {error}");
+    }
+}
+
 /// Discord wants a captcha solved before it goes on (a 400 naming
 /// `captcha_key`). Godwit can't show hCaptcha yet.
 #[derive(Debug)]
@@ -907,8 +926,15 @@ impl Api {
     /// client it happened, which the web client tells Discord.
     pub async fn add_friend(&self, user: &str, place: &str) -> Result<()> {
         let path = format!("/users/@me/relationships/{user}");
-        let request = with_json(self.request(Method::PUT, &path), &json!({}));
-        self.empty(request.header("X-Context-Properties", context(place))).await
+        crate::captcha::solving(
+            |solved| {
+                let request = with_json(self.request(Method::PUT, &path), &json!({}));
+                let request = with_solution(request.header("X-Context-Properties", context(place)), &solved);
+                self.empty(request)
+            },
+            open_captcha,
+        )
+        .await
     }
 
     /// Blocks `user`: a relationship of type 2 (docs.discord.food,
@@ -947,9 +973,15 @@ impl Api {
     /// Sends a friend request to whoever has `username`.
     pub async fn add_friend_by_username(&self, username: &str) -> Result<()> {
         let body = json!({"username": username, "discriminator": null});
-        let request = with_json(self.request(Method::POST, "/users/@me/relationships"), &body);
-        self.empty(request.header("X-Context-Properties", context("Add Friend")))
-            .await
+        crate::captcha::solving(
+            |solved| {
+                let request = with_json(self.request(Method::POST, "/users/@me/relationships"), &body);
+                let request = with_solution(request.header("X-Context-Properties", context("Add Friend")), &solved);
+                self.empty(request)
+            },
+            open_captcha,
+        )
+        .await
     }
 
     /// Unfriends, cancels or declines.
@@ -1381,9 +1413,15 @@ impl Api {
     /// Joins a server by invite code, as accepting an invite does.
     pub async fn join_invite(&self, code: &str) -> Result<Value> {
         let path = format!("/invites/{}", encode(code));
-        let request = with_json(self.request(Method::POST, &path), &json!({"session_id": null}));
-        self.json(request.header("X-Context-Properties", context("Join Guild")))
-            .await
+        crate::captcha::solving(
+            |solved| {
+                let request = with_json(self.request(Method::POST, &path), &json!({"session_id": null}));
+                let request = with_solution(request.header("X-Context-Properties", context("Join Guild")), &solved);
+                self.json(request)
+            },
+            open_captcha,
+        )
+        .await
     }
 
     /// An invite's preview, as an invite card shows it.

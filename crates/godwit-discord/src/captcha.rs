@@ -407,4 +407,48 @@ mod tests {
         client.post(&url).body("solved").send().await.unwrap();
         assert_eq!(solution.await.unwrap().unwrap(), "solved");
     }
+
+    #[tokio::test]
+    async fn a_challenged_request_is_sent_again_once_with_the_solution() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let sent = std::cell::RefCell::new(Vec::new());
+        let result = solving(
+            |solved| {
+                sent.borrow_mut().push(solved.clone());
+                async move {
+                    match solved {
+                        None => Err(anyhow::Error::new(captcha())),
+                        Some(_) => Ok("joined"),
+                    }
+                }
+            },
+            |url| {
+                let url = url.to_owned();
+                tokio::spawn(async move {
+                    let _ = reqwest::Client::new().post(url).body("solved").send().await;
+                });
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap(), "joined");
+        let sent = sent.into_inner();
+        assert_eq!(sent.len(), 2);
+        assert!(sent[0].is_none());
+        assert_eq!(sent[1].as_ref().map(|(_, s)| s.as_str()), Some("solved"));
+    }
+
+    #[tokio::test]
+    async fn other_failures_are_not_retried() {
+        let mut tries = 0;
+        let result: Result<()> = solving(
+            |_| {
+                tries += 1;
+                async { Err(anyhow::anyhow!("nope")) }
+            },
+            |_| {},
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(tries, 1);
+    }
 }

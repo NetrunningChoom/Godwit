@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 godwit-core.workspace = true
+open.workspace = true
 godwit-secrets.workspace = true
 # Discord's Markdown is Stoat's dialect with a few spellings changed: its
 # parser and rich-text conversion are shared (see `markdown`).
