@@ -113,7 +113,7 @@ impl Network {
     pub fn has_presence(self) -> bool {
         matches!(
             self,
-            Self::Stoat | Self::Discord | Self::Steam | Self::Slack | Self::Teams | Self::GoogleChat
+            Self::Stoat | Self::Discord | Self::Fluxer | Self::Steam | Self::Slack | Self::Teams | Self::GoogleChat
         )
     }
 
@@ -156,6 +156,14 @@ impl Network {
                 ("Appear offline", Invisible),
             ],
             Self::Slack => &[("Available", Online), ("Away", Idle)],
+            // `status` of the user settings: online, idle, dnd, invisible
+            // (https://docs.fluxer.com/http-api/users/settings/).
+            Self::Fluxer => &[
+                ("Online", Online),
+                ("Idle", Idle),
+                ("Do Not Disturb", Busy),
+                ("Invisible", Invisible),
+            ],
             // SteamDatabase's published EPersonaState values (enums_clientserver.proto):
             // Online 1, Busy 2, Away 3, Snooze 4, LookingToTrade 5, LookingToPlay 6, Invisible 7.
             Self::Steam => &[
@@ -598,7 +606,7 @@ mod tests {
         assert_eq!(video, [Stoat, Discord]);
         let settings: Vec<_> = Network::ALL.into_iter().filter(|n| n.has_server_settings()).collect();
         assert_eq!(settings, [Stoat, Discord]);
-        assert!(!Steam.has_status_text() && Stoat.has_status_text() && !Fluxer.has_status_text());
+        assert!(!Steam.has_status_text() && Stoat.has_status_text() && Fluxer.has_status_text());
         assert!(!Discord.has_profile_banner() && Stoat.has_profile_banner());
         assert!(Discord.has_server_profile_details() && Discord.has_server_profile_banner());
         assert!(!Stoat.has_server_profile_details() && !Stoat.has_server_profile_banner());
@@ -667,7 +675,10 @@ mod tests {
             labels(Network::GoogleChat),
             ["Automatic", "Do Not Disturb", "Set as away"]
         );
-        assert_eq!(labels(Network::Fluxer), ["Online"]);
+        assert_eq!(
+            labels(Network::Fluxer),
+            ["Online", "Idle", "Do Not Disturb", "Invisible"]
+        );
     }
 
     #[test]

@@ -75,6 +75,9 @@ pub struct FluxerAccount {
     origin: String,
     /// The sign-in form's server field, sent with the credentials.
     server_input: String,
+    /// Our channel overrides as Fluxer sent them, by guild id (`@me`: the
+    /// DMs). A change sends them all back, since the map replaces the stored one.
+    overrides: HashMap<String, serde_json::Map<String, Value>>,
 }
 
 /// A snowflake's time.
@@ -112,6 +115,7 @@ impl FluxerAccount {
             pins_shown: None,
             origin: crate::discovery::OFFICIAL.to_owned(),
             server_input: String::new(),
+            overrides: HashMap::new(),
             slot,
             net,
             events,
@@ -237,7 +241,10 @@ impl FluxerAccount {
             ),
         };
         Some(Room {
-            notify: Default::default(),
+            notify: godwit_core::room::RoomNotify {
+                level: self.store.channel_notify.get(channel).copied().filter(|l| *l <= 2),
+                muted: self.store.channel_muted(channel),
+            },
             id: RoomId::new(account, channel),
             name: name.into(),
             kind,
@@ -246,7 +253,7 @@ impl FluxerAccount {
             // may not do (its permission bits aren't documented as Discord's).
             capabilities: Capabilities::of(Network::Fluxer),
             encryption: RoomEncryption::Unencrypted,
-            unread: self.store.unread(channel),
+            unread: self.store.unread(channel) && !self.store.channel_muted(channel),
             mentions: self.store.mentions(channel),
             last_read: self
                 .store
@@ -338,9 +345,13 @@ impl FluxerAccount {
                     scheduled_event_count: 0,
                     edit_own_profile: false,
                     categories,
-                    muted: false,
-                    folder: None,
-                    rights: ServerRights::default(),
+                    muted: self.store.muted_guilds.contains(&g.id),
+                    folder: self.store.folder_of.get(&g.id).cloned(),
+                    rights: ServerRights {
+                        notify_levels: true,
+                        notify: self.store.notify_level(&g.id),
+                        ..ServerRights::default()
+                    },
                 }
             })
             .collect()
@@ -486,7 +497,15 @@ impl FluxerAccount {
         if d.get("read_state").is_none() {
             d["read_state"] = d["read_states"].clone();
         }
+        self.overrides.clear();
+        if let Some(list) = d["user_guild_settings"].as_array_mut() {
+            for s in list {
+                self.remember_overrides(s);
+                *s = crate::settings::normalize_guild_settings(s);
+            }
+        }
         self.store.ready(&d);
+        self.read_user_settings(&d["user_settings"]);
         // Fluxer READY carries relationship records and any initial presence
         // data; these share the documented gateway object shapes.
         self.store.supplemental(&d);
@@ -517,6 +536,99 @@ impl FluxerAccount {
         });
         self.sync_people(out);
         self.sync_presences(self.store.presences.keys().cloned().collect::<Vec<_>>(), out);
+        out.extend(self.own_presence());
+    }
+
+    /// Keeps the overrides of a user guild settings object as sent.
+    fn remember_overrides(&mut self, s: &Value) {
+        let key = crate::settings::key(s["guild_id"].as_str());
+        let map = s["channel_overrides"].as_object().cloned().unwrap_or_default();
+        self.overrides.insert(key, map);
+    }
+
+    /// One user guild settings object (READY's, or the update's), in full:
+    /// the channels it no longer lists have no override any more.
+    fn apply_guild_settings(&mut self, s: &Value) {
+        let before: Vec<String> = s
+            .get("channel_overrides")
+            .is_some()
+            .then(|| {
+                self.overrides
+                    .get(&crate::settings::key(s["guild_id"].as_str()))
+                    .map(|m| m.keys().cloned().collect())
+            })
+            .flatten()
+            .unwrap_or_default();
+        self.remember_overrides(s);
+        for channel in before {
+            if s["channel_overrides"].get(&channel).is_none() {
+                self.store.channel_notify.remove(&channel);
+                self.store.muted_channels.remove(&channel);
+            }
+        }
+        self.store
+            .apply_guild_settings(&crate::settings::normalize_guild_settings(s));
+    }
+
+    /// Our status and custom status from a user settings object, and the
+    /// server list's folders and order (`guild_folders`, whose id -1 is the
+    /// uncategorized group).
+    fn read_user_settings(&mut self, s: &Value) {
+        let read = crate::settings::read_status(s, chrono::Utc::now().timestamp());
+        if let Some(status) = read.status {
+            self.store.status = status;
+        }
+        if let Some(custom) = read.custom {
+            self.store.custom_status = custom;
+        }
+        if s["guild_folders"].is_array() {
+            let folders = godwit_discord::settings::folders_from_json(&s["guild_folders"]);
+            self.store.set_folders(&folders);
+            let place: HashMap<&String, usize> = folders
+                .iter()
+                .flat_map(|f| &f.guilds)
+                .enumerate()
+                .map(|(i, g)| (g, i + 1))
+                .collect();
+            self.store
+                .guild_order
+                .sort_by_key(|g| place.get(g).copied().unwrap_or(0));
+        }
+    }
+
+    /// Our presence and custom status as the core shows them.
+    fn own_presence(&self) -> Option<Event> {
+        use godwit_core::members::Presence;
+        let presence = match self.store.status.as_str() {
+            "idle" => Presence::Idle,
+            "dnd" => Presence::Busy,
+            "invisible" => Presence::Invisible,
+            _ => Presence::Online,
+        };
+        Some(Event::OwnPresence {
+            account: self.account.clone()?,
+            presence,
+            status: self.store.custom_status.clone().map(Into::into),
+        })
+    }
+
+    /// A room's own level or mute: shown at once, sent whole, and confirmed
+    /// by USER_GUILD_SETTINGS_UPDATE.
+    fn set_room_notify(&mut self, room: &RoomId, change: godwit_core::room::RoomNotifyChange) -> Vec<Event> {
+        let Some(channel) = self.channel_of(room) else {
+            return Vec::new();
+        };
+        let guild = self.store.channels.get(&channel).and_then(|c| c.guild.clone());
+        let key = crate::settings::key(guild.as_deref());
+        let patch = crate::settings::channel_patch(change, chrono::Utc::now());
+        let existing = self.overrides.get(&key).cloned().unwrap_or_default();
+        let body = crate::settings::overrides_body(&existing, &channel, patch);
+        self.apply_guild_settings(&serde_json::json!({
+            "guild_id": guild,
+            "channel_overrides": body["channel_overrides"],
+        }));
+        self.net.send(Cmd::Request(Request::GuildSettings { guild, body }));
+        self.room(&channel).map(Event::RoomUpdated).into_iter().collect()
     }
 
     /// Subscribes `guild`'s open channel (Lazy Request, op 14, as
@@ -782,6 +894,17 @@ impl FluxerAccount {
                 }
             }
             "USER_UPDATE" => self.store.put_user(d),
+            // https://docs.fluxer.com/gateway/events/: the full user settings,
+            // and the user guild settings of the one guild that changed.
+            "USER_SETTINGS_UPDATE" => {
+                self.read_user_settings(d);
+                out.extend(self.own_presence());
+                self.sync_rooms(out);
+            }
+            "USER_GUILD_SETTINGS_UPDATE" => {
+                self.apply_guild_settings(d);
+                self.sync_rooms(out);
+            }
             _ => {}
         }
     }
@@ -1255,6 +1378,44 @@ impl FluxerAccount {
                     }
                 }
             }
+            Command::SetRoomNotify { room, change } => out.extend(self.set_room_notify(&room, change)),
+            Command::ServerAdmin {
+                server,
+                op: godwit_core::server_settings::ServerAdmin::SetNotify(level),
+            } => {
+                let guild = server.raw.to_string();
+                let level = level.min(2);
+                self.store.guild_notify.insert(guild.clone(), level);
+                req(
+                    &self.net,
+                    Request::GuildSettings {
+                        guild: Some(guild),
+                        body: crate::settings::guild_level_body(level),
+                    },
+                );
+                self.sync_rooms(&mut out);
+            }
+            Command::SetPresence { presence, .. } => {
+                use godwit_core::members::Presence;
+                let status = match presence {
+                    Presence::Idle => "idle",
+                    Presence::Busy | Presence::Focus => "dnd",
+                    Presence::Invisible | Presence::Offline => "invisible",
+                    _ => "online",
+                };
+                self.store.status = status.to_owned();
+                req(&self.net, Request::UserSettings(crate::settings::status_body(status)));
+                out.extend(self.own_presence());
+            }
+            Command::SetStatusText(text) => {
+                let text = text.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+                self.store.custom_status = text.clone();
+                req(
+                    &self.net,
+                    Request::UserSettings(crate::settings::custom_status_body(text.as_deref())),
+                );
+                out.extend(self.own_presence());
+            }
             Command::LoadServerEvents { .. }
             | Command::SetServerEventInterest { .. }
             | Command::LoadModerationLog { .. } => {}
@@ -1628,6 +1789,88 @@ mod tests {
             panic!("file send not routed")
         };
         assert_eq!(files, vec![selected]);
+    }
+
+    fn next_request(cmds: &mut tokio::sync::mpsc::UnboundedReceiver<Cmd>) -> Option<Request> {
+        while let Ok(c) = cmds.try_recv() {
+            if let Cmd::Request(r) = c {
+                return Some(r);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn settings_in_ready_drive_notify_status_and_folders_and_changes_are_patched() {
+        use godwit_core::room::RoomNotifyChange as C;
+        let (mut a, mut cmds, _tx) = account();
+        let mut d = ready();
+        d["user_settings"] = json!({
+            "status": "dnd",
+            "custom_status": {"text": "busy", "expires_at": null},
+            "guild_folders": [{"id": -1, "name": null, "color": 0, "guild_ids": ["10"]}]
+        });
+        d["user_guild_settings"] = json!([
+            {"guild_id": "10", "message_notifications": 1, "muted": false,
+             "channel_overrides": {"13": {"muted": true, "message_notifications": 2,
+                "mute_config": {"end_time": null, "selected_time_window": 0}},
+                "11": {"collapsed": true, "message_notifications": 3}}}
+        ]);
+        let mut out = Vec::new();
+        a.dispatch("READY", &d, &mut out);
+        assert!(out.iter().any(|e| matches!(e,
+            Event::OwnPresence { presence: godwit_core::members::Presence::Busy, status: Some(t), .. } if &**t == "busy")));
+        let Some(Event::AccountReady { rooms, servers, .. }) = out.first() else {
+            panic!("{out:?}")
+        };
+        let rules = rooms.iter().find(|r| &*r.id.raw == "13").expect("rules");
+        assert!(rules.notify.muted && rules.notify.level == Some(2) && rules.capabilities.notify_settings);
+        assert!(servers[0].rights.notify_levels && servers[0].rights.notify == 1 && servers[0].folder.is_none());
+
+        let room = rules.id.clone();
+        let out = a.run(Command::SetRoomNotify {
+            room,
+            change: C::Unmute,
+        });
+        assert!(matches!(&out[..], [Event::RoomUpdated(r)] if !r.notify.muted));
+        let Some(Request::GuildSettings { guild, body }) = next_request(&mut cmds) else {
+            panic!("no request")
+        };
+        assert_eq!(guild.as_deref(), Some("10"));
+        assert_eq!(
+            body,
+            json!({"channel_overrides": {
+                "11": {"collapsed": true, "message_notifications": 3},
+                "13": {"muted": false, "message_notifications": 2,
+                       "mute_config": {"end_time": null, "selected_time_window": 0}}
+            }})
+        );
+
+        // An update that drops the override clears it.
+        let mut out = Vec::new();
+        a.dispatch(
+            "USER_GUILD_SETTINGS_UPDATE",
+            &json!({"guild_id": "10", "message_notifications": 0, "channel_overrides": null}),
+            &mut out,
+        );
+        assert_eq!(a.store.channel_notify.get("13"), None);
+        assert_eq!(a.store.notify_level("10"), 0);
+
+        a.run(Command::SetPresence {
+            presence: godwit_core::members::Presence::Idle,
+            choice: 1,
+        });
+        assert!(matches!(next_request(&mut cmds), Some(Request::UserSettings(b)) if b["status"] == "idle"));
+        a.run(Command::SetStatusText(Some(" hi ".into())));
+        assert!(
+            matches!(next_request(&mut cmds), Some(Request::UserSettings(b)) if b["custom_status"]["text"] == "hi")
+        );
+        a.run(Command::ServerAdmin {
+            server: ServerId::new(a.account.clone().expect("account"), "10"),
+            op: godwit_core::server_settings::ServerAdmin::SetNotify(2),
+        });
+        assert!(matches!(next_request(&mut cmds),
+            Some(Request::GuildSettings { guild: Some(g), body }) if g == "10" && body["message_notifications"] == 2));
     }
 
     #[test]

@@ -18,3 +18,4 @@ pub mod captcha;
 pub mod discovery;
 pub mod gateway;
 pub mod session;
+pub mod settings;

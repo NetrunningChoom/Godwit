@@ -70,6 +70,13 @@ pub enum Request {
     Gifs {
         query: String,
     },
+    /// `PATCH /users/@me/settings` with these fields.
+    UserSettings(Value),
+    /// A guild's (None: the DMs') notification settings, these fields.
+    GuildSettings {
+        guild: Option<String>,
+        body: Value,
+    },
 }
 
 pub enum Cmd {
@@ -422,6 +429,14 @@ async fn answer(api: &Api, request: Request) -> Answer {
         } => Answer::Done {
             what: "changing a pin",
             result: api.set_pinned(&channel, &message, pinned).await.map_err(text),
+        },
+        Request::UserSettings(body) => Answer::Done {
+            what: "saving the settings",
+            result: api.patch_settings(&body).await.map_err(text),
+        },
+        Request::GuildSettings { guild, body } => Answer::Done {
+            what: "saving the notification settings",
+            result: api.patch_guild_settings(guild.as_deref(), &body).await.map_err(text),
         },
         Request::GifCategories => Answer::Gifs {
             query: String::new(),

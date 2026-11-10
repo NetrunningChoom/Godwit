@@ -214,6 +214,9 @@ impl Capabilities {
                 max_upload: crate::media::MAX_UPLOAD,
                 // Fluxer refuses a pin we may not make.
                 pin_messages: true,
+                // A channel's own level and mute: `channel_overrides` of the
+                // user guild settings (docs.fluxer.com/http-api/users/settings/).
+                notify_settings: true,
                 search_filters: crate::search::SearchFilters::new(&[
                     crate::search::SearchFilter::From,
                     crate::search::SearchFilter::Mentions,

@@ -417,6 +417,21 @@ impl Api {
             .map(drop)
     }
 
+    /// `PATCH /users/@me/settings` (status, custom status): omitted fields
+    /// keep their values. https://docs.fluxer.com/http-api/users/settings/
+    pub async fn patch_settings(&self, body: &Value) -> Result<()> {
+        self.send(self.request(Method::PATCH, "/users/@me/settings").json(body))
+            .await
+            .map(drop)
+    }
+
+    /// `PATCH /users/@me/guilds/{id}/settings`, or `…/@me/settings` for the
+    /// DMs. https://docs.fluxer.com/http-api/users/settings/
+    pub async fn patch_guild_settings(&self, guild: Option<&str>, body: &Value) -> Result<()> {
+        let path = format!("/users/@me/guilds/{}/settings", guild.unwrap_or("@me"));
+        self.send(self.request(Method::PATCH, &path).json(body)).await.map(drop)
+    }
+
     /// Fluxer instance GIF provider endpoints: https://docs.fluxer.com/http-api/gifs/.
     pub async fn gif_featured(&self) -> Result<Value> {
         self.send(self.request(Method::GET, "/gifs/featured")).await
