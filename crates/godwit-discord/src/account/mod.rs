@@ -1054,10 +1054,12 @@ impl NetworkAccount for DiscordAccount {
                     let first = self.subscribed.insert(guild.clone());
                     // When its voice channels' sessions began, for the time
                     // beside them; VOICE_CHANNEL_START_TIME_UPDATE follows.
+                    // Both fields, as the web client always asks for them
+                    // (Yapfast 9dd48ff5); the statuses go unused.
                     if first {
                         self.net.send(Cmd::Gateway {
                             op: crate::gateway::REQUEST_CHANNEL_INFO,
-                            data: json!({"guild_id": guild, "fields": ["voice_start_time"]}),
+                            data: json!({"guild_id": guild, "fields": ["status", "voice_start_time"]}),
                         });
                     }
                     let moved = self.list_channel.get(&guild) != Some(&channel);
