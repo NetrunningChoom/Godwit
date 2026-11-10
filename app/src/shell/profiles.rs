@@ -53,14 +53,24 @@ pub(super) fn load_contacts(path: Option<&std::path::Path>) -> Contacts {
     }
 }
 
+/// The member list's drag limits; `Members`' handle in app.slint clamps to
+/// the same 200 to 480 px.
+pub(super) const MEMBERS_WIDTH: (f32, f32) = (200.0, 480.0);
+
+/// The kept member-list width brought within its limits; none when never
+/// dragged (or reset), so the window keeps its default.
+pub(super) fn members_width(saved: f32) -> Option<f32> {
+    (saved > 0.0).then(|| saved.clamp(MEMBERS_WIDTH.0, MEMBERS_WIDTH.1))
+}
+
 /// Panel widths as last dragged, within the handles' limits (0: never
 /// dragged, left as the window has them).
 pub(super) fn apply_widths(ui: &AppWindow, settings: &Settings) {
     if settings.sidebar_width > 0.0 {
         ui.set_sidebar_w(settings.sidebar_width.clamp(200.0, 420.0));
     }
-    if settings.members_width > 0.0 {
-        ui.set_members_w(settings.members_width.clamp(200.0, 400.0));
+    if let Some(width) = members_width(settings.members_width) {
+        ui.set_members_w(width);
     }
 }
 
@@ -761,5 +771,14 @@ mod tests {
         assert!(needs_asking(true, false));
         assert!(!needs_asking(false, false));
         assert!(needs_asking(false, true));
+    }
+
+    #[test]
+    fn the_member_width_is_kept_within_its_limits() {
+        assert_eq!(members_width(0.0), None);
+        assert_eq!(members_width(-5.0), None);
+        assert_eq!(members_width(100.0), Some(200.0));
+        assert_eq!(members_width(300.0), Some(300.0));
+        assert_eq!(members_width(900.0), Some(480.0));
     }
 }

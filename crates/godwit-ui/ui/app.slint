@@ -1675,7 +1675,7 @@ export component AppWindow inherits Window {
                             // Dragging left widens the list.
                             value: root.members-w;
                             direction: -1;
-                            dragged(w) => { root.members-w = clamp(w, 200px, 400px); }
+                            dragged(w) => { root.members-w = clamp(w, 200px, 480px); }
                             released => { root.panels-resized(root.sidebar-w, root.members-w); }
                             reset => { root.members-w = Theme.sidebar-width; root.panels-resized(root.sidebar-w, root.members-w); }
                         }
