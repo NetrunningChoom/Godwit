@@ -230,6 +230,17 @@ pub enum Event {
         id: MessageId,
         reactions: Vec<Reaction>,
     },
+    /// One reaction added to or taken off a message (networks that send
+    /// each change rather than the whole list, like Slack). `ours`: it was
+    /// our own, so a repeat of one already counted changes nothing.
+    ReactionToggled {
+        room: RoomId,
+        id: MessageId,
+        emoji: Arc<str>,
+        image_url: Option<Arc<str>>,
+        add: bool,
+        ours: bool,
+    },
     /// People who used one reaction, keyed so stale answers cannot replace a newer popup.
     Reactors {
         room: RoomId,

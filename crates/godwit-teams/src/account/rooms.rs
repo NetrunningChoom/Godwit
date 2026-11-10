@@ -292,7 +292,13 @@ impl TeamsAccount {
         })
     }
 
-    pub(super) fn remember_thread(&mut self, channel: &str, root: &str, message: Option<&Message>) -> Option<String> {
+    /// `message` comes with its `clientmessageid`, which marking it read sends back.
+    pub(super) fn remember_thread(
+        &mut self,
+        channel: &str,
+        root: &str,
+        message: Option<(&Message, &str)>,
+    ) -> Option<String> {
         let parent = self.conversations.get(channel)?;
         if !matches!(parent.kind, Kind::Channel(_)) || parent.parent.is_some() {
             return None;
@@ -306,7 +312,7 @@ impl TeamsAccount {
             parent: Some(channel.to_owned()),
             ..Conversation::default()
         });
-        if let Some(message) = message {
+        if let Some((message, client_id)) = message {
             if &*message.id.0 == root {
                 thread.topic = message
                     .snippet
@@ -325,7 +331,11 @@ impl TeamsAccount {
                 .as_ref()
                 .is_none_or(|(last, _, _)| last.parse::<i64>().unwrap_or(0) <= message.id.0.parse::<i64>().unwrap_or(0))
             {
-                thread.last = Some((message.id.0.to_string(), String::new(), message.author.raw.to_string()));
+                thread.last = Some((
+                    message.id.0.to_string(),
+                    client_id.to_owned(),
+                    message.author.raw.to_string(),
+                ));
             }
             thread.participating |= *message.author.raw == self.me;
         }

@@ -320,6 +320,12 @@ impl Shell {
     }
 
     pub(super) fn show_incoming_call(&mut self, ui: &AppWindow) {
+        // Joining a ringing call from its chat (not the popup) answers it too:
+        // the ringtone and popup go.
+        if let Some(room) = self.app.state().call.as_ref().map(|c| c.room.clone()) {
+            self.alerts.done(&room);
+            self.drop_incoming(&room);
+        }
         let Some((room, name, _)) = &self.incoming_call else {
             ui.set_incoming_call_open(false);
             return;

@@ -22,6 +22,11 @@ pub use godwit_core::backend::Waker;
 /// A request to one workspace, made because the user did something.
 #[derive(Debug, Clone)]
 pub enum Request {
+    /// One page of `search.messages` (newest first), from page 1.
+    Search {
+        query: String,
+        page: u32,
+    },
     /// A conversation's history, or (with `thread`) a thread's: its root and replies.
     History {
         channel: String,
@@ -91,6 +96,7 @@ pub enum Cmd {
 
 #[derive(Debug)]
 pub enum Answer {
+    Search(Result<Value, String>),
     History {
         channel: String,
         thread: Option<String>,
@@ -557,6 +563,7 @@ async fn answer(api: &Api, request: Request) -> Answer {
                 .await
                 .map_err(|e| text(&e)),
         ),
+        Request::Search { query, page } => Answer::Search(api.search(&query, page).await.map_err(|e| text(&e))),
         Request::Conversation(channel) => Answer::Conversation(
             api.call("conversations.info", &[("channel", channel.as_str())])
                 .await

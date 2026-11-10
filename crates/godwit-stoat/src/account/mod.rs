@@ -1880,6 +1880,29 @@ mod tests {
     }
 
     #[test]
+    fn our_own_and_server_channel_calls_do_not_ring() {
+        let (mut a, tx, _, _) = connected();
+        // Started by us: the system user writes it, `by` is who started it.
+        let mut ours = message("CALL2", "D", "00000000000000000000000000");
+        ours["system"] = json!({"type": "call_started", "by": "ME", "finished_at": null});
+        ours["type"] = "Message".into();
+        // A server's voice channel starting a call.
+        let mut server = message("CALL3", "C1", "00000000000000000000000000");
+        server["system"] = json!({"type": "call_started", "by": "ANN", "finished_at": null});
+        server["type"] = "Message".into();
+        tx.send(Ev::Event(ours)).unwrap();
+        tx.send(Ev::Event(server)).unwrap();
+        let events = a.poll();
+        assert!(!events.iter().any(|e| matches!(
+            e,
+            Event::Alert {
+                kind: godwit_core::application::AlertKind::Call,
+                ..
+            }
+        )));
+    }
+
+    #[test]
     fn member_lists_group_by_hoisted_role_then_online_then_offline() {
         let (mut a, tx, mut cmds, _) = connected();
         let _ = (cmds.try_recv(), cmds.try_recv());

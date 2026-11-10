@@ -2053,6 +2053,24 @@ impl NetworkAccount for DiscordAccount {
         Some(format!("https://discord.com/channels/{guild}/{}/{}", c.id, message.0))
     }
 
+    /// `https://discord.com/channels/{guild or @me}/{channel}[/{message}]`
+    /// (canary and ptb too), the form [`Self::message_link`] makes.
+    fn open_link(&self, url: &str) -> Option<(RoomId, Option<MessageId>)> {
+        let (host, path) = url.strip_prefix("https://")?.split_once('/')?;
+        if !matches!(
+            host,
+            "discord.com" | "canary.discord.com" | "ptb.discord.com" | "discordapp.com"
+        ) {
+            return None;
+        }
+        let path = path.split(['?', '#']).next()?;
+        let mut parts = path.strip_prefix("channels/")?.split('/');
+        let (_guild, channel) = (parts.next()?, parts.next()?);
+        let message = parts.next().filter(|m| !m.is_empty()).map(|m| MessageId(m.into()));
+        self.store.channels.contains_key(channel).then_some(())?;
+        Some((self.room_id(channel)?, message))
+    }
+
     fn watch_stream(&mut self, room: &RoomId, user: &godwit_core::ids::UserId, watch: bool) -> Vec<Event> {
         let mut out = Vec::new();
         self.watch_call_stream(room, user, watch, &mut out);

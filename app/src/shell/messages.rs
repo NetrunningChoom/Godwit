@@ -677,11 +677,31 @@ impl Shell {
             if let Some(account) = self.presenter.timeline_of.as_ref().map(|r| r.account.clone()) {
                 self.act(ui, Action::OpenProfile(UserId::new(account, user)));
             }
+        } else if let Some((room, message)) = self.own_link(url) {
+            // A link into one of our own chats: opened here, at its message.
+            self.act(ui, Action::SelectRoom(room));
+            if let Some(message) = message {
+                self.act(ui, Action::JumpTo(message));
+            }
         } else if url.starts_with("http://") || url.starts_with("https://") {
             // Asked first, showing where it really goes: a link's text can
             // say something else (Discord's masked links).
             ui.set_confirm_link(url.into());
         }
+    }
+
+    /// The chat (and message) a web link points into, if an account of ours
+    /// knows it: the open chat's account first, then the others.
+    fn own_link(&self, url: &str) -> Option<(RoomId, Option<MessageId>)> {
+        if !url.starts_with("https://") {
+            return None;
+        }
+        let current = self.presenter.timeline_of.as_ref().map(|r| r.account.clone());
+        let mut ids: Vec<AccountId> = self.app.state().accounts.iter().map(|a| a.id.clone()).collect();
+        ids.sort_by_key(|id| Some(id) != current.as_ref());
+        ids.iter()
+            .filter_map(|id| self.account(id)?.open_link(url))
+            .find(|(room, _)| self.app.state().room(room).is_some())
     }
 
     pub fn activate_message_button(&mut self, ui: &AppWindow, row: i32, custom_id: &str) {

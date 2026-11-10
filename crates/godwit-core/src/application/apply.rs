@@ -358,6 +358,25 @@ impl Application {
                 }
                 Vec::new()
             }
+            Event::ReactionToggled {
+                room,
+                id,
+                emoji,
+                image_url,
+                add,
+                ours,
+            } => {
+                if let Some(t) = self.state.timelines.get_mut(&room)
+                    && let Some(slot) = t.messages.iter().position(|m| m.id == id)
+                {
+                    let current = &t.messages[slot].reactions;
+                    let next = crate::message::toggle_reaction(current, &emoji, image_url, add, ours);
+                    if next != *current {
+                        Arc::make_mut(&mut Arc::make_mut(&mut t.messages)[slot]).reactions = next;
+                    }
+                }
+                Vec::new()
+            }
             Event::Reactors {
                 room,
                 message,

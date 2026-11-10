@@ -66,6 +66,12 @@ pub trait NetworkAccount {
     fn run(&mut self, command: Command) -> Vec<Event>;
     /// A message's link in the network's own app, if it has one.
     fn message_link(&self, room: &RoomId, message: &MessageId) -> Option<String>;
+    /// A web link into one of this account's own chats (the reverse of
+    /// [`Self::message_link`]): the room, and the message if it names one.
+    /// Opened in Godwit instead of the browser.
+    fn open_link(&self, _url: &str) -> Option<(RoomId, Option<MessageId>)> {
+        None
+    }
     /// Set when the network doesn't take reports from Godwit: the report
     /// entries then show this explanation and its links instead of a form.
     fn report_notice(&self) -> Option<crate::report::ReportNotice> {

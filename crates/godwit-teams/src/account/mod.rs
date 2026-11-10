@@ -372,7 +372,7 @@ mod tests {
         let conversations = json!({"conversations": [
             {"id": DM, "threadProperties": {"uniquerosterthread": "true"},
              "properties": {"consumptionhorizon": "1760346000000;1760346000001;1"},
-             "lastMessage": {"id": "1760346100000", "from": format!("https://emea.ng.msg.teams.microsoft.com/v1/users/ME/contacts/{BEA}"),
+             "lastMessage": {"id": "1760346100000", "clientmessageid": "9001", "from": format!("https://emea.ng.msg.teams.microsoft.com/v1/users/ME/contacts/{BEA}"),
                              "imdisplayname": "Bea Example", "originalarrivaltime": "2025-10-13T09:01:40.000Z"}},
             {"id": GROUP, "threadProperties": {"topic": "Planning"}, "properties": {},
              "lastMessage": {"id": "1760346000000", "from": format!("…/contacts/{ME}")}},
@@ -798,7 +798,7 @@ mod tests {
         let room = RoomId::new(a.account.clone().unwrap(), DM);
         a.run(Command::MarkRoomRead { room: room.clone() });
         assert!(
-            matches!(cmds.try_recv(), Ok(Cmd::Request(Request::Ack { message, .. })) if message == "1760346100000")
+            matches!(cmds.try_recv(), Ok(Cmd::Request(Request::Ack { message, client_id, .. })) if message == "1760346100000" && client_id == "9001")
         );
         a.run(Command::MarkRoomRead { room });
         assert!(cmds.try_recv().is_err(), "already read: nothing sent");

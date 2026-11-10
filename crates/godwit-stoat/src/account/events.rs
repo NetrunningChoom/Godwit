@@ -857,19 +857,22 @@ impl StoatAccount {
                         .as_ref()
                         .filter(|s| s.get("type").and_then(Value::as_str) == Some("call_started"))
                     {
+                        // System messages come from the system user, so who
+                        // started the call is `by` (stoat.js types/Message.ts).
+                        let by = system.get("by").and_then(Value::as_str).unwrap_or(m.author.as_str());
+                        let channel = self.store.channels.get(&m.channel);
+                        let private =
+                            channel.is_some_and(|c| matches!(c.channel_type.as_str(), "DirectMessage" | "Group"));
                         if system.get("finished_at").is_some_and(|v| !v.is_null()) {
                             out.push(Event::AlertDone { room: room.clone() });
-                        } else if self.store.me.as_deref() != Some(m.author.as_str()) {
-                            let channel = self.store.channels.get(&m.channel);
+                        } else if private && self.store.me.as_deref() != Some(by) {
                             let server = channel.and_then(|c| c.server.as_deref());
-                            let title = channel.map_or_else(
-                                || self.store.display_name(&m.author, server),
-                                |c| self.store.channel_title(c),
-                            );
+                            let title = channel
+                                .map_or_else(|| self.store.display_name(by, server), |c| self.store.channel_title(c));
                             out.push(Event::Alert {
                                 room: room.clone(),
                                 kind: AlertKind::Call,
-                                from: self.account.clone().map(|a| UserId::new(a, m.author.as_str())),
+                                from: self.account.clone().map(|a| UserId::new(a, by)),
                                 title: title.into(),
                                 body: Arc::from(""),
                             });

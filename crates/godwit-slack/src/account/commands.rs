@@ -40,6 +40,7 @@ impl SlackAccount {
                     }
                 }
             }
+            Answer::Search(result) => self.search_answer(team, result, out),
             Answer::Conversation(result) => match result {
                 Ok(value) => {
                     self.put_conversation(team, &value["channel"]);
@@ -501,6 +502,19 @@ impl SlackAccount {
                             ts: message.0.to_string(),
                         },
                     );
+                }
+            }
+            Command::SearchMessages { room, query, offset } => {
+                if let Some((team, channel, _)) = self.target(&room) {
+                    let (text, only) = self.search_text(&team, &channel, &query);
+                    let page = u32::try_from(offset / crate::api::SEARCH_PAGE + 1).unwrap_or(1);
+                    self.searching = Some(Search {
+                        room,
+                        query,
+                        offset,
+                        only,
+                    });
+                    self.request(&team, Request::Search { query: text, page });
                 }
             }
             Command::React {

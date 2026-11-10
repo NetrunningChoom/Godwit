@@ -166,6 +166,7 @@ impl InlinePlayers {
         if !valid_player_url(&spec.url) {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "unsupported player URL"));
         }
+        missing_check()?;
         self.clock += 1;
         if let Some(p) = self.players.iter_mut().find(|p| p.spec.url == spec.url) {
             p.used = self.clock;
@@ -208,14 +209,16 @@ impl InlinePlayers {
             .stdout(std::process::Stdio::piped());
         if let Some(path) = crate::media_log::path() {
             command.env("GODWIT_MEDIA_LOG", path);
-            command.env("GST_DEBUG", "2,decodebin:5,playbin:5,GST_CAPS:5,GST_ELEMENT_FACTORY:5");
+            // Warnings, and what decoding picked; caps negotiation at debug
+            // level was thousands of lines a video.
+            command.env("GST_DEBUG", "2,decodebin:4,playbin:4");
+            command.env("GST_DEBUG_NO_COLOR", "1");
             if !MEDIA_SUMMARY_SENT.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 command.env("GODWIT_MEDIA_SUMMARY", "1");
             }
-            command.stderr(std::process::Stdio::piped());
-        } else {
-            command.stderr(std::process::Stdio::null());
         }
+        // Read either way: a missing system library is told to the user.
+        command.stderr(std::process::Stdio::piped());
         let spawned = command.spawn();
         let mut child = match spawned {
             Ok(child) => child,
@@ -454,11 +457,50 @@ impl InlinePlayers {
     }
 }
 
+/// A system library the player helper couldn't load (its loader said so):
+/// it won't start until it's installed, so it isn't tried again.
+static MISSING_LIBRARY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+static MISSING_TOLD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The library named in the dynamic loader's "error while loading shared
+/// libraries: libX.so.N: cannot open shared object file".
+fn missing_library_in(line: &str) -> Option<String> {
+    let rest = line.split("error while loading shared libraries: ").nth(1)?;
+    let name = rest.split(':').next()?.trim();
+    (!name.is_empty() && name.len() < 128).then(|| name.to_owned())
+}
+
+fn missing_check() -> io::Result<()> {
+    match crate::media_log::lock(&MISSING_LIBRARY).as_ref() {
+        Some(lib) => Err(io::Error::new(io::ErrorKind::NotFound, format!("{lib} is missing"))),
+        None => Ok(()),
+    }
+}
+
+/// Once: what to tell the user when the player helper can't load a library.
+pub fn missing_library_notice() -> Option<String> {
+    let lib = crate::media_log::lock(&MISSING_LIBRARY).clone()?;
+    if MISSING_TOLD.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return None;
+    }
+    let hint = if lib.contains("webkit") {
+        " Install WebKitGTK 4.1 (with GStreamer) from your distribution to play videos here."
+    } else {
+        ""
+    };
+    Some(format!(
+        "Videos open in the browser: {lib} is missing on this system.{hint}"
+    ))
+}
+
 fn read_player_stderr(stderr: ChildStderr) {
     let _ = std::thread::Builder::new()
         .name("godwit-player-stderr".into())
         .spawn(move || {
             for line in io::BufReader::new(stderr).lines().map_while(Result::ok) {
+                if let Some(lib) = missing_library_in(&line) {
+                    crate::media_log::lock(&MISSING_LIBRARY).get_or_insert(lib);
+                }
                 if crate::media_log::enabled() {
                     if let Some(event) = line.strip_prefix("GODWIT_MEDIA: ") {
                         crate::media_log::line(&crate::media_log::safe_stderr(event));
@@ -552,6 +594,7 @@ pub fn pop_out(spec: &Spec) -> io::Result<()> {
     if !cfg!(any(target_os = "linux", windows)) {
         return Err(io::Error::new(io::ErrorKind::Unsupported, "no player window here"));
     }
+    missing_check()?;
     std::process::Command::new(player_executable()?)
         .args(["--window", spec.kind.arg(), &spec.url])
         .stdin(std::process::Stdio::null())
@@ -638,6 +681,13 @@ fn valid_player_url(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_loaders_missing_library_is_named() {
+        let line = "/x/godwit-player: error while loading shared libraries: libwebkit2gtk-4.1.so.0: cannot open shared object file: No such file or directory";
+        assert_eq!(missing_library_in(line).as_deref(), Some("libwebkit2gtk-4.1.so.0"));
+        assert_eq!(missing_library_in("0:00:01 WARN something"), None);
+    }
 
     fn spec(url: &str) -> Spec {
         Spec {

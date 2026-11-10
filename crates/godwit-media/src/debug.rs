@@ -10,6 +10,66 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 const MAX: u64 = 4 << 20;
 static ON: AtomicBool = AtomicBool::new(false);
 static SINK: Mutex<Option<(PathBuf, std::fs::File, u64)>> = Mutex::new(None);
+static REPEATS: Mutex<Repeats> = Mutex::new(Repeats {
+    shape: String::new(),
+    count: 0,
+});
+/// Longest line kept; the rest of a long one (GStreamer's caps lists) is cut.
+const LINE_MAX: usize = 400;
+
+/// The last line's shape (digits aside) and how many lines like it followed.
+struct Repeats {
+    shape: String,
+    count: u64,
+}
+
+/// The lines to write for `message`: cut to [`LINE_MAX`], without terminal
+/// colour codes, and a run of lines that differ only in numbers (times,
+/// addresses, sizes) kept as its first and a count.
+fn condense(repeats: &mut Repeats, message: &str) -> Vec<String> {
+    let mut clean = String::with_capacity(message.len().min(LINE_MAX + 4));
+    let mut chars = message.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            // CSI: ESC [ … final byte in @..~
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        if clean.len() >= LINE_MAX {
+            clean.push('…');
+            break;
+        }
+        clean.push(c);
+    }
+    let mut shape = String::with_capacity(clean.len());
+    for c in clean.chars() {
+        if c.is_ascii_digit() {
+            if !shape.ends_with('#') {
+                shape.push('#');
+            }
+        } else {
+            shape.push(c);
+        }
+    }
+    if shape == repeats.shape {
+        repeats.count += 1;
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(2);
+    if repeats.count > 0 {
+        out.push(format!("(×{} more like the line before)", repeats.count));
+    }
+    out.push(clean);
+    *repeats = Repeats { shape, count: 0 };
+    out
+}
 
 fn sink() -> MutexGuard<'static, Option<(PathBuf, std::fs::File, u64)>> {
     SINK.lock().unwrap_or_else(PoisonError::into_inner)
@@ -66,9 +126,12 @@ pub fn debug_log(message: &str) {
         *file = next;
         *length = 0;
     }
-    let line = format!("{} media {message}", timestamp());
-    if writeln!(file, "{line}").is_ok() {
-        *length += line.len() as u64 + 1;
+    let lines = condense(&mut REPEATS.lock().unwrap_or_else(PoisonError::into_inner), message);
+    for message in lines {
+        let line = format!("{} media {message}", timestamp());
+        if writeln!(file, "{line}").is_ok() {
+            *length += line.len() as u64 + 1;
+        }
     }
 }
 
@@ -81,6 +144,23 @@ fn timestamp() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn repeats_collapse_and_long_coloured_lines_are_cut() {
+        let mut r = Repeats {
+            shape: String::new(),
+            count: 0,
+        };
+        assert_eq!(condense(&mut r, "\u{1b}[32mDEBUG\u{1b}[0m pad 1"), ["DEBUG pad 1"]);
+        assert!(condense(&mut r, "DEBUG pad 22").is_empty());
+        assert!(condense(&mut r, "DEBUG pad 333").is_empty());
+        assert_eq!(
+            condense(&mut r, "player exited"),
+            ["(×2 more like the line before)", "player exited"]
+        );
+        let long = "x".repeat(1000);
+        assert_eq!(condense(&mut r, &long)[0].chars().count(), LINE_MAX + 1);
+    }
+
     use super::*;
 
     #[test]

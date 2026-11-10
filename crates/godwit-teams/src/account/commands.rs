@@ -395,14 +395,21 @@ impl TeamsAccount {
                     && n > c.read
                 {
                     c.read = n;
-                    req(
-                        &self.net,
-                        Request::Ack {
-                            conversation: conversation.clone(),
-                            message: last,
-                            client_id,
-                        },
-                    );
+                    // The horizon is `{id};{ms};{clientmessageid}` and Teams
+                    // refuses it without the last part; a message that came
+                    // without one is read here only.
+                    if client_id.is_empty() {
+                        godwit_core::verbose!("teams: read locally, the last message has no client id");
+                    } else {
+                        req(
+                            &self.net,
+                            Request::Ack {
+                                conversation: conversation.clone(),
+                                message: last,
+                                client_id,
+                            },
+                        );
+                    }
                     if let Some(r) = self.room(&conversation) {
                         out.push(Event::RoomUpdated(r));
                     }

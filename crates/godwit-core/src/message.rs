@@ -77,6 +77,47 @@ pub struct Reaction {
     pub me: bool,
 }
 
+/// `reactions` after one change: `emoji` added or taken off, by us when
+/// `ours`. Our own repeats (the echo of what we already counted) change
+/// nothing, and a reaction nobody has left any more goes.
+pub fn toggle_reaction(
+    reactions: &[Reaction],
+    emoji: &str,
+    image_url: Option<Arc<str>>,
+    add: bool,
+    ours: bool,
+) -> Vec<Reaction> {
+    let mut out = reactions.to_vec();
+    let found = out.iter().position(|r| &*r.emoji == emoji);
+    match (found, add) {
+        (Some(i), true) => {
+            if !(ours && out[i].me) {
+                out[i].count = out[i].count.saturating_add(1);
+                out[i].me |= ours;
+            }
+        }
+        (None, true) => out.push(Reaction {
+            emoji: emoji.into(),
+            image_url,
+            count: 1,
+            me: ours,
+        }),
+        (Some(i), false) => {
+            if !(ours && !out[i].me) {
+                out[i].count = out[i].count.saturating_sub(1);
+                if ours {
+                    out[i].me = false;
+                }
+                if out[i].count == 0 {
+                    out.remove(i);
+                }
+            }
+        }
+        (None, false) => {}
+    }
+    out
+}
+
 /// A compact row of controls attached to a message. Networks map their own
 /// component formats here so the timeline stays network-neutral.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -382,5 +423,37 @@ mod youtube_tests {
         assert!(spotify_player("https://open.spotify.com/track/a%22b").is_none());
         assert!(spotify_player("http://open.spotify.com/track/abc").is_none());
         assert!(link_player("https://music.youtube.com/watch?v=abc").is_some());
+    }
+}
+
+#[cfg(test)]
+mod reaction_tests {
+    use super::*;
+
+    fn r(emoji: &str, count: u32, me: bool) -> Reaction {
+        Reaction {
+            emoji: emoji.into(),
+            image_url: None,
+            count,
+            me,
+        }
+    }
+
+    #[test]
+    fn single_reaction_changes_count_once_and_echoes_of_ours_are_ignored() {
+        let added = toggle_reaction(&[], "👍", None, true, true);
+        assert_eq!(added, vec![r("👍", 1, true)]);
+        assert_eq!(toggle_reaction(&added, "👍", None, true, true), added, "our echo");
+        let other = toggle_reaction(&added, "👍", None, true, false);
+        assert_eq!(other, vec![r("👍", 2, true)]);
+        let ours_off = toggle_reaction(&other, "👍", None, false, true);
+        assert_eq!(ours_off, vec![r("👍", 1, false)]);
+        assert_eq!(
+            toggle_reaction(&ours_off, "👍", None, false, true),
+            ours_off,
+            "not ours to take off"
+        );
+        assert!(toggle_reaction(&ours_off, "👍", None, false, false).is_empty());
+        assert!(toggle_reaction(&[], "🎉", None, false, false).is_empty());
     }
 }

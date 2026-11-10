@@ -984,6 +984,26 @@ impl Application {
         if text.trim().is_empty() && !has_files {
             return Vec::new();
         }
+        // Over the network's length: kept in the composer to shorten, rather
+        // than refused by the server after it left.
+        if let Some(max) = self
+            .state
+            .room(&room)
+            .map(|r| r.capabilities.max_text)
+            .filter(|m| *m > 0)
+        {
+            let length = text.chars().count();
+            if length > max as usize {
+                self.state.errors.push(
+                    format!(
+                        "This message is {length} characters; {} takes up to {max}.",
+                        room.account.network.name()
+                    )
+                    .into(),
+                );
+                return Vec::new();
+            }
+        }
         self.state.drafts.remove(&room);
         let files = if editing {
             Vec::new()

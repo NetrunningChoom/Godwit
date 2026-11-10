@@ -44,6 +44,9 @@ pub const PAGE: usize = 50;
 /// Most channel list pages followed (200 a page).
 const MAX_PAGES: usize = 20;
 
+/// Matches a page of search asks for.
+pub const SEARCH_PAGE: usize = 20;
+
 /// A refusal in Slack's words (`not_authed`, `channel_not_found`, …).
 #[derive(Debug)]
 pub struct Refused(pub String);
@@ -441,9 +444,37 @@ impl Api {
 
     pub async fn react(&self, channel: &str, ts: &str, name: &str, add: bool) -> Result<()> {
         let method = if add { "reactions.add" } else { "reactions.remove" };
-        self.call(method, &[("channel", channel), ("timestamp", ts), ("name", name)])
+        match self
+            .call(method, &[("channel", channel), ("timestamp", ts), ("name", name)])
             .await
-            .map(drop)
+        {
+            // Already there, or already gone: what we asked for holds
+            // (https://api.slack.com/methods/reactions.add, reactions.remove).
+            Err(e)
+                if e.downcast_ref::<Refused>()
+                    .is_some_and(|r| matches!(r.0.as_str(), "already_reacted" | "no_reaction")) =>
+            {
+                Ok(())
+            }
+            other => other.map(drop),
+        }
+    }
+
+    /// Messages matching `query` (Slack's own search modifiers), newest
+    /// first, [`SEARCH_PAGE`] a page (https://api.slack.com/methods/search.messages).
+    pub async fn search(&self, query: &str, page: u32) -> Result<Value> {
+        let (count, page) = (SEARCH_PAGE.to_string(), page.max(1).to_string());
+        self.call(
+            "search.messages",
+            &[
+                ("query", query),
+                ("count", count.as_str()),
+                ("page", page.as_str()),
+                ("sort", "timestamp"),
+                ("sort_dir", "desc"),
+            ],
+        )
+        .await
     }
 
     pub async fn mark(&self, channel: &str, ts: &str) -> Result<()> {

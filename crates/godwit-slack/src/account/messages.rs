@@ -3,8 +3,29 @@
 //! Messages: mapping, typing and new ones.
 
 use super::*;
+use std::sync::Arc;
 
 impl SlackAccount {
+    /// A Slack reaction name as Godwit shows it: the emoji itself, or a
+    /// workspace emoji's canonical `:name:` and picture.
+    pub(super) fn reaction_emoji(&self, team: &str, name: &str) -> (Arc<str>, Option<Arc<str>>) {
+        let custom = self
+            .workspaces
+            .get(team)
+            .and_then(|w| w.emoji.as_object())
+            .and_then(|map| mrkdwn::custom_emoji(name, map));
+        (
+            custom.map_or_else(
+                || mrkdwn::shortcode(name).unwrap_or_else(|| format!(":{name}:")).into(),
+                |(canonical, _)| canonical.into(),
+            ),
+            custom
+                .map(|(_, url)| url)
+                .filter(|u| u.starts_with("https://"))
+                .map(Into::into),
+        )
+    }
+
     /// A message as Godwit shows it, in `channel`'s timeline or (`in_thread`)
     /// in one of its threads.
     pub(super) fn message(&mut self, team: &str, channel: &str, m: &Value, in_thread: bool) -> Option<Message> {
@@ -51,7 +72,8 @@ impl SlackAccount {
                 | "group_leave"
         );
         let names = Names { account: self, team };
-        let mut converted = mrkdwn::convert(m["text"].as_str().unwrap_or_default(), &names);
+        let source = mrkdwn::message_source(m);
+        let mut converted = mrkdwn::convert(&source, &names);
         // A channel post with replies: noted as a thread, and linked to it.
         let is_channel = self
             .workspaces
@@ -79,21 +101,10 @@ impl SlackAccount {
             .into_iter()
             .flatten()
             .filter_map(|r| {
-                let name = r["name"].as_str()?;
-                let custom = self
-                    .workspaces
-                    .get(team)
-                    .and_then(|w| w.emoji.as_object())
-                    .and_then(|map| mrkdwn::custom_emoji(name, map));
+                let (emoji, image_url) = self.reaction_emoji(team, r["name"].as_str()?);
                 Some(Reaction {
-                    emoji: custom.map_or_else(
-                        || mrkdwn::shortcode(name).unwrap_or_else(|| format!(":{name}:")).into(),
-                        |(canonical, _)| canonical.into(),
-                    ),
-                    image_url: custom
-                        .map(|(_, url)| url)
-                        .filter(|u| u.starts_with("https://"))
-                        .map(Into::into),
+                    emoji,
+                    image_url,
                     count: r["count"].as_u64().and_then(|c| u32::try_from(c).ok()).unwrap_or(1),
                     me: r["users"]
                         .as_array()
@@ -126,7 +137,7 @@ impl SlackAccount {
                 converted.rich.into()
             },
             markup: if system { Markup::Plain } else { Markup::Rich },
-            source: m["text"].as_str().unwrap_or_default().into(),
+            source: source.as_str().into(),
             reply_to: thread,
             jumbo: Vec::new(),
             attachments,

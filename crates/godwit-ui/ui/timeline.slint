@@ -59,6 +59,10 @@ export component Timeline inherits Rectangle {
     in property <bool> can-delete-others;
     in property <bool> can-bulk-delete;
     in-out property <string> draft;
+    /// The draft's length against the network's limit ("1850 / 2000"),
+    /// shown near and past it; `length-over`: past it, so it won't send.
+    in property <string> length-note;
+    in property <bool> length-over;
     in property <string> nudge;
     in property <string> compose-label;
     in property <string> typing;
@@ -1426,6 +1430,13 @@ export component Timeline inherits Rectangle {
                             : "Message " + root.title;
                         color: Theme.outline;
                         font-size: Theme.message-size;
+                    }
+                    if root.length-note != "": Text {
+                        x: parent.width - self.width - Theme.gap-lg;
+                        y: parent.height - self.height - 2px;
+                        text: root.length-note;
+                        color: root.length-over ? Theme.error : Theme.outline;
+                        font-size: Theme.text-caption;
                     }
                 }
                 // The official GIF button: only while there's nothing to send.

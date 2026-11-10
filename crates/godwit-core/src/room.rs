@@ -110,6 +110,9 @@ pub struct Capabilities {
     /// The largest file that can be attached here, in bytes (0: not known).
     #[serde(default)]
     pub max_upload: u64,
+    /// The longest message text, in characters (0: not known).
+    #[serde(default)]
+    pub max_text: u32,
     /// Messages can be pinned and unpinned here (`pins`: the list can be seen).
     #[serde(default)]
     pub pin_messages: bool,
@@ -183,6 +186,7 @@ impl Capabilities {
             gifs: true,
             stickers: false,
             max_upload: 0,
+            max_text: 0,
             pin_messages: false,
             manage_channel: false,
             manage_webhooks: false,
@@ -198,6 +202,8 @@ impl Capabilities {
                 mark_unread: true,
                 video: true,
                 max_upload: 20 * 1024 * 1024,
+                // DataMessageSend.content's maxLength (stoat.chat/api/openapi.json).
+                max_text: 2000,
                 ..all
             },
             // Discord without Nitro or boosts (the account adjusts per room).
@@ -205,6 +211,10 @@ impl Capabilities {
                 mark_unread: true,
                 threads: true,
                 max_upload: 10 * 1024 * 1024,
+                // Create Message's `content`: up to 2000 characters
+                // (discord.com/developers/docs/resources/message); Nitro's
+                // longer messages are set per account.
+                max_text: 2000,
                 ..all
             },
             // First version: text, replies, edits, deletes and reactions.
@@ -261,9 +271,21 @@ impl Capabilities {
             Network::Slack => Self {
                 attachments: true,
                 max_upload: crate::media::MAX_UPLOAD,
+                // chat.postMessage truncates `text` past 40,000 characters
+                // (api.slack.com/methods/chat.postMessage).
+                max_text: 40_000,
                 spoilers: false,
                 pins: false,
-                search: false,
+                // search.messages with Slack's modifiers, a workspace at a time.
+                search_filters: crate::search::SearchFilters::new(&[
+                    crate::search::SearchFilter::From,
+                    crate::search::SearchFilter::Before,
+                    crate::search::SearchFilter::After,
+                    crate::search::SearchFilter::During,
+                    crate::search::SearchFilter::In,
+                    crate::search::SearchFilter::Pinned,
+                    crate::search::SearchFilter::Scope,
+                ]),
                 voice: false,
                 voice_unavailable: true,
                 gifs: false,

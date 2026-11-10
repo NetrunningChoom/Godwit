@@ -139,6 +139,40 @@ impl SlackAccount {
                     out.push(Event::RoomUpdated(r));
                 }
             }
+            // One reaction on a message (https://api.slack.com/events/reaction_added,
+            // reaction_removed): the message's place isn't in the event, so
+            // its channel and the threads open in it all get the change.
+            "reaction_added" | "reaction_removed" if e["item"]["type"] == "message" => {
+                let item = &e["item"];
+                let (Some(channel), Some(ts), Some(name)) =
+                    (item["channel"].as_str(), item["ts"].as_str(), e["reaction"].as_str())
+                else {
+                    return;
+                };
+                let ours = self
+                    .workspaces
+                    .get(team)
+                    .is_some_and(|w| e["user"].as_str() == Some(w.me.as_str()));
+                let (emoji, image_url) = self.reaction_emoji(team, name);
+                let threads = self.workspaces.get(team).into_iter().flat_map(|w| {
+                    w.threads
+                        .keys()
+                        .filter(|(c, _)| c == channel)
+                        .map(|(_, root)| format!("{team}:{channel}:{root}"))
+                });
+                let rooms: Vec<String> = std::iter::once(format!("{team}:{channel}")).chain(threads).collect();
+                let Some(account) = self.account.clone() else { return };
+                for room in rooms {
+                    out.push(Event::ReactionToggled {
+                        room: RoomId::new(account.clone(), room.as_str()),
+                        id: MessageId(ts.into()),
+                        emoji: emoji.clone(),
+                        image_url: image_url.clone(),
+                        add: e["type"] == "reaction_added",
+                        ours,
+                    });
+                }
+            }
             "channel_joined" | "group_joined" | "im_created" | "mpim_joined" | "channel_rename" | "group_rename"
             | "channel_left" | "group_left" | "channel_archive" | "group_archive" => {
                 self.refresh_conversations(team);

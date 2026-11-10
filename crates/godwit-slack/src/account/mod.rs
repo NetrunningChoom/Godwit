@@ -12,6 +12,7 @@ mod events;
 mod messages;
 mod notifications;
 mod rooms;
+mod search;
 mod threads;
 
 use std::collections::{HashMap, HashSet};
@@ -153,6 +154,17 @@ pub struct SlackAccount {
     directory: HashMap<String, Vec<godwit_core::application::Person>>,
     persist: bool,
     media: godwit_core::media::Media,
+    /// The search waiting for its answer: where it was asked, what, from
+    /// which match, and the one chat its matches must be in (a DM's
+    /// channel search, which Slack's modifiers can't name).
+    searching: Option<Search>,
+}
+
+struct Search {
+    room: RoomId,
+    query: godwit_core::search::SearchQuery,
+    offset: usize,
+    only: Option<String>,
 }
 
 /// `ts` (`"1700000000.000100"`) in milliseconds.
@@ -176,6 +188,13 @@ fn newer(a: &str, b: &str) -> bool {
 }
 
 /// A room's parts: `T:C` (a conversation) or `T:C:ts` (a thread in it).
+/// A link's `p1700000010000200`: the message's `1700000010.000200`.
+fn archive_ts(p: &str) -> Option<String> {
+    let digits = p.strip_prefix('p')?;
+    (digits.len() > 6 && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| format!("{}.{}", &digits[..digits.len() - 6], &digits[digits.len() - 6..]))
+}
+
 fn parts(raw: &str) -> Option<(&str, &str, Option<&str>)> {
     let (team, rest) = raw.split_once(':')?;
     Some(match rest.split_once(':') {
@@ -222,6 +241,7 @@ impl SlackAccount {
             directory: HashMap::new(),
             followed: HashMap::new(),
             persist,
+            searching: None,
             media: godwit_core::media::Media::new("slack"),
         }
     }
@@ -382,6 +402,36 @@ impl NetworkAccount for SlackAccount {
             link.push_str(&format!("?thread_ts={t}&cid={channel}"));
         }
         Some(link)
+    }
+
+    /// `https://{workspace}.slack.com/archives/{channel}[/p{ts}][?thread_ts=…]`,
+    /// the form [`Self::message_link`] makes (and Slack's own copied links).
+    fn open_link(&self, url: &str) -> Option<(RoomId, Option<MessageId>)> {
+        let (host, rest) = url.strip_prefix("https://")?.split_once('/')?;
+        if !(host == "slack.com" || host.ends_with(".slack.com")) {
+            return None;
+        }
+        let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let mut parts = path.trim_end_matches('/').strip_prefix("archives/")?.split('/');
+        let channel = parts.next()?;
+        let message = parts.next().and_then(archive_ts);
+        let team = self
+            .workspaces
+            .iter()
+            .find(|(_, w)| w.conversations.contains_key(channel))
+            .map(|(team, _)| team.as_str())?;
+        let thread = query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix("thread_ts="))
+            .filter(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit() || b == b'.'));
+        let raw = match thread {
+            Some(root) => format!("{team}:{channel}:{root}"),
+            None => format!("{team}:{channel}"),
+        };
+        Some((
+            RoomId::new(self.account.clone()?, raw.as_str()),
+            message.map(|ts| MessageId(ts.into())),
+        ))
     }
 
     fn media(&self) -> Option<(String, godwit_core::account::MediaFetch)> {
@@ -926,6 +976,119 @@ mod tests {
             &mut out,
         );
         assert!(matches!(out.first(), Some(Event::MessageDeleted { id, .. }) if &*id.0 == "1700000010.000200"));
+    }
+
+    #[test]
+    fn search_uses_slack_modifiers_and_maps_matches() {
+        let (mut a, mut cmds) = account();
+        ready(&mut a);
+        while cmds.try_recv().is_ok() {}
+        let account = a.account.clone().unwrap();
+        let mut query = godwit_core::search::SearchQuery::text_only("deploy plan");
+        query.from = Some(UserId::new(account.clone(), "T1:U2"));
+        query.before = Some(godwit_core::search::SearchDate {
+            year: 2026,
+            month: 3,
+            day: 7,
+        });
+        a.run(Command::SearchMessages {
+            room: RoomId::new(account.clone(), "T1:C1"),
+            query: query.clone(),
+            offset: 20,
+        });
+        let sent = std::iter::from_fn(|| cmds.try_recv().ok()).find_map(|c| match c {
+            Cmd::Request {
+                request: Request::Search { query, page },
+                ..
+            } => Some((query, page)),
+            _ => None,
+        });
+        assert_eq!(
+            sent,
+            Some(("deploy plan in:#general from:<@U2> before:2026-03-07".into(), 2))
+        );
+        let mut out = Vec::new();
+        a.answer("T1", Answer::Search(Ok(json!({"messages": {
+            "matches": [{"channel": {"id": "C1"}, "user": "U2", "text": "the deploy plan", "ts": "1700000010.000200"}],
+            "paging": {"total": 21}
+        }}))), &mut out);
+        assert!(out.iter().any(
+            |e| matches!(e, Event::SearchResults { messages: Some(m), next_offset: None, total: Some(21), .. }
+            if m.len() == 1 && &*m[0].text == "the deploy plan")
+        ));
+    }
+
+    #[test]
+    fn archive_links_open_their_chat_and_message() {
+        let (mut a, _cmds) = account();
+        ready(&mut a);
+        let link = "https://acme.slack.com/archives/C1/p1700000010000200";
+        let (room, message) = a.open_link(link).unwrap();
+        assert_eq!(&*room.raw, "T1:C1");
+        assert_eq!(&*message.unwrap().0, "1700000010.000200");
+        let (room, _) = a
+            .open_link("https://acme.slack.com/archives/C1/p1700000020000100?thread_ts=1700000010.000200&cid=C1")
+            .unwrap();
+        assert_eq!(&*room.raw, "T1:C1:1700000010.000200");
+        let own = a
+            .message_link(
+                &RoomId::new(a.account.clone().unwrap(), "T1:C1"),
+                &MessageId("1700000010.000200".into()),
+            )
+            .unwrap();
+        assert_eq!(a.open_link(&own).unwrap().1.unwrap().0.as_ref(), "1700000010.000200");
+        assert!(a.open_link("https://acme.slack.com/archives/CUNKNOWN").is_none());
+        assert!(a.open_link("https://example.com/archives/C1").is_none());
+    }
+
+    #[test]
+    fn edits_elsewhere_update_the_message() {
+        let (mut a, _cmds) = account();
+        ready(&mut a);
+        let mut out = Vec::new();
+        a.news(
+            "T1",
+            &json!({"type": "message", "subtype": "message_changed", "channel": "C1", "hidden": true,
+                "message": {"type": "message", "user": "U2", "text": "fixed", "ts": "1700000010.000200",
+                    "edited": {"user": "U2", "ts": "1700000020.000100"}},
+                "previous_message": {"type": "message", "user": "U2", "text": "fxed", "ts": "1700000010.000200"}}),
+            &mut out,
+        );
+        assert!(out.iter().any(|e| matches!(e, Event::MessageUpdated { room, message }
+            if &*room.raw == "T1:C1" && &*message.text == "fixed" && message.edited)));
+    }
+
+    #[test]
+    fn live_reactions_reach_the_message_with_who_reacted() {
+        let (mut a, _cmds) = account();
+        ready(&mut a);
+        let me = a.workspaces["T1"].me.clone();
+        let mut out = Vec::new();
+        a.news(
+            "T1",
+            &json!({"type": "reaction_added", "user": me, "reaction": "+1",
+                "item": {"type": "message", "channel": "C1", "ts": "1700000010.000200"}}),
+            &mut out,
+        );
+        assert!(
+            matches!(out.first(), Some(Event::ReactionToggled { emoji, add: true, ours: true, id, .. })
+            if &**emoji == "👍" && &*id.0 == "1700000010.000200")
+        );
+        let mut out = Vec::new();
+        a.news(
+            "T1",
+            &json!({"type": "reaction_removed", "user": "U2", "reaction": "+1",
+                "item": {"type": "message", "channel": "C1", "ts": "1700000010.000200"}}),
+            &mut out,
+        );
+        assert!(matches!(
+            out.first(),
+            Some(Event::ReactionToggled {
+                add: false,
+                ours: false,
+                ..
+            })
+        ));
     }
 
     #[test]

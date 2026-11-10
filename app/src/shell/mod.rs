@@ -677,6 +677,9 @@ impl Shell {
         }
         self.log_errors(ui);
         let players = self.inline_players.poll();
+        if let Some(notice) = crate::inline_player::missing_library_notice() {
+            self.errors.push(notice.into());
+        }
         if self
             .fullscreen_player
             .as_mut()

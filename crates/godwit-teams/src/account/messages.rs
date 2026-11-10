@@ -29,7 +29,8 @@ impl TeamsAccount {
                 .map(str::to_owned)
                 .or_else(|| conversation_of(raw).and_then(|(_, root)| root))
                 .unwrap_or_else(|| message.id.0.to_string());
-            if let Some(thread) = self.remember_thread(&channel, &root, Some(&message)) {
+            let client_id = raw["clientmessageid"].as_str().unwrap_or_default();
+            if let Some(thread) = self.remember_thread(&channel, &root, Some((&message, client_id))) {
                 message.text = format!(
                     "{}\n\n[Open thread](godwit://room/{})",
                     message.text,
@@ -261,7 +262,7 @@ impl TeamsAccount {
             return;
         };
         if let Some(root) = root.as_deref() {
-            self.remember_thread(&conversation, root, Some(&message));
+            self.remember_thread(&conversation, root, Some((&message, client_id.as_str())));
             if let Some(thread) = self.conversations.get_mut(&route) {
                 thread.last = Some((message.id.0.to_string(), client_id.clone(), author.clone()));
             }

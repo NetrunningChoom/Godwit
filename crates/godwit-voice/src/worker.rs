@@ -48,6 +48,11 @@ impl Worker {
         self.stop.store(true, Ordering::Release);
     }
 
+    /// The flag the thread reads, for a helper that should stop with it.
+    pub fn stop_flag(&self) -> StopFlag {
+        StopFlag(self.stop.clone())
+    }
+
     pub fn stop_requested(&self) -> bool {
         self.stop.load(Ordering::Acquire)
     }

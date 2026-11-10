@@ -12,6 +12,11 @@ static ON: AtomicBool = AtomicBool::new(false);
 static SUMMARY_WRITTEN: AtomicBool = AtomicBool::new(false);
 static DIRECTORY: Mutex<Option<PathBuf>> = Mutex::new(None);
 
+/// A lock, poisoned or not.
+pub fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 pub fn enabled() -> bool {
     ON.load(Ordering::Relaxed)
 }

@@ -366,6 +366,121 @@ fn slack_reference(reference: &str) -> bool {
         || target.strip_prefix("!subteam^").is_some_and(|id| valid_id(b"S", id))
 }
 
+/// The mrkdwn a message shows. Apps lay theirs out in Block Kit
+/// (https://api.slack.com/reference/block-kit/blocks) and legacy attachments
+/// (https://api.slack.com/reference/messaging/attachments), leaving `text`
+/// as a fallback or empty; Slack's client shows the blocks then. A person's
+/// own message carries only `rich_text` blocks, the same as its `text`.
+pub fn message_source(m: &serde_json::Value) -> String {
+    let text = m["text"].as_str().unwrap_or_default();
+    let blocks = m["blocks"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let laid_out = blocks.iter().any(|b| b["type"] != "rich_text");
+    let mut parts: Vec<String> = Vec::new();
+    if laid_out || text.trim().is_empty() {
+        parts.extend(blocks.iter().filter_map(block_text).filter(|t| !t.trim().is_empty()));
+    }
+    if parts.is_empty() && !text.trim().is_empty() {
+        parts.push(text.to_owned());
+    }
+    for a in m["attachments"].as_array().into_iter().flatten() {
+        // Link previews come as attachments with `from_url`; they aren't the
+        // message's own words.
+        if a.get("from_url").is_some() && a["is_app_unfurl"] != true {
+            continue;
+        }
+        let mut lines: Vec<String> = Vec::new();
+        let field = |k: &str| a[k].as_str().filter(|t| !t.trim().is_empty()).map(str::to_owned);
+        lines.extend(field("pretext"));
+        lines.extend(field("author_name"));
+        if let Some(title) = field("title") {
+            lines.push(match a["title_link"].as_str() {
+                Some(link) if link.starts_with("https://") => format!("*<{link}|{title}>*"),
+                _ => format!("*{title}*"),
+            });
+        }
+        lines.extend(field("text"));
+        for f in a["fields"].as_array().into_iter().flatten() {
+            match (f["title"].as_str(), f["value"].as_str()) {
+                (Some(t), Some(v)) if !t.is_empty() => lines.push(format!("*{t}*\n{v}")),
+                (_, Some(v)) => lines.push(v.to_owned()),
+                _ => {}
+            }
+        }
+        if let Some(blocks) = a["blocks"].as_array() {
+            lines.extend(blocks.iter().filter_map(block_text).filter(|t| !t.trim().is_empty()));
+        }
+        lines.extend(field("footer"));
+        if lines.is_empty() {
+            lines.extend(field("fallback"));
+        }
+        if !lines.is_empty() {
+            parts.push(lines.join("\n"));
+        }
+    }
+    parts.join("\n")
+}
+
+/// One block's words, as mrkdwn.
+fn block_text(b: &serde_json::Value) -> Option<String> {
+    let text_of = |t: &serde_json::Value| t["text"].as_str().map(str::to_owned);
+    match b["type"].as_str()? {
+        "section" => {
+            let mut lines: Vec<String> = text_of(&b["text"]).into_iter().collect();
+            lines.extend(b["fields"].as_array().into_iter().flatten().filter_map(text_of));
+            Some(lines.join("\n"))
+        }
+        "header" => text_of(&b["text"]).map(|t| format!("*{t}*")),
+        "context" => Some(
+            b["elements"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|e| matches!(e["type"].as_str(), Some("mrkdwn" | "plain_text")))
+                .filter_map(text_of)
+                .collect::<Vec<_>>()
+                .join(" "),
+        ),
+        "rich_text" => Some(rich_text(&b["elements"])),
+        "image" => b["title"]["text"]
+            .as_str()
+            .or(b["alt_text"].as_str())
+            .map(str::to_owned),
+        _ => None,
+    }
+}
+
+/// A `rich_text` block's elements back as mrkdwn
+/// (https://api.slack.com/reference/block-kit/blocks#rich_text).
+fn rich_text(elements: &serde_json::Value) -> String {
+    let mut out = String::new();
+    for e in elements.as_array().into_iter().flatten() {
+        match e["type"].as_str().unwrap_or_default() {
+            "text" => out.push_str(e["text"].as_str().unwrap_or_default()),
+            "link" => match (e["url"].as_str(), e["text"].as_str()) {
+                (Some(url), Some(text)) => out.push_str(&format!("<{url}|{text}>")),
+                (Some(url), None) => out.push_str(&format!("<{url}>")),
+                _ => {}
+            },
+            "user" => out.push_str(&format!("<@{}>", e["user_id"].as_str().unwrap_or_default())),
+            "channel" => out.push_str(&format!("<#{}>", e["channel_id"].as_str().unwrap_or_default())),
+            "emoji" => out.push_str(&format!(":{}:", e["name"].as_str().unwrap_or_default())),
+            "rich_text_section" => out.push_str(&rich_text(&e["elements"])),
+            "rich_text_preformatted" => out.push_str(&format!("```{}```", rich_text(&e["elements"]))),
+            "rich_text_quote" => out.push_str(&format!("> {}", rich_text(&e["elements"]))),
+            "rich_text_list" => {
+                for item in e["elements"].as_array().into_iter().flatten() {
+                    out.push_str(&format!("• {}\n", rich_text(&item["elements"])));
+                }
+            }
+            _ => {}
+        }
+        if matches!(e["type"].as_str(), Some("rich_text_preformatted" | "rich_text_quote")) {
+            out.push('\n');
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,5 +584,24 @@ mod tests {
             "Hi <@U123>, <!here> and <#C456|general> &lt;tag&gt;"
         );
         assert_eq!(from_text("<javascript:alert(1)>"), "&lt;javascript:alert(1)&gt;");
+    }
+
+    #[test]
+    fn apps_show_their_blocks_and_attachments_and_people_their_text() {
+        let person = serde_json::json!({"text": "hi", "blocks": [{"type": "rich_text", "elements": [
+            {"type": "rich_text_section", "elements": [{"type": "text", "text": "hi"}]}]}]});
+        assert_eq!(message_source(&person), "hi");
+        let app = serde_json::json!({"text": "fallback", "blocks": [
+            {"type": "header", "text": {"type": "plain_text", "text": "Build"}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": "passed"}},
+            {"type": "divider"}]});
+        assert_eq!(message_source(&app), "*Build*\npassed");
+        let legacy = serde_json::json!({"text": "", "attachments": [
+            {"title": "Alert", "text": "disk full", "fields": [{"title": "Host", "value": "db1"}]},
+            {"from_url": "https://example.com", "title": "a preview"}]});
+        assert_eq!(message_source(&legacy), "*Alert*\ndisk full\n*Host*\ndb1");
+        let only_blocks = serde_json::json!({"text": "", "blocks": [{"type": "rich_text", "elements": [
+            {"type": "rich_text_section", "elements": [{"type": "text", "text": "yo "}, {"type": "emoji", "name": "wave"}]}]}]});
+        assert_eq!(message_source(&only_blocks), "yo :wave:");
     }
 }

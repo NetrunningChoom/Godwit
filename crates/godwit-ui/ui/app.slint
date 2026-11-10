@@ -773,6 +773,8 @@ export component AppWindow inherits Window {
     callback video-fullscreen(int);
     pure callback video-columns(int, length, length, length) -> int;
     in-out property <string> draft;
+    in property <string> length-note;
+    in property <bool> length-over;
     in-out property <int> composer-anchor;
     in-out property <int> composer-cursor;
     in property <int> composer-inserted-at;
@@ -1607,6 +1609,8 @@ export component AppWindow inherits Window {
                                         remove-file(i) => { root.remove-file(i); }
                                         toggle-file-spoiler(i) => { root.toggle-file-spoiler(i); }
                                         draft <=> root.draft;
+                                        length-note: root.length-note;
+                                        length-over: root.length-over;
                                         capture-composer(anchor, cursor) => {
                                             root.composer-anchor = anchor;
                                             root.composer-cursor = cursor;

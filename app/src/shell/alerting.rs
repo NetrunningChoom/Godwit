@@ -126,6 +126,20 @@ impl Shell {
                 {
                     return;
                 }
+                // Every network: only direct and group chats ring, and never
+                // for the call we're already in or joining (a server's voice
+                // channel starting, or a repeat while we're in it, stays quiet).
+                if *kind == godwit_core::application::AlertKind::Call
+                    && (call.is_some_and(|c| c.room == *room)
+                        || !self.app.state().room(room).is_none_or(|r| {
+                            matches!(
+                                r.kind,
+                                godwit_core::room::RoomKind::Direct { .. } | godwit_core::room::RoomKind::Group
+                            )
+                        }))
+                {
+                    return;
+                }
                 // Listed before Do Not Disturb, the account's mode or muzzle
                 // mode decide on a banner and a sound.
                 self.note_alert(room, *kind, from.as_ref(), title, body);

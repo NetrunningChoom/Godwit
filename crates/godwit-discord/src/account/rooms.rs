@@ -201,6 +201,9 @@ impl DiscordAccount {
                     .and_then(|g| self.store.guilds.get(g))
                     .map(|g| g.premium_tier),
             ),
+            // Nitro (premium_type 2) sends up to 4000 characters
+            // (support.discord.com, "Nitro Perks").
+            max_text: if self.store.premium_type == 2 { 4000 } else { 2000 },
             ..Capabilities::of(Network::Discord)
         };
         let with = match &kind {

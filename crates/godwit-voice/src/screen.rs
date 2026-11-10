@@ -7,7 +7,7 @@
 //! and the apps' windows itself ([`sources`]) and shares the one [`pick`]ed.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use livekit::webrtc::desktop_capturer::{DesktopCaptureSourceType, DesktopCapturer, DesktopCapturerOptions};
@@ -233,7 +233,25 @@ pub fn start(
 ) -> std::io::Result<Capture> {
     let preview = super::video::PreviewOwner::new(super::video::LOCAL_SCREEN);
     let mut sink = sink.into();
+    // The share ends once, whoever notices first: the capture thread, or the
+    // watchdog when frames stop (the shared app crashed, or the capturer hung
+    // inside a call that can't be interrupted).
+    let ended = Arc::new(AtomicBool::new(false));
+    let on_end: Arc<dyn Fn(String) + Send + Sync> = {
+        let ended = ended.clone();
+        let once = std::sync::Mutex::new(on_end);
+        Arc::new(move |why: String| {
+            if !ended.swap(true, Ordering::AcqRel) {
+                (super::sync::lock(&once))(why);
+            }
+        })
+    };
+    let watched = Arc::new(Stall::default());
+    let worker_watched = watched.clone();
+    let worker_end = on_end.clone();
     let worker = super::worker::Worker::spawn("screen-capture", move |flag| {
+        let on_end = worker_end;
+        let watched = worker_watched;
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         let kind = DesktopCaptureSourceType::Generic;
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -272,10 +290,12 @@ pub fn start(
         let failed = Arc::new(AtomicBool::new(false));
         let failed_cb = failed.clone();
         let stopped = flag.clone();
+        let frames = watched.clone();
         capturer.start_capture(pick, move |result| match result {
             // Stopped while a frame was on its way: it must not go out.
             Ok(_) if stopped.stopped() => {}
             Ok(frame) => {
+                frames.frame(started);
                 let (w, h) = (frame.width() as u32, frame.height() as u32);
                 if w < 2 || h < 2 {
                     return;
@@ -332,7 +352,52 @@ pub fn start(
             std::thread::sleep(interval);
         }
     })?;
+    let stop = worker.stop_flag();
+    let watchdog = std::thread::Builder::new()
+        .name("screen-watchdog".into())
+        .spawn(move || {
+            while !stop.stopped() && !ended.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(500));
+                if watched.stalled(Instant::now()) {
+                    on_end("Screen sharing stopped: the shared window or screen stopped sending pictures.".into());
+                    return;
+                }
+            }
+        });
+    if let Err(e) = watchdog {
+        eprintln!("warning: screen share watchdog: {e}");
+    }
     Ok(Capture { _worker: worker })
+}
+
+/// How long a share that was sending frames may go without one. Capturers
+/// hand back the last picture for a still screen, so silence means the source
+/// is gone or the capturer is stuck.
+const STALL: Duration = Duration::from_secs(10);
+
+/// When the capture's last frame came, in ms after it started (0: none yet).
+#[derive(Default)]
+struct Stall {
+    started: std::sync::OnceLock<Instant>,
+    last_ms: AtomicU64,
+}
+
+impl Stall {
+    fn frame(&self, started: Instant) {
+        let started = *self.started.get_or_init(|| started);
+        let ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX).max(1);
+        self.last_ms.store(ms, Ordering::Release);
+    }
+
+    /// Frames came and then none for [`STALL`]. Before the first one (the
+    /// system's picker still open) a share never counts as stalled.
+    fn stalled(&self, now: Instant) -> bool {
+        let last = self.last_ms.load(Ordering::Acquire);
+        let Some(started) = self.started.get().filter(|_| last > 0) else {
+            return false;
+        };
+        now.saturating_duration_since(*started + Duration::from_millis(last)) >= STALL
+    }
 }
 
 /// The video source to publish for a share at `quality`.
@@ -366,6 +431,16 @@ mod tests {
             ScreenOptions::new(ScreenQuality::Low, [640, 360]).size(1920, 1080),
             (640, 360)
         );
+    }
+
+    #[test]
+    fn a_share_stalls_only_after_frames_stop_coming() {
+        let stall = Stall::default();
+        let t0 = Instant::now();
+        assert!(!stall.stalled(t0 + Duration::from_secs(60)), "picker still open");
+        stall.frame(t0);
+        assert!(!stall.stalled(Instant::now() + Duration::from_secs(1)));
+        assert!(stall.stalled(Instant::now() + STALL + Duration::from_secs(1)));
     }
 
     #[test]
