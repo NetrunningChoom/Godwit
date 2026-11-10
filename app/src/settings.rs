@@ -35,6 +35,10 @@ pub struct Settings {
     pub time_format: crate::clock::TimeFormat,
     /// Numeric date order for message times (see `clock`).
     pub date_format: crate::clock::DateFormat,
+    /// Start Godwit when the user signs in to the computer (see `autostart`).
+    pub autostart: bool,
+    /// With `autostart`: show the window minimized at that start.
+    pub start_minimized: bool,
     /// The Unicode emoji pack (an id from `godwit_core::emoji_packs::PACKS`).
     pub emoji_pack: String,
     pub notifications: bool,
@@ -164,6 +168,8 @@ impl Default for Settings {
             ui_scale: 1.0,
             time_format: crate::clock::TimeFormat::default(),
             date_format: crate::clock::DateFormat::default(),
+            autostart: false,
+            start_minimized: false,
             emoji_pack: "twemoji".to_owned(),
             notifications: true,
             sounds: true,
@@ -589,6 +595,16 @@ mod tests {
             "old files keep today's look"
         );
         assert_eq!(partial.date_format, crate::clock::DateFormat::DayFirst);
+        assert!(!partial.autostart && !partial.start_minimized);
+        let on = Settings {
+            autostart: true,
+            start_minimized: true,
+            ..Settings::default()
+        };
+        save(&path, &on).unwrap();
+        let back = load(&path).unwrap();
+        assert!(back.autostart && back.start_minimized);
+        std::fs::write(&path, br#"{"notifications": false}"#).unwrap();
         assert!(partial.message_sound && partial.call_ring_sound && partial.call_event_sounds);
         let mut changed = Settings {
             message_sound: false,

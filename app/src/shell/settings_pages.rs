@@ -213,6 +213,8 @@ impl Shell {
         ui.set_time_format_index(i32::try_from(s.time_format.index()).unwrap_or(0));
         ui.set_date_formats(labels(&crate::clock::DateFormat::ALL.map(|(_, label)| label)));
         ui.set_date_format_index(i32::try_from(s.date_format.index()).unwrap_or(0));
+        ui.set_autostart(s.autostart);
+        ui.set_start_minimized(s.start_minimized);
         ui.set_rejoin_offers(labels(&crate::settings::RejoinOffer::ALL.map(|(_, label)| label)));
         ui.set_rejoin_offer_index(i32::try_from(s.rejoin_offer.index()).unwrap_or(0));
         ui.set_tone_index(i32::try_from(s.message_tone).unwrap_or(0));
@@ -859,6 +861,13 @@ impl Shell {
             for row in &mut self.presenter.rows {
                 row.invalidate();
             }
+        }
+        let startup_before = (s.autostart, s.start_minimized);
+        s.autostart = ui.get_autostart();
+        s.start_minimized = ui.get_start_minimized();
+        if (s.autostart, s.start_minimized) != startup_before {
+            // A one-file write (or registry value); the entry carries the flag.
+            crate::autostart::apply(s.autostart, s.start_minimized);
         }
         if let Some(offer) = crate::settings::RejoinOffer::at(ui.get_rejoin_offer_index()) {
             s.rejoin_offer = offer;

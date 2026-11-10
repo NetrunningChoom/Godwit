@@ -859,6 +859,8 @@ export component AppWindow inherits Window {
     in-out property <int> time-format-index;
     in property <[string]> date-formats;
     in-out property <int> date-format-index;
+    in-out property <bool> autostart;
+    in-out property <bool> start-minimized;
     in property <[string]> rejoin-offers;
     in-out property <int> rejoin-offer-index;
     in-out property <bool> echo-cancellation;
@@ -1987,6 +1989,8 @@ export component AppWindow inherits Window {
         time-format-index <=> root.time-format-index;
         date-formats: root.date-formats;
         date-format-index <=> root.date-format-index;
+        autostart <=> root.autostart;
+        start-minimized <=> root.start-minimized;
         rejoin-offers: root.rejoin-offers;
         rejoin-offer-index <=> root.rejoin-offer-index;
         tones: root.tones;

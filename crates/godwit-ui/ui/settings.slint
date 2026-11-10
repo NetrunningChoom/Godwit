@@ -164,6 +164,8 @@ export component Settings inherits Rectangle {
     in-out property <int> time-format-index;
     in property <[string]> date-formats;
     in-out property <int> date-format-index;
+    in-out property <bool> autostart;
+    in-out property <bool> start-minimized;
     in property <[string]> rejoin-offers;
     in-out property <int> rejoin-offer-index;
     // The new-message sound, from `tones`.
@@ -755,6 +757,16 @@ export component Settings inherits Rectangle {
                             current-index <=> root.date-format-index;
                             selected => { root.changed(); }
                         }
+                    }
+                    Heading { text: "Startup"; }
+                    Row {
+                        label: "Start Godwit when you sign in to your computer";
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.autostart; toggled(on) => { root.autostart = on; root.changed(); } }
+                    }
+                    Row {
+                        label: "Start minimized";
+                        detail: "When Godwit starts at sign-in, keep its window minimized.";
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.start-minimized; toggled(on) => { root.start-minimized = on; root.changed(); } }
                     }
                     Row {
                         label: "Panel sizes";

@@ -5,10 +5,11 @@
 
 use std::path::Path;
 
-use windows_sys::Win32::Foundation::{ERROR_SUCCESS, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_ERROR_HANDLE};
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey, RegCreateKeyExW, RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey, RegCreateKeyExW,
+    RegDeleteKeyValueW, RegSetValueExW,
 };
 use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 
@@ -106,6 +107,25 @@ fn set_user_values(key: &str, values: &[(&str, String)]) -> Result<(), u32> {
     // SAFETY: `handle` was opened above and isn't used after this.
     unsafe { RegCloseKey(handle) };
     result
+}
+
+const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+/// Sets the per-user start-at-sign-in command `name`.
+pub fn set_run_value(name: &str, command: &str) -> Result<(), u32> {
+    set_user_values(RUN_KEY, &[(name, command.to_owned())])
+}
+
+/// Removes the per-user start-at-sign-in value `name`; absent is fine.
+pub fn delete_run_value(name: &str) -> Result<(), u32> {
+    let (key, name) = (wide(RUN_KEY), wide(name));
+    // SAFETY: both strings are NUL-terminated UTF-16.
+    let status = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) };
+    if status == ERROR_SUCCESS || status == ERROR_FILE_NOT_FOUND {
+        Ok(())
+    } else {
+        Err(status)
+    }
 }
 
 /// `s` as NUL-terminated UTF-16.

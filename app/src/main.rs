@@ -1421,6 +1421,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sh.pump(w);
         sh.refresh(w);
     });
+    // Started by the sign-in entry (`autostart`): begin minimized.
+    if std::env::args().any(|a| a == godwit::autostart::MINIMIZED_FLAG) {
+        ui.show()?;
+        ui.window().set_minimized(true);
+    }
     ui.run()?;
     // Closed normally: whether the call we were in is offered next start
     // follows Settings › Voice (`closing`).
