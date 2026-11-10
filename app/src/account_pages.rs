@@ -145,11 +145,18 @@ impl AccountPages {
         );
         pages.set_security_qr(
             security
-                .pending_secret
+                .pending_uri
                 .as_ref()
-                .and_then(|secret| crate::qr::image(&format!("otpauth://totp/Godwit?secret={}&issuer=Stoat", secret.0)))
+                .and_then(|uri| crate::qr::image(&uri.0))
                 .unwrap_or_default(),
         );
+        {
+            use godwit_core::network::AccountPage as P;
+            let offered = account.network.account_pages();
+            pages.set_security_identity(offered.contains(&P::SecurityIdentity));
+            pages.set_security_proofs(offered.contains(&P::SecurityTypedProof));
+            pages.set_security_recovery_manage(offered.contains(&P::SecurityRecoveryCodes));
+        }
         pages.set_recovery_codes(ModelRc::new(Rc::new(VecModel::from(
             security
                 .recovery_codes

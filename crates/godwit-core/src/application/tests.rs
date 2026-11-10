@@ -14,7 +14,7 @@ fn account_security_dispatch_is_gated_to_capable_networks() {
     let mut app = Application::new(Default::default());
     let action = crate::account_security::SecurityAction::Load;
     assert!(
-        app.dispatch(Action::AccountSecurity(account(Network::Discord), action.clone()))
+        app.dispatch(Action::AccountSecurity(account(Network::Steam), action.clone()))
             .is_empty()
     );
     assert!(matches!(

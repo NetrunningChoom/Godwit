@@ -375,6 +375,59 @@ impl Api {
             .context("Discord gave no token for the confirmation")
     }
 
+    /// Changes the password; the answer carries the account's new token
+    /// (docs.discord.food, "Modify Current User").
+    pub(crate) async fn change_password(&self, current: &str, new: &str) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::PATCH, "/users/@me"),
+            &crate::security::password_change_body(current, new),
+        ))
+        .await
+    }
+
+    /// Checks the password before authenticator setup: Discord answers a
+    /// right one with code 60005 (docs.discord.food, "Enable User MFA").
+    pub(crate) async fn check_password_for_totp(&self, password: &str) -> Result<()> {
+        let body = crate::security::totp_check_body(password);
+        match self
+            .json(with_json(
+                self.request(Method::POST, "/users/@me/mfa/totp/enable"),
+                &body,
+            ))
+            .await
+        {
+            Err(e)
+                if e.downcast_ref::<DiscordError>()
+                    .is_some_and(|d| d.code == Some(crate::security::TOTP_SETUP_CONTINUES)) =>
+            {
+                Ok(())
+            }
+            Ok(_) => bail!("Discord didn't ask for the authenticator setup to go on. Try again."),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Turns the authenticator on; the answer has the new token and the
+    /// backup codes.
+    pub(crate) async fn enable_totp(&self, password: &str, secret: &str, code: &str) -> Result<Value> {
+        self.json(with_json(
+            self.request(Method::POST, "/users/@me/mfa/totp/enable"),
+            &crate::security::totp_enable_body(password, secret, code),
+        ))
+        .await
+    }
+
+    /// Turns the authenticator off (Discord asks to confirm first); the
+    /// answer has the new token.
+    pub(crate) async fn disable_totp(&self) -> Result<Value> {
+        self.json(
+            self.request(Method::POST, "/users/@me/mfa/totp/disable")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body("{}"),
+        )
+        .await
+    }
+
     async fn json(&self, request: RequestBuilder) -> Result<Value> {
         let response = self.execute(request).await?;
         let body = response.bytes().await.context("could not read Discord's answer")?;

@@ -198,8 +198,14 @@ impl Network {
                 AccountPage::RenameSessions,
                 AccountPage::LogOutOtherSessions,
                 AccountPage::Security,
+                AccountPage::SecurityIdentity,
+                AccountPage::SecurityTypedProof,
+                AccountPage::SecurityRecoveryCodes,
             ],
-            Self::Discord => &[AccountPage::PrivacyAndSessions],
+            // Discord's security page: password and authenticator. Its
+            // protected requests ask for a confirmation as they happen
+            // ([`crate::step_up`]), so no proof is typed up front.
+            Self::Discord => &[AccountPage::PrivacyAndSessions, AccountPage::Security],
             // Steam's authorized devices are listed (`Authentication.EnumerateTokens`);
             // revoking another device's token needs a signature no public
             // source explains, so the list is read-only.
@@ -531,7 +537,15 @@ pub enum AccountPage {
     RenameSessions,
     /// The official sessions page can revoke every other device at once.
     LogOutOtherSessions,
+    /// Password, email and second-factor controls.
     Security,
+    /// The security page can change the account's username and email.
+    SecurityIdentity,
+    /// Recovery codes can be viewed and regenerated on the security page.
+    SecurityRecoveryCodes,
+    /// The security page asks for a password, code or recovery code up front
+    /// (rather than the network asking when it needs one).
+    SecurityTypedProof,
 }
 
 /// A picture someone uploads ([`Network::image_spec`]).
@@ -592,9 +606,15 @@ mod tests {
                 AccountPage::RenameSessions,
                 AccountPage::LogOutOtherSessions,
                 AccountPage::Security,
+                AccountPage::SecurityIdentity,
+                AccountPage::SecurityTypedProof,
+                AccountPage::SecurityRecoveryCodes,
             ]
         );
-        assert_eq!(Discord.account_pages(), [AccountPage::PrivacyAndSessions]);
+        assert_eq!(
+            Discord.account_pages(),
+            [AccountPage::PrivacyAndSessions, AccountPage::Security]
+        );
         assert_eq!(Steam.account_pages(), [AccountPage::Sessions]);
         assert_eq!(GoogleChat.readers(), Some("Google and Workspace admins"));
         assert!(Stoat.readers().is_none());

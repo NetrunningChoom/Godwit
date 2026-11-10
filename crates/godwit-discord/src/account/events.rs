@@ -200,6 +200,7 @@ impl DiscordAccount {
                 let user = self.me().to_owned();
                 session::save(self.slot, &session::Saved { user, token });
             }
+            Ev::Security(result) => out.extend(self.security_done(result)),
             Ev::Ready(d) => self.ready(&d, out),
             Ev::Dispatch(event, data) => self.dispatch(&event, &data, out),
             Ev::Connection(online) => {
@@ -802,6 +803,9 @@ impl DiscordAccount {
                     self.store.me = store::User::from(d);
                     if let Some(on) = d["mfa_enabled"].as_bool() {
                         self.store.mfa_enabled = on;
+                    }
+                    if let Some(email) = d["email"].as_str() {
+                        self.store.email = email.to_owned();
                     }
                 }
             }

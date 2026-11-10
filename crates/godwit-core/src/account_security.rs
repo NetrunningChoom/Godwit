@@ -70,6 +70,8 @@ pub struct SecurityView {
     pub totp: bool,
     pub recovery: bool,
     pub pending_secret: Option<Secret>,
+    /// The `otpauth://` address of the pending secret, for a QR code.
+    pub pending_uri: Option<Secret>,
     pub recovery_codes: Vec<Secret>,
     pub error: Option<String>,
     pub message: Option<String>,

@@ -30,6 +30,7 @@ pub(crate) mod mfa;
 pub mod permissions;
 pub mod remote_auth;
 pub mod search;
+pub(crate) mod security;
 pub mod session;
 pub mod settings;
 pub(crate) mod soundboard;

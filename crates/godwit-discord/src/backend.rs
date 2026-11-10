@@ -443,6 +443,8 @@ pub enum Cmd {
         method: crate::mfa::Method,
         code: Secret,
     },
+    /// A password or authenticator change (see `security`).
+    Security(SecurityOp),
     /// Give up the prompt `id`; its request fails.
     StepUpCancel {
         id: u64,
@@ -699,6 +701,8 @@ pub enum Ev {
     Dispatch(String, Value),
     /// Discord refreshed the sign-in; keep this token instead.
     Token(String),
+    /// How a security change went (the message is safe to show).
+    Security(Result<SecurityDone, String>),
     /// The connection dropped (and is being made again) or came back.
     Connection(bool),
     /// The session can't go on: the sign-in was refused, or too many reconnects.
@@ -718,6 +722,35 @@ type Out = godwit_core::backend::Events<Ev>;
 
 pub type Handle = godwit_core::backend::Handle<Cmd>;
 
+/// A change to the account's credentials.
+#[derive(Debug)]
+pub enum SecurityOp {
+    ChangePassword {
+        current: Secret,
+        new: Secret,
+    },
+    /// Checks the password; `secret` is the one the person will confirm.
+    BeginTotp {
+        password: Secret,
+    },
+    EnableTotp {
+        password: Secret,
+        secret: Secret,
+        code: Secret,
+    },
+    DisableTotp,
+}
+
+/// What a [`SecurityOp`] did.
+#[derive(Debug)]
+pub enum SecurityDone {
+    PasswordChanged,
+    TotpBegun,
+    /// Turned on; the backup codes to show once.
+    TotpEnabled(Vec<Secret>),
+    TotpDisabled,
+}
+
 /// A password, MFA code or ticket: its Debug never shows the text, so a
 /// logged command can't leak it.
 #[derive(Clone)]
@@ -726,6 +759,36 @@ impl std::fmt::Debug for Secret {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("[redacted]")
     }
+}
+
+/// Runs one security change; Discord holds the protected ones back until
+/// the person confirms. The token is the account's new one, if it rotated.
+async fn run_security(
+    api: &Api,
+    prompts: &crate::mfa::Prompts,
+    raise: impl Fn(u64, Vec<crate::mfa::Method>),
+    op: SecurityOp,
+) -> anyhow::Result<(SecurityDone, Option<String>)> {
+    use crate::security::{backup_codes, rotated_token};
+    Ok(match op {
+        SecurityOp::ChangePassword { current, new } => {
+            let answer = crate::mfa::stepping_up(prompts, raise, || api.change_password(&current.0, &new.0)).await?;
+            (SecurityDone::PasswordChanged, rotated_token(&answer))
+        }
+        SecurityOp::BeginTotp { password } => {
+            api.check_password_for_totp(&password.0).await?;
+            (SecurityDone::TotpBegun, None)
+        }
+        SecurityOp::EnableTotp { password, secret, code } => {
+            let answer = api.enable_totp(&password.0, &secret.0, &code.0).await?;
+            let codes = backup_codes(&answer).into_iter().map(Secret).collect();
+            (SecurityDone::TotpEnabled(codes), rotated_token(&answer))
+        }
+        SecurityOp::DisableTotp => {
+            let answer = crate::mfa::stepping_up(prompts, raise, || api.disable_totp()).await?;
+            (SecurityDone::TotpDisabled, rotated_token(&answer))
+        }
+    })
 }
 
 /// What a refused confirmation says; Discord's own words are left out so
@@ -766,6 +829,8 @@ fn identify_presence() -> Value {
 
 enum Inner {
     Session(Result<(), anyhow::Error>),
+    /// The sign-in's token changed: the gateway session starts again with it.
+    Rotated(String),
 }
 
 struct State {
@@ -799,13 +864,25 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                 let Some(cmd) = cmd else { break };
                 handle(cmd, &mut state, &out, &inner_tx);
             }
-            Some(Inner::Session(result)) = inner_rx.recv() => {
-                state.session = None;
-                state.gateway = None;
-                if let Err(e) = result {
-                    out.send(Ev::Lost { reason: e.to_string(), signed_out: e.downcast_ref::<Unauthorized>().is_some() });
+            Some(message) = inner_rx.recv() => match message {
+                Inner::Session(result) => {
+                    state.session = None;
+                    state.gateway = None;
+                    if let Err(e) = result {
+                        out.send(Ev::Lost { reason: e.to_string(), signed_out: e.downcast_ref::<Unauthorized>().is_some() });
+                    }
                 }
-            }
+                Inner::Rotated(token) => {
+                    state.token = Some(token);
+                    // The old token no longer works, so the gateway must
+                    // connect again with the new one.
+                    if let Some(session) = state.session.take() {
+                        session.abort();
+                        state.gateway = None;
+                        start_session(&mut state, &out, &inner_tx);
+                    }
+                }
+            },
         }
     }
 }
@@ -945,6 +1022,28 @@ fn handle(cmd: Cmd, state: &mut State, out: &Out, inner: &tmpsc::UnboundedSender
                     },
                 };
                 out.send(Ev::StepUpFinished { id, result });
+            });
+        }
+        Cmd::Security(op) => {
+            let Some(api) = state.api.clone() else {
+                return;
+            };
+            let (out, inner) = (out.clone(), inner.clone());
+            let prompts = state.step_up.clone();
+            tokio::spawn(async move {
+                let raise = |id, methods| out.send(Ev::StepUpRequired { id, methods });
+                let result = match run_security(&api, &prompts, raise, op).await {
+                    Ok((done, token)) => {
+                        if let Some(token) = token {
+                            api.relogin(&token);
+                            out.send(Ev::Token(token.clone()));
+                            let _ = inner.send(Inner::Rotated(token));
+                        }
+                        Ok(done)
+                    }
+                    Err(error) => Err(crate::security::failure(&error)),
+                };
+                out.send(Ev::Security(result));
             });
         }
         Cmd::StepUpCancel { id } => state.step_up.answer(id, crate::mfa::Answer::Cancelled),

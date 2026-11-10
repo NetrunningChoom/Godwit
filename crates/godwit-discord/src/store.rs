@@ -394,6 +394,8 @@ pub struct Store {
     pub premium_type: u8,
     /// Whether our account has two-factor authentication (`mfa_enabled`).
     pub mfa_enabled: bool,
+    /// Our account's email address (shown masked, never logged).
+    pub email: String,
 }
 
 impl Store {
@@ -503,6 +505,7 @@ impl Store {
             .and_then(|p| u8::try_from(p).ok())
             .unwrap_or(0);
         self.mfa_enabled = d["user"]["mfa_enabled"] == true;
+        self.email = d["user"]["email"].as_str().unwrap_or_default().to_owned();
         for u in d["users"].as_array().into_iter().flatten() {
             self.put_user(u);
         }

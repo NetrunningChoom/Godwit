@@ -14,6 +14,7 @@ mod messages;
 mod notify;
 mod people;
 mod rooms;
+mod security;
 mod server_admin;
 mod sign_in;
 mod webhooks;
@@ -212,6 +213,10 @@ pub struct DiscordAccount {
     next_call: u64,
     /// DM calls ringing: channel → who's being rung.
     ringing: HashMap<String, Vec<String>>,
+    /// The security page as last shown (backup codes live here only while it shows them).
+    security: godwit_core::account_security::SecurityView,
+    /// An authenticator setup waiting for its first code.
+    totp_setup: Option<security::TotpSetup>,
     /// Demo mode: canned history by channel, answered here, never asked of
     /// Discord (see [`DiscordAccount::demo`]).
     demo: Option<HashMap<String, Vec<Value>>>,
@@ -284,6 +289,8 @@ impl DiscordAccount {
             soundboard_requested: false,
             next_call: 0,
             ringing: HashMap::new(),
+            security: Default::default(),
+            totp_setup: None,
             webhooks: None,
             demo: None,
             settings_channel: None,
@@ -953,7 +960,7 @@ impl NetworkAccount for DiscordAccount {
                 self.sync_servers(&mut out);
                 self.net.send(Cmd::Request(Request::EditFolders { proto, folders }));
             }
-            Command::AccountSecurity(_) => {}
+            Command::AccountSecurity(action) => out.extend(self.security_command(action)),
             Command::StepUpAnswer { id, method, code } => {
                 use godwit_core::step_up::StepUpMethod as M;
                 let method = match method {
@@ -4759,5 +4766,157 @@ mod sessions_tests {
         assert_eq!(&*s[0].device, "Android");
         assert_eq!(&*s[1].device, "Windows · Discord Client");
         assert_eq!(&*s[1].location, "Amsterdam, NL");
+    }
+}
+
+#[cfg(test)]
+mod security_page_tests {
+    use super::*;
+    use godwit_core::account_security::{ProofKind, SecurityAction as A};
+    use godwit_core::application::Secret as Typed;
+
+    fn account() -> (DiscordAccount, tokio::sync::mpsc::UnboundedReceiver<Cmd>) {
+        let (net, cmds) = Handle::detached();
+        let (_tx, events) = mpsc::channel();
+        let mut a = DiscordAccount::with(u32::MAX, net, events, Status::Connecting);
+        let mut out = Vec::new();
+        a.handle(Ev::Ready(Box::new(crate::store::test_ready())), &mut out);
+        (a, cmds)
+    }
+
+    fn drain(cmds: &mut tokio::sync::mpsc::UnboundedReceiver<Cmd>) -> Vec<Cmd> {
+        std::iter::from_fn(|| cmds.try_recv().ok()).collect()
+    }
+
+    fn view(out: &[Event]) -> godwit_core::account_security::SecurityView {
+        match out.last() {
+            Some(Event::AccountSecurity { view, .. }) => view.clone(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_page_loads_without_asking_discord() {
+        let (mut a, mut cmds) = account();
+        drain(&mut cmds);
+        a.store.email = "someone@example.com".into();
+        a.store.mfa_enabled = true;
+        let v = view(&a.run(Command::AccountSecurity(A::Load)));
+        assert_eq!(v.email, "s•••@example.com");
+        assert!(v.totp && !v.loading);
+        assert!(drain(&mut cmds).is_empty());
+    }
+
+    #[test]
+    fn a_short_password_is_refused_before_it_is_sent() {
+        let (mut a, mut cmds) = account();
+        drain(&mut cmds);
+        let out = a.run(Command::AccountSecurity(A::ChangePassword {
+            password: Typed("short".into()),
+            current_password: Typed("old-password".into()),
+            proof: None,
+        }));
+        assert!(view(&out).error.is_some());
+        assert!(drain(&mut cmds).is_empty());
+    }
+
+    #[test]
+    fn a_password_change_is_sent_and_its_new_token_is_kept() {
+        let (mut a, mut cmds) = account();
+        drain(&mut cmds);
+        let out = a.run(Command::AccountSecurity(A::ChangePassword {
+            password: Typed("a-new-password".into()),
+            current_password: Typed("old-password".into()),
+            proof: None,
+        }));
+        assert!(view(&out).loading);
+        let sent = drain(&mut cmds);
+        assert!(matches!(
+            sent.as_slice(),
+            [Cmd::Security(crate::backend::SecurityOp::ChangePassword { current, new })]
+                if current.0 == "old-password" && new.0 == "a-new-password"
+        ));
+        assert!(!format!("{sent:?}").contains("password"), "debug output is redacted");
+        let out = a.security_done(Ok(crate::backend::SecurityDone::PasswordChanged));
+        assert_eq!(view(&out).message.as_deref(), Some("Password changed."));
+        // The rotated token goes through the existing session saving.
+        let mut out = Vec::new();
+        a.handle(Ev::Token("rotated".into()), &mut out);
+    }
+
+    #[test]
+    fn authenticator_setup_runs_password_secret_code_then_shows_backup_codes() {
+        let (mut a, mut cmds) = account();
+        drain(&mut cmds);
+        // A proof that isn't the password can't start it.
+        let out = a.run(Command::AccountSecurity(A::BeginTotp {
+            proof: (ProofKind::Authenticator, Typed("123456".into())),
+        }));
+        assert!(view(&out).error.is_some());
+        a.run(Command::AccountSecurity(A::BeginTotp {
+            proof: (ProofKind::Password, Typed("pw".into())),
+        }));
+        assert!(matches!(
+            drain(&mut cmds).as_slice(),
+            [Cmd::Security(crate::backend::SecurityOp::BeginTotp { .. })]
+        ));
+        let v = view(&a.security_done(Ok(crate::backend::SecurityDone::TotpBegun)));
+        let secret = v.pending_secret.clone().expect("secret shown");
+        assert_eq!(secret.0.len(), 32);
+        assert!(v.pending_uri.is_some_and(|u| u.0.contains(&secret.0)));
+        // A malformed code isn't sent.
+        let out = a.run(Command::AccountSecurity(A::ConfirmTotp {
+            code: Typed("12".into()),
+        }));
+        assert!(view(&out).error.is_some());
+        assert!(drain(&mut cmds).is_empty());
+        a.run(Command::AccountSecurity(A::ConfirmTotp {
+            code: Typed("123 456".into()),
+        }));
+        let sent = drain(&mut cmds);
+        assert!(matches!(
+            sent.as_slice(),
+            [Cmd::Security(crate::backend::SecurityOp::EnableTotp { password, secret: s, code })]
+                if password.0 == "pw" && s.0 == secret.0 && code.0 == "123456"
+        ));
+        let v = view(&a.security_done(Ok(crate::backend::SecurityDone::TotpEnabled(vec![
+            crate::backend::Secret("aaaa1111".into()),
+        ]))));
+        assert!(v.totp && v.pending_secret.is_none() && v.recovery_codes.len() == 1);
+        assert!(a.totp_setup.is_none() && a.store.mfa_enabled);
+        // Loading the page again drops the codes.
+        assert!(
+            view(&a.run(Command::AccountSecurity(A::Load)))
+                .recovery_codes
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn removing_the_authenticator_goes_through_the_confirmation() {
+        let (mut a, mut cmds) = account();
+        a.store.mfa_enabled = true;
+        drain(&mut cmds);
+        a.run(Command::AccountSecurity(A::RemoveTotp {
+            proof: (ProofKind::Password, Typed(String::new())),
+        }));
+        assert!(matches!(
+            drain(&mut cmds).as_slice(),
+            [Cmd::Security(crate::backend::SecurityOp::DisableTotp)]
+        ));
+        let v = view(&a.security_done(Ok(crate::backend::SecurityDone::TotpDisabled)));
+        assert!(!v.totp && !a.store.mfa_enabled);
+    }
+
+    #[test]
+    fn a_failed_first_step_ends_the_setup_and_shows_the_reason() {
+        let (mut a, mut cmds) = account();
+        drain(&mut cmds);
+        a.run(Command::AccountSecurity(A::BeginTotp {
+            proof: (ProofKind::Password, Typed("wrong".into())),
+        }));
+        let v = view(&a.security_done(Err("Wrong email or password.".into())));
+        assert_eq!(v.error.as_deref(), Some("Wrong email or password."));
+        assert!(a.totp_setup.is_none() && !v.loading);
     }
 }

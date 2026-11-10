@@ -41,7 +41,13 @@ impl StoatAccount {
                                 view.pending_secret = value
                                     .get("secret")
                                     .and_then(Value::as_str)
-                                    .map(|s| godwit_core::application::Secret(s.to_owned()))
+                                    .map(|s| godwit_core::application::Secret(s.to_owned()));
+                                view.pending_uri = view.pending_secret.as_ref().map(|s| {
+                                    godwit_core::application::Secret(format!(
+                                        "otpauth://totp/Godwit?secret={}&issuer=Stoat",
+                                        s.0
+                                    ))
+                                });
                             }
                             crate::backend::MfaAction::ViewRecovery | crate::backend::MfaAction::GenerateRecovery => {
                                 view.recovery_codes = value
@@ -71,6 +77,7 @@ impl StoatAccount {
                             view.loading = false;
                             view.totp = true;
                             view.pending_secret = None;
+                            view.pending_uri = None;
                         }
                         Err(_) => {
                             view.error = Some("That password or code didn't match.".to_owned());
