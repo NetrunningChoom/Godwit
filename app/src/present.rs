@@ -1029,11 +1029,42 @@ impl Presenter {
                 .unzip();
             let starred: Vec<bool> = rows.iter().map(|r| r.favourite).collect();
             let mut rows = rows;
-            for (row, section) in rows
-                .iter_mut()
-                .zip(view::sections(&starred, self.people_favourites_filter))
+            let mut who = who;
+            // Friend groups (where a network keeps them): a friend is listed
+            // under each group they are in.
+            let groups = godwit_core::friend_groups::ordered(state.friend_groups.values().flatten().collect());
+            let in_groups: Vec<Vec<usize>> = who
+                .iter()
+                .map(|(_, users)| {
+                    (0..groups.len())
+                        .filter(|g| groups[*g].members.iter().any(|m| users.contains(m)))
+                        .collect()
+                })
+                .collect();
+            let names: Vec<String> = groups.iter().map(|g| g.name.clone()).collect();
+            match godwit_core::friend_groups::arrange(&starred, &in_groups, &names)
+                .filter(|_| !self.people_favourites_filter)
             {
-                row.section = section.into();
+                Some(placed) => {
+                    let (r, w): (Vec<_>, Vec<_>) = placed
+                        .into_iter()
+                        .map(|p| {
+                            let mut row = rows[p.row].clone();
+                            row.section = p.heading.unwrap_or_default().into();
+                            (row, who[p.row].clone())
+                        })
+                        .unzip();
+                    rows = r;
+                    who = w;
+                }
+                None => {
+                    for (row, section) in rows
+                        .iter_mut()
+                        .zip(view::sections(&starred, self.people_favourites_filter))
+                    {
+                        row.section = section.into();
+                    }
+                }
             }
             view::sync(&self.people, rows);
             view::sync(&self.merges, merges);

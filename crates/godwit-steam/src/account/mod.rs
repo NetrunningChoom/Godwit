@@ -1542,6 +1542,22 @@ mod tests {
     }
 
     #[test]
+    fn steam_friend_groups_map_to_core_event() {
+        let (mut account, tx, _commands) = ready_with_commands();
+        tx.send(Ev::FriendGroups(vec![(3, "Raid".into(), vec![7])])).unwrap();
+        let events = account.poll();
+        let self_id = AccountId::new(Network::Steam, backend::steam_id(1).to_string());
+        assert!(events.iter().any(|event| matches!(event,
+            Event::FriendGroups { account, groups }
+                if account == &self_id
+                    && groups.len() == 1
+                    && groups[0].id == "3"
+                    && groups[0].name == "Raid"
+                    && groups[0].members == vec![UserId::new(self_id.clone(), backend::steam_id(7).to_string())]
+        )));
+    }
+
+    #[test]
     fn group_messages_count_unread_and_mentions() {
         let (net, _commands) = Handle::detached();
         let (tx, events) = mpsc::channel();

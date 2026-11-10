@@ -419,6 +419,14 @@ impl Application {
                 self.state.favourites.extend(users);
                 Vec::new()
             }
+            Event::FriendGroups { account, groups } => {
+                if groups.is_empty() {
+                    self.state.friend_groups.remove(&account);
+                } else {
+                    self.state.friend_groups.insert(account, groups);
+                }
+                Vec::new()
+            }
             Event::Nicknames { account, nicknames } => {
                 let affected: Vec<_> = self
                     .state

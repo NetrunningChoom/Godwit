@@ -344,6 +344,8 @@ pub enum Ev {
     Personas(Vec<Persona>),
     /// The people in the friends list's favourites (account ids), all of them.
     Favourites(Vec<u32>),
+    /// The friend groups, all of them: id, name, members' account ids.
+    FriendGroups(Vec<crate::friend_groups::Group>),
     /// A full nickname list or Steam's incremental nickname notification.
     Nicknames(Vec<(u32, String)>),
     /// Steam games' names, by app id, as asked with [`Cmd::AppNames`].
@@ -1706,6 +1708,8 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
     let mut member_states = conn.on_notification::<CChatRoom_MemberStateChange_Notification>();
     let mut favourites_changed = conn.on_notification::<crate::favourites::Changed>();
     let mut nicknames_changed = conn.on::<crate::nicknames::Changed>();
+    let mut groups_changed = conn.on::<crate::friend_groups::GroupsList>();
+    let mut groups = crate::friend_groups::Groups::default();
 
     // Messages that came before we listened (the friends list arrives with
     // the sign-in): read them first.
@@ -1714,6 +1718,9 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
     for raw in early {
         if let Ok(list) = raw.clone().into_message::<CMsgClientFriendsList>() {
             friends_list(&conn, &list, me, out);
+        } else if let Ok(list) = raw.clone().into_message::<crate::friend_groups::GroupsList>() {
+            groups.apply(&list);
+            out.send(Ev::FriendGroups(groups.snapshot()));
         } else if let Ok(list) = raw.clone().into_message::<CMsgClientEmoticonList>() {
             out.send(emoticons(&list));
         } else if let Ok(state) = raw.into_message::<CMsgClientPersonaState>() {
@@ -1947,6 +1954,19 @@ fn listen(conn: Arc<Connection>, out: &Out, inner: &InnerSender) -> Vec<tokio::t
             while let Some(item) = favourites_changed.next().await {
                 if let Ok(n) = item {
                     o.send(Ev::Favourites(crate::favourites::people(&n.favorites)));
+                }
+            }
+        })
+        .abort_handle(),
+    );
+    // Friend groups arrive on sign-in and whenever one changes.
+    let o = out.clone();
+    tasks.push(
+        tokio::spawn(async move {
+            while let Some(item) = groups_changed.next().await {
+                if let Ok(list) = item {
+                    groups.apply(&list);
+                    o.send(Ev::FriendGroups(groups.snapshot()));
                 }
             }
         })

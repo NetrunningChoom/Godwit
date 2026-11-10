@@ -246,6 +246,7 @@ impl Application {
         self.state.blocked.retain(|u| u.account != account);
         self.state.ignored.retain(|u| u.account != account);
         self.state.favourites.retain(|u| u.account != account);
+        self.state.friend_groups.remove(&account);
         self.state.people_directory.remove(&account);
         self.state.presence.retain(|user, _| user.account != account);
         self.state.friend_requests.retain(|(p, _)| p.id.account != account);

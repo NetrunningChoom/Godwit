@@ -4450,6 +4450,33 @@ fn favourites_reach_only_networks_that_keep_them_and_follow_their_list() {
 }
 
 #[test]
+fn friend_groups_follow_the_networks_list_and_leave_with_the_account() {
+    let mut app = Application::default();
+    ready(&mut app, Network::Steam, Vec::new());
+    let acc = account(Network::Steam);
+    let group = |name: &str| crate::friend_groups::FriendGroup {
+        id: "1".into(),
+        name: name.into(),
+        members: vec![UserId::new(acc.clone(), "76561197960265729")],
+    };
+    app.apply(Event::FriendGroups {
+        account: acc.clone(),
+        groups: vec![group("Raid")],
+    });
+    assert_eq!(app.state.friend_groups[&acc][0].name, "Raid");
+    app.apply(Event::FriendGroups {
+        account: acc.clone(),
+        groups: vec![group("Family")],
+    });
+    assert_eq!(app.state.friend_groups[&acc][0].name, "Family");
+    app.apply(Event::FriendGroups {
+        account: acc.clone(),
+        groups: Vec::new(),
+    });
+    assert!(!app.state.friend_groups.contains_key(&acc));
+}
+
+#[test]
 fn nicknames_route_to_networks_that_keep_them_and_follow_their_list() {
     let mut app = Application::default();
     ready(&mut app, Network::Steam, Vec::new());

@@ -308,6 +308,11 @@ pub enum Event {
         account: AccountId,
         users: Vec<UserId>,
     },
+    /// The account's friend groups, all of them.
+    FriendGroups {
+        account: AccountId,
+        groups: Vec<crate::friend_groups::FriendGroup>,
+    },
     /// Network-owned nicknames for this account, as a complete snapshot.
     Nicknames {
         account: AccountId,

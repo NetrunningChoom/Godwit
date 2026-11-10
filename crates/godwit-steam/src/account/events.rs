@@ -169,6 +169,24 @@ impl SteamAccount {
                     out.push(Event::Favourites { account, users });
                 }
             }
+            Ev::FriendGroups(groups) => {
+                if let Some(account) = self.account.clone() {
+                    out.push(Event::FriendGroups {
+                        account: account.clone(),
+                        groups: groups
+                            .into_iter()
+                            .map(|(id, name, members)| godwit_core::friend_groups::FriendGroup {
+                                id: id.to_string(),
+                                name,
+                                members: members
+                                    .into_iter()
+                                    .map(|a| UserId::new(account.clone(), crate::backend::steam_id(a).to_string()))
+                                    .collect(),
+                            })
+                            .collect(),
+                    });
+                }
+            }
             Ev::Nicknames(nicknames) => {
                 if let Some(account) = self.account.clone() {
                     let nicknames = nicknames

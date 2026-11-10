@@ -228,6 +228,9 @@ pub struct AppState {
     /// so a star set in their own clients shows here too. Godwit's own,
     /// local stars are the app's.
     pub favourites: std::collections::HashSet<UserId>,
+    /// Friend groups per account, on networks that keep them
+    /// ([`Network::keeps_friend_groups`](crate::network::Network::keeps_friend_groups)).
+    pub friend_groups: std::collections::HashMap<AccountId, Vec<crate::friend_groups::FriendGroup>>,
     /// Pending friend requests: who, and whether they asked (not us).
     pub friend_requests: Vec<(Person, bool)>,
     /// The last "Add friend" from the friends list: sending (None after

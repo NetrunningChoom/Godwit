@@ -69,6 +69,12 @@ impl Network {
         matches!(self, Self::Steam)
     }
 
+    /// The network lets people sort friends into named groups (Steam's friend
+    /// tags) and tells Godwit about them, to show as sections of People.
+    pub fn keeps_friend_groups(self) -> bool {
+        matches!(self, Self::Steam)
+    }
+
     /// The network stores contact nicknames itself, so edits sync to its clients.
     pub fn keeps_nicknames(self) -> bool {
         matches!(self, Self::Steam | Self::Discord)
