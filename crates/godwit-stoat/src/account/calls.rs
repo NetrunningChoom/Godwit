@@ -159,6 +159,8 @@ impl StoatAccount {
             muted: false,
             deafened: false,
             stage: None,
+            video: false,
+            streaming: false,
         }
     }
 

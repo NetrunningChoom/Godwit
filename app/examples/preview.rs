@@ -755,6 +755,8 @@ fn call_many(app: &mut Application, _: &AppWindow, _: &RoomId, _: &RoomId) -> Sc
             muted: i % 3 == 0,
             deafened: false,
             stage: None,
+            video: false,
+            streaming: false,
         })
         .collect();
     app.apply(Event::VoiceOccupants {

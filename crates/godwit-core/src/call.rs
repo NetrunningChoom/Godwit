@@ -25,6 +25,66 @@ pub struct CallMember {
     /// Their part on a stage (speaker, audience, hand raised); None outside
     /// stage rooms.
     pub stage: Option<StageRole>,
+    /// Their camera is on (only where the network says so from outside the call).
+    pub video: bool,
+    /// Sharing their screen live.
+    pub streaming: bool,
+}
+
+/// The line summing up who is in a voice channel, for the card its row
+/// shows under the pointer: `1 person`, or `3 people · 1 live · 2 cameras`;
+/// empty for nobody. Port of Yapfast 0cf06a66's `voice_roster` summary.
+pub fn voice_summary(members: &[CallMember]) -> String {
+    if members.is_empty() {
+        return String::new();
+    }
+    let live = members.iter().filter(|m| m.streaming).count();
+    let cameras = members.iter().filter(|m| m.video).count();
+    let n = members.len();
+    let mut parts = vec![format!("{n} {}", if n == 1 { "person" } else { "people" })];
+    if live > 0 {
+        parts.push(format!("{live} live"));
+    }
+    if cameras > 0 {
+        parts.push(format!("{cameras} {}", if cameras == 1 { "camera" } else { "cameras" }));
+    }
+    parts.join(" · ")
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+    use crate::ids::{AccountId, UserId};
+    use crate::network::Network;
+
+    fn member(name: &str, video: bool, streaming: bool) -> CallMember {
+        CallMember {
+            user: UserId::new(AccountId::new(Network::Stoat, "a"), name),
+            name: name.into(),
+            avatar_url: None,
+            speaking: false,
+            muted: false,
+            deafened: false,
+            stage: None,
+            video,
+            streaming,
+        }
+    }
+
+    #[test]
+    fn sums_up_who_is_in_a_voice_channel() {
+        assert_eq!(voice_summary(&[]), "");
+        assert_eq!(voice_summary(&[member("Ann", false, false)]), "1 person");
+        let all = [
+            member("Ann", true, true),
+            member("Bob", false, true),
+            member("Cat", true, false),
+            member("Dan", false, false),
+        ];
+        assert_eq!(voice_summary(&all), "4 people · 2 live · 2 cameras");
+        let cam = [member("Ann", true, false), member("Bob", false, false)];
+        assert_eq!(voice_summary(&cam), "2 people · 1 camera");
+    }
 }
 
 /// Where someone stands on a stage: speakers talk, the audience listens and

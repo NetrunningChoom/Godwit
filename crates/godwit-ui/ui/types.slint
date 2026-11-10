@@ -99,6 +99,9 @@ export struct CallMemberItem {
     local-muted: bool,
     // First live video tile for this participant, or -1.
     video-index: int,
+    // Camera on / sharing their screen, as the voice card beside a channel row shows.
+    video: bool,
+    live: bool,
 }
 
 // kind: 0 direct message, 1 group, 2 channel, 3 notes.
@@ -122,6 +125,8 @@ export struct RoomItem {
     voice-count: string,
     // When its call began (Unix seconds; 0: unknown or nobody in it).
     voice-since: int,
+    // "3 people · 1 live · 1 camera", for the card beside a busy voice channel's row; empty for nobody.
+    voice-summary: string,
     // A direct chat: the other person's presence dot.
     presence: color,
     has-presence: bool,

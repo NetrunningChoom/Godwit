@@ -34,6 +34,7 @@ component Entry inherits Rectangle {
     background: root.selected ? Theme.secondary-container : touch.has-hover ? Theme.surface-highest : transparent;
     touch := TouchArea {
         mouse-cursor: root.dragging ? MouseCursor.grabbing : MouseCursor.pointer;
+        changed has-hover => { root.hover-changed(self.has-hover); }
         // `clicked` comes before the release's pointer-event: a drag's
         // release isn't also a click.
         clicked => {
@@ -73,6 +74,8 @@ component Entry inherits Rectangle {
             root.follow();
         }
     }
+    // The pointer arriving or leaving, for a card beside the row.
+    callback hover-changed(bool);
     @children
 }
 
@@ -247,11 +250,54 @@ component RoomRow inherits Rectangle {
             if !room.header && room.can-manage: MenuRow { glyph: Icons.settings; label: "Channel settings"; clicked => { root.menu(6); } }
         }
     }
+    // Who is in a busy voice channel, on a card beside its row while the
+    // pointer is on it (Yapfast 0cf06a66): a summary line, then the first
+    // eight with camera and LIVE marks, and how many more. A click, a drag or
+    // the menu puts it away until the pointer comes back.
+    property <bool> card-dismissed;
+    property <bool> card-wanted: root.hovered && !root.dragging && !root.card-dismissed && room.voice-summary != "";
+    property <bool> hovered;
+    changed card-wanted => {
+        if self.card-wanted { voice-card.show(); } else { voice-card.close(); }
+    }
+    voice-card := PopupWindow {
+        x: root.width + Theme.space-1;
+        y: 0;
+        close-policy: no-auto-close;
+        Rectangle {
+            width: 232px; // literal: the card's own width
+            height: card-rows.preferred-height;
+            border-radius: Theme.radius-sm;
+            background: Theme.surface;
+            drop-shadow-blur: 3px;
+            drop-shadow-color: Theme.shadow;
+            card-rows := VerticalLayout {
+                padding: Theme.space-3;
+                // No spacing: the rows past the eighth are 0 px tall and would add gaps.
+                Text { text: room.voice-summary; height: 22px; // literal: summary line
+                    vertical-alignment: center; color: Theme.on-surface-variant; font-size: Theme.text-small; font-weight: 700; overflow: elide; }
+                for m[i] in room.occupants: HorizontalLayout {
+                    height: i < 8 ? 26px : 0px; // literal: the sidebar's call-row height
+                    visible: i < 8;
+                    spacing: Theme.space-2;
+                    Avatar { size: 20px; source: m.avatar; has-image: m.has-avatar; initials: m.initials; }
+                    EmojiText { text: m.name; runs: m.name-runs; font-size: Theme.text-label; color: Theme.on-surface; horizontal-stretch: 1; }
+                    if m.video: Icon { text: Icons.videocam; font-size: Theme.text-title; color: Theme.on-surface-variant; width: 18px; }
+                    if m.live: Text { text: "LIVE"; font-size: Theme.text-tiny; font-weight: 700; color: Theme.error; vertical-alignment: center; }
+                }
+                if room.occupants.length > 8: Text { text: "and " + (room.occupants.length - 8) + " more"; color: Theme.on-surface-variant; font-size: Theme.text-small; }
+            }
+        }
+    }
     if !room.header: Entry {
         y: 0;
         height: root.entry;
         selected: room.selected;
-        clicked => { root.clicked(); }
+        hover-changed(h) => {
+            root.hovered = h;
+            if !h { root.card-dismissed = false; }
+        }
+        clicked => { root.card-dismissed = true; root.clicked(); }
         draggable: room.pinned && room.pins-above + room.pins-below > 0;
         dragging <=> root.dragging;
         drag-y <=> root.drag-y;
@@ -264,6 +310,7 @@ component RoomRow inherits Rectangle {
             }
         }
         context(x, y) => {
+            root.card-dismissed = true;
             root.menu-x = x;
             root.menu-y = y;
             room-menu.show();

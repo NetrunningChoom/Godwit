@@ -34,6 +34,8 @@ impl SteamAccount {
             muted: member.muted,
             deafened: member.deafened,
             stage: None,
+            video: false,
+            streaming: false,
         }
     }
 

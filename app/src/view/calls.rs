@@ -86,6 +86,8 @@ pub fn call_members(members: &[CallMember], images: &mut Images) -> Vec<CallMemb
                 }
                 .into(),
                 volume: 1.0,
+                video: m.video,
+                live: m.streaming,
                 ..CallMemberItem::default()
             }
         })

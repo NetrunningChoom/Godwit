@@ -351,6 +351,16 @@ pub(super) fn room_row(r: &Room, selected: bool, occupants: Option<&Vec<CallMemb
         selected,
         voice_channel: r.capabilities.voice_user_limit.is_some(),
         voice_since: 0,
+        // The card beside a busy voice channel's row (Yapfast 0cf06a66): from
+        // the occupants the rows under the channel already show.
+        voice_summary: if r.capabilities.voice_user_limit.is_some() {
+            occupants
+                .map(|m| godwit_core::call::voice_summary(m))
+                .unwrap_or_default()
+                .into()
+        } else {
+            Default::default()
+        },
         voice_count: r
             .capabilities
             .voice_user_limit

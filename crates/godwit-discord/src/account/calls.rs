@@ -783,6 +783,8 @@ impl DiscordAccount {
                 muted: s.muted(),
                 deafened: s.deafened(),
                 stage: stage.then(|| s.stage_role()),
+                video: s.self_video,
+                streaming: s.self_stream,
             })
             .collect()
     }

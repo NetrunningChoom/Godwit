@@ -145,6 +145,8 @@ pub fn call_member(raw: &str, name: &str, speaking: bool, muted: bool) -> CallMe
         muted,
         deafened: muted,
         stage: None,
+        video: false,
+        streaming: false,
     }
 }
 
@@ -1699,6 +1701,8 @@ impl DemoAccount {
                 avatar_url: Some("preview://avatar/me".into()),
                 deafened: self.deafened,
                 stage: None,
+                video: false,
+                streaming: false,
                 ..call_member("me", &me(), false, self.muted)
             });
         }
