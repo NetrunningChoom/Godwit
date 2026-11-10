@@ -891,6 +891,7 @@ export component AppWindow inherits Window {
     in property <bool> media-debug-log-folder-exists;
     callback open-debug-folder();
     in property <[string]> data-folders;
+    in property <[string]> data-folder-paths;
     in property <[bool]> data-folder-exists;
     callback open-data-folder(int);
     in property <string> version;
@@ -2034,6 +2035,7 @@ export component AppWindow inherits Window {
         media-debug-log-folder-exists: root.media-debug-log-folder-exists;
         open-debug-folder => { root.open-debug-folder(); }
         data-folders: root.data-folders;
+        data-folder-paths: root.data-folder-paths;
         data-folder-exists: root.data-folder-exists;
         open-data-folder(i) => { root.open-data-folder(i); }
         version: root.version;

@@ -208,6 +208,7 @@ export component Settings inherits Rectangle {
     in property <bool> media-debug-log-folder-exists;
     callback open-debug-folder();
     in property <[string]> data-folders;
+    in property <[string]> data-folder-paths;
     in property <[bool]> data-folder-exists;
     callback open-data-folder(int);
     in property <string> version;
@@ -801,39 +802,51 @@ export component Settings inherits Rectangle {
                     spacing: Theme.space-4;
                     BrandBanner { }
                     Heading { text: "About"; }
-                    Text { text: "Godwit " + root.version; color: Theme.on-surface; }
-                    Text { text: "Memory in use: " + root.memory; color: Theme.on-surface-variant; }
+                    Row {
+                        label: "Godwit " + root.version;
+                        detail: root.update-check-status;
+                        Button { text: "Check for updates"; kind: "text"; enabled: root.update-check-status != "Checking for updates…"; clicked => { root.check-for-updates(); } }
+                    }
+                    Row { label: "Memory in use"; detail: root.memory; }
                     Row { label: "Message cache"; detail: "Recent rooms, messages and pictures, encrypted on this device: " + root.cache-size; if root.cache-clearable: Button { text: "Clear"; kind: "text"; danger: true; clicked => { root.clear-cache(); } } }
-                    HorizontalLayout { spacing: Theme.space-2; Button { text: "Check for updates"; kind: "tonal"; enabled: root.update-check-status != "Checking for updates…"; clicked => { root.check-for-updates(); } } Text { text: root.update-check-status; color: Theme.on-surface-variant; wrap: word-wrap; vertical-alignment: center; } }
-                    Button { text: "Godwit on GitHub"; kind: "text"; clicked => { root.open-project-link(); } }
-                    Button { text: "Reset data"; kind: "text"; danger: true; clicked => { root.reset-data(); } }
-                    if root.install-supported: HorizontalLayout {
-                        alignment: start;
-                        spacing: Theme.space-3;
+                    Row {
+                        label: "Source code";
+                        detail: "Free software under the AGPL-3.0.";
+                        Button { text: "Open on GitHub"; kind: "text"; clicked => { root.open-project-link(); } }
+                    }
+                    if root.install-supported: Row {
+                        label: "App menu";
+                        detail: root.install-status != "" ? root.install-status : root.app-installed ? "Godwit is in your system's app list." : "Adds Godwit to your system's app list.";
                         Button {
-                            text: root.app-installed ? "Remove from apps" : "Add to apps";
-                            kind: "tonal";
+                            text: root.app-installed ? "Remove" : "Add";
+                            kind: "text";
+                            danger: root.app-installed;
                             clicked => { if root.app-installed { root.confirm-remove-app = true; } else { root.install-app(); } }
                         }
-                        Text { text: root.install-status; color: Theme.on-surface-variant; vertical-alignment: center; wrap: word-wrap; }
                     }
-                    Text {
-                        text: "A fast, light chat client for many networks at once. Free software under the AGPL-3.0.";
-                        wrap: word-wrap;
-                        color: Theme.on-surface-variant;
+                    Row {
+                        label: "Reset data";
+                        detail: "Signs out every account and deletes Godwit's settings, caches and logs on this device.";
+                        Button { text: "Reset"; kind: "text"; danger: true; clicked => { root.reset-data(); } }
                     }
-                    Heading { text: "Debugging"; }
+                    Heading { text: "Logs"; }
                     Row {
                         label: "Network debug log";
                         detail: "Writes each request's endpoint, status and timing to a file, for troubleshooting. No message text, names or sign-ins; ids only as short hashes. Switches off after each update.";
                         Toggle { y: (parent.height - self.height) / 2; checked: root.net-debug-log; toggled(on) => { root.net-debug-log = on; root.changed(); } }
                     }
-                    if root.net-debug-log: Text { text: root.net-debug-log-path; color: Theme.outline; font-size: Theme.text-small; wrap: word-wrap; }
                     Row { label: "Media log"; detail: "Records media playback and decoding diagnostics. URLs omit query strings; messages and names are never logged."; Toggle { y: (parent.height - self.height) / 2; checked: root.media-debug-log; toggled(on) => { root.media-debug-log = on; root.changed(); } } }
-                    if root.media-debug-log: Text { text: root.media-debug-log-path; color: Theme.outline; font-size: Theme.text-small; wrap: word-wrap; }
-                    Button { text: "Open media log folder"; kind: "text"; enabled: root.media-debug-log-folder-exists; clicked => { root.open-debug-folder(); } }
+                    Row {
+                        label: "Log folder";
+                        detail: root.media-debug-log-path;
+                        Button { text: "Open folder"; kind: "text"; enabled: root.media-debug-log-folder-exists; clicked => { root.open-debug-folder(); } }
+                    }
                     Heading { text: "Godwit folders"; }
-                    for index in root.data-folders.length: HorizontalLayout { spacing: Theme.space-3; Text { text: root.data-folders[index]; color: Theme.on-surface; wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; } Text { text: root.data-folder-exists[index] ? "" : "not created yet"; color: Theme.outline; vertical-alignment: center; } Button { text: "Open folder"; kind: "text"; enabled: root.data-folder-exists[index]; clicked => { root.open-data-folder(index); } } }
+                    for index in root.data-folders.length: Row {
+                        label: root.data-folders[index];
+                        detail: root.data-folder-paths[index] + (root.data-folder-exists[index] ? "" : " · not created yet");
+                        Button { text: "Open folder"; kind: "text"; enabled: root.data-folder-exists[index]; clicked => { root.open-data-folder(index); } }
+                    }
                 }
             }
         }

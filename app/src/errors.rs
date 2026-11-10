@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
 //! Problems the networks and the app ran into, kept as a log instead of
-//! pop-ups: Settings → Problems lists them, and `errors.log` in the config
-//! directory keeps them across restarts for the user to look at or share.
+//! pop-ups: Settings → Problems lists them, and `errors.log` keeps them
+//! across restarts for the user to look at or share. It sits with the debug
+//! logs in Godwit's cache folder, so every log is in one place.
 //!
 //! Errors are written without secrets where they're made (AGENTS.md), so the
 //! log never holds tokens or passwords.
@@ -11,6 +12,8 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+pub const FILE_NAME: &str = "errors.log";
 
 /// Problems kept in memory for Settings.
 const KEEP: usize = 200;
@@ -27,7 +30,7 @@ pub struct ErrorLog {
     entries: VecDeque<Entry>,
     /// Logged since Settings → Problems was last open.
     unseen: usize,
-    /// None in demo mode, or when there's no config directory.
+    /// None in demo mode, or when there's no cache directory.
     path: Option<PathBuf>,
 }
 
@@ -36,7 +39,21 @@ impl ErrorLog {
         let path = if demo {
             None
         } else {
-            godwit_core::config_dir::get().map(|dir| dir.join("errors.log"))
+            crate::settings::net_log_dir().map(|dir| {
+                let path = dir.join(FILE_NAME);
+                // Older versions kept it in the config folder: moved here once.
+                if let Some(old) = godwit_core::config_dir::get().map(|d| d.join(FILE_NAME))
+                    && old != path
+                    && old.is_file()
+                    && !path.exists()
+                {
+                    let _ = std::fs::create_dir_all(&dir);
+                    if std::fs::rename(&old, &path).is_err() && std::fs::copy(&old, &path).is_ok() {
+                        let _ = std::fs::remove_file(&old);
+                    }
+                }
+                path
+            })
         };
         Self {
             entries: VecDeque::new(),

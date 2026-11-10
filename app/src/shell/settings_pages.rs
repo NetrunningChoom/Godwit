@@ -159,20 +159,20 @@ impl Shell {
         );
         ui.set_media_debug_log(!s.media_debug_log.is_empty());
         let log_dir = crate::settings::net_log_dir();
-        ui.set_media_debug_log_path(
-            log_dir
-                .as_ref()
-                .map(|d| d.join(crate::media_log::FILE_NAME).display().to_string())
-                .unwrap_or_default()
-                .into(),
-        );
+        ui.set_media_debug_log_path(log_folder_text(log_dir.as_deref()).into());
         ui.set_media_debug_log_folder_exists(log_dir.as_ref().is_some_and(|d| crate::reset_data::is_directory(d)));
         let folders = crate::reset_data::folders();
         ui.set_data_folders(ModelRc::new(VecModel::from(
             folders
                 .iter()
-                .map(|(label, path)| format!("{label} · {}", path.display()).into())
-                .collect::<Vec<slint::SharedString>>(),
+                .map(|(label, _)| slint::SharedString::from(label.as_str()))
+                .collect::<Vec<_>>(),
+        )));
+        ui.set_data_folder_paths(ModelRc::new(VecModel::from(
+            folders
+                .iter()
+                .map(|(_, path)| slint::SharedString::from(path.display().to_string()))
+                .collect::<Vec<_>>(),
         )));
         ui.set_data_folder_exists(ModelRc::new(VecModel::from(
             folders
@@ -671,7 +671,7 @@ impl Shell {
         if let Some(path) = crate::settings::net_log_dir()
             && let Err(error) = open::that_detached(path)
         {
-            eprintln!("error: opening media log folder: {error}");
+            eprintln!("error: opening the log folder: {error}");
         }
     }
 
@@ -822,13 +822,7 @@ impl Shell {
             };
             s.apply_media_debug_log();
             let log_dir = crate::settings::net_log_dir();
-            ui.set_media_debug_log_path(
-                log_dir
-                    .as_ref()
-                    .map(|d| d.join(crate::media_log::FILE_NAME).display().to_string())
-                    .unwrap_or_default()
-                    .into(),
-            );
+            ui.set_media_debug_log_path(log_folder_text(log_dir.as_deref()).into());
             ui.set_media_debug_log_folder_exists(log_dir.as_ref().is_some_and(|d| crate::reset_data::is_directory(d)));
         }
         if self.devices_shown
@@ -945,4 +939,18 @@ impl Shell {
         self.settings.members_width = members;
         self.save_settings();
     }
+}
+
+/// The About page's log folder line: where the problems and debug logs are written.
+fn log_folder_text(dir: Option<&std::path::Path>) -> String {
+    dir.map(|d| {
+        format!(
+            "{} · {}, {}, {}",
+            d.display(),
+            crate::errors::FILE_NAME,
+            godwit_core::net::log::FILE_NAME,
+            crate::media_log::FILE_NAME
+        )
+    })
+    .unwrap_or_default()
 }

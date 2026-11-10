@@ -1899,15 +1899,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_cache_clearable(true);
                 ui.set_update_check_status("Last checked on request".into());
                 ui.set_media_debug_log(true);
-                ui.set_media_debug_log_path("~/.cache/godwit/media-debug.log".into());
+                ui.set_media_debug_log_path("~/.cache/godwit · errors.log, network-debug.log, media-debug.log".into());
                 ui.set_media_debug_log_folder_exists(true);
                 ui.set_data_folders(slint::ModelRc::new(slint::VecModel::from(vec![
-                    "Settings and configuration · ~/.config/godwit".into(),
-                    "Godwit data · ~/.local/share/godwit".into(),
-                    "Kept sessions · ~/.config/godwit/secrets".into(),
-                    "Message cache · ~/.config/godwit/message-cache".into(),
-                    "Media cache · ~/.config/godwit/picture-cache".into(),
-                    "Logs · ~/.cache/godwit".into(),
+                    "Settings and configuration".into(),
+                    "Godwit data".into(),
+                    "Kept sessions".into(),
+                    "Message cache".into(),
+                    "Media cache".into(),
+                    "Logs".into(),
+                ])));
+                ui.set_data_folder_paths(slint::ModelRc::new(slint::VecModel::from(vec![
+                    "~/.config/godwit".into(),
+                    "~/.local/share/godwit".into(),
+                    "~/.config/godwit/secrets".into(),
+                    "~/.config/godwit/message-cache".into(),
+                    "~/.config/godwit/picture-cache".into(),
+                    "~/.cache/godwit".into(),
                 ])));
                 ui.set_data_folder_exists(slint::ModelRc::new(slint::VecModel::from(vec![
                     true, true, true, true, false, true,
