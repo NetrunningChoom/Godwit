@@ -209,6 +209,10 @@ impl Shell {
             .map(|(_, n)| (*n).into())
             .collect();
         ui.set_tones(slint::ModelRc::new(slint::VecModel::from(tones)));
+        ui.set_time_formats(labels(&crate::clock::TimeFormat::ALL.map(|(_, label)| label)));
+        ui.set_time_format_index(i32::try_from(s.time_format.index()).unwrap_or(0));
+        ui.set_date_formats(labels(&crate::clock::DateFormat::ALL.map(|(_, label)| label)));
+        ui.set_date_format_index(i32::try_from(s.date_format.index()).unwrap_or(0));
         ui.set_rejoin_offers(labels(&crate::settings::RejoinOffer::ALL.map(|(_, label)| label)));
         ui.set_rejoin_offer_index(i32::try_from(s.rejoin_offer.index()).unwrap_or(0));
         ui.set_tone_index(i32::try_from(s.message_tone).unwrap_or(0));
@@ -846,6 +850,16 @@ impl Shell {
             1 => NoiseSuppression::WebRtc,
             _ => NoiseSuppression::Enhanced,
         };
+        let clock_before = (s.time_format, s.date_format);
+        s.time_format = crate::clock::TimeFormat::at(ui.get_time_format_index()).unwrap_or(s.time_format);
+        s.date_format = crate::clock::DateFormat::at(ui.get_date_format_index()).unwrap_or(s.date_format);
+        if (s.time_format, s.date_format) != clock_before {
+            crate::clock::apply(s.time_format, s.date_format);
+            // Rows carry their formatted times.
+            for row in &mut self.presenter.rows {
+                row.invalidate();
+            }
+        }
         if let Some(offer) = crate::settings::RejoinOffer::at(ui.get_rejoin_offer_index()) {
             s.rejoin_offer = offer;
         }

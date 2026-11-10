@@ -250,7 +250,7 @@ pub(crate) fn last_talked(ms: i64) -> String {
     let now = Local::now();
     let days = (now.date_naive() - at.date_naive()).num_days();
     match days {
-        ..=0 => at.format("%H:%M").to_string(),
+        ..=0 => crate::clock::time_of_day(&at),
         1..=6 => at.format("%a").to_string(),
         _ if at.format("%Y").to_string() == now.format("%Y").to_string() => at.format("%b %-d").to_string(),
         _ => at.format("%Y").to_string(),

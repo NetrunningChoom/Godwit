@@ -10,6 +10,7 @@ pub mod autodelete_page;
 pub mod background;
 pub mod cache;
 pub mod channel_settings;
+pub mod clock;
 pub mod code;
 pub mod cropper;
 pub mod demo;

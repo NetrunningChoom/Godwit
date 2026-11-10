@@ -21,11 +21,7 @@ pub(crate) fn time(ms: i64) -> String {
         return String::new();
     };
     let now: DateTime<Local> = Local::now();
-    if at.date_naive() == now.date_naive() {
-        at.format("Today at %H:%M").to_string()
-    } else {
-        at.format("%d/%m/%Y %H:%M").to_string()
-    }
+    crate::clock::message_time(&at, at.date_naive() == now.date_naive())
 }
 
 /// What a click on a collapsed run of hidden messages sends as its link

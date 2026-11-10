@@ -160,6 +160,10 @@ export component Settings inherits Rectangle {
     in-out property <bool> screen-quality-ask;
     in-out property <int> noise-index;
     // When the next start offers to rejoin the call Godwit stopped in.
+    in property <[string]> time-formats;
+    in-out property <int> time-format-index;
+    in property <[string]> date-formats;
+    in-out property <int> date-format-index;
     in property <[string]> rejoin-offers;
     in-out property <int> rejoin-offer-index;
     // The new-message sound, from `tones`.
@@ -727,6 +731,28 @@ export component Settings inherits Rectangle {
                             y: (parent.height - self.height) / 2;
                             model: root.scales;
                             current-index <=> root.scale-index;
+                            selected => { root.changed(); }
+                        }
+                    }
+                    Row {
+                        label: "Time format";
+                        detail: "How times of day are written.";
+                        Select {
+                            width: 160px;
+                            y: (parent.height - self.height) / 2;
+                            model: root.time-formats;
+                            current-index <=> root.time-format-index;
+                            selected => { root.changed(); }
+                        }
+                    }
+                    Row {
+                        label: "Date format";
+                        detail: "The order of day, month and year in message times.";
+                        Select {
+                            width: 160px;
+                            y: (parent.height - self.height) / 2;
+                            model: root.date-formats;
+                            current-index <=> root.date-format-index;
                             selected => { root.changed(); }
                         }
                     }

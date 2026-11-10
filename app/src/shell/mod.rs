@@ -373,6 +373,7 @@ impl Shell {
         }
         theme::apply(ui, settings.accent(), settings.style, settings.dark);
         crate::emoji::set_pack(&settings.emoji_pack);
+        crate::clock::apply(settings.time_format, settings.date_format);
         profiles::apply_widths(ui, &settings);
         let (media, media_networks): RegisteredMedia = live
             .iter()

@@ -31,6 +31,10 @@ pub struct Settings {
     pub style: usize,
     /// The interface scale on top of the display's (1: as the display says; see `scale`).
     pub ui_scale: f32,
+    /// Clock style for every time shown (see `clock`).
+    pub time_format: crate::clock::TimeFormat,
+    /// Numeric date order for message times (see `clock`).
+    pub date_format: crate::clock::DateFormat,
     /// The Unicode emoji pack (an id from `godwit_core::emoji_packs::PACKS`).
     pub emoji_pack: String,
     pub notifications: bool,
@@ -158,6 +162,8 @@ impl Default for Settings {
             accent: String::new(),
             style: 0,
             ui_scale: 1.0,
+            time_format: crate::clock::TimeFormat::default(),
+            date_format: crate::clock::DateFormat::default(),
             emoji_pack: "twemoji".to_owned(),
             notifications: true,
             sounds: true,
@@ -577,6 +583,12 @@ mod tests {
             !partial.notifications && partial.dark,
             "missing fields take their defaults"
         );
+        assert_eq!(
+            partial.time_format,
+            crate::clock::TimeFormat::Hour24,
+            "old files keep today's look"
+        );
+        assert_eq!(partial.date_format, crate::clock::DateFormat::DayFirst);
         assert!(partial.message_sound && partial.call_ring_sound && partial.call_event_sounds);
         let mut changed = Settings {
             message_sound: false,

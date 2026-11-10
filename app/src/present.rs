@@ -857,9 +857,8 @@ impl Presenter {
                     let label = |at| {
                         chrono::DateTime::from_timestamp(at, 0)
                             .map(|time| {
-                                time.with_timezone(&chrono::Local)
-                                    .format("%a, %b %-d · %H:%M")
-                                    .to_string()
+                                let time = time.with_timezone(&chrono::Local);
+                                format!("{} · {}", time.format("%a, %b %-d"), crate::clock::time_of_day(&time))
                             })
                             .unwrap_or_else(|| "Time not available".to_owned())
                     };
