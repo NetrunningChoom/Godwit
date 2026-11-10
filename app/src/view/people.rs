@@ -664,10 +664,13 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
         ui.set_card_note_source(key.into());
         ui.set_card_note(note.into());
     }
+    // Our own card lists no mutuals: every server and friend would be one
+    // (Yapfast a57d7c0a).
+    let mutuals = if p.has_mutuals && !p.me { usize::MAX } else { 0 };
     let servers: Vec<MutualItem> = p
         .mutual_servers
         .iter()
-        .take(if p.has_mutuals { usize::MAX } else { 0 })
+        .take(mutuals)
         .map(|m| {
             // A server we don't know (yet) is named by its id rather than hidden.
             let server = state.server(&m.server);
@@ -686,7 +689,7 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
     let friends: Vec<MutualItem> = p
         .mutual_friends
         .iter()
-        .take(if p.has_mutuals { usize::MAX } else { 0 })
+        .take(mutuals)
         .map(|f| {
             let (picture, has_picture) = picture(images, f.avatar_url.as_deref());
             MutualItem {
@@ -702,7 +705,7 @@ pub fn profile(ui: &AppWindow, p: &Profile, state: &AppState, images: &mut Image
     let groups: Vec<MutualItem> = p
         .mutual_groups
         .iter()
-        .take(if p.has_mutuals { usize::MAX } else { 0 })
+        .take(mutuals)
         .map(|g| MutualItem {
             initials: initials(&g.name).into(),
             name: g.name.as_ref().into(),
