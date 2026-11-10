@@ -41,6 +41,36 @@ impl SlackAccount {
                 }
             }
             Answer::Search(result) => self.search_answer(team, result, out),
+            Answer::Edited {
+                channel,
+                thread,
+                ts,
+                result,
+            } => match result {
+                Ok(v) => {
+                    let text = v["message"]["text"].as_str().or(v["text"].as_str()).unwrap_or_default();
+                    out.extend(self.edited(team, &channel, thread.as_deref(), &ts, text));
+                }
+                Err(e) => out.push(Event::Error(format!("Slack, editing a message: {e}").into())),
+            },
+            Answer::Reacted {
+                channel,
+                ts,
+                name,
+                add,
+                result,
+            } => match result {
+                Ok(()) => {
+                    let e = serde_json::json!({
+                        "type": if add { "reaction_added" } else { "reaction_removed" },
+                        "user": self.workspaces.get(team).map(|w| w.me.clone()).unwrap_or_default(),
+                        "reaction": name,
+                        "item": {"type": "message", "channel": channel, "ts": ts},
+                    });
+                    self.news(team, &e, out);
+                }
+                Err(e) => out.push(Event::Error(format!("Slack, reacting: {e}").into())),
+            },
             Answer::Conversation(result) => match result {
                 Ok(value) => {
                     self.put_conversation(team, &value["channel"]);
@@ -482,11 +512,12 @@ impl SlackAccount {
                 );
             }
             Command::EditMessage { room, message, text } => {
-                if let Some((team, channel, _)) = self.target(&room) {
+                if let Some((team, channel, thread)) = self.target(&room) {
                     self.request(
                         &team,
                         Request::Edit {
                             channel,
+                            thread,
                             ts: message.0.to_string(),
                             text: mrkdwn::from_text(&text),
                         },

@@ -6,6 +6,31 @@ use super::*;
 use std::sync::Arc;
 
 impl SlackAccount {
+    /// Our edit of `ts` showing `text` (mrkdwn), in its channel or thread.
+    pub(super) fn edited(
+        &mut self,
+        team: &str,
+        channel: &str,
+        thread: Option<&str>,
+        ts: &str,
+        text: &str,
+    ) -> Option<Event> {
+        let raw = match thread {
+            Some(root) => format!("{team}:{channel}:{root}"),
+            None => format!("{team}:{channel}"),
+        };
+        let room = RoomId::new(self.account.clone()?, raw.as_str());
+        let names = Names { account: self, team };
+        let converted = mrkdwn::convert(text, &names);
+        Some(Event::MessageEdited {
+            room,
+            id: MessageId(ts.into()),
+            text: converted.rich.into(),
+            markup: Markup::Rich,
+            source: text.into(),
+        })
+    }
+
     /// A Slack reaction name as Godwit shows it: the emoji itself, or a
     /// workspace emoji's canonical `:name:` and picture.
     pub(super) fn reaction_emoji(&self, team: &str, name: &str) -> (Arc<str>, Option<Arc<str>>) {

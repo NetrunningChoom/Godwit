@@ -1042,6 +1042,45 @@ mod tests {
     }
 
     #[test]
+    fn our_edits_and_reactions_show_from_slacks_answer() {
+        let (mut a, _cmds) = account();
+        ready(&mut a);
+        let mut out = Vec::new();
+        a.answer(
+            "T1",
+            Answer::Edited {
+                channel: "C1".into(),
+                thread: None,
+                ts: "1700000010.000200".into(),
+                result: Ok(json!({"ok": true, "message": {"text": "*fixed*"}})),
+            },
+            &mut out,
+        );
+        assert!(matches!(out.first(), Some(Event::MessageEdited { room, id, text, .. })
+            if &*room.raw == "T1:C1" && &*id.0 == "1700000010.000200" && &**text == "**fixed**"));
+        let mut out = Vec::new();
+        a.answer(
+            "T1",
+            Answer::Reacted {
+                channel: "C1".into(),
+                ts: "1700000010.000200".into(),
+                name: "+1".into(),
+                add: true,
+                result: Ok(()),
+            },
+            &mut out,
+        );
+        assert!(matches!(
+            out.first(),
+            Some(Event::ReactionToggled {
+                ours: true,
+                add: true,
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn edits_elsewhere_update_the_message() {
         let (mut a, _cmds) = account();
         ready(&mut a);

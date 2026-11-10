@@ -42,6 +42,8 @@ pub enum Request {
         files: Vec<godwit_core::application::Outgoing>,
     },
     Edit {
+        /// The thread the message is shown in, if it's a reply there.
+        thread: Option<String>,
         channel: String,
         ts: String,
         text: String,
@@ -96,6 +98,22 @@ pub enum Cmd {
 
 #[derive(Debug)]
 pub enum Answer {
+    /// Our edit, as chat.update answered it: shown without waiting for the
+    /// live update, which can come late or not at all.
+    Edited {
+        channel: String,
+        thread: Option<String>,
+        ts: String,
+        result: Result<Value, String>,
+    },
+    /// Our reaction went through (or was already as asked).
+    Reacted {
+        channel: String,
+        ts: String,
+        name: String,
+        add: bool,
+        result: Result<(), String>,
+    },
     Search(Result<Value, String>),
     History {
         channel: String,
@@ -547,11 +565,29 @@ async fn answer(api: &Api, request: Request) -> Answer {
         }
         Request::Edit {
             channel,
+            thread,
             ts,
             text: body,
-        } => done("editing a message", api.update(&channel, &ts, &body).await.map(drop)),
+        } => {
+            let result = api.update(&channel, &ts, &body).await.map_err(|e| text(&e));
+            Answer::Edited {
+                channel,
+                thread,
+                ts,
+                result,
+            }
+        }
         Request::Delete { channel, ts } => done("deleting a message", api.delete(&channel, &ts).await),
-        Request::React { channel, ts, name, add } => done("reacting", api.react(&channel, &ts, &name, add).await),
+        Request::React { channel, ts, name, add } => {
+            let result = api.react(&channel, &ts, &name, add).await.map_err(|e| text(&e));
+            Answer::Reacted {
+                channel,
+                ts,
+                name,
+                add,
+                result,
+            }
+        }
         Request::Mark { channel, ts } => done("marking read", api.mark(&channel, &ts).await),
         Request::NotificationPrefs => {
             Answer::NotificationPrefs(api.call("users.prefs.get", &[]).await.map_err(|e| text(&e)))
