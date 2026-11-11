@@ -6,6 +6,12 @@
 
 use super::*;
 
+/// Characters per message: Nitro (`premium_type` 2) sends up to 4000
+/// (support.discord.com, "Nitro Perks"), everyone else 2000.
+pub(super) fn text_limit(premium_type: u8) -> u32 {
+    if premium_type == 2 { 4000 } else { 2000 }
+}
+
 /// Discord and its web client mark attachment spoilers with this prefix
 /// (docs.discord.food, Attachment Object; stoatchat/for-web de5379b).
 fn is_spoiler_filename(filename: &str) -> bool {
@@ -457,10 +463,9 @@ impl DiscordAccount {
         });
     }
 
-    /// Discord's own limit on a message: 2,000 characters (Godwit never
-    /// offers Nitro features, so not Nitro's 4,000).
+    /// The longest message we may send, by our Nitro.
     pub(super) fn message_limit(&self) -> usize {
-        2000
+        usize::try_from(text_limit(self.store.premium_type)).unwrap_or(2000)
     }
 
     pub(super) fn channel_of(&self, room: &RoomId) -> Option<String> {
@@ -624,6 +629,19 @@ mod forward_tests {
             json!({"type": 0, "components": [{"type": 1}]}),
         ] {
             assert!(!forwardable(&no), "{no}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::text_limit;
+
+    #[test]
+    fn nitro_sends_longer_messages() {
+        assert_eq!(text_limit(2), 4000);
+        for other in [0, 1, 3] {
+            assert_eq!(text_limit(other), 2000);
         }
     }
 }
