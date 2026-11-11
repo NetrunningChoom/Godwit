@@ -1368,6 +1368,7 @@ fn raise(ui: &AppWindow) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    godwit_core::backend::register_helper_finder(godwit::inline_player::usable_player);
     #[cfg(windows)]
     godwit::win32::attach_console();
     // Before any other thread starts (see memory.rs).
@@ -1396,6 +1397,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let ui = AppWindow::new()?;
+    // Whether the helper's web view library loads is asked off the UI
+    // thread, so the first click on a video never waits for it. Demo mode
+    // leaves the cache alone, and the probe unpacks the helper there.
+    if !std::env::args().any(|a| a == "--demo") {
+        let _ = std::thread::Builder::new().name("helper-probe".into()).spawn(|| {
+            let _ = godwit::inline_player::missing_library();
+        });
+    }
     offer_install(&ui);
     offer_updates(&ui);
     // The Wayland app id (the X11 class too): desktops match it to

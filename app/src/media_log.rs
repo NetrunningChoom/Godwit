@@ -87,11 +87,21 @@ pub fn safe_stderr(line: &str) -> String {
     output
 }
 
+/// Whether WebKit and GStreamer details can follow: the helper reports them
+/// only when it could load.
+fn helper_details() -> String {
+    match crate::inline_player::missing_library() {
+        Some(lib) => format!("the player helper could not load {lib}, so no WebKit or GStreamer details follow"),
+        None => "WebKit and GStreamer runtime details follow from the player helper".to_owned(),
+    }
+}
+
 fn environment_summary() -> String {
     format!(
-        "environment os={} arch={}; WebKit and GStreamer runtime details follow from the player helper",
+        "environment os={} arch={}; {}",
         std::env::consts::OS,
-        std::env::consts::ARCH
+        std::env::consts::ARCH,
+        helper_details()
     )
 }
 

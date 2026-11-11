@@ -470,8 +470,69 @@ fn missing_library_in(line: &str) -> Option<String> {
     (!name.is_empty() && name.len() < 128).then(|| name.to_owned())
 }
 
+/// The library the helper links for its web view; named when the loader's
+/// own message didn't say which one failed.
+const WEB_VIEW_LIBRARY: &str = "libwebkit2gtk-4.1.so.0";
+
+/// What the loader failing the `--probe` run means: the missing library, or
+/// None when the helper started.
+fn missing_after_probe(code: Option<i32>, stderr: &str) -> Option<String> {
+    if code != Some(godwit_core::backend::LOADER_FAILED) {
+        return None;
+    }
+    Some(
+        stderr
+            .lines()
+            .find_map(missing_library_in)
+            .unwrap_or_else(|| WEB_VIEW_LIBRARY.to_owned()),
+    )
+}
+
+/// Runs the helper once (`--probe` exits before any window) to learn whether
+/// its libraries load; the answer is kept for the run. Only Linux links a
+/// library that may be absent; elsewhere the helper is assumed to work.
+fn probe_once() {
+    static PROBED: std::sync::Once = std::sync::Once::new();
+    PROBED.call_once(|| {
+        if !cfg!(target_os = "linux") {
+            return;
+        }
+        let Ok(helper) = player_executable() else { return };
+        let Ok(out) = std::process::Command::new(helper)
+            .arg("--probe")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .output()
+        else {
+            return;
+        };
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let missing = missing_after_probe(out.status.code(), &stderr);
+        crate::media_log::record(|| match &missing {
+            Some(lib) => format!("player helper could not load {lib}; videos open in the browser"),
+            None => "player helper loads".to_owned(),
+        });
+        if let Some(lib) = missing {
+            crate::media_log::lock(&MISSING_LIBRARY).get_or_insert(lib);
+        }
+    });
+}
+
+/// The helper for browser windows (sign-ins, captcha), unless its libraries
+/// are missing on this system.
+pub fn usable_player() -> Option<std::path::PathBuf> {
+    missing_check().ok()?;
+    player_executable().ok()
+}
+
+/// The library the helper could not load, if any (probing the helper once).
+pub fn missing_library() -> Option<String> {
+    probe_once();
+    crate::media_log::lock(&MISSING_LIBRARY).clone()
+}
+
 fn missing_check() -> io::Result<()> {
-    match crate::media_log::lock(&MISSING_LIBRARY).as_ref() {
+    match missing_library().as_ref() {
         Some(lib) => Err(io::Error::new(io::ErrorKind::NotFound, format!("{lib} is missing"))),
         None => Ok(()),
     }
@@ -484,7 +545,7 @@ pub fn missing_library_notice() -> Option<String> {
         return None;
     }
     let hint = if lib.contains("webkit") {
-        " Install WebKitGTK 4.1 (with GStreamer) from your distribution to play videos here."
+        " Install WebKitGTK 4.1 (with GStreamer) to play videos here: webkit2gtk4.1 (Fedora), libwebkit2gtk-4.1-0 (Debian, Ubuntu) or webkit2gtk-4.1 (Arch)."
     } else {
         ""
     };
@@ -687,6 +748,22 @@ mod tests {
         let line = "/x/godwit-player: error while loading shared libraries: libwebkit2gtk-4.1.so.0: cannot open shared object file: No such file or directory";
         assert_eq!(missing_library_in(line).as_deref(), Some("libwebkit2gtk-4.1.so.0"));
         assert_eq!(missing_library_in("0:00:01 WARN something"), None);
+    }
+
+    #[test]
+    fn a_loader_failure_in_the_probe_means_the_library_is_missing() {
+        let line = "x: error while loading shared libraries: libfoo.so.1: cannot open shared object file";
+        assert_eq!(missing_after_probe(Some(127), line).as_deref(), Some("libfoo.so.1"));
+        assert_eq!(missing_after_probe(Some(127), "").as_deref(), Some(WEB_VIEW_LIBRARY));
+        assert_eq!(missing_after_probe(Some(0), ""), None);
+        assert_eq!(missing_after_probe(None, ""), None);
+    }
+
+    #[test]
+    fn the_notice_names_the_packages() {
+        *crate::media_log::lock(&MISSING_LIBRARY) = Some(WEB_VIEW_LIBRARY.into());
+        let notice = missing_library_notice().unwrap_or_default();
+        assert!(notice.contains("webkit2gtk4.1") && notice.contains("libwebkit2gtk-4.1-0"));
     }
 
     fn spec(url: &str) -> Spec {

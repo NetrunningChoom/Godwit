@@ -90,8 +90,12 @@ signing key. Set `GODWIT_NO_UPDATE=1` to turn that off. Each release lists
   systems (Alpine).
 - **Wayland or X11**, any desktop.
 - **Sound**: PulseAudio or PipeWire.
-- **Video players** (inline videos, embeds): WebKitGTK 4.1 (`libwebkit2gtk-4.1`),
-  installed on most desktops; everything else works without it.
+- **WebKitGTK 4.1** (`libwebkit2gtk-4.1`) for inline videos, embeds and the
+  browser sign-in windows some networks use (Slack, Google Chat, the Discord
+  captcha). It isn't always installed: Fedora `webkit2gtk4.1`, Debian/Ubuntu
+  `libwebkit2gtk-4.1-0`, Arch `webkit2gtk-4.1`. Without it, videos and the
+  captcha open in your browser and those sign-ins say what to install;
+  everything else works.
 - **Sign-ins** are kept in your keyring (GNOME Keyring, KWallet or any Secret
   Service); without one, in owner-only files.
 

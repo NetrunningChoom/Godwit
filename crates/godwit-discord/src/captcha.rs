@@ -140,10 +140,7 @@ impl Page {
     pub async fn solve(&self, mut shown: impl FnMut(&str)) -> Result<String> {
         #[cfg(any(target_os = "linux", windows))]
         {
-            let helper = std::env::current_exe()
-                .ok()
-                .and_then(|exe| exe.parent().map(|p| p.join("godwit-player")));
-            if let Some(helper) = helper {
+            if let Some(helper) = godwit_core::backend::helper() {
                 let child = tokio::process::Command::new(helper)
                     .arg("--discord-captcha")
                     .arg(format!("{}#godwit-player", self.url))
@@ -154,6 +151,7 @@ impl Page {
                     .spawn();
                 match child {
                     Ok(mut child) => {
+                        // None: the helper's web view library is missing.
                         let output = async {
                             let mut bytes = Vec::new();
                             let stdout = child.stdout.take().context("captcha window has no output")?;
@@ -162,19 +160,27 @@ impl Page {
                                 bail!("Invalid answer from the captcha window");
                             }
                             let status = child.wait().await?;
+                            if status.code() == Some(godwit_core::backend::LOADER_FAILED) {
+                                return Ok(None);
+                            }
                             if !status.success() {
                                 bail!("The captcha window closed before the captcha was solved. Try again.");
                             }
-                            solution_line(&bytes).context("Invalid answer from the captcha window")
+                            solution_line(&bytes)
+                                .context("Invalid answer from the captcha window")
+                                .map(Some)
                         };
-                        return tokio::time::timeout(WAIT, async {
+                        let solved = tokio::time::timeout(WAIT, async {
                             tokio::select! {
                                 result = output => result,
-                                result = self.solution() => result,
+                                result = self.solution() => result.map(Some),
                             }
                         })
                         .await
-                        .context("Nobody solved the captcha in time. Try again.")?;
+                        .context("Nobody solved the captcha in time. Try again.")??;
+                        if let Some(solution) = solved {
+                            return Ok(solution);
+                        }
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                     Err(_) => bail!("Could not open the captcha window. Try again."),

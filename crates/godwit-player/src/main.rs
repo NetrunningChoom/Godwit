@@ -51,6 +51,11 @@ impl Kind {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // By the time main runs the dynamic loader has found every linked
+    // library, so exiting here tells the app the web view can load.
+    if args.first().map(String::as_str) == Some("--probe") {
+        std::process::exit(0);
+    }
     if args.first().map(String::as_str) == Some("--window") {
         run_window(&args[1..]);
     }

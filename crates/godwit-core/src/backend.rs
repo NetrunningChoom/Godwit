@@ -127,6 +127,17 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     #[test]
+    fn a_missing_web_view_library_is_named_with_its_packages() {
+        let text = SignInStopped::Exit(Some(LOADER_FAILED)).describe("Example");
+        assert!(text.contains("isn't installed"));
+        assert!(
+            text.contains("webkit2gtk4.1")
+                && text.contains("libwebkit2gtk-4.1-0")
+                && text.contains("webkit2gtk-4.1 (Arch)")
+        );
+        assert!(!SignInStopped::Exit(Some(3)).describe("Example").contains("installed"));
+    }
+    #[test]
     fn retry_after_honors_seconds_dates_and_overflow_without_early_retry() {
         use std::time::{Duration, SystemTime};
         assert_eq!(
@@ -182,8 +193,31 @@ mod tests {
 /// can be closed early (`kill` it to cancel).
 pub type SignInWindow = Arc<std::sync::Mutex<Option<std::process::Child>>>;
 
+/// The exit status of a program the dynamic loader could not start because a
+/// library it links is missing (the helper's web view library, for one).
+pub const LOADER_FAILED: i32 = 127;
+
+/// Packages that provide the helper's web view library on Linux.
+pub const WEB_VIEW_PACKAGES: &str =
+    "webkit2gtk4.1 (Fedora), libwebkit2gtk-4.1-0 (Debian, Ubuntu) or webkit2gtk-4.1 (Arch)";
+
+type HelperFinder = fn() -> Option<std::path::PathBuf>;
+static HELPER_FINDER: std::sync::OnceLock<HelperFinder> = std::sync::OnceLock::new();
+
+/// Registers how to find a helper that can run here (the app knows where it
+/// is unpacked and whether its web view library loads).
+pub fn register_helper_finder(finder: HelperFinder) {
+    let _ = HELPER_FINDER.set(finder);
+}
+
+/// The helper to open browser windows with, if one is registered and usable.
+pub fn helper() -> Option<std::path::PathBuf> {
+    HELPER_FINDER.get().and_then(|find| find())
+}
+
 /// Why a sign-in window gave no session: the helper's exit code (1: closed
-/// first, 2: not on this system), or that it couldn't start.
+/// first, 2: not on this system, 127: its web view library is missing), or
+/// that it couldn't start.
 #[derive(Debug)]
 pub enum SignInStopped {
     Start(std::io::Error),
@@ -197,6 +231,9 @@ impl SignInStopped {
             Self::Start(e) => format!("Couldn't open {network}'s sign-in window: {e}"),
             Self::Exit(Some(1) | None) => "The sign-in window was closed before signing in.".into(),
             Self::Exit(Some(2)) => format!("Signing in to {network} isn't available on this system yet."),
+            Self::Exit(Some(LOADER_FAILED)) => format!(
+                "{network}'s sign-in window needs a web view library (WebKitGTK 4.1) that isn't installed. Install {WEB_VIEW_PACKAGES}."
+            ),
             Self::Exit(Some(code)) => format!("{network}'s sign-in window stopped ({code})."),
         }
     }
