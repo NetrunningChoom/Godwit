@@ -20,6 +20,8 @@ export component EmojiPicker inherits Rectangle {
     width: 9 * 36px + 24px + 16px;
     // The top row on screen: the category bar marks its section.
     property <int> top: 0;
+    // The arrow keys moved the highlight (the mouse takes it back).
+    property <bool> keys: false;
     // The emoji the preview bar shows: the one last hovered (or the first
     // of the pack last picked); -1 until then.
     property <int> hover-row: -1;
@@ -39,17 +41,70 @@ export component EmojiPicker inherits Rectangle {
     property <int> preview-section: root.has-preview ? root.rows[root.preview-row].section : 0;
     property <string> preview-from: root.has-preview && root.preview.glyph == "" && root.preview-section < root.rows.length
         && root.rows[root.preview-section].header ? root.rows[root.preview-section].title : "";
+    // Moves the highlight: `dx` cells along (wrapping to the next or
+    // previous row), `dy` rows up or down (keeping the column), then scrolls
+    // it into view.
+    // The row the highlight moves to from (r, c).
+    pure function target-row(r: int, c: int, dx: int, dy: int) -> int {
+        return dy > 0 ? root.rows[r].below
+            : dy < 0 ? root.rows[r].above
+            : dx > 0 && c + 1 >= root.rows[r].cells.length ? root.rows[r].below
+            : dx < 0 && c <= 0 ? root.rows[r].above
+            : r;
+    }
+    function step(dx: int, dy: int) {
+        if !root.has-preview {
+            return;
+        }
+        root.keys = true;
+        // Stay put at either end of the list.
+        if root.target-row(root.preview-row, root.preview-col, dx, dy) < 0 {
+            return;
+        }
+        root.go(root.target-row(root.preview-row, root.preview-col, dx, dy), root.preview-row, root.preview-col, dx);
+    }
+    function go(nr: int, r: int, c: int, dx: int) {
+        root.hover-row = nr;
+        root.hover-col = nr == r ? c + dx
+            : dx > 0 ? 0
+            : dx < 0 ? root.rows[nr].cells.length - 1
+            : min(c, root.rows[nr].cells.length - 1);
+        if nr * 36px < -list.content-y {
+            list.content-y = -(nr * 36px);
+        } else if (nr + 1) * 36px > -list.content-y + list.visible-height {
+            list.content-y = -((nr + 1) * 36px - list.visible-height);
+        }
+    }
     height: 440px;
     border-radius: Theme.radius-lg;
     background: Theme.surface-high;
     drop-shadow-blur: 12px;
     drop-shadow-color: Theme.shadow;
     TouchArea { }
-    // Escape anywhere inside (the search too) closes the picker.
+    // Escape anywhere inside (the search too) closes the picker. The arrow
+    // keys move through the emoji and Enter picks the highlighted one (the
+    // first before any move); the official picker has no keyboard support
+    // beyond Tab (`EmojiPicker.tsx`), so this follows Godwit's switcher.
     FocusScope {
+        // Left and right belong to the search's caret unless it is empty.
+        capture-key-pressed(e) => {
+            if field.text == "" && (e.text == Key.LeftArrow || e.text == Key.RightArrow) {
+                root.step(e.text == Key.RightArrow ? 1 : -1, 0);
+                return accept;
+            }
+            reject
+        }
         key-pressed(e) => {
             if e.text == Key.Escape {
                 root.escape();
+                return accept;
+            }
+            if e.text == Key.DownArrow {
+                root.step(0, 1);
+                return accept;
+            }
+            if e.text == Key.UpArrow {
+                root.step(0, -1);
                 return accept;
             }
             reject
@@ -57,10 +112,16 @@ export component EmojiPicker inherits Rectangle {
     VerticalLayout {
         padding: Theme.space-4;
         spacing: Theme.space-3;
-        TextField {
+        field := TextField {
             placeholder: "Search for emojis...";
             autofocus: true;
-            edited(t) => { root.hover-row = -1; root.search(t); }
+            edited(t) => { root.hover-row = -1; root.keys = false; root.search(t); }
+            // Enter picks the highlighted emoji (the first one by default).
+            accepted => {
+                if root.has-preview {
+                    root.picked(root.preview-row, root.preview-col);
+                }
+            }
         }
         // The categories (each server's emoji, then the Unicode groups), as
         // Discord's picker: each is its first emoji; clicking jumps there.
@@ -126,7 +187,8 @@ export component EmojiPicker inherits Rectangle {
                     for cell[j] in row.cells: Rectangle {
                         width: 36px;
                         border-radius: Theme.radius-sm;
-                        background: pick.has-hover ? Theme.surface-highest : transparent;
+                        background: pick.has-hover || (root.keys && root.hover-row == i && root.hover-col == j)
+                            ? Theme.surface-highest : transparent;
                         if cell.has-image: Image {
                             width: 24px;
                             height: 24px;
@@ -138,6 +200,7 @@ export component EmojiPicker inherits Rectangle {
                             clicked => { root.picked(i, j); }
                             changed has-hover => {
                                 if self.has-hover {
+                                    root.keys = false;
                                     root.hover-row = i;
                                     root.hover-col = j;
                                 }

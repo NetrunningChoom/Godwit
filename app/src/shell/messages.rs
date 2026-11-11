@@ -333,6 +333,7 @@ impl Shell {
             (None, None) => picker::Allowed::All,
         };
         let rows = picker::rows(&custom, query, allowed);
+        let rows = self.picker.with_recent(rows, query);
         self.picker.set(rows, &mut self.images);
     }
 
@@ -354,6 +355,7 @@ impl Shell {
         let Some(pick) = self.picker.at(row, col).cloned() else {
             return;
         };
+        self.picker.remember(pick.clone());
         let target = self.picker_for.take();
         ui.set_picker_open(false);
         if self.picker_room.take() != self.app.state().selected {

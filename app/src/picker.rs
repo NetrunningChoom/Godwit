@@ -81,13 +81,13 @@ impl Allowed {
 /// The rows for `query` (empty: everything), with `custom` first; only the
 /// Unicode emoji the network has (`allowed`).
 pub fn rows(custom: &[&EmojiGroup], query: &str, allowed: Allowed) -> Vec<Row> {
-    let needle = query.trim().to_lowercase();
+    let needle = normalize(query);
     let known = |e: &&'static emojis::Emoji| allowed.has(e) && crate::emoji::drawn(e);
     let mut rows = Vec::new();
     let customs = |g: &EmojiGroup| -> Vec<Pick> {
         g.emoji
             .iter()
-            .filter(|e| needle.is_empty() || e.name.to_lowercase().contains(&needle))
+            .filter(|e| needle.is_empty() || match_rank(std::iter::once(&*e.name), &needle).is_some())
             .map(|e| Pick {
                 name: e.name.clone(),
                 glyph: "".into(),
@@ -112,15 +112,73 @@ pub fn rows(custom: &[&EmojiGroup], query: &str, allowed: Allowed) -> Vec<Row> {
         }
     } else {
         let mut cells: Vec<Pick> = custom.iter().flat_map(|g| customs(g)).collect();
-        cells.extend(
-            emojis::iter()
-                .filter(known)
-                .filter(|e| e.shortcodes().any(|s| s.contains(&needle)))
-                .map(unicode),
-        );
+        // Best matches first (exact, then prefix, then anywhere); the
+        // order within a rank stays the standard one.
+        let mut found: Vec<(u8, &'static emojis::Emoji)> = emojis::iter()
+            .filter(known)
+            .filter_map(|e| match_rank(e.shortcodes().chain(std::iter::once(e.name())), &needle).map(|r| (r, e)))
+            .collect();
+        found.sort_by_key(|(r, _)| *r);
+        cells.extend(found.into_iter().map(|(_, e)| unicode(e)));
         chunked(&mut rows, cells);
     }
     rows
+}
+
+/// A search term as the official picker compares it: case-insensitive, and
+/// ":thumbs up:", "thumbs up" and "thumbs_up" are the same (for-web's
+/// `EmojiPicker.tsx` matches names and shorthands case-insensitively; the
+/// colons and spaces are forgiven here for typed names).
+fn normalize(text: &str) -> String {
+    text.trim().trim_matches(':').to_lowercase().replace(' ', "_")
+}
+
+/// How well `needle` (already normalized) matches any of the names: 0 exact,
+/// 1 prefix, 2 contained, None for no match.
+fn match_rank<'a>(names: impl Iterator<Item = &'a str>, needle: &str) -> Option<u8> {
+    names
+        .filter_map(|n| {
+            let n = normalize(n);
+            if n == needle {
+                Some(0)
+            } else if n.starts_with(needle) {
+                Some(1)
+            } else if n.contains(needle) {
+                Some(2)
+            } else {
+                None
+            }
+        })
+        .min()
+}
+
+/// Each row's nearest emoji row above and below (-1 for none), so the arrow
+/// keys step over headings (and over empty sections).
+fn neighbours(rows: &[Row]) -> Vec<(i32, i32)> {
+    let cells: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| matches!(r, Row::Cells(_)))
+        .map(|(i, _)| i)
+        .collect();
+    let at = |i: usize| i32::try_from(i).unwrap_or(-1);
+    (0..rows.len())
+        .map(|i| {
+            let above = cells.iter().rev().find(|&&c| c < i).map_or(-1, |&c| at(c));
+            let below = cells.iter().find(|&&c| c > i).map_or(-1, |&c| at(c));
+            (above, below)
+        })
+        .collect()
+}
+
+/// Emoji picked lately, newest first, shown as the picker's first section.
+const RECENT_MAX: usize = 2 * COLUMNS;
+
+/// `pick` goes to the front of `recent` (once), keeping at most `RECENT_MAX`.
+fn remember(recent: &mut Vec<Pick>, pick: Pick) {
+    recent.retain(|p| p.reaction != pick.reaction);
+    recent.insert(0, pick);
+    recent.truncate(RECENT_MAX);
 }
 
 /// A category's heading (Yapfast's names for the Unicode groups).
@@ -149,6 +207,10 @@ pub struct Picker {
     complete: HashSet<usize>,
     /// Each row's section: the row of the heading above it.
     sections: Vec<usize>,
+    /// Each row's nearest emoji row above and below.
+    around: Vec<(i32, i32)>,
+    /// Picked this session (not kept across restarts), newest first.
+    recent: Vec<Pick>,
 }
 
 impl Picker {
@@ -159,7 +221,25 @@ impl Picker {
             wanted: HashSet::new(),
             complete: HashSet::new(),
             sections: Vec::new(),
+            around: Vec::new(),
+            recent: Vec::new(),
         }
+    }
+
+    /// `rows` with the recently used emoji in front (no search active).
+    pub fn with_recent(&self, mut rows: Vec<Row>, query: &str) -> Vec<Row> {
+        if query.trim().is_empty() && !self.recent.is_empty() {
+            let mut front = vec![Row::Header("Recently used".into())];
+            chunked(&mut front, self.recent.clone());
+            front.append(&mut rows);
+            return front;
+        }
+        rows
+    }
+
+    /// `pick` was chosen: it leads the recently used.
+    pub fn remember(&mut self, pick: Pick) {
+        remember(&mut self.recent, pick);
     }
 
     /// New contents (opened, or the search changed).
@@ -183,8 +263,10 @@ impl Picker {
             .rows
             .iter()
             .zip(&self.sections)
-            .map(|(r, s)| item(r, None, *s))
+            .enumerate()
+            .map(|(i, (r, s))| item(r, None, *s, self.around_of(i)))
             .collect();
+        self.around = neighbours(&self.rows);
         self.model.set_vec(items);
         // The category bar's icons are each section's first emoji: load
         // those rows now, before the screen's (asked last, so loaded first).
@@ -201,6 +283,10 @@ impl Picker {
             }
         }
         self.show(0, images);
+    }
+
+    fn around_of(&self, i: usize) -> (i32, i32) {
+        self.around.get(i).copied().unwrap_or((-1, -1))
     }
 
     /// The view is scrolled so `first` is the top row.
@@ -229,12 +315,13 @@ impl Picker {
     fn fill(&mut self, i: usize, images: &mut Images) {
         let Some(row) = self.rows.get(i) else { return };
         let section = self.sections.get(i).copied().unwrap_or(0);
+        let around = self.around_of(i);
         let (it, complete) = match row {
-            Row::Header(_) => (item(row, None, section), true),
+            Row::Header(_) => (item(row, None, section, around), true),
             Row::Cells(cells) => {
                 let pics: Vec<Option<Image>> = cells.iter().map(|c| images.get(&c.url, PICKER_EMOJI)).collect();
                 let complete = pics.iter().all(Option::is_some);
-                (item(row, Some(pics), section), complete)
+                (item(row, Some(pics), section, around), complete)
             }
         };
         if complete {
@@ -253,7 +340,7 @@ impl Picker {
     }
 }
 
-fn item(row: &Row, pics: Option<Vec<Option<Image>>>, section: usize) -> EmojiRowItem {
+fn item(row: &Row, pics: Option<Vec<Option<Image>>>, section: usize, around: (i32, i32)) -> EmojiRowItem {
     let section = i32::try_from(section).unwrap_or(0);
     match row {
         Row::Header(t) => EmojiRowItem {
@@ -261,6 +348,8 @@ fn item(row: &Row, pics: Option<Vec<Option<Image>>>, section: usize) -> EmojiRow
             title: t.as_ref().into(),
             cells: ModelRc::default(),
             section,
+            above: around.0,
+            below: around.1,
         },
         Row::Cells(cells) => {
             let pics = pics.unwrap_or_default();
@@ -283,6 +372,8 @@ fn item(row: &Row, pics: Option<Vec<Option<Image>>>, section: usize) -> EmojiRow
                 title: "".into(),
                 cells: ModelRc::new(VecModel::from(cells)),
                 section,
+                above: around.0,
+                below: around.1,
             }
         }
     }
@@ -316,6 +407,73 @@ mod tests {
         });
         assert_eq!(first.map(|p| &*p.reaction), Some("👍"));
         assert!(rows(&[], "no-such-emoji-name", Allowed::All).is_empty());
+    }
+
+    fn pick(code: &str) -> Pick {
+        Pick {
+            name: code.into(),
+            glyph: "".into(),
+            url: "".into(),
+            reaction: code.into(),
+            code: code.into(),
+        }
+    }
+
+    #[test]
+    fn search_forgives_case_spaces_and_colons_and_ranks_matches() {
+        let n = normalize(" :Thumbs Up: ");
+        assert_eq!(n, "thumbs_up");
+        assert_eq!(match_rank(["thumbs_up"].into_iter(), &n), Some(0));
+        assert_eq!(match_rank(["thumbs_up_sign"].into_iter(), &n), Some(1));
+        assert_eq!(match_rank(["big_thumbs_up"].into_iter(), &n), Some(2));
+        assert_eq!(match_rank(["smile"].into_iter(), &n), None);
+        // The best of several names counts.
+        assert_eq!(match_rank(["big_thumbs_up", "thumbs_up"].into_iter(), &n), Some(0));
+        // A full emoji name finds it, not only its shorthand.
+        let found = rows(&[], "thumbs up", Allowed::All);
+        assert!(
+            found
+                .iter()
+                .any(|r| matches!(r, Row::Cells(c) if c.iter().any(|p| &*p.reaction == "👍")))
+        );
+    }
+
+    #[test]
+    fn neighbours_skip_headings() {
+        let rows = vec![
+            Row::Header("a".into()),
+            Row::Cells(vec![pick("1")]),
+            Row::Header("b".into()),
+            Row::Header("empty".into()),
+            Row::Cells(vec![pick("2")]),
+        ];
+        let n = neighbours(&rows);
+        assert_eq!(n[1], (-1, 4));
+        assert_eq!(n[4], (1, -1));
+        assert_eq!(n[0], (-1, 1));
+        assert_eq!(n[3], (1, 4));
+    }
+
+    #[test]
+    fn recent_emoji_lead_once_and_are_capped() {
+        let mut recent = Vec::new();
+        remember(&mut recent, pick("a"));
+        remember(&mut recent, pick("b"));
+        remember(&mut recent, pick("a"));
+        let order: Vec<&str> = recent.iter().map(|p| &*p.reaction).collect();
+        assert_eq!(order, ["a", "b"]);
+        for i in 0..40 {
+            remember(&mut recent, pick(&i.to_string()));
+        }
+        assert_eq!(recent.len(), RECENT_MAX);
+        assert_eq!(&*recent[0].reaction, "39");
+
+        let mut picker = Picker::new();
+        picker.remember(pick("x"));
+        let with = picker.with_recent(Vec::new(), "");
+        assert!(matches!(&with[0], Row::Header(t) if &**t == "Recently used"));
+        // Not while searching.
+        assert!(picker.with_recent(Vec::new(), "x").is_empty());
     }
 
     #[test]

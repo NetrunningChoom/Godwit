@@ -656,6 +656,9 @@ export struct EmojiRowItem {
     cells: [EmojiCellItem],
     // The row of its section's heading (the category bar marks it).
     section: int,
+    // The nearest emoji row above and below (-1 for none): the arrow keys step there.
+    above: int,
+    below: int,
 }
 
 // A quick-switcher result. kind: as RoomItem.
