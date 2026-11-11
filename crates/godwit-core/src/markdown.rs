@@ -616,6 +616,45 @@ mod tests {
     }
 
     #[test]
+    fn adjacent_emoji_shortcodes() {
+        let a = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+        let b = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+        let ids = |s: &str| -> Vec<String> {
+            parse_inline(s)
+                .into_iter()
+                .filter_map(|i| match i.kind {
+                    Kind::Emoji(id) => Some(id),
+                    _ => None,
+                })
+                .collect()
+        };
+        for sep in ["", " "] {
+            assert_eq!(ids(&format!(":{a}:{sep}:{a}:")), [a, a]);
+            assert_eq!(ids(&format!(":{a}:{sep}:{b}:{sep}:{a}:")), [a, b, a]);
+            assert_eq!(
+                parse_inline(&format!(":smile:{sep}:smile:"))[0].text,
+                format!("😄{sep}😄")
+            );
+            assert_eq!(
+                parse_inline(&format!(":smile:{sep}:smile:{sep}:smile:"))[0].text,
+                format!("😄{sep}😄{sep}😄")
+            );
+        }
+        assert_eq!(parse_inline("hi :smile::wave: yo")[0].text, "hi 😄👋 yo");
+        assert_eq!(ids(&format!("x:{a}::{a}:y")), [a, a]);
+        assert_eq!(parse_inline("a::b")[0].text, "a::b");
+        assert_eq!(parse_inline("`:smile::smile:`")[0].text, ":smile::smile:");
+        let only = |s: &str| match parse(s).as_slice() {
+            [Block::Paragraph(inl)] => emoji_only(inl).map(|v| v.len()),
+            _ => None,
+        };
+        assert_eq!(only(&format!(":{a}::{a}:")), Some(2));
+        assert_eq!(only(&format!(":{a}::{a}::{a}:")), Some(3));
+        assert_eq!(only(":smile::smile:"), Some(2));
+        assert_eq!(only(":smile: :smile: :smile:"), Some(3));
+    }
+
+    #[test]
     fn unicode_shortcodes() {
         assert_eq!(
             parse_inline("hi :wave: and :not_a_real_one:")[0].text,

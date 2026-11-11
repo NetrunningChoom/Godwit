@@ -199,8 +199,11 @@ fn line(text: &str, names: &impl Names, out: &mut Out) {
             ':' => {
                 // `:name:` or `:name::skin-tone-3:`.
                 let mut end = (i + 1..chars.len()).find(|&j| chars[j] == ':');
+                // Only a `::skin-tone-N:` suffix continues the name: `:a::b:` is two emoji.
+                let tone: Vec<char> = "skin-tone-".chars().collect();
                 if let Some(e) = end
                     && chars.get(e + 1) == Some(&':')
+                    && chars.get(e + 2..e + 2 + tone.len()) == Some(tone.as_slice())
                 {
                     end = (e + 2..chars.len()).find(|&j| chars[j] == ':');
                 }
@@ -507,6 +510,18 @@ mod tests {
         let c = conv("*bold* _it_ ~gone~ `a &lt; b` &amp; 2*3");
         assert_eq!(c.rich, "**bold** *it* ~~gone~~ `a < b` \\& 2\\*3");
         assert_eq!(c.plain, "bold it gone a < b & 2*3");
+    }
+
+    #[test]
+    fn adjacent_emoji_are_each_converted() {
+        assert_eq!(conv(":smile::smile:").plain, "😄😄");
+        assert_eq!(conv(":smile::smile::smile:").plain, "😄😄😄");
+        assert_eq!(conv(":smile: :smile:").plain, "😄 😄");
+        assert_eq!(conv(":wave::skin-tone-3::smile:").plain, "👋🏼😄");
+        let c = conv(":celebrate::celebrate:");
+        assert_eq!(c.plain, ":party::party:");
+        assert_eq!(c.rich.matches("godwit://emoji/").count(), 2);
+        assert_eq!(conv("a::b").plain, "a::b");
     }
 
     #[test]

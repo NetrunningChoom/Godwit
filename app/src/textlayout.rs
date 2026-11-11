@@ -742,6 +742,20 @@ mod tests {
     }
 
     #[test]
+    fn adjacent_custom_emoji_each_get_a_picture() {
+        let one = godwit_core::rich::emoji("aww_yeah", "https://x.example/a.png");
+        for sep in ["", " "] {
+            let p = Paragraph::rich(&format!("{one}{sep}{one}{sep}{one}"), &none);
+            assert_eq!(p.emoji.len(), 3, "{sep:?}");
+            assert!(
+                p.emoji.iter().all(|e| &*e.text == ":aww_yeah:"),
+                "{:?}",
+                p.emoji.iter().map(|e| e.text.to_string()).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
     fn rich_text_keeps_its_styles_links_and_lists() {
         let p = Paragraph::rich("**bold** *it* [site](https://x.example) `c`\\\nnext", &none);
         assert_eq!(p.text, "bold it site c\nnext");
