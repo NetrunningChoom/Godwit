@@ -268,8 +268,16 @@ async fn call(
         }
     };
     let input_gain = Arc::new(AtomicU32::new(settings.input_volume.to_bits()));
+    let chain = Arc::new(AtomicU32::new(Chain::of(&settings).pack()));
     let (mic_tx, mic_rx) = mpsc::unbounded_channel::<Vec<f32>>();
-    let engine = match start_engine(source, &settings, input_gain.clone(), mic_rx, render_rx, loud.clone()) {
+    let engine = match start_engine(
+        source,
+        chain.clone(),
+        input_gain.clone(),
+        mic_rx,
+        render_rx,
+        loud.clone(),
+    ) {
         Ok(engine) => engine,
         Err(error) => {
             drop(output);
@@ -375,6 +383,7 @@ async fn call(
                 VoiceCmd::Update(new) => {
                     lock(&mixer).apply(new);
                     input_gain.store(new.input_volume.to_bits(), Ordering::Relaxed);
+                    chain.store(Chain::of(new).pack(), Ordering::Relaxed);
                     false // Device changes run after negotiation finishes.
                 }
                 VoiceCmd::SetCamera { active: false, .. } => {
@@ -519,8 +528,10 @@ async fn call(
                 Some(VoiceCmd::Update(new)) => {
                     lock(&mixer).apply(&new);
                     input_gain.store(new.input_volume.to_bits(), Ordering::Relaxed);
+                    chain.store(Chain::of(&new).pack(), Ordering::Relaxed);
+                    let restart = restart_for(&settings, &new);
                     // Devices switch live; keep the old one if the new one won't open.
-                    if new.output_device != settings.output_device {
+                    if restart.output {
                         drop(output.take());
                         match Output::start(new.output_device.clone(), mixer.clone(), render_tx.clone()) {
                             Ok(o) => output = Some(o),
@@ -533,7 +544,7 @@ async fn call(
                             }
                         }
                     }
-                    if new.input_device != settings.input_device {
+                    if restart.input {
                         match Mic::start(new.input_device.clone(), mic_tx.clone()) {
                             Ok(m) => mic = Some(m),
                             Err(e) => eprintln!("error: switching microphone: {e:#}"),
@@ -1004,7 +1015,7 @@ fn to_i16(s: f32) -> i16 {
 /// chain, then hands frames to LiveKit.
 pub(crate) fn start_engine(
     source: NativeAudioSource,
-    settings: &VoiceSettings,
+    chain: Arc<AtomicU32>,
     input_gain: Arc<AtomicU32>,
     mic_rx: mpsc::UnboundedReceiver<Vec<f32>>,
     render_rx: std::sync::mpsc::Receiver<Vec<i16>>,
@@ -1024,7 +1035,7 @@ pub(crate) fn start_engine(
             futures_executor::block_on(source.capture_frame(&af)),
         );
     };
-    start_engine_with(Box::new(sink), settings, input_gain, mic_rx, render_rx, loud)
+    start_engine_with(Box::new(sink), chain, input_gain, mic_rx, render_rx, loud)
 }
 
 /// Where the processing thread hands each processed 10 ms frame.
@@ -1035,21 +1046,18 @@ pub(crate) type FrameSink = Box<dyn FnMut(&[i16]) + Send>;
 /// audio themselves (Discord's voice servers take raw Opus over UDP).
 pub(crate) fn start_engine_with(
     mut sink: FrameSink,
-    settings: &VoiceSettings,
+    chain: Arc<AtomicU32>,
     input_gain: Arc<AtomicU32>,
     mut mic_rx: mpsc::UnboundedReceiver<Vec<f32>>,
     render_rx: std::sync::mpsc::Receiver<Vec<i16>>,
     loud: Loudness,
 ) -> Result<std::thread::JoinHandle<()>> {
-    let mode = settings.noise_suppression;
-    let (echo, agc) = (settings.echo_cancellation, settings.auto_gain_control);
     let handle = std::thread::Builder::new().name("voice-dsp".into()).spawn(move || {
-        let mut apm = AudioProcessingModule::new(echo, agc, true, mode == NoiseSuppression::WebRtc);
-        // A starting hint; WebRTC's echo canceller estimates the real delay itself.
-        log_error("setting echo cancellation delay", apm.set_stream_delay_ms(40));
+        let mut current = Chain::unpack(chain.load(Ordering::Relaxed));
+        let mut apm = build_apm(current);
         let mut reverse_errors = ErrorLog::default();
         let mut processing_errors = ErrorLog::default();
-        let mut processor = Processor::new(mode, 1.0);
+        let mut processor = Processor::new(current.mode, 1.0);
         let mut pending: Vec<f32> = Vec::with_capacity(FRAME * 2);
         let mut processed: Vec<f32> = Vec::with_capacity(FRAME * 2);
         let mut out: Vec<i16> = Vec::with_capacity(FRAME);
@@ -1060,6 +1068,17 @@ pub(crate) fn start_engine_with(
                 if let Ok(newer) = mic_rx.try_recv() {
                     chunk = newer;
                 }
+            }
+            // A changed noise mode, echo or gain setting rebuilds only this
+            // chain, between two chunks; capture, output and the call go on.
+            let wanted = Chain::unpack(chain.load(Ordering::Relaxed));
+            if wanted != current {
+                current = wanted;
+                apm = build_apm(current);
+                processor = Processor::new(current.mode, 1.0);
+                // Half-processed audio belongs to the old chain.
+                pending.clear();
+                out.clear();
             }
             while let Ok(mut reference) = render_rx.try_recv() {
                 reverse_errors.once(
@@ -1081,7 +1100,7 @@ pub(crate) fn start_engine_with(
                 for &s in &processed {
                     out.push(to_i16(s));
                     if out.len() == FRAME {
-                        let voice = mode != NoiseSuppression::Enhanced || processor.voice_probability > 0.5;
+                        let voice = current.mode != NoiseSuppression::Enhanced || processor.voice_probability > 0.5;
                         if voice && is_speech(&out) {
                             lock(&loud).insert(LOCAL.to_string(), Instant::now());
                         }
@@ -1093,6 +1112,151 @@ pub(crate) fn start_engine_with(
         }
     })?;
     Ok(handle)
+}
+
+/// What the processing thread rebuilds itself from: the settings that shape
+/// the audio chain (not the volumes, which it reads every frame).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Chain {
+    pub(crate) mode: NoiseSuppression,
+    pub(crate) echo: bool,
+    pub(crate) agc: bool,
+}
+
+impl Chain {
+    pub(crate) fn of(s: &VoiceSettings) -> Self {
+        Self {
+            mode: s.noise_suppression,
+            echo: s.echo_cancellation,
+            agc: s.auto_gain_control,
+        }
+    }
+
+    pub(crate) fn pack(self) -> u32 {
+        let mode = match self.mode {
+            NoiseSuppression::Disabled => 0,
+            NoiseSuppression::WebRtc => 1,
+            NoiseSuppression::Enhanced => 2,
+        };
+        mode | (u32::from(self.echo) << 2) | (u32::from(self.agc) << 3)
+    }
+
+    pub(crate) fn unpack(bits: u32) -> Self {
+        let mode = match bits & 3 {
+            0 => NoiseSuppression::Disabled,
+            1 => NoiseSuppression::WebRtc,
+            _ => NoiseSuppression::Enhanced,
+        };
+        Self {
+            mode,
+            echo: bits & 4 != 0,
+            agc: bits & 8 != 0,
+        }
+    }
+}
+
+fn build_apm(chain: Chain) -> AudioProcessingModule {
+    let mut apm = AudioProcessingModule::new(chain.echo, chain.agc, true, chain.mode == NoiseSuppression::WebRtc);
+    // A starting hint; WebRTC's echo canceller estimates the real delay itself.
+    log_error("setting echo cancellation delay", apm.set_stream_delay_ms(40));
+    apm
+}
+
+/// What a settings change needs restarted in a running call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Restart {
+    pub(crate) input: bool,
+    pub(crate) output: bool,
+    pub(crate) chain: bool,
+}
+
+pub(crate) fn restart_for(old: &VoiceSettings, new: &VoiceSettings) -> Restart {
+    Restart {
+        input: old.input_device != new.input_device,
+        output: old.output_device != new.output_device,
+        chain: Chain::of(old) != Chain::of(new),
+    }
+}
+
+/// The devices of a call that has no room to manage them itself (Steam's
+/// peer, Discord's raw audio): switched live when the settings change.
+pub(crate) struct Devices {
+    settings: VoiceSettings,
+    mic: Option<Mic>,
+    mic_tx: Option<mpsc::UnboundedSender<Vec<f32>>>,
+    speakers: Option<Output>,
+    render_tx: std::sync::mpsc::Sender<Vec<i16>>,
+    mixer: Arc<Mutex<Mixer>>,
+}
+
+impl Devices {
+    pub(crate) fn new(
+        settings: &VoiceSettings,
+        mic: Mic,
+        mic_tx: mpsc::UnboundedSender<Vec<f32>>,
+        speakers: Output,
+        render_tx: std::sync::mpsc::Sender<Vec<i16>>,
+        mixer: Arc<Mutex<Mixer>>,
+    ) -> Self {
+        Self {
+            settings: settings.clone(),
+            mic: Some(mic),
+            mic_tx: Some(mic_tx),
+            speakers: Some(speakers),
+            render_tx,
+            mixer,
+        }
+    }
+
+    /// Switches to `new`'s devices; a device that won't open leaves the old one running.
+    pub(crate) fn switch(&mut self, new: &VoiceSettings) {
+        let restart = restart_for(&self.settings, new);
+        if restart.output {
+            drop(self.speakers.take());
+            match Output::start(new.output_device.clone(), self.mixer.clone(), self.render_tx.clone()) {
+                Ok(o) => self.speakers = Some(o),
+                Err(e) => {
+                    eprintln!("error: switching speakers: {e:#}");
+                    match Output::start(
+                        self.settings.output_device.clone(),
+                        self.mixer.clone(),
+                        self.render_tx.clone(),
+                    ) {
+                        Ok(o) => self.speakers = Some(o),
+                        Err(error) => log_error("restoring speakers", Err::<(), _>(error)),
+                    }
+                }
+            }
+        }
+        if restart.input
+            && let Some(tx) = self.mic_tx.clone()
+        {
+            match Mic::start(new.input_device.clone(), tx) {
+                Ok(m) => self.mic = Some(m),
+                Err(e) => eprintln!("error: switching microphone: {e:#}"),
+            }
+        }
+        // A device that failed to open keeps its old name, so a later change retries from the right state.
+        if self.speakers.is_some() && restart.output {
+            self.settings.output_device = new.output_device.clone();
+        }
+        if restart.input && self.mic.is_some() {
+            self.settings.input_device = new.input_device.clone();
+        }
+        self.settings.noise_suppression = new.noise_suppression;
+        self.settings.echo_cancellation = new.echo_cancellation;
+        self.settings.auto_gain_control = new.auto_gain_control;
+    }
+
+    /// Stops capture and ends the processing thread's input.
+    pub(crate) fn close_input(&mut self) {
+        drop(self.mic.take());
+        drop(self.mic_tx.take());
+    }
+
+    pub(crate) fn close_output(&mut self) {
+        drop(self.speakers.take());
+    }
 }
 
 /// Per-participant playback buffers and gains, mixed by the output stream.
@@ -1567,6 +1731,71 @@ impl Resampler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chain_round_trips_through_its_packed_form() {
+        for mode in [
+            NoiseSuppression::Disabled,
+            NoiseSuppression::WebRtc,
+            NoiseSuppression::Enhanced,
+        ] {
+            for (echo, agc) in [(false, false), (true, false), (false, true), (true, true)] {
+                let chain = Chain { mode, echo, agc };
+                assert_eq!(Chain::unpack(chain.pack()), chain);
+            }
+        }
+    }
+
+    #[test]
+    fn restart_names_only_what_changed() {
+        let old = VoiceSettings::default();
+        assert_eq!(
+            restart_for(&old, &old),
+            Restart {
+                input: false,
+                output: false,
+                chain: false
+            }
+        );
+
+        let mut new = old.clone();
+        new.noise_suppression = NoiseSuppression::WebRtc;
+        assert_eq!(
+            restart_for(&old, &new),
+            Restart {
+                input: false,
+                output: false,
+                chain: true
+            }
+        );
+
+        let mut new = old.clone();
+        new.input_device = Some("mic".into());
+        assert_eq!(
+            restart_for(&old, &new),
+            Restart {
+                input: true,
+                output: false,
+                chain: false
+            }
+        );
+
+        let mut new = old.clone();
+        new.output_device = Some("speakers".into());
+        new.input_volume = 2.0;
+        assert_eq!(
+            restart_for(&old, &new),
+            Restart {
+                input: false,
+                output: true,
+                chain: false
+            }
+        );
+
+        let mut new = old.clone();
+        new.echo_cancellation = !old.echo_cancellation;
+        assert!(restart_for(&old, &new).chain);
+    }
 
     #[test]
     fn voice_task_can_be_spawned_on_the_network_runtime() {

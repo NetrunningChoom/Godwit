@@ -645,7 +645,7 @@ export component Settings inherits Rectangle {
                         label: "Always ask for screen share quality";
                         Toggle { y: (parent.height - self.height) / 2; checked: root.screen-quality-ask; toggled(on) => { root.screen-quality-ask = on; root.changed(); } }
                     }
-                    Text { text: "Noise suppression (applies from the next call)"; color: Theme.on-surface; wrap: word-wrap; }
+                    Text { text: "Noise suppression"; color: Theme.on-surface; wrap: word-wrap; }
                     Select { model: CallAudio.noise-modes; current-index <=> root.noise-index; selected => { root.changed(); } }
                     Row {
                         label: "Echo cancellation";

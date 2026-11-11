@@ -25,7 +25,7 @@ use livekit::webrtc::peer_connection_factory::{PeerConnectionFactory, RtcConfigu
 use livekit::webrtc::session_description::{SdpType, SessionDescription};
 use tokio::sync::mpsc;
 
-use super::call::{LOCAL, Loudness, Mic, Mixer, Output, VoiceSettings, play_rtc, start_engine};
+use super::call::{Chain, Devices, LOCAL, Loudness, Mic, Mixer, Output, VoiceSettings, play_rtc, start_engine};
 use super::dsp::SAMPLE_RATE;
 use crate::sync::lock;
 
@@ -52,10 +52,9 @@ pub struct Peer {
     players: HashMap<String, tokio::task::JoinHandle<()>>,
     // Dropped in this order: capture stops, then the processing thread ends,
     // then the speakers close.
-    mic: Option<Mic>,
-    mic_tx: Option<mpsc::UnboundedSender<Vec<f32>>>,
+    devices: Mutex<Devices>,
+    chain: Arc<AtomicU32>,
     engine: Option<std::thread::JoinHandle<()>>,
-    output: Option<Output>,
     _factory: PeerConnectionFactory,
 }
 
@@ -73,14 +72,15 @@ impl Peer {
         let mixer = Arc::new(Mutex::new(Mixer::default()));
         lock(&mixer).apply(settings);
         let (render_tx, render_rx) = std::sync::mpsc::channel::<Vec<i16>>();
-        let output = Output::start(settings.output_device.clone(), mixer.clone(), render_tx)?;
+        let output = Output::start(settings.output_device.clone(), mixer.clone(), render_tx.clone())?;
 
         let source = NativeAudioSource::new(AudioSourceOptions::default(), SAMPLE_RATE, 1, 0);
         let input_gain = Arc::new(AtomicU32::new(settings.input_volume.to_bits()));
+        let chain = Arc::new(AtomicU32::new(Chain::of(settings).pack()));
         let (mic_tx, mic_rx) = mpsc::unbounded_channel::<Vec<f32>>();
         let engine = start_engine(
             source.clone(),
-            settings,
+            chain.clone(),
             input_gain.clone(),
             mic_rx,
             render_rx,
@@ -112,6 +112,7 @@ impl Peer {
             });
         })));
 
+        let devices_mixer = mixer.clone();
         Ok(Self {
             pc,
             mic_track,
@@ -119,10 +120,9 @@ impl Peer {
             loud,
             input_gain,
             players: HashMap::new(),
-            mic: Some(mic),
-            mic_tx: Some(mic_tx),
+            devices: Mutex::new(Devices::new(settings, mic, mic_tx, output, render_tx, devices_mixer)),
+            chain,
             engine: Some(engine),
-            output: Some(output),
             _factory: factory,
         })
     }
@@ -244,11 +244,13 @@ impl Peer {
         lock(&self.mixer).deafened = deafened;
     }
 
-    /// Volumes from new settings (devices stay as they were for this call).
+    /// New settings mid-call: volumes, the noise mode and the devices all apply at once.
     pub fn update(&self, settings: &VoiceSettings) {
         lock(&self.mixer).apply(settings);
         self.input_gain
             .store(settings.input_volume.to_bits(), Ordering::Relaxed);
+        self.chain.store(Chain::of(settings).pack(), Ordering::Relaxed);
+        lock(&self.devices).switch(settings);
     }
 }
 
@@ -259,11 +261,10 @@ impl Drop for Peer {
             player.abort();
         }
         // Closing the microphone channel ends the processing thread.
-        drop(self.mic.take());
-        drop(self.mic_tx.take());
+        lock(&self.devices).close_input();
         if let Some(engine) = self.engine.take() {
             let _ = engine.join();
         }
-        drop(self.output.take());
+        lock(&self.devices).close_output();
     }
 }
