@@ -272,6 +272,23 @@ export component Warning inherits Rectangle {
     }
 }
 
+// The hover tooltip's bubble. Slint opens a Tooltip's popup at the pointer, so
+// the bubble sits below a transparent gap and never covers what is hovered.
+export component TipBubble inherits Rectangle {
+    in property <string> text;
+    width: bubble.width;
+    height: bubble.y + bubble.height;
+    background: transparent;
+    bubble := Rectangle {
+        y: Theme.tip-gap;
+        width: tip-label.preferred-width + 16px;
+        height: tip-label.preferred-height + 8px;
+        border-radius: Theme.radius-xs;
+        background: Theme.surface-highest;
+        tip-label := Text { x: 8px; y: 4px; text: root.text; color: Theme.on-surface; font-size: Theme.text-small; }
+    }
+}
+
 export component IconButton inherits Rectangle {
     in property <string> glyph;
     in property <string> tooltip;
@@ -292,13 +309,7 @@ export component IconButton inherits Rectangle {
         clicked => { root.clicked(); }
     }
     if root.tooltip != "": Tooltip {
-        Rectangle {
-            width: tip-label.preferred-width + 16px;
-            height: tip-label.preferred-height + 8px;
-            border-radius: Theme.radius-xs;
-            background: Theme.surface-highest;
-            tip-label := Text { text: root.tooltip; color: Theme.on-surface; font-size: Theme.text-small; }
-        }
+        TipBubble { text: root.tooltip; }
     }
 }
 
@@ -328,13 +339,7 @@ export component ImageIconButton inherits Rectangle {
         clicked => { root.clicked(); }
     }
     if root.tooltip != "": Tooltip {
-        Rectangle {
-            width: tip-label.preferred-width + 16px;
-            height: tip-label.preferred-height + 8px;
-            border-radius: Theme.radius-xs;
-            background: Theme.surface-highest;
-            tip-label := Text { text: root.tooltip; color: Theme.on-surface; font-size: Theme.text-small; }
-        }
+        TipBubble { text: root.tooltip; }
     }
 }
 

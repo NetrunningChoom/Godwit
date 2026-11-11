@@ -3,7 +3,7 @@
 
 import { Theme, Icons, Icon } from "theme.slint";
 import { Anim, Players, Select, MessageItem, ReactionItem } from "types.slint";
-import { Avatar, IconButton, Button, MenuPanel, MenuPlace, MenuRow, MenuDivider, EmojiText } from "widgets.slint";
+import { Avatar, TipBubble, IconButton, Button, MenuPanel, MenuPlace, MenuRow, MenuDivider, EmojiText } from "widgets.slint";
 import { TextBlock } from "textblock.slint";
 import { AttachmentView, EmbedMedia, EmbedCard, InviteCard, ActivityCard } from "message-media.slint";
 
@@ -243,14 +243,8 @@ export component MessageRow inherits Rectangle {
                         if e.has-image: Image { width: parent.width; height: parent.height; source: e.anim >= 0 ? Anim.frames[e.anim] : e.image; }
                         if !e.has-image: Text { text: e.glyph; font-size: parent.height * 0.8; color: Theme.on-surface; }
                             Tooltip {
-                                Rectangle {
-                                    width: tip.preferred-width + 16px;
-                                    height: tip.preferred-height + 8px;
-                                    border-radius: Theme.radius-xs;
-                                    background: Theme.surface-highest;
-                                    tip := Text { text: e.name; color: Theme.on-surface; font-size: Theme.text-small; }
-                                }
-                            }
+ TipBubble { text: e.name; }
+ }
                         }
                     }
                     if message.jumbo.length == 0: VerticalLayout {

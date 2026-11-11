@@ -6,7 +6,7 @@
 // lists and the current picks are the ones Settings shows; Rust keeps both
 // in step.
 import { Theme, Icons, Icon } from "theme.slint";
-import { MenuPanel, MenuRow, MenuDivider, MenuPlace } from "widgets.slint";
+import { TipBubble, MenuPanel, MenuRow, MenuDivider, MenuPlace } from "widgets.slint";
 
 export global CallAudio {
     in property <[string]> inputs;
@@ -82,13 +82,7 @@ export component AudioMenuArrow inherits Rectangle {
         }
     }
     if root.tooltip != "": Tooltip {
-        Rectangle {
-            width: tip-label.preferred-width + 16px;
-            height: tip-label.preferred-height + 8px;
-            border-radius: Theme.radius-xs;
-            background: Theme.surface-highest;
-            tip-label := Text { text: root.tooltip; color: Theme.on-surface; font-size: Theme.text-small; }
-        }
+        TipBubble { text: root.tooltip; }
     }
 
     pop := PopupWindow {

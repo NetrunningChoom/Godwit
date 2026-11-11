@@ -4,7 +4,7 @@
 import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { EmojiRowItem, EmojiCellItem } from "types.slint";
-import { TextField } from "widgets.slint";
+import { TextField, TipBubble } from "widgets.slint";
 
 // The emoji picker, as Godwit's: a search, then 36 px cells nine to a row.
 // Rows are uniform, so the scroll position says which are on screen.
@@ -207,14 +207,8 @@ export component EmojiPicker inherits Rectangle {
                             }
                         }
                         Tooltip {
-                            Rectangle {
-                                width: tip.preferred-width + 16px;
-                                height: tip.preferred-height + 8px;
-                                border-radius: Theme.radius-xs;
-                                background: Theme.surface-highest;
-                                tip := Text { text: cell.name; color: Theme.on-surface; font-size: Theme.text-small; }
-                            }
-                        }
+ TipBubble { text: cell.name; }
+ }
                     }
                 }
             }
