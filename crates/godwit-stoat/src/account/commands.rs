@@ -851,7 +851,7 @@ impl StoatAccount {
                 self.sync_rooms(&mut out);
                 out
             }
-            Command::LoadThreads { .. } | Command::LoadForum { .. }
+            Command::SetActivity(_) | Command::LoadThreads { .. } | Command::LoadForum { .. }
             | Command::LoadServerEvents { .. } | Command::SetServerEventInterest { .. } | Command::LoadModerationLog { .. } => Vec::new(),
         }
     }
