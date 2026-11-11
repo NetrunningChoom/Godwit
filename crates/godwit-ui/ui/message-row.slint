@@ -464,7 +464,7 @@ export component MessageRow inherits Rectangle {
         x: MenuPlace.fit-x(root.menu-x, 220px, root.absolute-position.x);
         y: MenuPlace.fit-y(root.menu-y, root.menu-h, root.absolute-position.y);
         MenuPanel {
-            max-height: MenuPlace.limit();
+            menu-max-height: MenuPlace.limit();
             dismissed => { menu.close(); }
             // On a link: open it (after the usual question) or copy its address.
             if root.menu-link != "": MenuRow { glyph: Icons.open-in-new; label: "Open link"; clicked => { root.link-clicked(root.menu-link); } }

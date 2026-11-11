@@ -21,7 +21,7 @@ export component FolderCreate inherits Dialog {
     // A long list scrolls inside the card.
     Flickable {
         height: min(list.preferred-height, 320px);
-        viewport-height: list.preferred-height;
+        content-height: list.preferred-height;
         list := VerticalLayout {
             width: parent.width;
             spacing: Theme.space-1;

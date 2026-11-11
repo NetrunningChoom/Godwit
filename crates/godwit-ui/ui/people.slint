@@ -236,7 +236,7 @@ export component People inherits Rectangle {
         x: MenuPlace.fit-x(root.menu-x, 220px, root.absolute-position.x);
         y: MenuPlace.fit-y(root.menu-y, MenuPlace.rows-h(5, 1), root.absolute-position.y);
         MenuPanel {
-            max-height: MenuPlace.limit();
+            menu-max-height: MenuPlace.limit();
             dismissed => { person-menu.close(); }
             if root.menu-person >= 0 && root.menu-person < root.people.length: MenuRow {
                 glyph: Icons.link;

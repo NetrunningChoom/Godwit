@@ -207,7 +207,7 @@ component RoomRow inherits Rectangle {
         // from its child's, and with only `if` children it had none, so
         // the menu opened 0×0 (invisible, and the next click closed it).
         MenuPanel {
-            max-height: MenuPlace.limit();
+            menu-max-height: MenuPlace.limit();
             dismissed => { room-menu.close(); }
             // A category's menu: create in it, move it, and (Manage Channels
             // on it) rename or delete it in its settings.
@@ -264,7 +264,7 @@ component RoomRow inherits Rectangle {
         x: MenuPlace.fit-x(root.menu-x, 260px, root.absolute-position.x);
         y: MenuPlace.fit-y(root.menu-y, MenuPlace.rows-h(6, 0), root.absolute-position.y);
         MenuPanel {
-            max-height: MenuPlace.limit();
+            menu-max-height: MenuPlace.limit();
             dismissed => { mute-menu.close(); }
             MenuRow { glyph: Icons.volume-off; label: "For 15 minutes"; clicked => { root.menu(20); } }
             MenuRow { glyph: Icons.volume-off; label: "For 1 hour"; clicked => { root.menu(21); } }

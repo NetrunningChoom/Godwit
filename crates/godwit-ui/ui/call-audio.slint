@@ -94,7 +94,7 @@ export component AudioMenuArrow inherits Rectangle {
         MenuPanel {
             width: root.menu-w;
             height: root.menu-h;
-            max-height: root.menu-h;
+            menu-max-height: root.menu-h;
             dismissed => { pop.close(); }
             MenuHeading { text: root.heading; }
             if root.devices.length == 0: MenuRow {

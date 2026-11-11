@@ -384,7 +384,7 @@ export component Rail inherits Rectangle {
         width: 200px;
         MenuPanel {
             width: parent.width;
-            max-height: MenuPlace.limit();
+            menu-max-height: MenuPlace.limit();
             dismissed => { server-menu.close(); }
             if root.menu-can-invite: MenuRow { glyph: Icons.link; label: "Invite people"; clicked => { root.server-invite(); } }
             MenuRow { glyph: Icons.unread; label: "Mark as read"; clicked => { root.server-mark-read(); } }
@@ -415,7 +415,7 @@ export component Rail inherits Rectangle {
         width: 220px;
         ProfileMenu {
             width: parent.width;
-            max-height: MenuPlace.limit();
+            menu-max-height: MenuPlace.limit();
             dismissed => { profile-menu.close(); }
             profiles: root.profiles;
             choose(i) => { root.switch-profile(i); }

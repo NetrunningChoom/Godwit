@@ -796,11 +796,11 @@ export component ConfirmDialog inherits Dialog {
 // 3 px shadow. Put MenuRows (and MenuDividers) inside.
 export component MenuPanel inherits Rectangle {
     // Hosts pass MenuPlace.limit(): a menu taller than the window scrolls.
-    in property <length> max-height: 100000px;
+    in property <length> menu-max-height: 100000px;
     // Esc was pressed; the host closes its PopupWindow.
     callback dismissed;
     width: max(220px, rows.preferred-width);
-    height: min(rows.preferred-height, root.max-height);
+    height: min(rows.preferred-height, root.menu-max-height);
     border-radius: Theme.radius-xs;
     background: Theme.surface;
     drop-shadow-blur: 3px;
@@ -812,7 +812,7 @@ export component MenuPanel inherits Rectangle {
             reject
         }
         Flickable {
-            viewport-height: rows.preferred-height;
+            content-height: rows.preferred-height;
             rows := VerticalLayout {
                 width: root.width;
                 padding-top: Theme.space-2;
@@ -838,25 +838,25 @@ export global MenuPlace {
     in-out property <length> window-w;
     in-out property <length> window-h;
     out property <length> margin: Theme.space-2;
-    pure function fit(pos: length, size: length, origin: length, win: length) -> length {
+    pure public function fit(pos: length, size: length, origin: length, win: length) -> length {
         return win <= 0px ? pos
             : (origin + pos + size + MenuPlace.margin <= win ? max(origin + pos, MenuPlace.margin)
             : (origin + pos - size >= MenuPlace.margin ? origin + pos - size
             : max(MenuPlace.margin, win - size - MenuPlace.margin))) - origin;
     }
-    pure function fit-x(pos: length, width: length, origin: length) -> length {
+    pure public function fit-x(pos: length, width: length, origin: length) -> length {
         return MenuPlace.fit(pos, width, origin, MenuPlace.window-w);
     }
-    pure function fit-y(pos: length, height: length, origin: length) -> length {
+    pure public function fit-y(pos: length, height: length, origin: length) -> length {
         return MenuPlace.fit(pos, height, origin, MenuPlace.window-h);
     }
     // The tallest a menu may be: the window less both margins.
-    pure function limit() -> length {
+    pure public function limit() -> length {
         return MenuPlace.window-h <= 0px ? 100000px : max(0px, MenuPlace.window-h - MenuPlace.margin * 2);
     }
     // A MenuPanel's height from its row counts, capped at limit(). Hosts
     // over-count rather than under-count.
-    pure function rows-h(rows: int, dividers: int) -> length {
+    pure public function rows-h(rows: int, dividers: int) -> length {
         return min(MenuPlace.limit(), rows * 36px + dividers * 9px + Theme.space-2 * 2);
     }
 }
