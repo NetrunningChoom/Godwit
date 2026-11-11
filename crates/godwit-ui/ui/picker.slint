@@ -11,7 +11,10 @@ import { TextField, TipBubble } from "widgets.slint";
 export component EmojiPicker inherits Rectangle {
     in property <[EmojiRowItem]> rows;
     callback search(string);
-    callback picked(int, int);
+    // Row, column, and whether Shift was held: the official pickers stay
+    // open for a Shift-click so several can be picked in a row.
+    callback picked(int, int, bool);
+    property <bool> shift-held: false;
     // The top row on screen.
     callback scrolled-to(int);
     callback escape();
@@ -119,7 +122,7 @@ export component EmojiPicker inherits Rectangle {
             // Enter picks the highlighted emoji (the first one by default).
             accepted => {
                 if root.has-preview {
-                    root.picked(root.preview-row, root.preview-col);
+                    root.picked(root.preview-row, root.preview-col, false);
                 }
             }
         }
@@ -197,7 +200,8 @@ export component EmojiPicker inherits Rectangle {
                         if !cell.has-image: Text { text: cell.glyph; font-size: Theme.text-large; color: Theme.on-surface; }
                         pick := TouchArea {
                             mouse-cursor: pointer;
-                            clicked => { root.picked(i, j); }
+                            pointer-event(e) => { root.shift-held = e.modifiers.shift; }
+                            clicked => { root.picked(i, j, root.shift-held); }
                             changed has-hover => {
                                 if self.has-hover {
                                     root.keys = false;

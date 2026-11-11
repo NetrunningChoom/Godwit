@@ -348,7 +348,8 @@ impl Shell {
     }
 
     /// An emoji was picked: react with it, or write it into the draft.
-    pub fn picker_picked(&mut self, ui: &AppWindow, row: i32, col: i32) {
+    /// `keep_open` (Shift held) leaves the picker open for the next one.
+    pub fn picker_picked(&mut self, ui: &AppWindow, row: i32, col: i32, keep_open: bool) {
         let (Ok(row), Ok(col)) = (usize::try_from(row), usize::try_from(col)) else {
             return;
         };
@@ -359,9 +360,12 @@ impl Shell {
             self.settings.recent_emoji = self.picker.recent().to_vec();
             self.save_settings();
         }
-        let target = self.picker_for.take();
-        ui.set_picker_open(false);
-        let room = self.picker_room.take();
+        let (target, room) = if keep_open {
+            (self.picker_for.clone(), self.picker_room.clone())
+        } else {
+            ui.set_picker_open(false);
+            (self.picker_for.take(), self.picker_room.take())
+        };
         if room != self.app.state().selected {
             return;
         }

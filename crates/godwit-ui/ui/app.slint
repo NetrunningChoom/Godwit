@@ -974,7 +974,7 @@ export component AppWindow inherits Window {
     in property <bool> picker-open;
     in property <[EmojiRowItem]> emoji-rows;
     callback picker-search(string);
-    callback picker-picked(int, int);
+    callback picker-picked(int, int, bool);
     callback picker-scrolled(int);
     callback close-picker();
     callback open-attachment(int, int);
@@ -1660,7 +1660,7 @@ export component AppWindow inherits Window {
                                         picker-open: root.picker-open;
                                         emoji-rows: root.emoji-rows;
                                         picker-search(q) => { root.picker-search(q); }
-                                        picker-picked(r, c) => { root.picker-picked(r, c); }
+                                        picker-picked(r, c, keep) => { root.picker-picked(r, c, keep); }
                                         picker-scrolled(r) => { root.picker-scrolled(r); }
                                         close-picker => { root.close-picker(); }
                                         open-attachment(i, a) => { root.open-attachment(i, a); }

@@ -957,7 +957,7 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_open_picker(row) => |sh, ui| sh.open_picker(ui, row));
     callback!(ui.on_picker_search(q) => |sh, _| sh.picker_search(&q));
     callback!(ui.on_picker_scrolled(first) => |sh, _| sh.picker_scrolled(first));
-    callback!(ui.on_picker_picked(row, col) => |sh, ui| sh.picker_picked(ui, row, col));
+    callback!(ui.on_picker_picked(row, col, keep_open) => |sh, ui| sh.picker_picked(ui, row, col, keep_open));
     callback!(ui.on_close_picker() => |sh, ui| sh.close_picker(ui));
     callback!(ui.on_open_attachment(row, index) => |sh, ui| sh.open_attachment(ui, row, index));
     callback!(ui.on_attachment_action(row, index, action) => |sh, _| sh.attachment_action(row, index, action));
