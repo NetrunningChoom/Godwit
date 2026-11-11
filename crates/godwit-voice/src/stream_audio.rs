@@ -425,29 +425,114 @@ mod platform {
             Ok(reply)
         }
 
-        /// The playback streams to record: (index, owning process id).
-        fn inputs(&mut self) -> Result<Vec<(u32, Option<u32>)>> {
+        /// Every playback stream with its owning process: the stream's own
+        /// properties first, then its client's (PulseAudio copies the
+        /// client's application properties into its streams; others may not).
+        fn inputs(&mut self) -> Result<Vec<Playback>> {
             let list: protocol::SinkInputInfoList = self.ask(protocol::Command::GetSinkInputInfoList)?;
+            // A failed client listing only loses the fallback.
+            let clients: protocol::ClientInfoList = self.ask(protocol::Command::GetClientInfoList).unwrap_or_default();
             Ok(list
                 .into_iter()
                 .map(|input| {
-                    let pid = input
-                        .props
-                        .get(protocol::Prop::ApplicationProcessId)
-                        .and_then(|raw| std::str::from_utf8(raw).ok())
-                        .and_then(|s| s.trim_end_matches('\0').parse().ok());
-                    (input.index, pid)
+                    let client = input
+                        .client_index
+                        .and_then(|index| clients.iter().find(|c| c.index == index));
+                    let text = |prop: protocol::Prop| {
+                        [Some(&input.props), client.map(|c| &c.props)]
+                            .into_iter()
+                            .flatten()
+                            .find_map(|props| {
+                                props
+                                    .get(prop)
+                                    .and_then(|raw| std::str::from_utf8(raw).ok())
+                                    .map(|s| s.trim_end_matches('\0').to_owned())
+                                    .filter(|s| !s.is_empty())
+                            })
+                    };
+                    Playback {
+                        index: input.index,
+                        pid: text(protocol::Prop::ApplicationProcessId).and_then(|s| s.parse().ok()),
+                        binary: text(protocol::Prop::ApplicationProcessBinary),
+                    }
                 })
                 .collect())
         }
     }
 
-    /// Whether a playback stream is wanted for `target`.
-    fn wanted(target: Target, pid: Option<u32>) -> bool {
-        let own = std::process::id();
+    /// One app's playback stream.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct Playback {
+        index: u32,
+        /// `application.process.id`.
+        pid: Option<u32>,
+        /// `application.process.binary`.
+        binary: Option<String>,
+    }
+
+    /// Who Godwit is: its process id and the program names of its own
+    /// processes (the app and its helpers, such as the video player).
+    struct Own {
+        pid: u32,
+        binaries: Vec<String>,
+    }
+
+    impl Own {
+        fn current() -> Self {
+            let mut binaries = vec!["godwit".to_owned(), "godwit-player".to_owned()];
+            if let Some(name) = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            {
+                // Linux appends " (deleted)" to the path of a replaced binary.
+                let name = name.trim_end_matches(" (deleted)").to_owned();
+                if !binaries.contains(&name) {
+                    binaries.push(name);
+                }
+            }
+            Self {
+                pid: std::process::id(),
+                binaries,
+            }
+        }
+    }
+
+    /// The parent of a process, from `/proc/<pid>/stat` (the field after the
+    /// last `)`, as the name before it may contain anything).
+    fn parent_of(pid: u32) -> Option<u32> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        stat.rsplit_once(')')?.1.split_whitespace().nth(1)?.parse().ok()
+    }
+
+    /// Whether a playback stream belongs to Godwit: its process is ours or a
+    /// descendant of ours (helpers), or its program is one of ours (when the
+    /// process id is missing or from another pid namespace).
+    fn is_own(own: &Own, stream: &Playback, parent: impl Fn(u32) -> Option<u32>) -> bool {
+        if let Some(binary) = &stream.binary
+            && own.binaries.iter().any(|b| b == binary)
+        {
+            return true;
+        }
+        let mut pid = stream.pid;
+        // Bounded: a cycle can't hang the scan.
+        for _ in 0..16 {
+            let Some(p) = pid else { return false };
+            if p == own.pid {
+                return true;
+            }
+            pid = parent(p);
+        }
+        false
+    }
+
+    /// Whether a playback stream is wanted for `target`: never Godwit's own.
+    fn wanted(target: Target, own: &Own, stream: &Playback, parent: impl Fn(u32) -> Option<u32>) -> bool {
+        if is_own(own, stream, parent) {
+            return false;
+        }
         match target {
-            Target::AllButGodwit => pid != Some(own),
-            Target::App(app) => pid == Some(app),
+            Target::AllButGodwit => true,
+            Target::App(app) => stream.pid == Some(app),
         }
     }
 
@@ -479,6 +564,7 @@ mod platform {
                 return;
             }
         };
+        let own = Own::current();
         let mut streams: HashMap<u32, (pulseaudio::RecordStream, Buffer)> = HashMap::new();
         let mut next_scan = Instant::now();
         let mut tick = Instant::now();
@@ -487,7 +573,7 @@ mod platform {
             if Instant::now() >= next_scan {
                 next_scan = Instant::now() + RESCAN;
                 match lister.inputs() {
-                    Ok(inputs) => rescan(&client, target, &inputs, &mut streams),
+                    Ok(inputs) => rescan(&client, target, &own, &inputs, &mut streams),
                     Err(error) => {
                         eprintln!("error: listing apps' sound: {error:#}");
                         break;
@@ -514,33 +600,40 @@ mod platform {
                 framer.push(&frame);
             }
         }
-        // Deleted off this thread: a server that stopped answering would
-        // otherwise hold stopping the share forever.
         let left: Vec<pulseaudio::RecordStream> = streams.drain().map(|(_, (stream, _))| stream).collect();
-        if !left.is_empty() {
-            let spawned = std::thread::Builder::new()
-                .name("stream-audio-end".into())
-                .spawn(move || {
-                    for stream in left {
-                        let _ = futures_executor::block_on(stream.delete());
-                    }
-                });
-            if let Err(e) = spawned {
-                eprintln!("warning: stream audio cleanup: {e}");
-            }
+        delete_off_thread(left);
+    }
+
+    /// Deletes record streams off the calling thread: a server that stopped
+    /// answering would otherwise hold stopping the share forever.
+    fn delete_off_thread(left: Vec<pulseaudio::RecordStream>) {
+        if left.is_empty() {
+            return;
+        }
+        let spawned = std::thread::Builder::new()
+            .name("stream-audio-end".into())
+            .spawn(move || {
+                for stream in left {
+                    let _ = futures_executor::block_on(stream.delete());
+                }
+            });
+        if let Err(e) = spawned {
+            eprintln!("warning: stream audio cleanup: {e}");
         }
     }
 
-    /// Records new app streams and drops ended ones.
+    /// Records new app streams and drops ended ones, and any that turn out to
+    /// be Godwit's own (a stream is judged again on every scan).
     fn rescan(
         client: &pulseaudio::Client,
         target: Target,
-        inputs: &[(u32, Option<u32>)],
+        own: &Own,
+        inputs: &[Playback],
         streams: &mut HashMap<u32, (pulseaudio::RecordStream, Buffer)>,
     ) {
         let gone: Vec<u32> = streams
             .keys()
-            .filter(|index| !inputs.iter().any(|(i, _)| i == *index))
+            .filter(|index| !inputs.iter().any(|i| i.index == **index))
             .copied()
             .collect();
         // The app's playback stream is gone (it quit or crashed), and the
@@ -549,13 +642,25 @@ mod platform {
         for index in gone {
             streams.remove(&index);
         }
-        for &(index, pid) in inputs {
-            if streams.contains_key(&index) || !wanted(target, pid) {
+        // Still playing but not ours to record (a stream whose owner only
+        // became known after it started): stop recording it.
+        let unwanted: Vec<u32> = inputs
+            .iter()
+            .filter(|i| streams.contains_key(&i.index) && !wanted(target, own, i, parent_of))
+            .map(|i| i.index)
+            .collect();
+        let dropped: Vec<pulseaudio::RecordStream> = unwanted
+            .into_iter()
+            .filter_map(|index| streams.remove(&index).map(|(stream, _)| stream))
+            .collect();
+        delete_off_thread(dropped);
+        for input in inputs {
+            if streams.contains_key(&input.index) || !wanted(target, own, input, parent_of) {
                 continue;
             }
-            match record(client, index) {
+            match record(client, input.index) {
                 Ok(recorded) => {
-                    streams.insert(index, recorded);
+                    streams.insert(input.index, recorded);
                 }
                 Err(error) => eprintln!("error: recording an app's sound: {error:#}"),
             }
@@ -610,13 +715,35 @@ mod platform {
 
         #[test]
         fn godwit_is_left_out_and_one_app_is_only_itself() {
-            let own = std::process::id();
-            assert!(!wanted(Target::AllButGodwit, Some(own)));
-            assert!(wanted(Target::AllButGodwit, Some(own + 1)));
-            assert!(wanted(Target::AllButGodwit, None));
-            assert!(wanted(Target::App(42), Some(42)));
-            assert!(!wanted(Target::App(42), Some(43)));
-            assert!(!wanted(Target::App(42), None));
+            let own = Own {
+                pid: 100,
+                binaries: vec!["godwit".into(), "godwit-player".into()],
+            };
+            let stream = |pid: Option<u32>, binary: Option<&str>| Playback {
+                index: 1,
+                pid,
+                binary: binary.map(str::to_owned),
+            };
+            // 100 is us, 101 our helper, 200 a game, 300 a browser.
+            let parent = |pid: u32| match pid {
+                101 => Some(100),
+                200 => Some(1),
+                _ => None,
+            };
+            let all = |s: &Playback| wanted(Target::AllButGodwit, &own, s, parent);
+            assert!(!all(&stream(Some(100), None)));
+            assert!(!all(&stream(Some(101), Some("something"))));
+            assert!(!all(&stream(Some(555), Some("godwit"))));
+            assert!(!all(&stream(None, Some("godwit-player"))));
+            assert!(all(&stream(Some(200), Some("game"))));
+            assert!(all(&stream(None, None)));
+            let one = |app: u32, s: &Playback| wanted(Target::App(app), &own, s, parent);
+            assert!(one(200, &stream(Some(200), None)));
+            assert!(!one(200, &stream(Some(300), None)));
+            assert!(!one(200, &stream(None, None)));
+            // Godwit is never picked, even asked for by id.
+            assert!(!one(100, &stream(Some(100), None)));
+            assert!(!one(101, &stream(Some(101), None)));
         }
 
         #[test]
