@@ -156,8 +156,16 @@ impl Api {
         endpoint: &str,
         request: &Rq,
     ) -> Result<Rs> {
+        // A rate-limit answer's wait holds every request, sends included.
         tokio::time::sleep_until(self.next_request).await;
-        self.next_request = tokio::time::Instant::now() + Duration::from_millis(300);
+        // Reads keep a short gap after them; what the user does (send, edit,
+        // react) goes at once: answers already take most of a second, and
+        // these requests take turns anyway.
+        let gap = match class {
+            godwit_core::net::Class::Write => Duration::ZERO,
+            _ => Duration::from_millis(100),
+        };
+        self.next_request = tokio::time::Instant::now() + gap;
         self.request += 1;
         let url = format!("{BASE}/api/{endpoint}?c={}&rt=b&alt=proto&key={API_KEY}", self.request);
         let mut req = self

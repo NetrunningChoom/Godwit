@@ -1008,6 +1008,7 @@ impl GChatAccount {
                     }
                     Err(e) => {
                         eprintln!("error: Google Chat history: {e}");
+                        godwit_core::net::log::line(&format!("gchat history failed: {e}"));
                         out.push(Event::HistoryFailed { room });
                     }
                 }
