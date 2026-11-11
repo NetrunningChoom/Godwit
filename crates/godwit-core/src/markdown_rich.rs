@@ -114,6 +114,7 @@ pub fn to_plain(src: &str, names: &impl Resolve) -> String {
                 Kind::Role(id) => line.push_str(&format!("@{}", names.role(id))),
                 Kind::Emoji(id) => line.push_str(&format!(":{}:", names.emoji(id))),
                 Kind::Timestamp(secs, style) => line.push_str(&names.timestamp(*secs, *style)),
+                Kind::MassMention(word) => line.push_str(&format!("@{word}")),
                 Kind::Text | Kind::Link(_) => line.push_str(&i.text),
             }
         }
@@ -137,6 +138,8 @@ fn inline_run(out: &mut String, inlines: &[Inline], names: &impl Resolve) {
             Kind::User(id) => Some((format!("@{}", names.user(id)), format!("godwit://user/{id}"))),
             Kind::Channel(id) => Some((format!("#{}", names.channel(id)), format!("godwit://room/{id}"))),
             Kind::Role(id) => Some((format!("@{}", names.role(id)), format!("godwit://role/{id}"))),
+            // Shown as a mention; clicking it opens nothing.
+            Kind::MassMention(word) => Some((format!("@{word}"), format!("godwit://mention/{word}"))),
             Kind::Emoji(id) => {
                 match names.emoji_url(id) {
                     Some(url) => out.push_str(&rich::emoji(&names.emoji(id), &url)),

@@ -77,6 +77,21 @@ pub fn respell(src: &str) -> (String, Vec<(String, String)>) {
             }
             continue;
         }
+        // @everyone and @here (docs.discord.food, Message Formatting): the
+        // shared parser's broadcast spelling, so they show as mentions.
+        if let Some(word) = ["everyone", "here"]
+            .into_iter()
+            .find(|w| rest.strip_prefix('@').is_some_and(|r| r.starts_with(w)))
+        {
+            out.push_str(&format!("<!{word}>"));
+            rest = &rest[word.len() + 1..];
+            continue;
+        }
+        // Stoat's @online means nothing on Discord: escaped, so the shared
+        // parser leaves it as text.
+        if rest.starts_with("@online") && !out.ends_with('\\') {
+            out.push('\\');
+        }
         if rest.starts_with('<')
             && let Some(end) = rest.find('>')
         {
@@ -293,6 +308,12 @@ pub fn to_plain(src: &str, names: &impl Names) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn everyone_and_here_become_broadcasts_outside_code() {
+        let (out, _) = respell("@everyone @here `@here` @online");
+        assert_eq!(out, "<!everyone> <!here> `@here` \\@online");
+    }
 
     #[test]
     fn mentions_and_emoji_are_respelled_outside_code() {

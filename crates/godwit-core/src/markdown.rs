@@ -23,7 +23,15 @@ pub enum Kind {
     Emoji(String),
     /// `<t:unix>` / `<t:unix:style>`: seconds and the style letter (official RE_TIMESTAMP).
     Timestamp(i64, Option<char>),
+    /// A mention of many people at once, by its word ("everyone", "online"):
+    /// Stoat's literal `@everyone`/`@online`, or `<!word>` from another network.
+    MassMention(String),
 }
+
+/// The mass mentions Stoat's for-web shows as mentions: the literal words,
+/// matched anywhere in text as its remark plugin does
+/// (<https://github.com/stoatchat/for-web/blob/main/packages/client/components/markdown/plugins/mentions.tsx>).
+const MASS_MENTIONS: [&str; 2] = ["everyone", "online"];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Inline {
@@ -357,6 +365,11 @@ pub fn parse_inline(src: &str) -> Vec<Inline> {
                 ("@", id) if is_ulid(id) => Some(Kind::User(id.to_string())),
                 ("#", id) if is_ulid(id) => Some(Kind::Channel(id.to_string())),
                 ("%", id) if is_ulid(id) => Some(Kind::Role(id.to_string())),
+                // A network's own broadcast mention respelled for this parser
+                // (Discord's @here, for one): `<!word>`.
+                ("!", word) if !word.is_empty() && word.bytes().all(|b| b.is_ascii_alphanumeric()) => {
+                    Some(Kind::MassMention(word.to_string()))
+                }
                 _ => timestamp(inner),
             };
             if let Some(kind) = kind {
@@ -365,6 +378,21 @@ pub fn parse_inline(src: &str) -> Vec<Inline> {
                 i += end + 1;
                 continue;
             }
+        }
+
+        // Mass mentions: @everyone, @online.
+        if c == '@'
+            && let Some(word) = MASS_MENTIONS.iter().find(|w| rest[1..].starts_with(*w))
+        {
+            push(&mut out, std::mem::take(&mut buf), style, Kind::Text);
+            push(
+                &mut out,
+                rest[..=word.len()].to_string(),
+                style,
+                Kind::MassMention((*word).to_string()),
+            );
+            i += word.len() + 1;
+            continue;
         }
 
         // Custom emoji: :ULID:
@@ -605,6 +633,33 @@ mod tests {
         assert!(v.iter().any(|i| i.kind == Kind::User(id.into())));
         assert!(v.iter().any(|i| i.kind == Kind::Link("https://x.org/a".into())));
         assert!(v.iter().any(|i| i.kind == Kind::Emoji(id.into())));
+    }
+
+    #[test]
+    fn mass_mentions_are_mentions_but_not_in_code() {
+        let v = parse_inline("hey @everyone and @online, `@everyone`");
+        let mass: Vec<_> = v
+            .iter()
+            .filter_map(|i| match &i.kind {
+                Kind::MassMention(w) => Some(w.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(mass, ["everyone", "online"]);
+        assert!(v.iter().any(|i| i.style.code && i.text == "@everyone"));
+    }
+
+    #[test]
+    fn respelled_broadcasts_are_mass_mentions() {
+        let v = parse_inline("<!here> and <!all> but not <!da te>");
+        let mass: Vec<_> = v
+            .iter()
+            .filter_map(|i| match &i.kind {
+                Kind::MassMention(w) => Some(w.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(mass, ["here", "all"]);
     }
 
     #[test]

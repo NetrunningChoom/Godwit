@@ -90,7 +90,12 @@ pub fn text(message: &proto::Message) -> String {
     let source = message.text_body();
     let mut links = Vec::new();
     for annotation in &message.annotations {
-        let url = if annotation.has_user_mention_metadata() {
+        let url = if annotation.has_user_mention_metadata()
+            && annotation.user_mention_metadata().type_() == proto::user_mention_metadata::Type::MENTION_ALL
+        {
+            // "@all": everyone in the space, shown as a mention with nothing to open.
+            "godwit://mention/all".to_owned()
+        } else if annotation.has_user_mention_metadata() {
             let user = annotation.user_mention_metadata();
             if user.id.id().is_empty() {
                 continue;

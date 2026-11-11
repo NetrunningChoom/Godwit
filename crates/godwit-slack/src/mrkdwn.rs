@@ -137,8 +137,16 @@ fn reference(inner: &str, names: &impl Names, out: &mut Out) {
         out.plain.push_str(&format!("#{name}"));
     } else if let Some(special) = target.strip_prefix('!') {
         // `<!here>`, `<!channel>`, `<!everyone>`, `<!subteam^S…|@team>`, `<!date^…|text>`.
-        let shown = label.unwrap_or_else(|| format!("@{}", special.split('^').next().unwrap_or(special)));
-        out.text(&shown);
+        let word = special.split('^').next().unwrap_or(special);
+        let shown = label.unwrap_or_else(|| format!("@{word}"));
+        if matches!(word, "here" | "channel" | "everyone" | "subteam") {
+            // Broadcasts and user groups show as mentions (nothing to open).
+            out.rich
+                .push_str(&format!("[{}](godwit://mention/{word})", rich::escape(&shown)));
+            out.plain.push_str(&shown);
+        } else {
+            out.text(&shown);
+        }
     } else {
         let url = decode(target);
         let lower = url.to_ascii_lowercase();
@@ -529,7 +537,7 @@ mod tests {
         let c = conv("hi <@U2> in <#C3> see <https://a.b/c(d)|this> <!here>");
         assert_eq!(
             c.rich,
-            "hi [\\@Ada](godwit://user/T1:U2) in [\\#general](godwit://room/T1:C3) see [this](https://a.b/c%28d%29) \\@here"
+            "hi [\\@Ada](godwit://user/T1:U2) in [\\#general](godwit://room/T1:C3) see [this](https://a.b/c%28d%29) [\\@here](godwit://mention/here)"
         );
         assert_eq!(conv("<javascript:alert(1)|x>").rich, "x");
     }
