@@ -91,6 +91,9 @@ pub struct Settings {
     pub net_debug_log: String,
     /// Media diagnostics are opt-in and are reset after each app update.
     pub media_debug_log: String,
+    /// The emoji picker's recently used, newest first (an emoji's reaction:
+    /// the Unicode glyph, or a custom emoji's id).
+    pub recent_emoji: Vec<String>,
     /// Home's pinned and hidden chats (`network:user|room`).
     pub pinned_rooms: Vec<String>,
     pub hidden_rooms: Vec<String>,
@@ -195,6 +198,7 @@ impl Default for Settings {
             message_tone: 0,
             net_debug_log: String::new(),
             media_debug_log: String::new(),
+            recent_emoji: Vec::new(),
             pinned_rooms: Vec::new(),
             pins_seeded: Vec::new(),
             hidden_rooms: Vec::new(),

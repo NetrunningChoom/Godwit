@@ -532,7 +532,11 @@ impl Shell {
                 p.collapsed = settings.collapsed.iter().filter_map(|k| parse_account_key(k)).collect();
                 p
             },
-            picker: Picker::default(),
+            picker: {
+                let mut p = Picker::default();
+                p.load_recent(&settings.recent_emoji);
+                p
+            },
             picker_for: None,
             picker_room: None,
             emoji_samples_loading: false,

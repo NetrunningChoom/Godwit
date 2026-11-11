@@ -52,6 +52,16 @@ fn unicode(e: &'static emojis::Emoji) -> Pick {
     }
 }
 
+fn custom_pick(e: &godwit_core::message::CustomEmoji) -> Pick {
+    Pick {
+        name: e.name.clone(),
+        glyph: "".into(),
+        url: e.image_url.clone(),
+        reaction: e.reaction.clone(),
+        code: e.code.clone(),
+    }
+}
+
 fn chunked(rows: &mut Vec<Row>, cells: Vec<Pick>) {
     for chunk in cells.chunks(COLUMNS) {
         rows.push(Row::Cells(chunk.to_vec()));
@@ -88,13 +98,7 @@ pub fn rows(custom: &[&EmojiGroup], query: &str, allowed: Allowed) -> Vec<Row> {
         g.emoji
             .iter()
             .filter(|e| needle.is_empty() || match_rank(std::iter::once(&*e.name), &needle).is_some())
-            .map(|e| Pick {
-                name: e.name.clone(),
-                glyph: "".into(),
-                url: e.image_url.clone(),
-                reaction: e.reaction.clone(),
-                code: e.code.clone(),
-            })
+            .map(custom_pick)
             .collect()
     };
     if needle.is_empty() {
@@ -174,11 +178,37 @@ fn neighbours(rows: &[Row]) -> Vec<(i32, i32)> {
 /// Emoji picked lately, newest first, shown as the picker's first section.
 const RECENT_MAX: usize = 2 * COLUMNS;
 
-/// `pick` goes to the front of `recent` (once), keeping at most `RECENT_MAX`.
-fn remember(recent: &mut Vec<Pick>, pick: Pick) {
-    recent.retain(|p| p.reaction != pick.reaction);
-    recent.insert(0, pick);
+/// `key` (an emoji's reaction: the glyph, or a custom emoji's id) goes to the
+/// front of `recent` (once), keeping at most `RECENT_MAX`. False when it was
+/// already first, so nothing changed.
+fn remember(recent: &mut Vec<String>, key: &str) -> bool {
+    if recent.first().is_some_and(|k| k == key) {
+        return false;
+    }
+    recent.retain(|k| k != key);
+    recent.insert(0, key.to_string());
     recent.truncate(RECENT_MAX);
+    true
+}
+
+/// The recent keys as emoji to show: custom ones only while `custom` (the
+/// open chat's) still has them, Unicode ones only if the network has them.
+fn resolve_recent(recent: &[String], custom: &[&EmojiGroup], allowed: Allowed) -> Vec<Pick> {
+    recent
+        .iter()
+        .filter_map(|key| {
+            custom
+                .iter()
+                .flat_map(|g| g.emoji.iter())
+                .find(|e| *e.reaction == **key)
+                .map(custom_pick)
+                .or_else(|| {
+                    emojis::get(key)
+                        .filter(|e| allowed.has(e) && crate::emoji::drawn(e))
+                        .map(unicode)
+                })
+        })
+        .collect()
 }
 
 /// A category's heading (Yapfast's names for the Unicode groups).
@@ -209,8 +239,8 @@ pub struct Picker {
     sections: Vec<usize>,
     /// Each row's nearest emoji row above and below.
     around: Vec<(i32, i32)>,
-    /// Picked this session (not kept across restarts), newest first.
-    recent: Vec<Pick>,
+    /// Picked lately (kept in the settings), newest first.
+    recent: Vec<String>,
 }
 
 impl Picker {
@@ -227,19 +257,32 @@ impl Picker {
     }
 
     /// `rows` with the recently used emoji in front (no search active).
-    pub fn with_recent(&self, mut rows: Vec<Row>, query: &str) -> Vec<Row> {
-        if query.trim().is_empty() && !self.recent.is_empty() {
-            let mut front = vec![Row::Header("Recently used".into())];
-            chunked(&mut front, self.recent.clone());
-            front.append(&mut rows);
-            return front;
+    pub fn with_recent(&self, mut rows: Vec<Row>, query: &str, custom: &[&EmojiGroup], allowed: Allowed) -> Vec<Row> {
+        if query.trim().is_empty() {
+            let shown = resolve_recent(&self.recent, custom, allowed);
+            if !shown.is_empty() {
+                let mut front = vec![Row::Header("Recently used".into())];
+                chunked(&mut front, shown);
+                front.append(&mut rows);
+                return front;
+            }
         }
         rows
     }
 
-    /// `pick` was chosen: it leads the recently used.
-    pub fn remember(&mut self, pick: Pick) {
-        remember(&mut self.recent, pick);
+    /// The recently used, as kept in the settings.
+    pub fn load_recent(&mut self, keys: &[String]) {
+        self.recent = keys.iter().take(RECENT_MAX).cloned().collect();
+    }
+
+    pub fn recent(&self) -> &[String] {
+        &self.recent
+    }
+
+    /// `pick` was chosen: it leads the recently used. True when the list
+    /// changed (and so is worth saving).
+    pub fn remember(&mut self, pick: &Pick) -> bool {
+        remember(&mut self.recent, &pick.reaction)
     }
 
     /// New contents (opened, or the search changed).
@@ -457,23 +500,40 @@ mod tests {
     #[test]
     fn recent_emoji_lead_once_and_are_capped() {
         let mut recent = Vec::new();
-        remember(&mut recent, pick("a"));
-        remember(&mut recent, pick("b"));
-        remember(&mut recent, pick("a"));
-        let order: Vec<&str> = recent.iter().map(|p| &*p.reaction).collect();
-        assert_eq!(order, ["a", "b"]);
+        assert!(remember(&mut recent, "a"));
+        assert!(remember(&mut recent, "b"));
+        assert!(remember(&mut recent, "a"));
+        assert_eq!(recent, ["a", "b"]);
+        assert!(!remember(&mut recent, "a"), "already first: nothing to save");
         for i in 0..40 {
-            remember(&mut recent, pick(&i.to_string()));
+            remember(&mut recent, &i.to_string());
         }
         assert_eq!(recent.len(), RECENT_MAX);
-        assert_eq!(&*recent[0].reaction, "39");
+        assert_eq!(recent[0], "39");
+    }
 
+    #[test]
+    fn recent_emoji_load_resolve_and_skip_unavailable() {
         let mut picker = Picker::new();
-        picker.remember(pick("x"));
-        let with = picker.with_recent(Vec::new(), "");
+        let loaded: Vec<String> = ["\u{1f44d}", "gone-custom", "\u{1f600}"].map(String::from).into();
+        picker.load_recent(&loaded);
+        assert_eq!(picker.recent(), loaded);
+        // A custom emoji we no longer have is skipped.
+        let shown = resolve_recent(picker.recent(), &[], Allowed::All);
+        let reactions: Vec<&str> = shown.iter().map(|p| &*p.reaction).collect();
+        assert_eq!(reactions, ["\u{1f44d}", "\u{1f600}"]);
+        let with = picker.with_recent(Vec::new(), "", &[], Allowed::All);
         assert!(matches!(&with[0], Row::Header(t) if &**t == "Recently used"));
         // Not while searching.
-        assert!(picker.with_recent(Vec::new(), "x").is_empty());
+        assert!(picker.with_recent(Vec::new(), "x", &[], Allowed::All).is_empty());
+        // Nothing resolvable: no heading.
+        let mut other = Picker::new();
+        other.load_recent(&["gone-custom".to_string()]);
+        assert!(other.with_recent(Vec::new(), "", &[], Allowed::All).is_empty());
+        // Loading caps the list.
+        let many: Vec<String> = (0..40).map(|i| i.to_string()).collect();
+        other.load_recent(&many);
+        assert_eq!(other.recent().len(), RECENT_MAX);
     }
 
     #[test]

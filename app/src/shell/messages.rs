@@ -333,7 +333,7 @@ impl Shell {
             (None, None) => picker::Allowed::All,
         };
         let rows = picker::rows(&custom, query, allowed);
-        let rows = self.picker.with_recent(rows, query);
+        let rows = self.picker.with_recent(rows, query, &custom, allowed);
         self.picker.set(rows, &mut self.images);
     }
 
@@ -355,10 +355,14 @@ impl Shell {
         let Some(pick) = self.picker.at(row, col).cloned() else {
             return;
         };
-        self.picker.remember(pick.clone());
+        if self.picker.remember(&pick) {
+            self.settings.recent_emoji = self.picker.recent().to_vec();
+            self.save_settings();
+        }
         let target = self.picker_for.take();
         ui.set_picker_open(false);
-        if self.picker_room.take() != self.app.state().selected {
+        let room = self.picker_room.take();
+        if room != self.app.state().selected {
             return;
         }
         match target {
