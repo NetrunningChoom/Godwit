@@ -9,7 +9,7 @@ import { ForumView } from "forum-view.slint";
 import { EmojiPicker } from "picker.slint";
 import { TextBlock } from "textblock.slint";
 import { Gifs, GifPicker } from "gif-picker.slint";
-import { Avatar, IconButton, ImageIconButton, Button, MenuPanel, MenuRow, MenuDivider, TextField, Select as Dropdown, EmojiText } from "widgets.slint";
+import { Avatar, IconButton, ImageIconButton, Button, MenuPanel, MenuPlace, MenuRow, MenuDivider, TextField, Select as Dropdown, EmojiText } from "widgets.slint";
 import { TalkOnItem } from "types.slint";
 import { MessageRow } from "message-row.slint";
 
@@ -1531,8 +1531,8 @@ export component Timeline inherits Rectangle {
     }
     // Someone's sound here: volume 0–200% and a mute that only we hear.
     member-sound := PopupWindow {
-        x: min(root.sound-x, root.width - 260px);
-        y: min(root.sound-y, root.height - 130px);
+        x: MenuPlace.fit-x(root.sound-x, 240px, root.absolute-position.x);
+        y: MenuPlace.fit-y(root.sound-y, 130px, root.absolute-position.y);
         width: 240px;
         close-policy: close-on-click-outside;
         // Sized by its contents: without a height of its own the panel

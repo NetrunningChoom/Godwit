@@ -4,7 +4,7 @@
 import { ListView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { ContactItem, MergeItem } from "types.slint";
-import { Avatar, Button, TextField, EmojiText, PageHeader, EmptyState, ChoiceChip, NetworkSelect, MenuPanel, MenuRow, MenuDivider } from "widgets.slint";
+import { Avatar, Button, TextField, EmojiText, PageHeader, EmptyState, ChoiceChip, NetworkSelect, MenuPanel, MenuPlace, MenuRow, MenuDivider } from "widgets.slint";
 
 // One account as a chip: the network's name; clicking talks to them there,
 // the ✕ says "this account isn't them".
@@ -233,9 +233,11 @@ export component People inherits Rectangle {
         }
     }
     person-menu := PopupWindow {
-        x: root.menu-x;
-        y: root.menu-y;
+        x: MenuPlace.fit-x(root.menu-x, 220px, root.absolute-position.x);
+        y: MenuPlace.fit-y(root.menu-y, MenuPlace.rows-h(5, 1), root.absolute-position.y);
         MenuPanel {
+            max-height: MenuPlace.limit();
+            dismissed => { person-menu.close(); }
             if root.menu-person >= 0 && root.menu-person < root.people.length: MenuRow {
                 glyph: Icons.link;
                 label: "Link another account";

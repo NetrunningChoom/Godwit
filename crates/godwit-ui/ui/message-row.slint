@@ -3,7 +3,7 @@
 
 import { Theme, Icons, Icon } from "theme.slint";
 import { Anim, Players, Select, MessageItem, ReactionItem } from "types.slint";
-import { Avatar, IconButton, Button, MenuPanel, MenuRow, MenuDivider, EmojiText } from "widgets.slint";
+import { Avatar, IconButton, Button, MenuPanel, MenuPlace, MenuRow, MenuDivider, EmojiText } from "widgets.slint";
 import { TextBlock } from "textblock.slint";
 import { AttachmentView, EmbedMedia, EmbedCard, InviteCard, ActivityCard } from "message-media.slint";
 
@@ -452,10 +452,26 @@ export component MessageRow inherits Rectangle {
             }
         }
     }
+    // The menu's rows and dividers, counted (generously) for MenuPlace.
+    property <int> menu-rows: (root.menu-link != "" ? 2 : 0) + (root.menu-attachment >= 0 ? 3 : 0) + (Select.active ? 1 : 0)
+        + (!root.message.system && root.can-reply ? 1 : 0) + (root.can-mark-unread ? 1 : 0)
+        + (root.message.forwardable && !root.message.pending && root.can-forward ? 1 : 0) + 1
+        + (root.message.poll-endable && !root.message.pending ? 1 : 0)
+        + (!root.message.system && root.can-react ? 1 : 0)
+        + message.reactions.length + (message.reactions.length > 0 ? 1 : 0)
+        + (!root.message.system && root.message.mine && root.can-edit ? 1 : 0) + 1
+        + (!root.message.system && root.can-pin ? 1 : 0) + (!root.message.system && root.can-thread ? 1 : 0)
+        + (!root.message.system && !root.message.mine && root.can-report ? 1 : 0)
+        + (root.deletable ? 1 : 0) + (root.can-bulk-delete ? 1 : 0);
+    property <int> menu-dividers: (root.menu-link != "" ? 1 : 0) + (root.menu-attachment >= 0 ? 1 : 0) + (Select.active ? 1 : 0) + 1
+        + (message.reactions.length > 0 ? 1 : 0) + (root.can-report ? 1 : 0) + (root.deletable ? 1 : 0);
+    property <length> menu-h: MenuPlace.rows-h(root.menu-rows, root.menu-dividers);
     menu := PopupWindow {
-        x: root.menu-x;
-        y: root.menu-y;
+        x: MenuPlace.fit-x(root.menu-x, 220px, root.absolute-position.x);
+        y: MenuPlace.fit-y(root.menu-y, root.menu-h, root.absolute-position.y);
         MenuPanel {
+            max-height: MenuPlace.limit();
+            dismissed => { menu.close(); }
             // On a link: open it (after the usual question) or copy its address.
             if root.menu-link != "": MenuRow { glyph: Icons.open-in-new; label: "Open link"; clicked => { root.link-clicked(root.menu-link); } }
             if root.menu-link != "": MenuRow { glyph: Icons.copy; label: "Copy link address"; clicked => { root.copy-string(root.menu-link); } }

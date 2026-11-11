@@ -790,16 +790,69 @@ export component ConfirmDialog inherits Dialog {
 // The official ContextMenu: a surface-container panel, 4 px corners, a
 // 3 px shadow. Put MenuRows (and MenuDividers) inside.
 export component MenuPanel inherits Rectangle {
+    // Hosts pass MenuPlace.limit(): a menu taller than the window scrolls.
+    in property <length> max-height: 100000px;
+    // Esc was pressed; the host closes its PopupWindow.
+    callback dismissed;
     width: max(220px, rows.preferred-width);
-    height: rows.preferred-height;
+    height: min(rows.preferred-height, root.max-height);
     border-radius: Theme.radius-xs;
     background: Theme.surface;
     drop-shadow-blur: 3px;
     drop-shadow-color: Theme.shadow;
-    rows := VerticalLayout {
-        padding-top: Theme.space-2;
-        padding-bottom: Theme.space-2;
-        @children
+    FocusScope {
+        init => { self.focus(); }
+        key-pressed(e) => {
+            if e.text == Key.Escape { root.dismissed(); return accept; }
+            reject
+        }
+        Flickable {
+            viewport-height: rows.preferred-height;
+            rows := VerticalLayout {
+                width: root.width;
+                padding-top: Theme.space-2;
+                padding-bottom: Theme.space-2;
+                @children
+            }
+        }
+    }
+}
+
+// Where a pointer-opened menu goes, one rule for all of them. A PopupWindow
+// takes its x/y relative to its parent element, so a host passes the pointer
+// (relative to that element), the menu's size, the element's absolute
+// position (`origin`) and the window's size (`window-w/h`, set by AppWindow):
+//   - fits to the right/below the pointer: stays where it is;
+//   - does not fit: flips to the left of / above the pointer;
+//   - does not fit that way either: shifts to the far edge;
+//   - taller/wider than the window: pinned to the top/left margin (the
+//     MenuPanel then scrolls, see limit()).
+// Always keeps `margin` to the window edge. Window size 0 (not set yet):
+// the position is left alone.
+export global MenuPlace {
+    in-out property <length> window-w;
+    in-out property <length> window-h;
+    out property <length> margin: Theme.space-2;
+    pure function fit(pos: length, size: length, origin: length, win: length) -> length {
+        return win <= 0px ? pos
+            : (origin + pos + size + MenuPlace.margin <= win ? max(origin + pos, MenuPlace.margin)
+            : (origin + pos - size >= MenuPlace.margin ? origin + pos - size
+            : max(MenuPlace.margin, win - size - MenuPlace.margin))) - origin;
+    }
+    pure function fit-x(pos: length, width: length, origin: length) -> length {
+        return MenuPlace.fit(pos, width, origin, MenuPlace.window-w);
+    }
+    pure function fit-y(pos: length, height: length, origin: length) -> length {
+        return MenuPlace.fit(pos, height, origin, MenuPlace.window-h);
+    }
+    // The tallest a menu may be: the window less both margins.
+    pure function limit() -> length {
+        return MenuPlace.window-h <= 0px ? 100000px : max(0px, MenuPlace.window-h - MenuPlace.margin * 2);
+    }
+    // A MenuPanel's height from its row counts, capped at limit(). Hosts
+    // over-count rather than under-count.
+    pure function rows-h(rows: int, dividers: int) -> length {
+        return min(MenuPlace.limit(), rows * 36px + dividers * 9px + Theme.space-2 * 2);
     }
 }
 

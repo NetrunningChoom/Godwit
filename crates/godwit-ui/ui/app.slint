@@ -43,7 +43,7 @@ import { ServerSettings } from "server-settings.slint";
 import { ChannelSettings } from "channel-settings.slint";
 import { Settings } from "settings.slint";
 import { ProfileCard } from "profile.slint";
-import { Dialog, ConfirmDialog, Button, TextField, TextArea, ResizeHandle, Avatar, IconButton } from "widgets.slint";
+import { Dialog, ConfirmDialog, Button, TextField, TextArea, ResizeHandle, Avatar, IconButton, MenuPlace } from "widgets.slint";
 import { IncomingCall } from "incoming-call.slint";
 import { Cropper } from "cropper.slint";
 import { ImageViewer } from "image-viewer.slint";
@@ -72,6 +72,10 @@ export component AppWindow inherits Window {
     // wide as it's dragged, and the narrowest whole chat.
     min-width: max(640px, Theme.rail-width + root.sidebar-w + Theme.chat-min-width);
     min-height: 400px;
+    // The window's size for MenuPlace, which keeps menus on screen.
+    init => { MenuPlace.window-w = self.width; MenuPlace.window-h = self.height; }
+    changed width => { MenuPlace.window-w = self.width; }
+    changed height => { MenuPlace.window-h = self.height; }
         // The window and rail sit on surface-high, as officially.
     background: Theme.surface-high;
     default-font-family: "Inter";

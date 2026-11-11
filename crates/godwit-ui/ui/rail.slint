@@ -5,7 +5,7 @@
 import { Theme, Icons, Icon } from "theme.slint";
 import { NetworkIcon } from "network-icon.slint";
 import { ServerItem, FolderIcon, ProfileItem } from "types.slint";
-import { Avatar, Badge, MenuPanel, MenuRow, MenuDivider } from "widgets.slint";
+import { Avatar, Badge, MenuPanel, MenuPlace, MenuRow, MenuDivider } from "widgets.slint";
 
 // One 56 px entry: a 42 px round icon, the pill on the left edge (32 px
 // selected, 16 px hovered, 8 px unread) and the mention badge. Godwit's and
@@ -371,11 +371,13 @@ export component Rail inherits Rectangle {
         Rectangle { height: Theme.gap-md; }
     }
     server-menu := PopupWindow {
-        x: root.width - 4px;
-        y: root.menu-y;
+        x: MenuPlace.fit-x(root.width - 4px, 200px, root.absolute-position.x);
+        y: MenuPlace.fit-y(root.menu-y, MenuPlace.rows-h((root.menu-can-invite ? 1 : 0) + 4 + (root.menu-settings ? 1 : 0) + (root.menu-can-report ? 1 : 0) + (root.menu-can-leave ? 1 : 0), 3), root.absolute-position.y);
         width: 200px;
         MenuPanel {
             width: parent.width;
+            max-height: MenuPlace.limit();
+            dismissed => { server-menu.close(); }
             if root.menu-can-invite: MenuRow { glyph: Icons.link; label: "Invite people"; clicked => { root.server-invite(); } }
             MenuRow { glyph: Icons.unread; label: "Mark as read"; clicked => { root.server-mark-read(); } }
             if root.menu-settings: MenuRow { glyph: Icons.settings; label: "Server settings"; clicked => { root.server-settings(); } }
@@ -393,11 +395,13 @@ export component Rail inherits Rectangle {
         }
     }
     profile-menu := PopupWindow {
-        x: root.width - 4px;
-        y: root.profile-menu-y;
+        x: MenuPlace.fit-x(root.width - 4px, 220px, root.absolute-position.x);
+        y: MenuPlace.fit-y(root.profile-menu-y, MenuPlace.rows-h(root.profiles.length + 1, 1), root.absolute-position.y);
         width: 220px;
         ProfileMenu {
             width: parent.width;
+            max-height: MenuPlace.limit();
+            dismissed => { profile-menu.close(); }
             profiles: root.profiles;
             choose(i) => { root.switch-profile(i); }
             manage => { root.manage-profiles(); }
