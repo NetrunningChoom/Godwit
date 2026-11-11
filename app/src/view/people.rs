@@ -281,12 +281,14 @@ pub fn requests(state: &AppState, images: &mut Images) -> (Vec<RequestItem>, Vec
 /// contact with its accounts in chip order.
 /// Each People row's contact and its accounts, in chip order.
 pub type PeopleRows = Vec<(ContactId, Vec<UserId>)>;
+/// The two contacts of each suggested merge, in the suggestions' order.
+pub type MergePairs = Vec<(ContactId, ContactId)>;
 
 pub fn people(
     state: &AppState,
     images: &mut Images,
     _favourites: &[String],
-) -> (Vec<ContactItem>, PeopleRows, Vec<MergeItem>) {
+) -> (Vec<ContactItem>, PeopleRows, Vec<MergeItem>, MergePairs) {
     // Only identities on accounts signed in now: a signed-out account's
     // contacts (and merges) wait, hidden, until it signs in again.
     let signed_in = |u: &UserId| state.accounts.iter().any(|a| a.id == u.account);
@@ -379,12 +381,9 @@ pub fn people(
         });
         who.push((c.id, c.identities.clone()));
     }
-    // Who might be one person (Godwit never merges on its own), by row.
-    let row_of = |id: ContactId| {
-        who.iter()
-            .position(|(c, _)| *c == id)
-            .and_then(|r| i32::try_from(r).ok())
-    };
+    // Who might be one person (Godwit never merges on its own), by contact:
+    // People filters and regroups its rows, so row numbers don't last.
+    let listed = |id: ContactId| who.iter().any(|(c, _)| *c == id);
     let where_of = |c: &Metacontact| {
         let mut labels: Vec<String> = Vec::new();
         for u in &c.identities {
@@ -395,24 +394,24 @@ pub fn people(
         }
         labels.join(", ")
     };
-    let merges = godwit_core::contacts::suggest_merges(&contacts)
+    let (merges, pairs) = godwit_core::contacts::suggest_merges(&contacts)
         .into_iter()
+        .filter(|(x, y)| listed(*x) && listed(*y))
         .filter_map(|(x, y)| {
             let (cx, cy) = (
                 contacts.iter().find(|c| c.id == x)?,
                 contacts.iter().find(|c| c.id == y)?,
             );
-            Some(MergeItem {
-                a: row_of(x)?,
-                b: row_of(y)?,
+            let item = MergeItem {
                 a_name: cx.name.as_str().into(),
                 b_name: cy.name.as_str().into(),
                 a_where: where_of(cx).into(),
                 b_where: where_of(cy).into(),
-            })
+            };
+            Some((item, (x, y)))
         })
-        .collect();
-    (rows, who, merges)
+        .unzip();
+    (rows, who, merges, pairs)
 }
 
 /// The headings over People's rows (as shown, after filtering): where
@@ -761,6 +760,78 @@ mod tests {
     use super::{sections, sort_friend_rows};
     use godwit_core::ids::{AccountId, UserId};
     use godwit_core::network::Network;
+
+    /// Each suggestion's contacts, by name, as People lists them.
+    fn suggested(app: &godwit_core::application::Application) -> Vec<(String, String, String, String)> {
+        let mut images = crate::images::Images::offline();
+        let (_, _, merges, pairs) = super::people(app.state(), &mut images, &[]);
+        assert_eq!(merges.len(), pairs.len(), "one pair per suggestion");
+        let name = |id| app.state().contacts.get(id).map(|c| c.name.clone()).unwrap_or_default();
+        merges
+            .iter()
+            .zip(pairs)
+            .map(|(m, (a, b))| (m.a_name.to_string(), m.b_name.to_string(), name(a), name(b)))
+            .collect()
+    }
+
+    #[test]
+    fn suggested_merges_name_the_contacts_they_act_on() {
+        let (mut app, _, _) = crate::demo::world(godwit_core::contacts::Contacts::default());
+        crate::demo::multi(&mut app);
+        let shown = suggested(&app);
+        assert!(!shown.is_empty(), "the demo suggests a merge");
+        for (a_name, b_name, a, b) in shown {
+            assert_eq!((a_name, b_name), (a, b));
+        }
+    }
+
+    #[test]
+    fn merging_a_suggestion_joins_that_pair_and_drops_it() {
+        use godwit_core::application::Action;
+        let (mut app, _, _) = crate::demo::world(godwit_core::contacts::Contacts::default());
+        crate::demo::multi(&mut app);
+        let mut images = crate::images::Images::offline();
+        let (_, _, _, pairs) = super::people(app.state(), &mut images, &[]);
+        let (into, from) = pairs[0];
+        let users: Vec<UserId> = [into, from]
+            .iter()
+            .flat_map(|c| {
+                app.state()
+                    .contacts
+                    .get(*c)
+                    .map(|c| c.identities.clone())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let others = app.state().contacts.iter().count() - 2;
+        app.dispatch(Action::MergeContacts { into, from });
+        let joined = app.state().contacts.get(into).expect("kept");
+        assert!(users.iter().all(|u| joined.identities.contains(u)));
+        assert!(app.state().contacts.get(from).is_none());
+        assert_eq!(app.state().contacts.iter().count(), others + 1, "nobody else merged");
+        let (_, _, _, after) = super::people(app.state(), &mut images, &[]);
+        assert!(
+            !after
+                .iter()
+                .any(|(a, b)| [a, b].iter().any(|c| **c == into || **c == from)),
+            "{after:?}"
+        );
+    }
+
+    #[test]
+    fn not_the_same_drops_the_suggestion_and_merges_nobody() {
+        use godwit_core::application::Action;
+        let (mut app, _, _) = crate::demo::world(godwit_core::contacts::Contacts::default());
+        crate::demo::multi(&mut app);
+        let mut images = crate::images::Images::offline();
+        let (_, _, _, pairs) = super::people(app.state(), &mut images, &[]);
+        let (a, b) = pairs[0];
+        let count = app.state().contacts.iter().count();
+        app.dispatch(Action::NotSame { a, b });
+        assert_eq!(app.state().contacts.iter().count(), count);
+        let (_, _, _, after) = super::people(app.state(), &mut images, &[]);
+        assert!(!after.contains(&(a, b)) && !after.contains(&(b, a)), "{after:?}");
+    }
 
     #[test]
     fn favourites_and_everyone_else_are_headed() {

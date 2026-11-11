@@ -1008,7 +1008,7 @@ mod multi_tests {
         assert!(friends.iter().any(|f| f.name == "Raid lead"));
 
         // People: the near-identical names on two networks are suggested.
-        let (_, _, merges) = people(app.state(), &mut images, &[]);
+        let (_, _, merges, _) = people(app.state(), &mut images, &[]);
         assert_eq!(merges.len(), 1, "one suggestion");
 
         // The Steam chat's markup: an emoticon picture and a sticker.

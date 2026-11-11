@@ -1326,9 +1326,14 @@ fn connect_callbacks(ui: &AppWindow) {
             sh.act(ui, Action::SetNudges { contact, on });
         }
     });
-    callback!(ui.on_not_same(a, b) => |sh, ui| {
-        if let (Some((a, _)), Some((b, _))) = (sh.person_at(a), sh.person_at(b)) {
-            let (a, b) = (*a, *b);
+    // Suggested merges go by contact: People's rows are filtered and regrouped.
+    callback!(ui.on_merge_suggested(k) => |sh, ui| {
+        if let Some((into, from)) = sh.merge_pair(k) {
+            sh.act(ui, Action::MergeContacts { into, from });
+        }
+    });
+    callback!(ui.on_not_same(k) => |sh, ui| {
+        if let Some((a, b)) = sh.merge_pair(k) {
             sh.act(ui, Action::NotSame { a, b });
         }
     });

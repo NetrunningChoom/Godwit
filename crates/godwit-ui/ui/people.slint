@@ -19,7 +19,9 @@ export component People inherits Rectangle {
     // The person being linked, or -1.
     in-out property <int> linking: -1;
     callback link(int, int);
-    callback not-same(int, int);
+    // A suggested merge (by its index in `merges`) taken or turned down.
+    callback merge(int);
+    callback not-same(int);
     callback nudges(int, bool);
     callback unlink(int, int);
     callback choose(int, int);
@@ -97,7 +99,7 @@ export component People inherits Rectangle {
                 font-weight: 600;
                 color: Theme.outline;
             }
-            for m in root.merges: Rectangle {
+            for m[k] in root.merges: Rectangle {
                 height: Theme.row-member;
                 border-radius: Theme.radius-sm;
                 background: Theme.surface-low;
@@ -116,13 +118,13 @@ export component People inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                         text: "Merge";
                         kind: "tonal";
-                        clicked => { root.link(m.a, m.b); }
+                        clicked => { root.merge(k); }
                     }
                     Button {
                         y: (parent.height - self.height) / 2;
                         text: "Not the same";
                         kind: "text";
-                        clicked => { root.not-same(m.a, m.b); }
+                        clicked => { root.not-same(k); }
                     }
                 }
             }

@@ -66,6 +66,8 @@ pub struct Presenter {
     pub people: Rc<VecModel<ContactItem>>,
     /// People who might be one (suggestions on People).
     pub merges: Rc<VecModel<crate::ui::MergeItem>>,
+    /// The contacts of each suggestion in `merges`, in its order.
+    pub merge_pairs: view::MergePairs,
     /// A verification request from another device was being shown.
     asked: bool,
     /// The link request People last acted on (see `AppState::link_request`).
@@ -987,7 +989,7 @@ impl Presenter {
         ui.set_showing_people(state.showing_people);
         if state.showing_people || state.showing_friends {
             ui.set_people_favourites_only(self.people_favourites_filter);
-            let (rows, who, merges) = view::people(state, images, &self.muzzle.person_favourites);
+            let (rows, who, merges, merge_pairs) = view::people(state, images, &self.muzzle.person_favourites);
             // The networks people are on, for the filter's chips.
             let mut networks: Vec<slint::SharedString> = Vec::new();
             // Labels may name an alt ("Discord · …"); the filter is by network.
@@ -1068,6 +1070,7 @@ impl Presenter {
             }
             view::sync(&self.people, rows);
             view::sync(&self.merges, merges);
+            self.merge_pairs = merge_pairs;
             self.people_rows = who;
             if let Some(contact) = linking {
                 let row = self.people_rows.iter().position(|(c, _)| *c == contact);

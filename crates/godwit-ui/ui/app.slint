@@ -1071,7 +1071,8 @@ export component AppWindow inherits Window {
     callback answer-invite(bool);
     callback join-room(int);
     callback link-people(int, int);
-    callback not-same(int, int);
+    callback merge-suggested(int);
+    callback not-same(int);
     // The person People is linking, or -1 (Escape cancels).
     in-out property <int> people-linking: -1;
     callback unlink-person(int, int);
@@ -1470,7 +1471,8 @@ export component AppWindow inherits Window {
                                         merges: root.merges;
                                         linking <=> root.people-linking;
                                         link(a, b) => { root.link-people(a, b); }
-                                        not-same(a, b) => { root.not-same(a, b); }
+                                        merge(k) => { root.merge-suggested(k); }
+                                        not-same(k) => { root.not-same(k); }
                                         nudges(i, on) => { root.set-nudges(i, on); }
                                         unlink(a, b) => { root.unlink-person(a, b); }
                                         choose(a, b) => { root.choose-network(a, b); }

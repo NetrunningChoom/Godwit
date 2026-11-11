@@ -1154,6 +1154,11 @@ impl Shell {
         self.presenter.people_rows.get(usize::try_from(row).ok()?)
     }
 
+    /// The two contacts of suggested merge `k` (as listed on People).
+    pub fn merge_pair(&self, k: i32) -> Option<(ContactId, ContactId)> {
+        self.presenter.merge_pairs.get(usize::try_from(k).ok()?).copied()
+    }
+
     pub fn contact(&self, id: ContactId) -> Option<&Metacontact> {
         self.app.state().contacts.get(id)
     }
