@@ -131,16 +131,31 @@ impl Api {
     /// expires), the token is fetched again once and the call retried; if
     /// that says signed out, it fails as signed out.
     pub async fn call<Rq: Message, Rs: Message>(&mut self, endpoint: &str, request: &Rq) -> Result<Rs> {
-        match self.call_once(endpoint, request).await {
+        self.call_as(class(endpoint), endpoint, request).await
+    }
+
+    /// Like `call`, with the network layer's class chosen by the caller.
+    async fn call_as<Rq: Message, Rs: Message>(
+        &mut self,
+        class: godwit_core::net::Class,
+        endpoint: &str,
+        request: &Rq,
+    ) -> Result<Rs> {
+        match self.call_once(class, endpoint, request).await {
             Err(e) if e.downcast_ref::<Unauthorized>().is_some() => {
                 self.refresh().await?;
-                self.call_once(endpoint, request).await
+                self.call_once(class, endpoint, request).await
             }
             other => other,
         }
     }
 
-    async fn call_once<Rq: Message, Rs: Message>(&mut self, endpoint: &str, request: &Rq) -> Result<Rs> {
+    async fn call_once<Rq: Message, Rs: Message>(
+        &mut self,
+        class: godwit_core::net::Class,
+        endpoint: &str,
+        request: &Rq,
+    ) -> Result<Rs> {
         tokio::time::sleep_until(self.next_request).await;
         self.next_request = tokio::time::Instant::now() + Duration::from_millis(300);
         self.request += 1;
@@ -156,7 +171,7 @@ impl Api {
             req = req.header("x-framework-xsrf-token", xsrf);
         }
         // `c` counts requests: it doesn't make a repeated call a new one.
-        let answer = godwit_core::net::fetch_with(NET, class(endpoint), req, &["c"])
+        let answer = godwit_core::net::fetch_with(NET, class, req, &["c"])
             .await
             .with_context(|| endpoint.to_string())?;
         let status = answer.status;
@@ -266,7 +281,15 @@ impl Api {
     /// oldest first.
     pub async fn topics(&mut self, group: &str, page: i32, before: Option<i64>) -> Result<proto::ListTopicsResponse> {
         let req = Self::topics_request(group, page, before)?;
-        let mut resp: proto::ListTopicsResponse = self.call("list_topics", &req).await?;
+        // An older page is asked for by the user scrolling back, so the repeat
+        // guard (for loops) doesn't hold it: the caller paces it (`Live`).
+        // Newest pages and catch-ups stay guarded.
+        let class = if before.is_some() {
+            godwit_core::net::Class::Live
+        } else {
+            class("list_topics")
+        };
+        let mut resp: proto::ListTopicsResponse = self.call_as(class, "list_topics", &req).await?;
         resp.topics.sort_by_key(|t| t.sort_time());
         Ok(resp)
     }
@@ -290,9 +313,22 @@ impl Api {
     }
 
     /// A topic's root and replies, as maugclib's proto_list_messages.
-    pub async fn thread_messages(&mut self, group: &str, topic: &str, page: i32) -> Result<Vec<proto::Message>> {
+    /// `paging`: the user asked for an older page, which the repeat guard
+    /// doesn't hold (see `topics`).
+    pub async fn thread_messages(
+        &mut self,
+        group: &str,
+        topic: &str,
+        page: i32,
+        paging: bool,
+    ) -> Result<Vec<proto::Message>> {
         let request = Self::thread_messages_request(group, topic, page)?;
-        let response: proto::ListMessagesResponse = self.call("list_messages", &request).await?;
+        let class = if paging {
+            godwit_core::net::Class::Live
+        } else {
+            class("list_messages")
+        };
+        let response: proto::ListMessagesResponse = self.call_as(class, "list_messages", &request).await?;
         Ok(response.messages)
     }
 
@@ -313,7 +349,7 @@ impl Api {
     pub async fn history(&mut self, room: &str, page: i32, before: Option<i64>) -> Result<Vec<proto::Message>> {
         let (group, topic) = room_parts(room);
         if let Some(topic) = topic {
-            self.thread_messages(group, topic, page).await
+            self.thread_messages(group, topic, page, before.is_some()).await
         } else {
             Ok(self
                 .topics(group, page, before)
@@ -333,14 +369,24 @@ impl Api {
     ) -> Result<(Vec<proto::Message>, Option<i64>, bool)> {
         let (group, topic) = room_parts(room);
         if let Some(topic) = topic {
-            let messages = self.thread_messages(group, topic, page).await?;
+            let messages = self.thread_messages(group, topic, page, before.is_some()).await?;
             let cursor = messages.iter().map(proto::Message::create_time).min();
             let reached_start = messages.len() < page as usize;
+            godwit_core::net::log::line(&format!(
+                "{NET} history thread: asked {page}, got {}, older {}, reached start {reached_start}",
+                messages.len(),
+                before.is_some()
+            ));
             return Ok((messages, cursor, reached_start));
         }
         let response = self.topics(group, page, before).await?;
         let cursor = response.topics.iter().map(proto::Topic::sort_time).min();
         let reached_start = response.contains_first_topic();
+        godwit_core::net::log::line(&format!(
+            "{NET} history space: asked {page}, got {} topics, older {}, reached start {reached_start}",
+            response.topics.len(),
+            before.is_some()
+        ));
         let messages = response.topics.into_iter().flat_map(|topic| topic.replies).collect();
         Ok((messages, cursor, reached_start))
     }

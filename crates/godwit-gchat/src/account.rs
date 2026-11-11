@@ -474,8 +474,7 @@ impl GChatAccount {
             // so an older page asks for a longer prefix and the history merge keeps
             // only messages not shown yet. Spaces page by their `before` cursor.
             let page = if api::room_parts(&group).1.is_some() {
-                let shown = self.seen.iter().filter(|(g, _)| g == &group).count();
-                shown.saturating_add(backend::PAGE as usize).min(MAX_THREAD_PAGE) as i32
+                self.older_thread_page(&group)
             } else {
                 backend::PAGE
             };
@@ -484,8 +483,20 @@ impl GChatAccount {
                 before: Some(anchor),
                 page,
             });
-            self.history_cursors.remove(&group);
+            // The cursor stays until an answer replaces it, so a failed or
+            // empty answer doesn't end scrollback for the room.
         }
+    }
+    /// The page size for a thread's older page: its messages shown so far
+    /// plus one page. Counts the thread's own messages, not the whole space's.
+    fn older_thread_page(&self, group: &str) -> i32 {
+        let (base, topic) = api::room_parts(group);
+        let shown = self
+            .messages
+            .iter()
+            .filter(|((g, _), (t, _))| g.as_str() == base && Some(t.as_str()) == topic)
+            .count();
+        shown.saturating_add(backend::PAGE as usize).min(MAX_THREAD_PAGE) as i32
     }
     /// Like `presence_now`, but for a stream event: the server only sends
     /// these when something actually changed, so the 30-second snapshot
@@ -914,11 +925,7 @@ impl GChatAccount {
                 let Some(account) = self.account.clone() else { return };
                 let room = RoomId::new(account, group.as_str());
                 match result {
-                    Ok((messages, cursor, mut reached_start)) => {
-                        // An older page that brings nothing new (Chat answered
-                        // with a page already shown) ends paging: asking again
-                        // would return the same page, and the view would keep
-                        // asking while it stays scrolled to the top.
+                    Ok((messages, cursor, reached_start)) => {
                         // An older page leaves out what is already shown (the
                         // boundary topic may come back), so nothing doubles.
                         let shown: std::collections::HashSet<String> = if older.is_some() {
@@ -930,12 +937,26 @@ impl GChatAccount {
                         } else {
                             Default::default()
                         };
-                        if older.is_some() && shown.len() == messages.len() {
-                            reached_start = true;
+                        // An older page with nothing new (a page already shown, or
+                        // an empty answer) is no progress, not the start: the
+                        // cursor stays so the next scroll up asks again (the
+                        // service may have answered badly this once). Only the
+                        // service's own word (`reached_start`) ends paging.
+                        let nothing_new = older.is_some() && shown.len() == messages.len();
+                        if nothing_new {
+                            godwit_core::net::log::line(&format!(
+                                "gchat history: older page had nothing new ({} messages), reached start {reached_start}",
+                                messages.len()
+                            ));
                         }
-                        if let Some(cursor) = cursor.filter(|_| !(older.is_some() && reached_start)) {
+                        if reached_start && older.is_some() {
+                            godwit_core::net::log::line("gchat history: reached start of older pages");
+                        }
+                        if older.is_some() && reached_start {
+                            self.history_cursors.remove(&group);
+                        } else if let Some(cursor) = cursor.filter(|_| !nothing_new) {
                             self.history_cursors.insert(group.clone(), cursor);
-                        } else {
+                        } else if older.is_none() {
                             self.history_cursors.remove(&group);
                         }
                         let catchup = self.catchup.remove(&group);
@@ -1821,8 +1842,8 @@ mod tests {
             "an older page must carry its anchor so it is prepended: {out:?}"
         );
 
-        // An older page with nothing new (the same page again) ends paging
-        // rather than being asked for over and over.
+        // An older page with nothing new (the same page again) is no progress,
+        // not the start: the cursor stays and the next scroll asks again.
         while cmds.try_recv().is_ok() {}
         a.run(Command::LoadHistory {
             room: room.clone(),
@@ -1835,13 +1856,56 @@ mod tests {
             matches!(
                 out.last(),
                 Some(Event::History {
-                    reached_start: true,
+                    reached_start: false,
                     ..
                 })
             ),
             "{out:?}"
         );
+        while cmds.try_recv().is_ok() {}
+        a.run(Command::LoadHistory {
+            room: room.clone(),
+            before: Some(anchor.clone()),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::History { before: Some(300), .. })));
 
+        // An empty older answer keeps the cursor too; a failed one as well.
+        let mut out = Vec::new();
+        a.handle(page(Vec::new(), None), &mut out);
+        a.run(Command::LoadHistory {
+            room: room.clone(),
+            before: Some(anchor.clone()),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::History { before: Some(300), .. })));
+        a.handle(
+            Ev::History {
+                group: "space:2".into(),
+                result: Err("boom".into()),
+            },
+            &mut Vec::new(),
+        );
+        a.run(Command::LoadHistory {
+            room: room.clone(),
+            before: Some(anchor.clone()),
+        });
+        assert!(matches!(cmds.try_recv(), Ok(Cmd::History { before: Some(300), .. })));
+
+        // The service saying it is the start ends paging.
+        let mut out = Vec::new();
+        a.handle(
+            Ev::History {
+                group: "space:2".into(),
+                result: Ok((Vec::new(), None, true)),
+            },
+            &mut out,
+        );
+        assert!(matches!(
+            out.last(),
+            Some(Event::History {
+                reached_start: true,
+                ..
+            })
+        ));
         // Without a cursor there is nothing older to ask for.
         let out = a.run(Command::LoadHistory {
             room,
@@ -1855,6 +1919,31 @@ mod tests {
             }]
         ));
         assert!(cmds.try_recv().is_err());
+    }
+
+    #[test]
+    fn a_threads_older_page_counts_only_its_own_messages() {
+        let (mut a, _cmds) = account();
+        a.handle(
+            Ev::Ready {
+                me: "me".into(),
+                world: vec![world_item("space:2", "Team", None)],
+            },
+            &mut Vec::new(),
+        );
+        // Messages of the thread "topic" and of another topic in the same space.
+        for (id, topic) in [
+            ("a", "topic"),
+            ("b", "topic"),
+            ("c", "other"),
+            ("d", "other"),
+            ("e", "other"),
+        ] {
+            a.messages
+                .insert(("space:2".to_owned(), id.to_owned()), (topic.to_owned(), 1));
+        }
+        assert_eq!(a.older_thread_page("space:2#topic"), 2 + backend::PAGE);
+        assert_eq!(a.older_thread_page("space:2#none"), backend::PAGE);
     }
 
     #[test]
