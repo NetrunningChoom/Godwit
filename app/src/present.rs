@@ -1373,17 +1373,14 @@ pub fn alert_options(choices: &[crate::settings::AlertMode]) -> ModelRc<SharedSt
     })
 }
 
-/// The composer's length note: shown from 90% of the network's limit
-/// (`max`, 0: none), and whether the draft is past it.
+/// The composer's length note, shown whenever the network's limit is known
+/// (`max`, 0: unknown), and whether the draft is past it.
 fn length_note(draft: &str, max: u32) -> (String, bool) {
     if max == 0 {
         return (String::new(), false);
     }
     let length = draft.chars().count();
     let max = max as usize;
-    if length * 10 < max * 9 {
-        return (String::new(), false);
-    }
     (format!("{length} / {max}"), length > max)
 }
 
@@ -1405,8 +1402,9 @@ mod length_note_tests {
     use super::length_note;
 
     #[test]
-    fn the_note_shows_near_and_past_the_limit_only() {
-        assert_eq!(length_note(&"a".repeat(1700), 2000), (String::new(), false));
+    fn the_note_shows_whenever_the_limit_is_known() {
+        assert_eq!(length_note("", 2000), ("0 / 2000".into(), false));
+        assert_eq!(length_note(&"a".repeat(1700), 2000), ("1700 / 2000".into(), false));
         assert_eq!(length_note(&"a".repeat(1800), 2000), ("1800 / 2000".into(), false));
         assert_eq!(length_note(&"é".repeat(2001), 2000), ("2001 / 2000".into(), true));
         assert_eq!(length_note("anything", 0), (String::new(), false));
