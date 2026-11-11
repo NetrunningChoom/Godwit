@@ -178,8 +178,8 @@ impl Shell {
         if self.demo.is_some() {
             static DEMO_DEVICES: std::sync::LazyLock<godwit_voice::call::AudioDevices> =
                 std::sync::LazyLock::new(|| godwit_voice::call::AudioDevices {
-                    inputs: vec!["Demo microphone".into()],
-                    outputs: vec!["Demo speakers".into()],
+                    inputs: vec!["Demo microphone".into(), "Demo headset microphone".into()],
+                    outputs: vec!["Demo speakers".into(), "Demo headphones".into()],
                     cameras: vec!["Demo camera".into(), "Demo camera 2".into()],
                 });
             Some(&DEMO_DEVICES)
@@ -289,8 +289,53 @@ impl Shell {
         ui.set_share_dialog_open(self.share_dialog.is_some());
     }
 
+    /// The call controls' audio menu opened: the devices are listed again
+    /// (not on a timer), and the lists shown now are the last known ones.
+    pub fn call_audio_opened(&mut self, ui: &AppWindow) {
+        if self.demo.is_none() {
+            self.list_devices();
+        }
+        self.show_devices(ui);
+    }
+
+    /// A pick in the call controls' menus: the same voice settings Settings
+    /// edits, saved and sent to the calls at once.
+    fn apply_call_audio(&mut self, ui: &AppWindow, change: impl FnOnce(&mut godwit_voice::call::VoiceSettings)) {
+        let before = self.settings.voice.clone();
+        change(&mut self.settings.voice);
+        if self.settings.voice != before {
+            self.push_voice_settings();
+            self.save_settings();
+        }
+        // Settings' lists and the menus show the new pick.
+        self.devices_shown = false;
+        self.show_devices(ui);
+    }
+
+    pub fn pick_call_input(&mut self, ui: &AppWindow, index: i32) {
+        let Some(devices) = self.audio_devices() else { return };
+        let choice = crate::voice_ui::device_choice(&devices.inputs, &self.settings.voice.input_device, index);
+        self.apply_call_audio(ui, |v| v.input_device = choice);
+    }
+
+    pub fn pick_call_output(&mut self, ui: &AppWindow, index: i32) {
+        let Some(devices) = self.audio_devices() else { return };
+        let choice = crate::voice_ui::device_choice(&devices.outputs, &self.settings.voice.output_device, index);
+        self.apply_call_audio(ui, |v| v.output_device = choice);
+    }
+
+    pub fn pick_call_noise(&mut self, ui: &AppWindow, index: i32) {
+        let mode = crate::voice_ui::noise_at(index);
+        self.apply_call_audio(ui, |v| v.noise_suppression = mode);
+    }
+
     /// The audio device lists, once they've arrived.
     pub(super) fn show_devices(&mut self, ui: &AppWindow) {
+        use slint::ComponentHandle;
+        // The noise suppression choice, for Settings and the microphone menu.
+        let noise = crate::voice_ui::noise_index(self.settings.voice.noise_suppression);
+        ui.set_noise_index(noise);
+        ui.global::<crate::ui::CallAudio>().set_noise_index(noise);
         if let Some(devices) = self.devices_rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
             self.devices = Some(devices);
             self.devices_rx = None;
@@ -303,6 +348,12 @@ impl Shell {
         let (inputs, input_index) = crate::voice_ui::device_list(&d.inputs, &self.settings.voice.input_device);
         let (outputs, output_index) = crate::voice_ui::device_list(&d.outputs, &self.settings.voice.output_device);
         let (cameras, camera_index) = crate::voice_ui::device_list(&d.cameras, &self.settings.voice.camera);
+        // The call controls' menus list the same devices.
+        let audio = ui.global::<crate::ui::CallAudio>();
+        audio.set_inputs(inputs.clone());
+        audio.set_input_index(input_index);
+        audio.set_outputs(outputs.clone());
+        audio.set_output_index(output_index);
         ui.set_inputs(inputs);
         ui.set_input_index(input_index);
         ui.set_outputs(outputs);

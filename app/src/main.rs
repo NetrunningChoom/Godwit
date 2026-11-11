@@ -734,6 +734,13 @@ fn connect_callbacks(ui: &AppWindow) {
     callback!(ui.on_open_data_folder(index) => |sh, _| sh.open_data_folder(index));
     callback!(ui.on_mic_test(on) => |sh, ui| sh.mic_test(ui, on));
     callback!(ui.on_list_devices() => |sh, ui| sh.settings_opened(ui));
+    {
+        let audio = ui.global::<godwit::ui::CallAudio>();
+        callback!(audio.on_opening() => |sh, ui| sh.call_audio_opened(ui));
+        callback!(audio.on_pick_input(i) => |sh, ui| sh.pick_call_input(ui, i));
+        callback!(audio.on_pick_output(i) => |sh, ui| sh.pick_call_output(ui, i));
+        callback!(audio.on_pick_noise(i) => |sh, ui| sh.pick_call_noise(ui, i));
+    }
     callback!(ui.on_log_out() => |sh, _| sh.log_out());
     callback!(ui.on_select_home() => |sh, ui| sh.act(ui, Action::SelectServer(None)));
     callback!(ui.on_select_server(row) => |sh, ui| {

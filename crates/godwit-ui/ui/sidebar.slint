@@ -4,6 +4,7 @@
 
 import { ListView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
+import { AudioMenuArrow, CallAudio } from "call-audio.slint";
 import { RoomItem, DirectoryItem, SoundItem } from "types.slint";
 import { Avatar, Badge, IconButton, Button, NetList, MenuPanel, MenuPlace, MenuRow, MenuDivider, TextField, EmojiText, NetworkSelect } from "widgets.slint";
 
@@ -194,7 +195,7 @@ component RoomRow inherits Rectangle {
         ? (room.can-create-here ? 1 : 0) + (room.can-reorder ? 2 : 0) + (room.can-manage ? 1 : 0)
         : 5 + (room.pins-above > 0 ? 1 : 0) + (room.pins-below > 0 ? 1 : 0) + (room.games ? 1 : 0)
             + (room.can-join-thread ? 1 : 0) + (room.can-leave ? 1 : 0) + (room.can-close ? 1 : 0)
-            + (room.can-notify ? (room.muted ? 1 : 6) + (room.kind == 2 ? 4 : 0) : 0)
+            + (room.can-notify ? 1 + (room.kind == 2 ? 4 : 0) : 0)
             + (room.kind != 2 ? 1 : 0) + (room.can-reorder ? 2 : 0) + (room.can-manage ? 1 : 0);
     property <int> menu-dividers: room.header ? 0
         : (room.can-join-thread ? 1 : 0) + (room.can-leave ? 1 : 0) + (room.can-notify ? 1 : 0) + (room.can-notify && room.kind == 2 ? 1 : 0)
@@ -236,17 +237,12 @@ component RoomRow inherits Rectangle {
             if !room.header && room.can-leave: MenuDivider { }
             if !room.header && room.can-leave: MenuRow { glyph: Icons.logout; label: "Leave group"; danger: true; clicked => { root.menu(12); } }
             if !room.header && room.can-close: MenuRow { glyph: Icons.close; label: "Close DM"; danger: true; clicked => { root.menu(14); } }
-            // The official channel menu's mute (with durations) and notification settings,
-            // as rows (menu 20..=24 mute for a while, 26 until turned off, 27 unmute,
-            // 30..=33 the level).
+            // The official channel menu's mute and notification settings. Mute opens
+            // its durations in a second panel (menu 20..=24 for a while, 26 until
+            // turned off); a muted chat shows how long and unmutes (27). 30..=33 the level.
             if !room.header && room.can-notify: MenuDivider { }
-            if !room.header && room.can-notify && room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Unmute channel" : "Unmute"; clicked => { root.menu(27); } }
-            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Mute channel for 15 minutes" : "Mute for 15 minutes"; clicked => { root.menu(20); } }
-            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 1 hour"; clicked => { root.menu(21); } }
-            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 3 hours"; clicked => { root.menu(22); } }
-            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 8 hours"; clicked => { root.menu(23); } }
-            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… for 24 hours"; clicked => { root.menu(24); } }
-            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: "… until I turn it back on"; clicked => { root.menu(26); } }
+            if !room.header && room.can-notify && room.muted: MenuRow { glyph: Icons.volume-off; label: (room.kind == 2 ? "Unmute channel" : "Unmute") + (room.muted-until != "" ? " (muted " + room.muted-until + ")" : ""); clicked => { root.menu(27); } }
+            if !room.header && room.can-notify && !room.muted: MenuRow { glyph: Icons.volume-off; label: room.kind == 2 ? "Mute channel…" : "Mute…"; clicked => { mute-menu.show(); } }
             if !room.header && room.can-notify && room.kind == 2: MenuDivider { }
             if !room.header && room.can-notify && room.kind == 2: MenuRow { glyph: Icons.notifications; label: (room.notify-level == 3 ? "✓ " : "") + "Use server default"; clicked => { root.menu(30); } }
             if !room.header && room.can-notify && room.kind == 2: MenuRow { glyph: Icons.chat; label: (room.notify-level == 0 ? "✓ " : "") + "Notify: all messages"; clicked => { root.menu(31); } }
@@ -260,6 +256,22 @@ component RoomRow inherits Rectangle {
             if !room.header && room.can-reorder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.menu(8); } }
             if !room.header && room.can-reorder: MenuRow { glyph: Icons.expand; label: "Move down"; clicked => { root.menu(9); } }
             if !room.header && room.can-manage: MenuRow { glyph: Icons.settings; label: "Channel settings"; clicked => { root.menu(6); } }
+        }
+    }
+    // The mute durations, opened by the menu's Mute row at the same spot. The
+    // networks' mutes take these windows or "until turned off" (menu 20..=24, 26).
+    mute-menu := PopupWindow {
+        x: MenuPlace.fit-x(root.menu-x, 260px, root.absolute-position.x);
+        y: MenuPlace.fit-y(root.menu-y, MenuPlace.rows-h(6, 0), root.absolute-position.y);
+        MenuPanel {
+            max-height: MenuPlace.limit();
+            dismissed => { mute-menu.close(); }
+            MenuRow { glyph: Icons.volume-off; label: "For 15 minutes"; clicked => { root.menu(20); } }
+            MenuRow { glyph: Icons.volume-off; label: "For 1 hour"; clicked => { root.menu(21); } }
+            MenuRow { glyph: Icons.volume-off; label: "For 3 hours"; clicked => { root.menu(22); } }
+            MenuRow { glyph: Icons.volume-off; label: "For 8 hours"; clicked => { root.menu(23); } }
+            MenuRow { glyph: Icons.volume-off; label: "For 24 hours"; clicked => { root.menu(24); } }
+            MenuRow { glyph: Icons.volume-off; label: "Until I turn it back on"; clicked => { root.menu(26); } }
         }
     }
     // Who is in a busy voice channel, on a card beside its row while the
@@ -1071,12 +1083,34 @@ export component Sidebar inherits Rectangle {
                     tooltip: root.self-muted ? "Unmute" : "Mute";
                     clicked => { root.toggle-mute(); }
                 }
+                AudioMenuArrow {
+                    y: (parent.height - self.height) / 2;
+                    tooltip: "Microphone and noise suppression";
+                    heading: "Input device";
+                    device-glyph: Icons.mic;
+                    devices: CallAudio.inputs;
+                    device-index: CallAudio.input-index;
+                    noise: true;
+                    opening => { CallAudio.opening(); }
+                    device-picked(i) => { CallAudio.pick-input(i); }
+                    noise-picked(i) => { CallAudio.pick-noise(i); }
+                }
                 IconButton {
                     y: (parent.height - self.height) / 2;
                     glyph: root.self-deafened ? Icons.headset-off : Icons.headset;
                     tint: root.self-deafened ? Theme.error : Theme.on-surface-variant;
                     tooltip: root.self-deafened ? "Undeafen" : "Deafen";
                     clicked => { root.toggle-deafen(); }
+                }
+                AudioMenuArrow {
+                    y: (parent.height - self.height) / 2;
+                    tooltip: "Output device";
+                    heading: "Output device";
+                    device-glyph: Icons.volume-up;
+                    devices: CallAudio.outputs;
+                    device-index: CallAudio.output-index;
+                    opening => { CallAudio.opening(); }
+                    device-picked(i) => { CallAudio.pick-output(i); }
                 }
                 IconButton {
                     y: (parent.height - self.height) / 2;

@@ -37,7 +37,6 @@ use godwit_core::ids::{AccountId, MessageId, RoomId, ServerId, UserId};
 use godwit_core::message::AttachmentKind;
 use godwit_core::network::Network;
 use godwit_core::rich;
-use godwit_voice::dsp::NoiseSuppression;
 use slint::{ModelRc, SharedString, VecModel};
 
 use crate::cache::Cache;

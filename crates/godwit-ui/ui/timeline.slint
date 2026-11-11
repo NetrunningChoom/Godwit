@@ -10,6 +10,7 @@ import { EmojiPicker } from "picker.slint";
 import { TextBlock } from "textblock.slint";
 import { Gifs, GifPicker } from "gif-picker.slint";
 import { Avatar, IconButton, ImageIconButton, Button, MenuPanel, MenuPlace, MenuRow, MenuDivider, TextField, Select as Dropdown, EmojiText } from "widgets.slint";
+import { AudioMenuArrow, CallAudio } from "call-audio.slint";
 import { TalkOnItem } from "types.slint";
 import { MessageRow } from "message-row.slint";
 
@@ -820,6 +821,18 @@ export component Timeline inherits Rectangle {
                 fill: root.call-muted ? Theme.error.with-alpha(0.18) : Theme.surface-high;
                 clicked => { root.toggle-mute(); }
             }
+            AudioMenuArrow {
+                y: (parent.height - self.height) / 2;
+                tooltip: "Microphone and noise suppression";
+                heading: "Input device";
+                device-glyph: Icons.mic;
+                devices: CallAudio.inputs;
+                device-index: CallAudio.input-index;
+                noise: true;
+                opening => { CallAudio.opening(); }
+                device-picked(i) => { CallAudio.pick-input(i); }
+                noise-picked(i) => { CallAudio.pick-noise(i); }
+            }
             ImageIconButton {
                 icon: root.call-deafened
                     ? @image-url("../../../assets/icons/yapfast/headphone-off.svg")
@@ -828,6 +841,16 @@ export component Timeline inherits Rectangle {
                 tint: root.call-deafened ? Theme.error : Theme.on-surface;
                 fill: root.call-deafened ? Theme.error.with-alpha(0.18) : Theme.surface-high;
                 clicked => { root.toggle-deafen(); }
+            }
+            AudioMenuArrow {
+                y: (parent.height - self.height) / 2;
+                tooltip: "Output device";
+                heading: "Output device";
+                device-glyph: Icons.volume-up;
+                devices: CallAudio.outputs;
+                device-index: CallAudio.output-index;
+                opening => { CallAudio.opening(); }
+                device-picked(i) => { CallAudio.pick-output(i); }
             }
             if root.call-video-network || root.call-camera: ImageIconButton {
                 icon: root.call-camera

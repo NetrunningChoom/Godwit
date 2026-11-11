@@ -5,6 +5,7 @@ import { AutoDeletePage, AdState } from "autodelete.slint";
 import { PrivacyPage, SessionsPage, DataPrivacyPage, AccountSecurityPage, AccountPages, PrivPara } from "account-pages.slint";
 import { ProfilesPage, ProfilesState } from "profiles-settings.slint";
 import { ProfileSettings } from "profile-settings.slint";
+import { CallAudio } from "call-audio.slint";
 import { BrandBanner } from "brand-banner.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
@@ -645,7 +646,7 @@ export component Settings inherits Rectangle {
                         Toggle { y: (parent.height - self.height) / 2; checked: root.screen-quality-ask; toggled(on) => { root.screen-quality-ask = on; root.changed(); } }
                     }
                     Text { text: "Noise suppression (applies from the next call)"; color: Theme.on-surface; wrap: word-wrap; }
-                    Select { model: ["None", "Basic (WebRTC)", "Enhanced (RNNoise)"]; current-index <=> root.noise-index; selected => { root.changed(); } }
+                    Select { model: CallAudio.noise-modes; current-index <=> root.noise-index; selected => { root.changed(); } }
                     Row {
                         label: "Echo cancellation";
                         Toggle { y: (parent.height - self.height) / 2; checked: root.echo-cancellation; toggled(on) => { root.echo-cancellation = on; root.changed(); } }

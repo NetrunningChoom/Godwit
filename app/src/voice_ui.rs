@@ -4,6 +4,7 @@
 use godwit_core::application::AppState;
 use godwit_core::call::{CallStatus, ScreenShareQuality};
 use godwit_core::ids::RoomId;
+use godwit_voice::dsp::NoiseSuppression;
 use godwit_voice::screen::ScreenQuality;
 use slint::{ModelRc, SharedString, VecModel};
 
@@ -33,6 +34,24 @@ pub fn device_choice(names: &[String], current: &Option<String>, index: i32) -> 
         .and_then(|i| names.get(i))
         .cloned()
         .or_else(|| current.clone())
+}
+
+/// The noise suppression choice's row in the lists that offer it (Settings,
+/// the call controls' microphone menu).
+pub fn noise_index(mode: NoiseSuppression) -> i32 {
+    match mode {
+        NoiseSuppression::Disabled => 0,
+        NoiseSuppression::WebRtc => 1,
+        NoiseSuppression::Enhanced => 2,
+    }
+}
+
+pub fn noise_at(index: i32) -> NoiseSuppression {
+    match index {
+        0 => NoiseSuppression::Disabled,
+        1 => NoiseSuppression::WebRtc,
+        _ => NoiseSuppression::Enhanced,
+    }
 }
 
 pub fn quality_index(quality: ScreenQuality) -> i32 {
@@ -114,6 +133,18 @@ impl ShareDialog {
 mod tests {
     use super::*;
     use slint::Model;
+    #[test]
+    fn noise_rows_round_trip() {
+        for mode in [
+            NoiseSuppression::Disabled,
+            NoiseSuppression::WebRtc,
+            NoiseSuppression::Enhanced,
+        ] {
+            assert_eq!(noise_at(noise_index(mode)), mode);
+        }
+        assert_eq!(noise_at(-1), NoiseSuppression::Enhanced);
+        assert_eq!(noise_at(9), NoiseSuppression::Enhanced);
+    }
     #[test]
     fn missing_devices_stay_selected_until_the_user_changes_them() {
         let names = vec!["Present".into()];

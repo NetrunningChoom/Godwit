@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+// The audio choices that sit on the call controls: a small arrow beside the
+// microphone and the headphones button opens a menu upward from it. The
+// lists and the current picks are the ones Settings shows; Rust keeps both
+// in step.
+import { Theme, Icons, Icon } from "theme.slint";
+import { MenuPanel, MenuRow, MenuDivider, MenuPlace } from "widgets.slint";
+
+export global CallAudio {
+    in property <[string]> inputs;
+    in property <int> input-index;
+    in property <[string]> outputs;
+    in property <int> output-index;
+    // The same three choices Settings offers, in the order of its index.
+    in property <[string]> noise-modes: ["None", "Basic (WebRTC)", "Enhanced (RNNoise)"];
+    in property <int> noise-index;
+    // The menu opened: the device lists are asked for again.
+    callback opening();
+    callback pick-input(int);
+    callback pick-output(int);
+    callback pick-noise(int);
+}
+
+component MenuHeading inherits Rectangle {
+    in property <string> text;
+    height: 28px;
+    Text {
+        x: Theme.gap-lg;
+        width: parent.width - Theme.gap-lg * 2;
+        height: parent.height;
+        text: root.text;
+        font-size: Theme.text-caption;
+        color: Theme.on-surface-variant;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+// The arrow, and the menu it opens above itself: a device list (the current
+// one marked) and, for the microphone, the noise suppression choice.
+export component AudioMenuArrow inherits Rectangle {
+    in property <string> tooltip;
+    in property <string> heading;
+    in property <string> device-glyph;
+    in property <[string]> devices;
+    in property <int> device-index;
+    // Also offer noise suppression (the microphone's menu).
+    in property <bool> noise;
+    callback device-picked(int);
+    callback noise-picked(int);
+    callback opening();
+
+    // The menu's width: a fixed size, narrower when the window is.
+    property <length> menu-w: MenuPlace.window-w <= 0px ? 280px : min(280px, MenuPlace.window-w - MenuPlace.margin * 2);
+    // Its height from the rows it holds, never more than the room above the
+    // button (the panel scrolls beyond that).
+    property <length> natural-h: Theme.space-2 * 2 + 28px + max(1, root.devices.length) * 36px
+        + (root.noise ? 9px + 28px + CallAudio.noise-modes.length * 36px : 0px);
+    property <length> menu-h: MenuPlace.window-h <= 0px ? root.natural-h
+        : min(root.natural-h, max(36px, root.absolute-position.y - MenuPlace.margin - Theme.gap-sm));
+    // Left edges lined up with the arrow, pulled back inside the window.
+    property <length> menu-x: MenuPlace.window-w <= 0px ? 0px
+        : max(MenuPlace.margin, min(root.absolute-position.x, MenuPlace.window-w - root.menu-w - MenuPlace.margin))
+            - root.absolute-position.x;
+
+    width: 16px; // literal: an arrow's own hit area
+    height: Theme.control-icon;
+    border-radius: Theme.radius-sm;
+    background: touch.has-hover ? Theme.surface-highest : transparent;
+    Icon {
+        text: Icons.expand-less;
+        font-size: Theme.text-title;
+        color: Theme.on-surface-variant;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.opening();
+            pop.show();
+        }
+    }
+    if root.tooltip != "": Tooltip {
+        Rectangle {
+            width: tip-label.preferred-width + 16px;
+            height: tip-label.preferred-height + 8px;
+            border-radius: Theme.radius-xs;
+            background: Theme.surface-highest;
+            tip-label := Text { text: root.tooltip; color: Theme.on-surface; font-size: Theme.text-small; }
+        }
+    }
+
+    pop := PopupWindow {
+        x: root.menu-x;
+        y: -root.menu-h - Theme.gap-sm;
+        width: root.menu-w;
+        height: root.menu-h;
+        close-policy: close-on-click-outside;
+        MenuPanel {
+            width: root.menu-w;
+            height: root.menu-h;
+            max-height: root.menu-h;
+            dismissed => { pop.close(); }
+            MenuHeading { text: root.heading; }
+            if root.devices.length == 0: MenuRow {
+                glyph: root.device-glyph;
+                label: "Looking for devices";
+            }
+            for name[i] in root.devices: MenuRow {
+                glyph: root.device-glyph;
+                label: name;
+                selected: i == root.device-index;
+                clicked => {
+                    root.device-picked(i);
+                    pop.close();
+                }
+            }
+            if root.noise: VerticalLayout {
+                MenuDivider { }
+                MenuHeading { text: "Noise suppression"; }
+                for mode[i] in CallAudio.noise-modes: MenuRow {
+                    glyph: "";
+                    label: mode;
+                    selected: i == CallAudio.noise-index;
+                    clicked => {
+                        root.noise-picked(i);
+                        pop.close();
+                    }
+                }
+            }
+        }
+    }
+}

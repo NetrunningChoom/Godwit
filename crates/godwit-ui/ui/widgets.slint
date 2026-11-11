@@ -862,8 +862,10 @@ export component MenuRow inherits Rectangle {
     in property <string> glyph;
     in property <string> label;
     in property <bool> danger;
+    // The current pick of a list of choices: accent colour and bold.
+    in property <bool> selected;
     callback clicked;
-    property <color> fg: root.danger ? Theme.error : Theme.on-surface;
+    property <color> fg: root.danger ? Theme.error : root.selected ? Theme.primary : Theme.on-surface;
     height: 36px;
     background: touch.pressed ? root.fg.with-alpha(0.12) : touch.has-hover ? root.fg.with-alpha(0.08) : transparent;
     HorizontalLayout {
@@ -871,7 +873,7 @@ export component MenuRow inherits Rectangle {
         padding-right: Theme.gap-lg;
         spacing: Theme.space-3;
         Icon { text: root.glyph; font-size: Theme.text-title; color: root.fg; width: 16px; }
-        Text { text: root.label; color: root.fg; vertical-alignment: center; horizontal-stretch: 1; }
+        Text { text: root.label; color: root.fg; font-weight: root.selected ? 700 : 400; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
     }
     touch := TouchArea { clicked => { root.clicked(); } }
 }
