@@ -188,4 +188,22 @@ mod tests {
         let t = trigger_at("@alex", 3).expect("middle of trigger");
         assert_eq!(insert("@alex", &t, "@Ada"), ("@Ada".into(), 4));
     }
+
+    #[test]
+    fn bare_at_offers_every_person_and_a_partial_name_narrows_them() {
+        let people = ["Ada", "Alan", "Grace"].map(|n| Candidate {
+            id: CandidateId::MentionSpecial(n.into()),
+            name: n.into(),
+            detail: Arc::from("Person"),
+        });
+        let bare = trigger_at("@", 1).expect("a lone @ is a trigger");
+        assert_eq!((bare.kind, bare.query.as_str()), (TriggerKind::Person, ""));
+        assert_eq!(matches(&people, &bare.query, 8).len(), 3);
+        let partial = trigger_at("hello @a", 8).expect("@ after a space");
+        let names: Vec<_> = matches(&people, &partial.query, 8)
+            .iter()
+            .map(|c| c.name.to_string())
+            .collect();
+        assert_eq!(names, ["Ada", "Alan", "Grace"]);
+    }
 }

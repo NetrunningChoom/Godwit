@@ -171,7 +171,12 @@ export component Timeline inherits Rectangle {
     callback autocomplete-picked(int);
     in property <[AutocompleteItem]> autocomplete-rows;
     property <int> autocomplete-index: 0;
-    changed autocomplete-rows => { autocomplete-index = 0; }
+    changed autocomplete-rows => {
+        autocomplete-index = 0;
+        // A PopupWindow only appears through show(); `visible` never opens it.
+        autocomplete-menu.close();
+        if autocomplete-rows.length > 0 { autocomplete-menu.show(); }
+    }
     in property <int> inserted-at;
     in property <int> insert-serial;
     changed insert-serial => {
@@ -1299,7 +1304,8 @@ export component Timeline inherits Rectangle {
                 y: -min(220px, 40px * root.autocomplete-rows.length + Theme.gap-md);
                 width: min(320px, root.width - Theme.gap-lg * 2);
                 height: min(220px, 40px * root.autocomplete-rows.length + Theme.gap-md);
-                visible: root.autocomplete-rows.length > 0;
+                // Typing in the input must not close it; the rows empty when the token ends.
+                close-policy: no-auto-close;
                 Rectangle {
                     background: Theme.surface-high;
                     border-radius: Theme.radius-md;
@@ -1344,7 +1350,10 @@ export component Timeline inherits Rectangle {
                     min-width: 120px;
                     // Grows with the draft up to a cap, then scrolls inside
                     // (the input used to spill over the chat above).
-                    height: min(max(Theme.row-member, input.preferred-height + Theme.space-7), 220px);
+                    // A strip of its own under the text for the length counter,
+                    // so the counter never sits over the draft.
+                    property <length> note-room: root.length-note != "" ? Theme.text-caption + Theme.gap-sm * 2 : 0px;
+                    height: min(max(Theme.row-member, input.preferred-height + Theme.space-7), 220px) + self.note-room;
                     border-radius: Theme.radius-lg;
                     background: Theme.surface;
                     // A ScrollView, not a bare Flickable: the wheel scrolls it
@@ -1352,6 +1361,7 @@ export component Timeline inherits Rectangle {
                     draft-scroll := ScrollView {
                         x: Theme.gap-lg;
                         width: parent.width - Theme.gap-lg;
+                        height: parent.height - parent.note-room;
                         horizontal-scrollbar-policy: always-off;
                         content-width: self.visible-width;
                         // 12px above the text; the 12px below is the one
