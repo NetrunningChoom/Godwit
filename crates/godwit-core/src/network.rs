@@ -118,14 +118,13 @@ impl Network {
     }
 
     /// How the network wants our presence kept up to date (see
-    /// [`crate::activity`]). Only Google Chat shows us active or away from
-    /// what the client reports; the others keep the chosen status until it
-    /// changes, so they're sent it once per change and nothing more.
+    /// [`crate::activity`]). Every network keeps the chosen status until it
+    /// changes, so it's sent once per change and nothing more; Google Chat
+    /// is shown active for as long as we're signed in, unless "Set as away"
+    /// is chosen, rather than following window focus.
     pub fn presence_upkeep(self) -> crate::activity::PresenceUpkeep {
-        match self {
-            Self::GoogleChat => crate::activity::PresenceUpkeep::FollowsActivity,
-            _ => crate::activity::PresenceUpkeep::OnChange,
-        }
+        let _ = self;
+        crate::activity::PresenceUpkeep::OnChange
     }
 
     /// How the network lists a server's threads. Slack gathers them in a
