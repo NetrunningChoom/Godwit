@@ -3,7 +3,7 @@
 
 import { Theme, Icons, Icon } from "theme.slint";
 import { NotificationItem } from "types.slint";
-import { Avatar, Button, PageHeader, EmptyState } from "widgets.slint";
+import { Avatar, Button, PageHeader, EmptyState, EmojiText } from "widgets.slint";
 import { NetworkIcon } from "network-icon.slint";
 import { ListView } from "std-widgets.slint";
 
@@ -62,9 +62,9 @@ export component Notifications inherits Rectangle {
                                 width: 14px;
                                 height: 14px;
                             }
-                            Text {
+                            EmojiText {
                                 text: item.author;
-                                overflow: elide;
+                                runs: item.author-runs;
                                 font-weight: 600;
                                 color: Theme.on-surface;
                                 horizontal-stretch: 0;
@@ -88,9 +88,9 @@ export component Notifications inherits Rectangle {
                         HorizontalLayout {
                             spacing: Theme.space-2;
                             if item.call: Icon { text: Icons.call; font-size: Theme.text-body; width: 16px; color: Theme.on-surface-variant; }
-                            Text {
+                            EmojiText {
                                 text: item.preview;
-                                overflow: elide;
+                                runs: item.preview-runs;
                                 font-size: Theme.text-label;
                                 horizontal-stretch: 1;
                                 color: Theme.on-surface-variant;

@@ -477,6 +477,7 @@ pub fn members(groups: &[MemberGroup], images: &mut Images) -> (Vec<MemberItem>,
         rows.push(MemberItem {
             header: true,
             name: g.title.as_ref().into(),
+            name_runs: label_runs(&g.title, images),
             ..MemberItem::default()
         });
         who.push(None);
@@ -505,6 +506,7 @@ pub fn members(groups: &[MemberGroup], images: &mut Images) -> (Vec<MemberItem>,
                 has_colour: m.colour.is_some(),
                 presence: presence_colour(m.presence),
                 status: m.status.as_deref().unwrap_or_default().into(),
+                status_runs: label_runs(m.status.as_deref().unwrap_or_default(), images),
             });
             who.push(Some(m.user.clone()));
         }

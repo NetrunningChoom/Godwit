@@ -66,6 +66,10 @@ impl Shell {
         self.settings.convert_emoticons
     }
 
+    pub fn bulk_delete(&self) -> bool {
+        self.settings.bulk_delete
+    }
+
     /// Fetches the invite cards on screen, once each (as the official
     /// element's query, which never refetches).
     pub(super) fn load_invites(&mut self, ui: &AppWindow) {
@@ -431,8 +435,13 @@ impl Shell {
             }
             return;
         }
-        if choice == 5 {
-            self.settings.cycle_room_alerts(&room);
+        if let Some(alerts) = match choice {
+            5 => Some(settings::RoomAlerts::Default),
+            15 => Some(settings::RoomAlerts::All),
+            16 => Some(settings::RoomAlerts::Off),
+            _ => None,
+        } {
+            self.settings.set_room_alerts(&room, alerts);
             self.presenter.muzzle = self.settings.clone();
             self.save_settings();
             self.refresh(ui);

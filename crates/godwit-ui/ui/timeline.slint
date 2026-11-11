@@ -3,7 +3,7 @@
 
 import { Slider, ScrollView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
-import { Anim, Players, CallFrames, Select, BlockItem, MessageItem, AttachmentItem, EmbedItem, InviteItem, ReactionItem, FileItem, CallMemberItem, EmojiRowItem, StreamItem, AutocompleteItem } from "types.slint";
+import { Anim, Players, CallFrames, Select, BlockItem, MessageItem, AttachmentItem, EmbedItem, InviteItem, ReactionItem, FileItem, CallMemberItem, EmojiRowItem, StreamItem, AutocompleteItem, LabelRun } from "types.slint";
 import { CallVideoItem, ForumPostItem, ForumTagItem } from "types.slint";
 import { ForumView } from "forum-view.slint";
 import { EmojiPicker } from "picker.slint";
@@ -19,6 +19,7 @@ import { MessageRow } from "message-row.slint";
 // messages, who's typing and the composer.
 export component Timeline inherits Rectangle {
         in property <string> title;
+        in property <[LabelRun]> title-runs;
         // With several accounts: the one this room is on ("" otherwise),
         // shown as a chip in the header and named in the composer.
         in property <string> as-account;
@@ -171,8 +172,29 @@ export component Timeline inherits Rectangle {
     callback autocomplete-picked(int);
     in property <[AutocompleteItem]> autocomplete-rows;
     property <int> autocomplete-index: 0;
+    // The suggestion list's geometry, here because the popup's insides
+    // can't be reached from outside it.
+    property <length> autocomplete-row: 38px;
+    property <length> autocomplete-pad: Theme.space-1;
+    // The chat area above the composer, which the popup covers.
+    property <length> autocomplete-area: max(0px, composer-box.absolute-position.y - root.absolute-position.y);
+    // Sized to its rows, at most 220px and never taller than the chat above;
+    // more rows scroll inside instead of spilling over the input.
+    property <length> autocomplete-height: min(220px, self.autocomplete-area - Theme.gap-md, self.autocomplete-row * root.autocomplete-rows.length + self.autocomplete-pad * 2);
+    property <length> autocomplete-scroll: 0px;
+    // Arrow keys keep the picked row in view when the list scrolls.
+    changed autocomplete-index => {
+        let view = autocomplete-height - autocomplete-pad * 2;
+        let top = autocomplete-index * autocomplete-row;
+        if top < -autocomplete-scroll {
+            autocomplete-scroll = -top;
+        } else if top + autocomplete-row > view - autocomplete-scroll {
+            autocomplete-scroll = view - top - autocomplete-row;
+        }
+    }
     changed autocomplete-rows => {
         autocomplete-index = 0;
+        autocomplete-scroll = 0px;
         // A PopupWindow only appears through show(); `visible` never opens it.
         autocomplete-menu.close();
         if autocomplete-rows.length > 0 { autocomplete-menu.show(); }
@@ -250,13 +272,15 @@ export component Timeline inherits Rectangle {
     // Older messages load a screen before the top is reached, so they're in
     // place when it is; while the view stays up there, at most a page every
     // 0.7 s (the core asks for one page at a time), so a fast scroll doesn't
-    // fire page after page at the network.
+    // fire page after page at the network. A failed page stops the automatic
+    // loading: retrying the same request every tick would hammer the network
+    // with an answer that fails the same way, so only "Try again" asks again.
     property <bool> near-top;
-    changed near-top => { if root.near-top && !root.reached-start { root.load-earlier(); } }
+    changed near-top => { if root.near-top && !root.reached-start && !root.failed { root.load-earlier(); } }
     earlier-timer := Timer {
         interval: 700ms;
-        // Not once the chat's start is in: nothing ticks while idle.
-        running: root.near-top && !root.reached-start;
+        // Not once the chat's start is in, or after a failure: nothing ticks while idle.
+        running: root.near-top && !root.reached-start && !root.failed;
         triggered => { root.load-earlier(); }
     }
     property <bool> at-bottom: true;
@@ -391,14 +415,18 @@ export component Timeline inherits Rectangle {
                 // Header texts elide: an unwrapped text's minimum is its whole
                 // length, which made the chat wider than the window (its
                 // composer's buttons went off screen).
-                if !root.renaming: Text {
-                    text: root.title;
-                    vertical-alignment: center;
-                    overflow: elide;
-                    min-width: min(self.preferred-width, 80px);
-                    font-size: Theme.text-navigation;
-                    font-weight: 600;
-                    color: Theme.on-surface;
+                if !root.renaming: Rectangle {
+                    min-width: min(title-text.preferred-width, 80px);
+                    preferred-width: title-text.preferred-width;
+                    title-text := EmojiText {
+                        width: parent.width;
+                        height: parent.height;
+                        text: root.title;
+                        runs: root.title-runs;
+                        font-size: Theme.text-navigation;
+                        font-weight: 600;
+                        color: Theme.on-surface;
+                    }
                     // A person: click their name to give them your own.
                     if root.can-rename: TouchArea {
                         mouse-cursor: pointer;
@@ -778,7 +806,7 @@ export component Timeline inherits Rectangle {
                         HorizontalLayout {
                             alignment: center;
                             spacing: Theme.space-2;
-                            Text { text: m.name; color: Theme.on-surface; overflow: elide; }
+                            EmojiText { text: m.name; runs: m.name-runs; color: Theme.on-surface; horizontal-stretch: 0; }
                             if m.muted: Icon { text: Icons.mic-off; font-size: Theme.text-body; color: Theme.error; }
                             if m.deafened: Icon { text: Icons.headset-off; font-size: Theme.text-body; color: Theme.error; }
                             // Muted here only: a speaker-off icon beside the others, as the
@@ -1285,7 +1313,7 @@ export component Timeline inherits Rectangle {
                 }
             }
         }
-        Rectangle {
+        composer-box := Rectangle {
             // A forum has no composer (its posts are started from the list).
             visible: !root.is-forum;
             height: root.is-forum ? 0px : composer.preferred-height + Theme.gap-md * 2;
@@ -1300,27 +1328,47 @@ export component Timeline inherits Rectangle {
             autocomplete-menu := PopupWindow {
                 // Matches the composer suggestions in stoatchat/for-web's text editor; keeping this
                 // popup above the input also leaves the chat's newest message visible.
-                x: Theme.gap-lg;
-                y: -min(220px, 40px * root.autocomplete-rows.length + Theme.gap-md);
-                width: min(320px, root.width - Theme.gap-lg * 2);
-                height: min(220px, 40px * root.autocomplete-rows.length + Theme.gap-md);
+                // It covers the chat above the composer (never the composer, so
+                // typing and clicking in the input go on): a click anywhere in
+                // that area closes it, as Escape does.
+                x: root.absolute-position.x - parent.absolute-position.x;
+                y: root.absolute-position.y - parent.absolute-position.y;
+                width: root.width;
+                height: root.autocomplete-area;
                 // Typing in the input must not close it; the rows empty when the token ends.
                 close-policy: no-auto-close;
+                TouchArea {
+                    clicked => { root.autocomplete-picked(-2); }
+                }
                 Rectangle {
+                    x: Theme.gap-lg;
+                    y: parent.height - self.height;
+                    width: min(320px, root.width - Theme.gap-lg * 2);
+                    height: root.autocomplete-height;
                     background: Theme.surface-high;
                     border-radius: Theme.radius-md;
-                    VerticalLayout {
-                        padding: Theme.space-1;
+                    clip: true;
+                    // Swallows clicks between rows, so they don't close the list.
+                    TouchArea { }
+                    Flickable {
+                        x: root.autocomplete-pad;
+                        y: root.autocomplete-pad;
+                        width: parent.width - root.autocomplete-pad * 2;
+                        height: parent.height - root.autocomplete-pad * 2;
+                        content-height: root.autocomplete-row * root.autocomplete-rows.length;
+                        content-y <=> root.autocomplete-scroll;
                         for item[i] in root.autocomplete-rows: Rectangle {
-                            height: 38px;
+                            y: root.autocomplete-row * i;
+                            height: root.autocomplete-row;
                             border-radius: Theme.radius-sm;
                             background: i == root.autocomplete-index ? Theme.secondary-container : transparent;
                             HorizontalLayout {
                                 padding-left: Theme.space-3;
+                                padding-right: Theme.space-3;
                                 spacing: Theme.space-3;
-                                Text { text: item.kind == 0 ? "@" : (item.kind == 1 ? "#" : ":"); color: Theme.primary; }
-                                Text { text: item.name; color: Theme.on-surface; overflow: elide; horizontal-stretch: 1; }
-                                Text { text: item.detail; color: Theme.on-surface-variant; font-size: Theme.text-caption; }
+                                Text { text: item.kind == 0 ? "@" : (item.kind == 1 ? "#" : ":"); color: Theme.primary; vertical-alignment: center; }
+                                EmojiText { text: item.name; runs: item.name-runs; color: Theme.on-surface; horizontal-stretch: 1; }
+                                Text { text: item.detail; color: Theme.on-surface-variant; font-size: Theme.text-caption; overflow: elide; vertical-alignment: center; }
                             }
                             TouchArea { mouse-cursor: pointer; clicked => { root.autocomplete-picked(i); } }
                         }

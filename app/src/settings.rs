@@ -144,6 +144,10 @@ pub struct Settings {
     /// Background profiles' notifications show who and what; off, only
     /// the profile's name and the kind of alert.
     pub background_previews: bool,
+    /// "Delete messages from here down" in the message menu (where the
+    /// network allows it). Off: one wrong click can remove up to
+    /// `bulk::MAX_PER_ACTION` messages, so it has to be switched on first.
+    pub bulk_delete: bool,
     /// The profile in use; not saved (each start opens the default one).
     #[serde(skip)]
     pub current_profile: u32,
@@ -219,6 +223,7 @@ impl Default for Settings {
             ask_profile_switch: true,
             background_profiles: false,
             background_previews: false,
+            bulk_delete: false,
             current_profile: 0,
         }
     }
@@ -449,13 +454,13 @@ impl Settings {
         }
     }
 
-    /// Default → All → Off → Default.
-    pub fn cycle_room_alerts(&mut self, room: &RoomId) {
+    /// Sets one chat's alerts; the default isn't stored.
+    pub fn set_room_alerts(&mut self, room: &RoomId, alerts: RoomAlerts) {
         let key = room_key(room);
-        match self.room_alerts(room) {
-            RoomAlerts::Default => self.room_alerts.insert(key, "all".into()),
-            RoomAlerts::All => self.room_alerts.insert(key, "off".into()),
-            RoomAlerts::Off => self.room_alerts.remove(&key),
+        match alerts {
+            RoomAlerts::Default => self.room_alerts.remove(&key),
+            RoomAlerts::All => self.room_alerts.insert(key, "all".into()),
+            RoomAlerts::Off => self.room_alerts.insert(key, "off".into()),
         };
     }
 
@@ -559,13 +564,13 @@ mod tests {
         let room = RoomId::new(AccountId::new(Network::Slack, "T1:U1"), "T1:C1");
         let mut s = Settings::default();
         assert_eq!(s.room_alerts(&room), RoomAlerts::Default);
-        s.cycle_room_alerts(&room);
+        s.set_room_alerts(&room, RoomAlerts::All);
         assert_eq!(s.room_alerts(&room), RoomAlerts::All);
         let saved: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(saved.room_alerts(&room), RoomAlerts::All);
-        s.cycle_room_alerts(&room);
+        s.set_room_alerts(&room, RoomAlerts::Off);
         assert_eq!(s.room_alerts(&room), RoomAlerts::Off);
-        s.cycle_room_alerts(&room);
+        s.set_room_alerts(&room, RoomAlerts::Default);
         assert_eq!(s.room_alerts(&room), RoomAlerts::Default);
         assert!(s.room_alerts.is_empty(), "the default isn't stored");
     }

@@ -129,6 +129,9 @@ pub fn rows(
                 preview: n.preview.replace(['\n', '\r'], " ").into(),
                 when: ago(n.at_ms, now_ms).into(),
                 call: n.kind == AlertKind::Call,
+                // Filled by the caller, which has the emoji pictures.
+                author_runs: Default::default(),
+                preview_runs: Default::default(),
             }
         })
         .collect()

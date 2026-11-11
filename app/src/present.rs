@@ -437,12 +437,11 @@ impl Presenter {
             ui.set_settings_account_tab(1);
         }
         self.asked = asking;
-        ui.set_account_name(
-            focus_account(state, self.focus.as_ref())
-                .map(|a| a.display_name.to_string())
-                .unwrap_or_default()
-                .into(),
-        );
+        let account_name = focus_account(state, self.focus.as_ref())
+            .map(|a| a.display_name.to_string())
+            .unwrap_or_default();
+        ui.set_account_name_runs(view::label_runs(&account_name, images));
+        ui.set_account_name(account_name.into());
         if !main {
             return;
         }
@@ -923,6 +922,8 @@ impl Presenter {
                 .iter()
                 .map(|room| crate::ui::ThreadItem {
                     name: room.name.as_ref().into(),
+                    name_runs: view::label_runs(&room.name, images),
+                    preview_runs: view::label_runs(room.status.as_deref().unwrap_or_default(), images),
                     context: room
                         .parent
                         .as_ref()
@@ -1097,6 +1098,7 @@ impl Presenter {
         let title = with
             .and_then(|w| view::person_name(state, w))
             .unwrap_or_else(|| room.name.to_string());
+        ui.set_room_title_runs(view::label_runs(&title, images));
         ui.set_room_title(title.into());
         let contact = with.and_then(|w| state.contacts.of(w));
         ui.set_room_can_rename(contact.is_some());
@@ -1173,7 +1175,9 @@ impl Presenter {
         ui.set_can_edit(room.capabilities.edit);
         ui.set_can_delete(room.capabilities.delete);
         ui.set_can_delete_others(room.capabilities.delete_others);
-        ui.set_can_bulk_delete(room.capabilities.bulk_delete && room.capabilities.delete_others);
+        ui.set_can_bulk_delete(
+            self.muzzle.bulk_delete && room.capabilities.bulk_delete && room.capabilities.delete_others,
+        );
         ui.set_can_moderate_reactions(room.capabilities.moderate_reactions);
         ui.set_can_show_reactors(room.capabilities.reaction_users);
         ui.set_has_pins(room.capabilities.pins);

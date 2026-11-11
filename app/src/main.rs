@@ -949,6 +949,10 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_delete_from(row) => |sh, ui| {
+        // The menu hides it while the setting is off; a stale row can't slip through.
+        if !sh.bulk_delete() {
+            return;
+        }
         if let Some(id) = sh.message_at(row) {
             sh.act(ui, Action::DeleteFrom(id));
         }

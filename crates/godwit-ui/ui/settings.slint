@@ -176,6 +176,8 @@ export component Settings inherits Rectangle {
     in-out property <bool> auto-gain;
     in-out property <bool> dark;
     in-out property <bool> convert-emoticons;
+    // Whether the message menu offers "Delete messages from here down".
+    in-out property <bool> bulk-delete;
     // Appearance: the accent swatch picked (theme::ACCENTS' order) and the colour style.
     in-out property <int> accent-index;
     in-out property <int> style-index;
@@ -769,6 +771,12 @@ export component Settings inherits Rectangle {
                         label: "Start minimized";
                         detail: "When Godwit starts at sign-in, keep its window minimized.";
                         Toggle { y: (parent.height - self.height) / 2; checked: root.start-minimized; toggled(on) => { root.start-minimized = on; root.changed(); } }
+                    }
+                    Heading { text: "Moderation"; }
+                    Row {
+                        label: "Delete messages from here down";
+                        detail: "Adds it to the message menu in chats where you can delete other people's messages. It removes up to 100 messages at once and can't be undone.";
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.bulk-delete; toggled(on) => { root.bulk-delete = on; root.changed(); } }
                     }
                     Row {
                         label: "Panel sizes";

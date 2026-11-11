@@ -276,7 +276,7 @@ mod tests {
             &|_| false,
         );
         assert_eq!(n.map(|n| n.title), Some("Ann".to_owned()));
-        settings.cycle_room_alerts(&room); // every message
+        settings.set_room_alerts(&room, crate::settings::RoomAlerts::All);
         assert!(
             notice(
                 &alert(&room, AlertKind::Message),
@@ -348,9 +348,9 @@ mod tests {
             room: channel.id.clone(),
             message: demo::msg("1", "ann", "Ann", 0, "hello"),
         };
-        settings.cycle_room_alerts(&channel.id); // every message
+        settings.set_room_alerts(&channel.id, crate::settings::RoomAlerts::All);
         assert!(notice(&ev, app.state(), &settings, &|_| false, &|_| false).is_some());
-        settings.cycle_room_alerts(&channel.id); // none
+        settings.set_room_alerts(&channel.id, crate::settings::RoomAlerts::Off);
         assert!(notice(&ev, app.state(), &settings, &|_| false, &|_| false).is_none());
     }
 

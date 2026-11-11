@@ -61,10 +61,12 @@ export component Members inherits Rectangle {
                 border-radius: Theme.radius-dot;
                 background: Theme.surface-high;
             }
-            if row.header: Text {
+            if row.header: EmojiText {
                 x: 8px;
                 y: parent.height - self.height - 8px;
+                width: parent.width - 16px;
                 text: row.name;
+                runs: row.name-runs;
                 font-size: Theme.text-small;
                 font-weight: 600;
                 color: Theme.on-surface-variant;
@@ -106,10 +108,10 @@ export component Members inherits Rectangle {
                             font-weight: 600;
                             color: row.has-colour ? row.colour : Theme.on-surface;
                         }
-                        if row.status != "": Text {
+                        if row.status != "": EmojiText {
                             text: row.status;
+                            runs: row.status-runs;
                             font-size: Theme.text-caption;
-                            overflow: elide;
                             color: Theme.on-surface-variant;
                         }
                     }

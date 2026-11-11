@@ -503,6 +503,16 @@ fn category_header(title: &str, images: &mut Images) -> RoomItem {
 /// category key (headings only), for folding it.
 /// `network`: Home shows only chats on that network (its name; "" for all).
 pub fn rooms(state: &AppState, images: &mut Images, query: &str, network: &str, collapsed: &[String]) -> SidebarRows {
+    let mut rows = rooms_rows(state, images, query, network, collapsed);
+    // Subtitles (statuses, "with …" lines) are settled by now: their emoji
+    // become pictures, as the names' do.
+    for row in &mut rows.1 {
+        row.subtitle_runs = label_runs(&row.subtitle, images);
+    }
+    rows
+}
+
+fn rooms_rows(state: &AppState, images: &mut Images, query: &str, network: &str, collapsed: &[String]) -> SidebarRows {
     // Non-room pages keep the last room in core state for context (drafts,
     // profiles, returning to Home), but it isn't the currently open row.
     let selected = (!state.showing_friends

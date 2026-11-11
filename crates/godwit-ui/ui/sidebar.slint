@@ -5,7 +5,7 @@
 import { ListView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { AudioMenuArrow, CallAudio } from "call-audio.slint";
-import { RoomItem, DirectoryItem, SoundItem } from "types.slint";
+import { RoomItem, DirectoryItem, SoundItem, LabelRun } from "types.slint";
 import { Avatar, Badge, TipBubble, IconButton, Button, NetList, MenuPanel, MenuPlace, MenuRow, MenuDivider, TextField, EmojiText, NetworkSelect } from "widgets.slint";
 
 // Rows as Godwit and the official sidebar draw them: 16 px corners,
@@ -193,12 +193,12 @@ component RoomRow inherits Rectangle {
     // The menu's rows and dividers, counted (generously) for MenuPlace.
     property <int> menu-rows: room.header
         ? (room.can-create-here ? 1 : 0) + (room.can-reorder ? 2 : 0) + (room.can-manage ? 1 : 0)
-        : 5 + (room.pins-above > 0 ? 1 : 0) + (room.pins-below > 0 ? 1 : 0) + (room.games ? 1 : 0)
+        : 7 + (room.pins-above > 0 ? 1 : 0) + (room.pins-below > 0 ? 1 : 0) + (room.games ? 1 : 0)
             + (room.can-join-thread ? 1 : 0) + (room.can-leave ? 1 : 0) + (room.can-close ? 1 : 0)
             + (room.can-notify ? 1 + (room.kind == 2 ? 4 : 0) : 0)
             + (room.kind != 2 ? 1 : 0) + (room.can-reorder ? 2 : 0) + (room.can-manage ? 1 : 0);
     property <int> menu-dividers: room.header ? 0
-        : (room.can-join-thread ? 1 : 0) + (room.can-leave ? 1 : 0) + (room.can-notify ? 1 : 0) + (room.can-notify && room.kind == 2 ? 1 : 0)
+        : 1 + (room.can-join-thread ? 1 : 0) + (room.can-leave ? 1 : 0) + (room.can-notify ? 1 : 0) + (room.can-notify && room.kind == 2 ? 1 : 0)
             + (room.kind != 2 ? 1 : 0) + (room.can-manage ? 1 : 0) + (room.can-reorder ? 1 : 0);
     room-menu := PopupWindow {
         x: MenuPlace.fit-x(root.menu-x, 260px, root.absolute-position.x);
@@ -226,9 +226,12 @@ component RoomRow inherits Rectangle {
             if !room.header && room.pins-below > 0: MenuRow { glyph: Icons.expand; label: "Move pin down"; clicked => { root.menu(11); } }
             if !room.header: MenuRow { glyph: Icons.chat; label: "Mark as read"; clicked => { root.menu(1); } }
             if !room.header: MenuRow { glyph: Icons.unread; label: "Mark as unread"; clicked => { root.menu(2); } }
-            // Muzzle mode (Settings → Notifications) for just this chat.
-            // Cycles: the network's rules → every message → off.
-            if !room.header: MenuRow { glyph: Icons.unread; label: room.alerts == 1 ? "Notifications: all messages" : room.alerts == 2 ? "Notifications: off" : "Notifications: default"; clicked => { root.menu(5); } }
+            // This chat's alerts, the three choices shown with the current one
+            // marked: the network's own rules, every message, or none.
+            if !room.header: MenuDivider { }
+            if !room.header: MenuRow { glyph: Icons.unread; label: "Notifications: network default"; selected: room.alerts == 0; clicked => { root.menu(5); } }
+            if !room.header: MenuRow { glyph: Icons.unread; label: "Notifications: all messages"; selected: room.alerts == 1; clicked => { root.menu(15); } }
+            if !room.header: MenuRow { glyph: Icons.unread; label: "Notifications: off"; selected: room.alerts == 2; clicked => { root.menu(16); } }
             if !room.header: MenuRow { glyph: Icons.schedule; label: room.muzzled ? "Unmuzzle repeat messages" : "Muzzle repeat messages"; clicked => { root.menu(4); } }
             if !room.header && room.games: MenuRow { glyph: Icons.group; label: "Games in common…"; clicked => { root.menu(7); } }
             if !room.header && room.can-join-thread: MenuDivider { }
@@ -443,10 +446,10 @@ component RoomRow inherits Rectangle {
                         color: room.selected ? Theme.on-secondary-container : Theme.outline;
                     }
                 }
-                if room.subtitle != "": Text {
+                if room.subtitle != "": EmojiText {
                     text: room.subtitle;
+                    runs: room.subtitle-runs;
                     font-size: Theme.text-caption;
-                    overflow: elide;
                     color: room.selected ? Theme.on-secondary-container : Theme.on-surface-variant;
                 }
                 // Someone on several networks: their status on each.
@@ -519,6 +522,7 @@ export component Sidebar inherits Rectangle {
     in property <[DirectoryItem]> directory;
     callback join-room(int);
     in property <string> account-name;
+    in property <[LabelRun]> account-name-runs;
     in property <int> clock;
     in property <image> account-avatar;
     in property <bool> account-has-presence;
@@ -1057,58 +1061,68 @@ export component Sidebar inherits Rectangle {
                         background: root.account-presence;
                     }
                 }
-                Text {
+                EmojiText {
                     text: root.account-name;
-                    vertical-alignment: center;
-                    overflow: elide;
+                    runs: root.account-name-runs;
                     horizontal-stretch: 1;
                     color: Theme.on-surface;
                     font-weight: 600;
                 }
                 // Always here, as Discord's user panel: they hold outside a
                 // call too, and the next call starts muted or deafened.
-                IconButton {
-                    y: (parent.height - self.height) / 2;
-                    glyph: root.self-muted ? Icons.mic-off : Icons.mic;
-                    enabled: !root.self-deafened;
-                    tint: root.self-muted ? Theme.error : root.in-call && root.call-speaking ? Theme.online : Theme.on-surface-variant;
-                    tooltip: root.self-muted ? "Unmute" : "Mute";
-                    clicked => { root.toggle-mute(); }
-                }
-                AudioMenuArrow {
-                    y: (parent.height - self.height) / 2;
-                    tooltip: "Microphone and noise suppression";
-                    heading: "Input device";
-                    device-glyph: Icons.mic;
-                    devices: CallAudio.inputs;
-                    device-index: CallAudio.input-index;
-                    noise: true;
-                    opening => { CallAudio.opening(); }
-                    device-picked(i) => { CallAudio.pick-input(i); }
-                    noise-picked(i) => { CallAudio.pick-noise(i); }
-                }
-                IconButton {
-                    y: (parent.height - self.height) / 2;
-                    glyph: root.self-deafened ? Icons.headset-off : Icons.headset;
-                    tint: root.self-deafened ? Theme.error : Theme.on-surface-variant;
-                    tooltip: root.self-deafened ? "Undeafen" : "Deafen";
-                    clicked => { root.toggle-deafen(); }
-                }
-                AudioMenuArrow {
-                    y: (parent.height - self.height) / 2;
-                    tooltip: "Output device";
-                    heading: "Output device";
-                    device-glyph: Icons.volume-up;
-                    devices: CallAudio.outputs;
-                    device-index: CallAudio.output-index;
-                    opening => { CallAudio.opening(); }
-                    device-picked(i) => { CallAudio.pick-output(i); }
-                }
-                IconButton {
-                    y: (parent.height - self.height) / 2;
-                    glyph: Icons.settings;
-                    tooltip: "Settings";
-                    clicked => { root.open-settings(); }
+                // Each button sits right against its device arrow, and the
+                // controls close together, apart from the name.
+                HorizontalLayout {
+                    spacing: Theme.space-2;
+                    HorizontalLayout {
+                        spacing: 0px;
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            glyph: root.self-muted ? Icons.mic-off : Icons.mic;
+                            enabled: !root.self-deafened;
+                            tint: root.self-muted ? Theme.error : root.in-call && root.call-speaking ? Theme.online : Theme.on-surface-variant;
+                            tooltip: root.self-muted ? "Unmute" : "Mute";
+                            clicked => { root.toggle-mute(); }
+                        }
+                        AudioMenuArrow {
+                            y: (parent.height - self.height) / 2;
+                            tooltip: "Microphone and noise suppression";
+                            heading: "Input device";
+                            device-glyph: Icons.mic;
+                            devices: CallAudio.inputs;
+                            device-index: CallAudio.input-index;
+                            noise: true;
+                            opening => { CallAudio.opening(); }
+                            device-picked(i) => { CallAudio.pick-input(i); }
+                            noise-picked(i) => { CallAudio.pick-noise(i); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 0px;
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            glyph: root.self-deafened ? Icons.headset-off : Icons.headset;
+                            tint: root.self-deafened ? Theme.error : Theme.on-surface-variant;
+                            tooltip: root.self-deafened ? "Undeafen" : "Deafen";
+                            clicked => { root.toggle-deafen(); }
+                        }
+                        AudioMenuArrow {
+                            y: (parent.height - self.height) / 2;
+                            tooltip: "Output device";
+                            heading: "Output device";
+                            device-glyph: Icons.volume-up;
+                            devices: CallAudio.outputs;
+                            device-index: CallAudio.output-index;
+                            opening => { CallAudio.opening(); }
+                            device-picked(i) => { CallAudio.pick-output(i); }
+                        }
+                    }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        glyph: Icons.settings;
+                        tooltip: "Settings";
+                        clicked => { root.open-settings(); }
+                    }
                 }
             }
         }

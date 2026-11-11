@@ -3,7 +3,7 @@
 
 import { Theme, Icons, Icon } from "theme.slint";
 import { ThreadItem } from "types.slint";
-import { Button, EmptyState } from "widgets.slint";
+import { Button, EmptyState, EmojiText } from "widgets.slint";
 import { ScrollView } from "std-widgets.slint";
 
 export component Threads inherits Rectangle {
@@ -48,8 +48,8 @@ export component Threads inherits Rectangle {
                             Text { text: item.context; color: Theme.on-surface-variant; horizontal-stretch: 1; overflow: elide; }
                             Text { text: item.when; color: Theme.outline; }
                         }
-                        Text { text: item.name; color: Theme.on-surface; font-weight: item.unread ? 700 : 500; overflow: elide; }
-                        Text { text: item.preview; color: Theme.on-surface-variant; overflow: elide; }
+                        EmojiText { text: item.name; runs: item.name-runs; color: Theme.on-surface; font-weight: item.unread ? 700 : 500; }
+                        EmojiText { text: item.preview; runs: item.preview-runs; color: Theme.on-surface-variant; }
                     }
                 }
             }

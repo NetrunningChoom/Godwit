@@ -222,6 +222,7 @@ impl Shell {
                 crate::ui::AutocompleteItem {
                     kind,
                     id: id.into(),
+                    name_runs: crate::view::label_runs(&c.name, &mut self.images),
                     name: c.name.to_string().into(),
                     detail: c.detail.to_string().into(),
                 }

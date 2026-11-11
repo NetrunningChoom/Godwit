@@ -150,6 +150,7 @@ impl Shell {
         ui.set_dnd(s.dnd);
         ui.set_dark(s.dark);
         ui.set_convert_emoticons(s.convert_emoticons);
+        ui.set_bulk_delete(s.bulk_delete);
         ui.set_net_debug_log(!s.net_debug_log.is_empty());
         ui.set_net_debug_log_path(
             crate::settings::net_log_dir()
@@ -800,6 +801,7 @@ impl Shell {
         s.dnd = ui.get_dnd();
         s.dark = ui.get_dark();
         s.convert_emoticons = ui.get_convert_emoticons();
+        s.bulk_delete = ui.get_bulk_delete();
         let net_debug_log = ui.get_net_debug_log();
         if net_debug_log != !s.net_debug_log.is_empty() {
             s.net_debug_log = if net_debug_log {

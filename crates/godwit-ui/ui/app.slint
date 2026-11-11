@@ -105,6 +105,7 @@ export component AppWindow inherits Window {
     in property <string> login-mfa-hint;
     // Us.
     in property <string> account-name;
+    in property <[LabelRun]> account-name-runs;
     in property <string> account-username;
     in property <string> account-network;
     in property <string> account-initials;
@@ -510,6 +511,7 @@ export component AppWindow inherits Window {
     in property <bool> has-room;
     in property <[DirectoryItem]> directory;
     in property <string> room-title;
+    in property <[LabelRun]> room-title-runs;
     // The open room's account, with several accounts ("" with one).
     in property <string> room-account;
     // A merged person's networks, for switching in their chat's header.
@@ -884,6 +886,7 @@ export component AppWindow inherits Window {
     in-out property <bool> auto-gain;
     in-out property <bool> dark;
     in-out property <bool> convert-emoticons;
+    in-out property <bool> bulk-delete;
     in-out property <int> accent-index;
     in-out property <int> style-index;
     in property <[EmojiPackItem]> emoji-packs;
@@ -1338,6 +1341,7 @@ export component AppWindow inherits Window {
                             directory: root.directory;
                             join-room(i) => { root.join-room(i); }
                             account-name: root.account-name;
+                            account-name-runs: root.account-name-runs;
                             account-avatar: root.account-avatar;
                             account-has-presence: root.account-has-presence;
                             account-presence: root.account-presence;
@@ -1533,6 +1537,7 @@ export component AppWindow inherits Window {
                                         combined-resize-hover <=> root.combined-resize-hover;
                                         sidebar-width-committed => { root.panels-resized(root.sidebar-w, root.members-w); }
                                         title: root.room-title;
+                                        title-runs: root.room-title-runs;
                                         as-account: root.room-account;
                                         talk-on: root.room-talk-on;
                                         talk-on-labels: root.room-talk-on-labels;
@@ -2036,6 +2041,7 @@ export component AppWindow inherits Window {
         auto-gain <=> root.auto-gain;
         dark <=> root.dark;
         convert-emoticons <=> root.convert-emoticons;
+        bulk-delete <=> root.bulk-delete;
         accent-index <=> root.accent-index;
         style-index <=> root.style-index;
         emoji-packs: root.emoji-packs;

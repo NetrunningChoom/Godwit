@@ -25,7 +25,11 @@ impl Shell {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
         let images = &mut self.images;
-        let rows = crate::notifications::rows(&self.notifications, state, now, |url| view::avatar(images, url));
+        let mut rows = crate::notifications::rows(&self.notifications, state, now, |url| view::avatar(images, url));
+        for row in &mut rows {
+            row.author_runs = view::label_runs(&row.author, images);
+            row.preview_runs = view::label_runs(&row.preview, images);
+        }
         view::sync(&self.notification_items, rows);
     }
 

@@ -2008,6 +2008,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             right_click: Some((600.0, 660.0)),
             ..Scene::new("menu", Box::new(|_, _, _, _| Screen::Main))
         },
+        // A chat's menu: its notification choices, the current one marked.
+        Scene {
+            right_click: Some((150.0, 120.0)),
+            ..Scene::new("room-menu", Box::new(|_, _, _, _| Screen::Main))
+        },
         Scene {
             size: Some((800, 600)),
             ..Scene::new("narrow", Box::new(|_, _, _, _| Screen::Main))

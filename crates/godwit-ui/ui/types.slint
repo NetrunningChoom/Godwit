@@ -133,6 +133,8 @@ export struct RoomItem {
     // Under the name: a custom status or presence ("Idle"), or a group's
     // member count; "" for none.
     subtitle: string,
+    // The subtitle with its emoji as pictures; empty when it has none.
+    subtitle-runs: [LabelRun],
     // Home with several accounts: whose chat it is, as a small avatar on
     // the row's picture.
     account-badged: bool,
@@ -618,12 +620,16 @@ export struct MemberItem {
     // The presence dot.
     presence: color,
     status: string,
+    // The status with its emoji as pictures; empty when it has none.
+    status-runs: [LabelRun],
 }
 
 export struct AutocompleteItem {
     kind: int,
     id: string,
     name: string,
+    // The name with its emoji as pictures; empty when it has none.
+    name-runs: [LabelRun],
     detail: string,
 }
 
@@ -852,6 +858,9 @@ export struct NotificationItem {
     // The chat, or "Server · channel".
     place: string,
     author: string,
+    // The author and preview with their emoji as pictures; empty when none.
+    author-runs: [LabelRun],
+    preview-runs: [LabelRun],
     initials: string,
     avatar: image,
     has-avatar: bool,
@@ -879,6 +888,9 @@ export struct ActiveItem {
 
 export struct ThreadItem {
     name: string,
+    // The name and preview with their emoji as pictures; empty when none.
+    name-runs: [LabelRun],
+    preview-runs: [LabelRun],
     context: string,
     preview: string,
     when: string,
