@@ -27,6 +27,8 @@ pub mod gifs;
 pub mod hooks;
 pub mod ids;
 pub mod log;
+pub mod markdown;
+pub mod markdown_rich;
 pub mod media;
 pub mod members;
 pub mod message;
@@ -48,6 +50,7 @@ pub mod server;
 pub mod server_settings;
 pub mod step_up;
 pub mod stickers;
+pub mod timefmt;
 pub mod webhooks;
 
 pub mod backend;

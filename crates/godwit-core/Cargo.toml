@@ -11,6 +11,9 @@ ureq.workspace = true
 reqwest.workspace = true
 bytes = "1"
 chrono.workspace = true
+# The shared Markdown parser: emoji shortcodes and emoji-only messages.
+emojis.workspace = true
+unicode-segmentation.workspace = true
 if-addrs = "0.15"
 http.workspace = true
 url = "2"

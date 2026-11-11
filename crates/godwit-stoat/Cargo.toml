@@ -20,7 +20,6 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
-unicode-segmentation.workspace = true
 
 [dev-dependencies]
 godwit-secrets = { workspace = true, features = ["test-support"] }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Godwit contributors
-//! Stoat's Markdown → Godwit rich text (see `godwit_core::message::Markup::Rich`).
+//! Stoat's Markdown → Godwit rich text (see [`crate::message::Markup::Rich`]).
 //!
 //! The parser in [`crate::markdown`] understands Stoat's dialect; this turns
 //! its output into the CommonMark subset every Godwit UI renders, with
@@ -9,7 +9,7 @@
 
 use std::fmt::Write as _;
 
-use godwit_core::rich::{self, code_span, escape};
+use crate::rich::{self, code_span, escape};
 
 use crate::markdown::{self, Block, Inline, Kind, Style};
 

@@ -9,9 +9,6 @@ license.workspace = true
 godwit-core.workspace = true
 open.workspace = true
 godwit-secrets.workspace = true
-# Discord's Markdown is Stoat's dialect with a few spellings changed: its
-# parser and rich-text conversion are shared (see `markdown`).
-godwit-stoat.workspace = true
 # Calls: the microphone, processing, speakers and Opus, shared with the other networks.
 godwit-voice.workspace = true
 # Call video: decoding cameras and Go Live streams (VP8, and H264 where

@@ -4,7 +4,7 @@
 // Copyright (C) the Yapfast authors, GPL-3.0-or-later.
 //! Discord's Markdown → Godwit rich text. Discord's dialect is Stoat's with
 //! a few spellings changed, so its mentions are respelled for Stoat's parser
-//! and converted by `godwit_stoat::rich`:
+//! and converted by `godwit_core::markdown_rich`:
 //!
 //! | Discord | Stoat |
 //! |---|---|
@@ -17,7 +17,7 @@
 //! zero-padded to 26 here (a snowflake never starts with 0) and unpadded
 //! before they're looked up. Nothing changes inside code.
 
-use godwit_stoat::rich::{self, Resolve};
+use godwit_core::markdown_rich::{self as rich, Resolve};
 
 /// Names for a message's mentions, by Discord id.
 pub trait Names {
@@ -267,7 +267,7 @@ where
         }
         Some('R') => {
             let diff = now - secs;
-            let r = godwit_stoat::timefmt::relative(diff.abs() * 1000);
+            let r = godwit_core::timefmt::relative(diff.abs() * 1000);
             if diff >= 0 || r == "just now" {
                 r
             } else {

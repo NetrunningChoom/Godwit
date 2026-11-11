@@ -3225,6 +3225,7 @@ dependencies = [
  "bytes",
  "chrono",
  "directories",
+ "emojis",
  "godwit-secrets",
  "http",
  "httpdate",
@@ -3233,6 +3234,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "unicode-segmentation",
  "ureq",
  "url",
 ]
@@ -3252,7 +3254,6 @@ dependencies = [
  "godwit-core",
  "godwit-media",
  "godwit-secrets",
- "godwit-stoat",
  "godwit-voice",
  "open",
  "openmls",
@@ -3413,7 +3414,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-tungstenite 0.30.0",
- "unicode-segmentation",
 ]
 
 [[package]]
