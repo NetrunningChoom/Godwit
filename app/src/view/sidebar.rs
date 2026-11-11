@@ -321,6 +321,37 @@ fn folder_row(
     }
 }
 
+/// Now, in Unix seconds.
+fn now_secs() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+/// The local time zone's offset from UTC, in seconds.
+fn local_offset_secs() -> i64 {
+    use chrono::Offset;
+    i64::from(chrono::Local::now().offset().fix().local_minus_utc())
+}
+
+/// How a mute's end reads in the room menu: "until 14:30" today, "until
+/// Nov 13, 14:30" another day, and "until I turn it back on" when it has
+/// no end (or the network doesn't say).
+fn muted_until_text(until: Option<i64>, now: i64, offset: i64) -> String {
+    let local = |t: i64| {
+        i32::try_from(offset)
+            .ok()
+            .and_then(chrono::FixedOffset::east_opt)
+            .and_then(|zone| chrono::DateTime::from_timestamp(t, 0).map(|t| t.with_timezone(&zone)))
+    };
+    let (Some(end), Some(today)) = (until.and_then(local), local(now)) else {
+        return "until I turn it back on".into();
+    };
+    if end.date_naive() == today.date_naive() {
+        format!("until {}", end.format("%H:%M"))
+    } else {
+        format!("until {}", end.format("%b %-d, %H:%M"))
+    }
+}
+
 pub(super) fn room_row(r: &Room, selected: bool, occupants: Option<&Vec<CallMember>>, images: &mut Images) -> RoomItem {
     let kind = match r.kind {
         RoomKind::Direct { .. } => 0,
@@ -339,6 +370,11 @@ pub(super) fn room_row(r: &Room, selected: bool, occupants: Option<&Vec<CallMemb
         can_notify: r.capabilities.notify_settings,
         muted: r.notify.muted,
         notify_level: r.notify.level.map_or(3, i32::from),
+        muted_until: if r.notify.muted {
+            muted_until_text(r.notify.muted_until, now_secs(), local_offset_secs()).into()
+        } else {
+            Default::default()
+        },
         header: false,
         name: r.name.as_ref().into(),
         name_runs: label_runs(&r.name, images),
@@ -1273,5 +1309,19 @@ mod rail_tests {
             .position(|r| matches!(r, RailRow::Server(s) if &*s.raw == "A"))
             .unwrap();
         assert!(reordered(&all, &open_ids, in_folder, 1, false).is_none());
+    }
+}
+
+#[cfg(test)]
+mod mute_text_tests {
+    use super::muted_until_text;
+
+    #[test]
+    fn mute_end_reads_for_the_menu() {
+        // 2023-11-14 22:13:20 UTC, in UTC+1 (23:13 local).
+        let now = 1_700_000_000;
+        assert_eq!(muted_until_text(Some(now + 900), now, 3600), "until 23:28");
+        assert_eq!(muted_until_text(Some(now + 3600), now, 3600), "until Nov 15, 00:13");
+        assert_eq!(muted_until_text(None, now, 3600), "until I turn it back on");
     }
 }

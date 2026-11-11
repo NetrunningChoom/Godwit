@@ -6,7 +6,7 @@ import { ListView } from "std-widgets.slint";
 import { Theme, Icons, Icon } from "theme.slint";
 import { AudioMenuArrow, CallAudio } from "call-audio.slint";
 import { RoomItem, DirectoryItem, SoundItem } from "types.slint";
-import { Avatar, Badge, IconButton, Button, NetList, MenuPanel, MenuPlace, MenuRow, MenuDivider, TextField, EmojiText, NetworkSelect } from "widgets.slint";
+import { Avatar, Badge, TipBubble, IconButton, Button, NetList, MenuPanel, MenuPlace, MenuRow, MenuDivider, TextField, EmojiText, NetworkSelect } from "widgets.slint";
 
 // Rows as Godwit and the official sidebar draw them: 16 px corners,
 // secondary-container when selected, surface-highest on hover.
@@ -965,19 +965,11 @@ export component Sidebar inherits Rectangle {
                             Text { text: "?"; color: Theme.on-surface-variant; font-size: Theme.text-caption; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
                         }
                         Tooltip {
-                            Rectangle {
-                                width: quality-tip.preferred-width + 16px;
-                                height: quality-tip.preferred-height + 8px;
-                                border-radius: Theme.radius-xs;
-                                background: Theme.surface-highest;
-                                quality-tip := Text {
-                                    text: root.call-status != "Voice connected" ? root.call-status
+                            TipBubble {
+                                text: root.call-status != "Voice connected" ? root.call-status
                                         : root.call-quality < 0 ? "Connection quality unavailable"
                                         : (root.call-quality == 0 ? "Fine" : root.call-quality == 1 ? "Average" : "Bad")
                                             + " connection · " + root.call-latency + " ms";
-                                    color: Theme.on-surface;
-                                    font-size: Theme.text-small;
-                                }
                             }
                         }
                     }

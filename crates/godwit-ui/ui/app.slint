@@ -23,6 +23,7 @@ export { Gifs } from "gif-picker.slint";
 export { PlayerWindow } from "player-window.slint";
 import { Switcher } from "switcher.slint";
 import { ForwardDialog } from "forward-dialog.slint";
+import { FolderCreate } from "folder-create.slint";
 import { PollDialog } from "poll-dialog.slint";
 import { UserCard } from "usercard.slint";
 import { Members } from "members.slint";
@@ -126,6 +127,14 @@ export component AppWindow inherits Window {
     callback save-folder-settings(string, int);
     callback close-folder-settings();
     callback edit-folder(int);
+    // The opened server's folder choices (names), whether it could start a
+    // folder with another server, and those servers (the Create folder dialog).
+    in property <[string]> menu-folders;
+    in property <bool> menu-can-create-folder;
+    in property <[string]> folder-partners;
+    in-out property <bool> folder-create-open;
+    callback add-to-folder(int);
+    callback create-folder(int);
     callback remove-from-folder(int);
     callback ungroup-folder(int);
     callback drop-server(int, int, bool);
@@ -1241,6 +1250,13 @@ export component AppWindow inherits Window {
                 toggle-folder(i) => { root.toggle-folder(i); }
                 move-server(i, d) => { root.move-server(i, d); }
                 edit-folder(i) => { root.edit-folder(i); }
+                menu-folders: root.menu-folders;
+                menu-can-create-folder: root.menu-can-create-folder;
+                add-to-folder(i) => { root.add-to-folder(i); }
+                create-folder => { root.folder-create-open = true; }
+                menu-notify-levels: root.server-notify-levels;
+                menu-notify: root.server-notify;
+                server-notify(level) => { root.server-menu-notify(level); }
                 remove-from-folder(i) => { root.remove-from-folder(i); }
                 ungroup-folder(i) => { root.ungroup-folder(i); }
                 move-server-by(i, d) => { root.move-server-by(i, d); }
@@ -1878,6 +1894,14 @@ export component AppWindow inherits Window {
         clear-colour <=> root.folder-edit-clear;
         save(n, c) => { root.save-folder-settings(n, c); }
         cancel => { root.close-folder-settings(); }
+    }
+    if root.folder-create-open && screen == Screen.main: FolderCreate {
+        partners: root.folder-partners;
+        create(i) => {
+            root.folder-create-open = false;
+            root.create-folder(i);
+        }
+        cancel => { root.folder-create-open = false; }
     }
     if root.channel-settings-open && screen == Screen.main: ChannelSettings {
         title: root.channel-edit-title;

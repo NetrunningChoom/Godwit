@@ -164,6 +164,7 @@ impl SlackAccount {
                     _ => None,
                 },
                 muted: ws.muted.contains(id),
+                ..Default::default()
             },
             id: RoomId::new(account, format!("{team}:{id}").as_str()),
             name: name.into(),

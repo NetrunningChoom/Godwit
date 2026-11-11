@@ -5,7 +5,7 @@
 import { Theme, Icons, Icon } from "theme.slint";
 import { NetworkIcon } from "network-icon.slint";
 import { ServerItem, FolderIcon, ProfileItem } from "types.slint";
-import { Avatar, Badge, MenuPanel, MenuPlace, MenuRow, MenuDivider } from "widgets.slint";
+import { Avatar, Badge, TipBubble, MenuPanel, MenuPlace, MenuRow, MenuDivider } from "widgets.slint";
 
 // One 56 px entry: a 42 px round icon, the pill on the left edge (32 px
 // selected, 16 px hovered, 8 px unread) and the mention badge. Godwit's and
@@ -83,13 +83,7 @@ component RailEntry inherits Rectangle {
         }
     }
     if root.tooltip != "": Tooltip {
-        Rectangle {
-            width: tip-label.preferred-width + 16px;
-            height: tip-label.preferred-height + 8px;
-            border-radius: Theme.radius-xs;
-            background: Theme.surface-highest;
-            tip-label := Text { text: root.tooltip; color: Theme.on-surface; font-size: Theme.text-small; }
-        }
+        TipBubble { text: root.tooltip; }
     }
 }
 
@@ -172,6 +166,20 @@ export component Rail inherits Rectangle {
     in property <bool> menu-can-report;
     in property <bool> folders-enabled;
     in property <bool> menu-folder-enabled;
+    // The folders the opened server could join (its own left out), by name,
+    // and whether it could start a new one with another server.
+    in property <[string]> menu-folders;
+    in property <bool> menu-can-create-folder;
+    callback add-to-folder(int);
+    callback create-folder();
+    // Its notification level (0 all, 1 mentions, 2 nothing), where its network keeps one.
+    in property <bool> menu-notify-levels;
+    in property <int> menu-notify;
+    callback server-notify(int);
+    // The menu is on a server's tile (not a folder's).
+    property <bool> on-server: root.menu-row >= 0 && !root.servers[root.menu-row].folder;
+    property <bool> can-folder: root.on-server && root.folders-enabled && root.menu-folder-enabled;
+    property <[string]> no-folders: [];
     callback server-report();
     callback server-invite();
     callback server-mark-read();
@@ -372,7 +380,7 @@ export component Rail inherits Rectangle {
     }
     server-menu := PopupWindow {
         x: MenuPlace.fit-x(root.width - 4px, 200px, root.absolute-position.x);
-        y: MenuPlace.fit-y(root.menu-y, MenuPlace.rows-h((root.menu-can-invite ? 1 : 0) + 4 + (root.menu-settings ? 1 : 0) + (root.menu-can-report ? 1 : 0) + (root.menu-can-leave ? 1 : 0), 3), root.absolute-position.y);
+        y: MenuPlace.fit-y(root.menu-y, MenuPlace.rows-h((root.menu-can-invite ? 1 : 0) + 4 + (root.menu-settings ? 1 : 0) + (root.menu-can-report ? 1 : 0) + (root.menu-can-leave ? 1 : 0) + (root.menu-notify-levels ? 3 : 0) + (root.menu-can-create-folder ? 1 : 0) + root.menu-folders.length, 5), root.absolute-position.y);
         width: 200px;
         MenuPanel {
             width: parent.width;
@@ -380,8 +388,15 @@ export component Rail inherits Rectangle {
             dismissed => { server-menu.close(); }
             if root.menu-can-invite: MenuRow { glyph: Icons.link; label: "Invite people"; clicked => { root.server-invite(); } }
             MenuRow { glyph: Icons.unread; label: "Mark as read"; clicked => { root.server-mark-read(); } }
+            if root.on-server && root.menu-notify-levels: MenuDivider { }
+            if root.on-server && root.menu-notify-levels: MenuRow { glyph: Icons.chat; label: (root.menu-notify == 0 ? "✓ " : "") + "Notify: all messages"; clicked => { root.server-notify(0); } }
+            if root.on-server && root.menu-notify-levels: MenuRow { glyph: Icons.at; label: (root.menu-notify == 1 ? "✓ " : "") + "Notify: only @mentions"; clicked => { root.server-notify(1); } }
+            if root.on-server && root.menu-notify-levels: MenuRow { glyph: Icons.lock; label: (root.menu-notify == 2 ? "✓ " : "") + "Notify: nothing"; clicked => { root.server-notify(2); } }
             if root.menu-settings: MenuRow { glyph: Icons.settings; label: "Server settings"; clicked => { root.server-settings(); } }
             MenuDivider { }
+            // Folders: a new one with another server, or an existing one.
+            if root.can-folder && root.menu-can-create-folder: MenuRow { glyph: Icons.group; label: "Create folder…"; clicked => { root.create-folder(); } }
+            for name[n] in root.can-folder ? root.menu-folders : root.no-folders: MenuRow { glyph: Icons.arrow-forward; label: "Add to folder: " + name; clicked => { root.add-to-folder(n); } }
             if root.folders-enabled && root.menu-folder-enabled && root.menu-row >= 0 && root.servers[root.menu-row].folder: MenuRow { glyph: Icons.settings; label: "Folder settings"; clicked => { root.edit-folder(root.menu-row); } }
             if root.folders-enabled && root.menu-folder-enabled && root.menu-row >= 0 && root.servers[root.menu-row].folder: MenuRow { glyph: Icons.close; label: "Ungroup folder"; clicked => { root.ungroup-folder(root.menu-row); } }
             if root.menu-row >= 0 && !root.servers[root.menu-row].in-folder: MenuRow { glyph: Icons.expand-less; label: "Move up"; clicked => { root.move-server(root.menu-row, -1); } }

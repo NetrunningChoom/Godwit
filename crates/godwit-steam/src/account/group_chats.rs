@@ -86,6 +86,7 @@ impl SteamAccount {
             notify: godwit_core::room::RoomNotify {
                 level: r.notify,
                 muted: r.muted,
+                ..Default::default()
             },
             id: RoomId::new(account.clone(), group_room_raw(group, chat)),
             name: if server {

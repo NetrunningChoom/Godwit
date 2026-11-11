@@ -2307,7 +2307,9 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                         }
                     }
                     godwit_core::folder_edit::FolderEdit::AddServer { folder, server, .. } => {
-                        let value = servers.iter().find(|s| s.id == folder).and_then(|s| s.folder.clone());
+                        let value = servers
+                            .iter()
+                            .find_map(|s| s.folder.clone().filter(|f| f.id == folder.raw));
                         if let Some(value) = value
                             && let Some(s) = servers.iter_mut().find(|s| s.id == server)
                         {
@@ -2567,8 +2569,14 @@ impl godwit_core::account::NetworkAccount for DemoAccount {
                 };
                 match change {
                     C::Level(level) => r.notify.level = level,
-                    C::Mute { .. } => r.notify.muted = true,
-                    C::Unmute => r.notify.muted = false,
+                    C::Mute { seconds } => {
+                        r.notify.muted = true;
+                        r.notify.muted_until = seconds.map(|s| chrono::Utc::now().timestamp() + i64::from(s));
+                    }
+                    C::Unmute => {
+                        r.notify.muted = false;
+                        r.notify.muted_until = None;
+                    }
                 }
                 vec![Event::RoomUpdated(r.clone())]
             }

@@ -407,6 +407,10 @@ pub struct RoomNotify {
     pub level: Option<u8>,
     /// Muted now (a mute that has run out counts as off).
     pub muted: bool,
+    /// When a timed mute ends (Unix seconds); None: not muted, or until we
+    /// turn it back on, or the network doesn't say.
+    #[serde(default)]
+    pub muted_until: Option<i64>,
 }
 
 /// A change to a room's [`RoomNotify`].

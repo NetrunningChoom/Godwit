@@ -593,6 +593,75 @@ impl Shell {
         }
     }
 
+    /// The opened server's rail-menu choices for folders, shown in `refresh`.
+    pub(super) fn show_folder_choices(&mut self, ui: &AppWindow) {
+        let choices = self
+            .app
+            .state()
+            .selected_server
+            .as_ref()
+            .filter(|s| s.account.network.has_server_folders())
+            .map(|s| folder_choices(&self.app.state().servers, s))
+            .unwrap_or_default();
+        let names = (
+            choices.folders.iter().map(|f| f.1.clone()).collect::<Vec<_>>(),
+            choices.partners.iter().map(|p| p.1.clone()).collect::<Vec<_>>(),
+        );
+        // Set only on a change: a fresh model every refresh would rebuild the open menu.
+        if names == self.folder_choices_shown {
+            return;
+        }
+        let model = |names: &[String]| {
+            slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(
+                names
+                    .iter()
+                    .map(|n| slint::SharedString::from(n.as_str()))
+                    .collect::<Vec<_>>(),
+            )))
+        };
+        ui.set_menu_folders(model(&names.0));
+        ui.set_folder_partners(model(&names.1));
+        ui.set_menu_can_create_folder(!names.1.is_empty());
+        self.folder_choices_shown = names;
+    }
+
+    /// "Add to folder: …" in the opened server's rail menu: its `index`th choice.
+    pub fn add_selected_to_folder(&mut self, ui: &AppWindow, index: i32) {
+        let Some(server) = self.app.state().selected_server.clone() else {
+            return;
+        };
+        let choices = folder_choices(&self.app.state().servers, &server);
+        let Some((folder, _)) = usize::try_from(index).ok().and_then(|i| choices.folders.get(i)) else {
+            return;
+        };
+        let edit = godwit_core::folder_edit::FolderEdit::AddServer {
+            folder: ServerId::new(server.account.clone(), folder.to_string()),
+            server: server.clone(),
+            at: None,
+        };
+        self.act(ui, Action::EditFolders(server.account.clone(), edit));
+    }
+
+    /// The Create folder dialog's pick: a new folder of the opened server and
+    /// its `index`th partner.
+    pub fn create_folder_with(&mut self, ui: &AppWindow, index: i32) {
+        let Some(server) = self.app.state().selected_server.clone() else {
+            return;
+        };
+        let choices = folder_choices(&self.app.state().servers, &server);
+        let Some((partner, _)) = usize::try_from(index)
+            .ok()
+            .and_then(|i| choices.partners.get(i))
+            .cloned()
+        else {
+            return;
+        };
+        let edit = godwit_core::folder_edit::FolderEdit::Create {
+            servers: [server.clone(), partner],
+        };
+        self.act(ui, Action::EditFolders(server.account.clone(), edit));
+    }
+
     /// A folder dissolved from its rail row's menu; its servers stay.
     pub fn ungroup_folder(&mut self, ui: &AppWindow, row: i32) {
         let Some(view::RailRow::Folder(account, folder)) = usize::try_from(row)
@@ -1151,5 +1220,109 @@ mod notify_choice_tests {
         assert_eq!(notify_change(30), Some(C::Level(None)));
         assert_eq!(notify_change(32), Some(C::Level(Some(1))));
         assert_eq!(notify_change(6), None);
+    }
+}
+
+/// What the rail menu of `selected` offers for folders: the account's folders
+/// it is not in (id and name), and the servers outside any folder it could
+/// start one with (only while it is outside one itself). Unnamed folders go by
+/// their first servers' names, as the official client's tile does.
+#[derive(Default)]
+pub(super) struct FolderChoices {
+    pub folders: Vec<(std::sync::Arc<str>, String)>,
+    pub partners: Vec<(ServerId, String)>,
+}
+
+pub(super) fn folder_choices(
+    servers: &[std::sync::Arc<godwit_core::server::Server>],
+    selected: &ServerId,
+) -> FolderChoices {
+    let own = servers.iter().find(|s| &s.id == selected);
+    let own_folder = own.and_then(|s| s.folder.as_ref()).map(|f| f.id.clone());
+    let mut out = FolderChoices::default();
+    for s in servers.iter().filter(|s| s.id.account == selected.account) {
+        let Some(folder) = s.folder.as_ref() else {
+            if own.is_some() && own_folder.is_none() && &s.id != selected {
+                out.partners.push((s.id.clone(), s.name.to_string()));
+            }
+            continue;
+        };
+        if Some(&folder.id) == own_folder.as_ref() || out.folders.iter().any(|(id, _)| *id == folder.id) {
+            continue;
+        }
+        let name = folder.name.as_deref().filter(|n| !n.trim().is_empty()).map_or_else(
+            || {
+                servers
+                    .iter()
+                    .filter(|m| {
+                        m.id.account == selected.account && m.folder.as_ref().is_some_and(|f| f.id == folder.id)
+                    })
+                    .take(2)
+                    .map(|m| m.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+            str::to_owned,
+        );
+        out.folders.push((folder.id.clone(), name));
+    }
+    out
+}
+
+#[cfg(test)]
+mod folder_choice_tests {
+    use super::folder_choices;
+    use godwit_core::ids::{AccountId, ServerId};
+    use godwit_core::network::Network;
+    use godwit_core::server::{Server, ServerFolder};
+    use std::sync::Arc;
+
+    fn server(account: &AccountId, raw: &str, folder: Option<(&str, Option<&str>, Option<u32>)>) -> Arc<Server> {
+        Arc::new(Server {
+            id: ServerId::new(account.clone(), raw),
+            name: raw.into(),
+            icon_url: None,
+            banner_url: None,
+            categories: Vec::new(),
+            muted: false,
+            rights: Default::default(),
+            folder: folder.map(|(id, name, colour)| {
+                Arc::new(ServerFolder {
+                    id: id.into(),
+                    name: name.map(Into::into),
+                    colour,
+                })
+            }),
+            scheduled_events: false,
+            can_view_moderation_log: false,
+            scheduled_event_count: 0,
+            edit_own_profile: false,
+        })
+    }
+
+    #[test]
+    fn folder_choices_leave_out_its_own_folder_and_foldered_partners() {
+        let a = AccountId::new(Network::Discord, "me");
+        let other = AccountId::new(Network::Discord, "you");
+        let servers = vec![
+            server(&a, "1", Some(("f", Some("Games"), None))),
+            server(&a, "2", Some(("g", None, None))),
+            server(&a, "3", None),
+            server(&a, "4", None),
+            server(&other, "5", None),
+        ];
+        let id = |raw: &str| ServerId::new(a.clone(), raw);
+        let free = folder_choices(&servers, &id("3"));
+        assert_eq!(
+            free.folders.iter().map(|f| f.1.as_str()).collect::<Vec<_>>(),
+            ["Games", "2"]
+        );
+        assert_eq!(free.partners.iter().map(|p| p.0.clone()).collect::<Vec<_>>(), [id("4")]);
+        let inside = folder_choices(&servers, &id("1"));
+        assert_eq!(inside.folders.iter().map(|f| f.1.as_str()).collect::<Vec<_>>(), ["2"]);
+        assert!(
+            inside.partners.is_empty(),
+            "a foldered server joins or leaves, it doesn't start one"
+        );
     }
 }

@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Godwit contributors
+
+import { Theme } from "theme.slint";
+import { Button, Dialog } from "widgets.slint";
+
+// "Create folder…" in a server's rail menu: a folder starts from two
+// servers, so pick the other one (the opened server is already in it).
+export component FolderCreate inherits Dialog {
+    // The servers it can share a folder with, by name.
+    in property <[string]> partners;
+    // The chosen one (-1: none yet).
+    in-out property <int> current: -1;
+    callback create(int);
+    callback cancel();
+
+    title: "Create folder";
+    card-width: 420px;
+    dismissed => { root.cancel(); }
+    Text { text: "Pick the server to put in the folder with it."; color: Theme.on-surface-variant; wrap: word-wrap; }
+    // A long list scrolls inside the card.
+    Flickable {
+        height: min(list.preferred-height, 320px);
+        viewport-height: list.preferred-height;
+        list := VerticalLayout {
+            width: parent.width;
+            spacing: Theme.space-1;
+            for name[i] in root.partners: Rectangle {
+                height: 44px;
+                border-radius: Theme.radius-lg;
+                background: i == root.current ? Theme.secondary-container
+                    : row.has-hover ? Theme.surface-highest : transparent;
+                Text {
+                    x: Theme.space-3;
+                    width: parent.width - Theme.space-3 * 2;
+                    text: name;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    color: i == root.current ? Theme.on-secondary-container : Theme.on-surface;
+                }
+                row := TouchArea { mouse-cursor: pointer; clicked => { root.current = i; } }
+            }
+        }
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: Theme.gap-sm;
+        Button { text: "Cancel"; kind: "text"; clicked => { root.cancel(); } }
+        Button { text: "Create"; kind: "filled"; enabled: root.current >= 0; clicked => { root.create(root.current); } }
+    }
+}

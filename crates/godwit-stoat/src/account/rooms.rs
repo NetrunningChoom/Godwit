@@ -125,7 +125,15 @@ impl StoatAccount {
             ..Capabilities::of(Network::Stoat)
         };
         Room {
-            notify: godwit_core::room::RoomNotify { level, muted },
+            notify: godwit_core::room::RoomNotify {
+                level,
+                muted,
+                // The synced setting keeps milliseconds.
+                muted_until: prefs
+                    .mute(false, &c.id, now_ms)
+                    .and_then(|m| m.until)
+                    .map(|ms| ms / 1000),
+            },
             id: RoomId::new(account.clone(), c.id.as_str()),
             name: self.store.channel_title(c).into(),
             kind,

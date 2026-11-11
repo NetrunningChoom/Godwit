@@ -218,6 +218,7 @@ impl DiscordAccount {
                     self.store.channel_notify.get(channel).copied().filter(|l| *l <= 2)
                 },
                 muted: self.store.channel_muted(channel),
+                muted_until: self.store.muted_channels.get(channel).copied().flatten(),
             },
             id: RoomId::new(account, channel),
             name: name.into(),

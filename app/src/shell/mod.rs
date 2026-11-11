@@ -100,6 +100,8 @@ pub struct Shell {
     /// The message a thread is being started from (the dialog's).
     thread_from: Option<MessageId>,
     folder_edit: Option<(AccountId, ServerId, Option<u32>)>,
+    /// The folder names last handed to the rail menu and Create folder dialog.
+    folder_choices_shown: (Vec<String>, Vec<String>),
     /// Trigger and ranked rows currently shown for the composer.
     autocomplete: Vec<godwit_core::autocomplete::Candidate>,
     autocomplete_trigger: Option<godwit_core::autocomplete::Trigger>,
@@ -485,6 +487,7 @@ impl Shell {
             crop: None,
             thread_from: None,
             folder_edit: None,
+            folder_choices_shown: Default::default(),
             autocomplete: Vec::new(),
             autocomplete_trigger: None,
             autocomplete_room: None,
@@ -1149,6 +1152,7 @@ impl Shell {
                 .iter()
                 .any(|a| a.id.network.has_server_folders()),
         );
+        self.show_folder_choices(ui);
         ui.set_menu_folder_enabled(
             self.app
                 .state()
