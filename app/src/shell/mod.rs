@@ -624,6 +624,10 @@ impl Shell {
     /// Handles whatever the network and the image loader produced.
     pub fn window_focus_changed(&mut self, focused: bool) {
         self.window_focused = focused;
+        // Networks that follow our activity are told (core sends it only
+        // when it changed); the rest never hear of focus.
+        let effects = self.app.dispatch(Action::SetActivity(focused));
+        self.run(effects);
     }
 
     pub fn pump(&mut self, ui: &AppWindow) {

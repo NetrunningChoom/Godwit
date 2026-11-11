@@ -93,6 +93,8 @@ pub struct Application {
     /// Locally acknowledged read positions. Network snapshots can lag or omit
     /// read receipts; keep the UI consistent until a newer message arrives.
     local_reads: HashMap<RoomId, Option<MessageId>>,
+    /// Whether the user is active, and what each account was last told.
+    activity: crate::activity::ActivityRelay,
 }
 
 /// How long a typing notice lasts without being repeated. Networks repeat
@@ -116,6 +118,7 @@ impl Application {
             last_room: HashMap::new(),
             typing_at: HashMap::new(),
             local_reads: HashMap::new(),
+            activity: crate::activity::ActivityRelay::default(),
         }
     }
 

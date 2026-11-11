@@ -456,6 +456,10 @@ pub enum Command {
     /// Set (or clear) our custom status text; answered with
     /// [`Event::OwnPresence`].
     SetStatusText(Option<String>),
+    /// The user became active in Godwit (true) or inactive; sent only to
+    /// networks that follow it ([`crate::activity::PresenceUpkeep`]), once per
+    /// change. Not answered.
+    SetActivity(bool),
     /// Set our presence; answered with [`Event::OwnPresence`].
     /// `choice` is its index in [`Network::presence_choices`](crate::network::Network::presence_choices),
     /// for networks with several choices that share one [`Presence`] (Steam's Away and Snooze).

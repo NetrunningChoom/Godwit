@@ -1143,6 +1143,37 @@ impl Application {
         }]
     }
 
+    /// Tells the accounts that follow activity, each only when its value
+    /// differs from the last one it was sent.
+    pub(super) fn dispatch_set_activity(&mut self, active: bool) -> Vec<Effect> {
+        if !self.activity.set_active(active) {
+            return Vec::new();
+        }
+        self.activity_effects()
+    }
+
+    /// The commands accounts are due: those that follow activity and
+    /// haven't been told the current value.
+    pub(super) fn activity_effects(&mut self) -> Vec<Effect> {
+        let ids: Vec<AccountId> = self
+            .state
+            .accounts
+            .iter()
+            .filter(|a| a.id.network.presence_upkeep() == crate::activity::PresenceUpkeep::FollowsActivity)
+            .map(|a| a.id.clone())
+            .collect();
+        let mut effects = Vec::new();
+        for account in ids {
+            if let Some(active) = self.activity.due(&account) {
+                effects.push(Effect::Backend {
+                    account,
+                    command: Command::SetActivity(active),
+                });
+            }
+        }
+        effects
+    }
+
     pub(super) fn dispatch_set_status_text(&mut self, account: AccountId, text: Option<String>) -> Vec<Effect> {
         // The network's limit (Stoat's UserStatus.text: 128).
         let text: Option<String> = text

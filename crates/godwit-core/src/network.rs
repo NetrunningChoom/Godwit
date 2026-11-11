@@ -117,6 +117,17 @@ impl Network {
         )
     }
 
+    /// How the network wants our presence kept up to date (see
+    /// [`crate::activity`]). Only Google Chat shows us active or away from
+    /// what the client reports; the others keep the chosen status until it
+    /// changes, so they're sent it once per change and nothing more.
+    pub fn presence_upkeep(self) -> crate::activity::PresenceUpkeep {
+        match self {
+            Self::GoogleChat => crate::activity::PresenceUpkeep::FollowsActivity,
+            _ => crate::activity::PresenceUpkeep::OnChange,
+        }
+    }
+
     /// How the network lists a server's threads. Slack gathers them in a
     /// panel (its "Threads" view); elsewhere threads are rooms of their own.
     pub fn thread_style(self) -> ThreadStyle {

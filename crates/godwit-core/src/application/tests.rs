@@ -5977,3 +5977,27 @@ fn delete_from_collects_this_and_newer_messages_only_for_moderators() {
         }
     }
 }
+
+#[test]
+fn activity_reaches_only_networks_that_follow_it_and_only_on_change() {
+    let mut app = Application::default();
+    ready(&mut app, Network::Stoat, Vec::new());
+    let first = ready(&mut app, Network::GoogleChat, Vec::new());
+    assert_eq!(commands(&first), [&Command::SetActivity(true)], "told once on connect");
+    assert!(app.dispatch(Action::SetActivity(true)).is_empty(), "unchanged");
+    let effects = app.dispatch(Action::SetActivity(false));
+    assert_eq!(commands(&effects), [&Command::SetActivity(false)]);
+    assert!(
+        effects
+            .iter()
+            .all(|e| matches!(e, Effect::Backend { account, .. } if account.network == Network::GoogleChat)),
+        "Stoat never hears of focus"
+    );
+    assert!(app.dispatch(Action::SetActivity(false)).is_empty());
+    let again = ready(&mut app, Network::GoogleChat, Vec::new());
+    assert_eq!(
+        commands(&again),
+        [&Command::SetActivity(false)],
+        "a reconnect is told once"
+    );
+}

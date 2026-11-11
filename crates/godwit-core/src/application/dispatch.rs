@@ -689,6 +689,7 @@ impl Application {
                 presence,
                 choice,
             } => self.dispatch_set_presence(account, presence, choice),
+            Action::SetActivity(active) => self.dispatch_set_activity(active),
             Action::SetStatusText { account, text } => self.dispatch_set_status_text(account, text),
             Action::StartVerification(account) => {
                 if !self.state.accounts.iter().any(|a| a.id == account) {

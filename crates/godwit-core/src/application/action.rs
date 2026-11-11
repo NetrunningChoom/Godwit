@@ -334,6 +334,10 @@ pub enum Action {
         /// The picked entry's index in the network's `presence_choices`.
         choice: usize,
     },
+    /// The user is active in Godwit (window focused) or not any more. Only
+    /// reaches networks whose `presence_upkeep` follows activity, and only
+    /// when it changed for them.
+    SetActivity(bool),
     /// Set our custom status text there (None or blank clears it).
     SetStatusText {
         account: AccountId,

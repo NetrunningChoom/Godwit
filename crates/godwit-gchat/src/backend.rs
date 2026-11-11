@@ -59,6 +59,8 @@ pub enum Cmd {
     /// People's presence now (a snapshot: there's no push yet).
     Presence(Vec<String>),
     SetPresence(godwit_core::members::Presence),
+    /// The user is active in Godwit or not (from the shared activity).
+    SetActivity(bool),
     SetStatus(Option<String>),
     MarkRead {
         group: String,
@@ -127,6 +129,34 @@ pub fn spawn(wake: Waker) -> std::io::Result<(Handle, mpsc::Receiver<Ev>)> {
 
 use godwit_core::backend::error_text as text;
 
+/// The chosen status as the shared activity rule sees it.
+fn chosen_presence(allows_active: bool) -> godwit_core::members::Presence {
+    if allows_active {
+        godwit_core::members::Presence::Online
+    } else {
+        godwit_core::members::Presence::Idle
+    }
+}
+
+/// Sets the ping's active flag from the app's activity and the chosen
+/// status; the channel pings only when it really changed.
+fn refresh_active(
+    active: &tokio::sync::watch::Sender<bool>,
+    app_active: &std::sync::atomic::AtomicBool,
+    chosen_ok: &std::sync::atomic::AtomicBool,
+) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let next = godwit_core::activity::effective(app_active.load(Relaxed), chosen_presence(chosen_ok.load(Relaxed)));
+    active.send_if_modified(|value| {
+        if *value == next {
+            false
+        } else {
+            *value = next;
+            true
+        }
+    });
+}
+
 /// A fresh id for a message we send, as maugclib makes them
 /// (`hangups%{random u64}`). Godwit's nonces restart every session
 /// (`pending-1`, …), and Chat refuses an id it has seen with 409 Conflict.
@@ -163,6 +193,12 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
     let mut requests = tokio::task::JoinSet::new();
     let mut generation = 0_u64;
     let active = tokio::sync::watch::Sender::new(true);
+    // What `active` is made of: the app's activity, and whether the chosen
+    // status allows being shown active (Automatic, not "Set as away").
+    let (app_active, chosen_ok) = (
+        Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        Arc::new(std::sync::atomic::AtomicBool::new(true)),
+    );
     let mut window: Option<godwit_core::backend::SignInWindow> = None;
     // The kept sign-in starting (and retrying while unreachable).
     let mut starting: Option<tokio::task::JoinHandle<()>> = None;
@@ -293,12 +329,20 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                     Cmd::SetPresence(presence) => {
                         if let Some(api) = api.clone() {
                             let (out, active) = (out.clone(), active.clone());
+                            let (app_active, chosen_ok) = (app_active.clone(), chosen_ok.clone());
                             requests.spawn(async move {
                                 let result = api.lock().await.set_own_presence(presence).await;
-                                if result.is_ok() { active.send_if_modified(|value| { let next = presence != godwit_core::members::Presence::Idle; if *value == next { false } else { *value = next; true } }); }
+                                if result.is_ok() {
+                                    chosen_ok.store(presence != godwit_core::members::Presence::Idle, std::sync::atomic::Ordering::Relaxed);
+                                    refresh_active(&active, &app_active, &chosen_ok);
+                                }
                                 out.send(Ev::OwnState(result.map(Box::new).map_err(|e| text(&e))));
                             });
                         }
+                    }
+                    Cmd::SetActivity(now) => {
+                        app_active.store(now, std::sync::atomic::Ordering::Relaxed);
+                        refresh_active(&active, &app_active, &chosen_ok);
                     }
                     Cmd::SetStatus(status) => {
                         if let Some(api) = api.clone() {
@@ -345,7 +389,11 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
             Some(ready) = ready_rx.recv() => {
                 if ready.generation != generation { continue; }
                 api = Some(ready.api);
-                active.send_replace(!ready.own_status.has_presence_shared() || ready.own_status.presence_shared());
+                chosen_ok.store(!ready.own_status.has_presence_shared() || ready.own_status.presence_shared(), std::sync::atomic::Ordering::Relaxed);
+                active.send_replace(godwit_core::activity::effective(
+                    app_active.load(std::sync::atomic::Ordering::Relaxed),
+                    chosen_presence(chosen_ok.load(std::sync::atomic::Ordering::Relaxed)),
+                ));
                 out.send(Ev::Ready { me: ready.me, world: ready.world });
                 out.send(Ev::OwnState(Ok(Box::new(ready.own_status))));
                 if let Some(t) = stream.take() { t.abort(); }

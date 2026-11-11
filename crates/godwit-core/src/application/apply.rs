@@ -196,6 +196,9 @@ impl Application {
                     a.presence = Some(Presence::Online);
                 }
                 effects.extend(self.derive_people(&id));
+                // A fresh connection knows nothing of the app's activity.
+                self.activity.forget(&id);
+                effects.extend(self.activity_effects());
                 self.pin_new_notes();
                 effects
             }

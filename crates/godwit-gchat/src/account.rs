@@ -1242,6 +1242,7 @@ impl NetworkAccount for GChatAccount {
                 }
             }
             Command::SetPresence { presence: p, .. } => self.net.send(Cmd::SetPresence(p)),
+            Command::SetActivity(active) => self.net.send(Cmd::SetActivity(active)),
             Command::SetStatusText(s) => self.net.send(Cmd::SetStatus(s)),
             Command::LoadHistory { room, before } => {
                 if let Some(before) = before {
