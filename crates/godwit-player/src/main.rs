@@ -71,6 +71,48 @@ fn main() {
     run_helper(&args);
 }
 
+// Accepted by every helper build so the app can always pass its saved option.
+fn hardware_acceleration_arg(args: &[String]) -> bool {
+    args.iter()
+        .find_map(|arg| match arg.as_str() {
+            "--hardware-acceleration" => Some(true),
+            "--no-hardware-acceleration" => Some(false),
+            _ => None,
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod hardware_acceleration_tests {
+    use super::*;
+
+    #[test]
+    fn option_parses_enabled_and_default_off_arguments() {
+        assert!(!hardware_acceleration_arg(&["video".into()]));
+        assert!(hardware_acceleration_arg(&[
+            "video".into(),
+            "--hardware-acceleration".into()
+        ]));
+        assert!(!hardware_acceleration_arg(&[
+            "video".into(),
+            "--no-hardware-acceleration".into()
+        ]));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn boolean_maps_to_webkit_policy() {
+        assert_eq!(
+            hardware_acceleration_policy(false),
+            webkit2gtk::HardwareAccelerationPolicy::Never
+        );
+        assert_eq!(
+            hardware_acceleration_policy(true),
+            webkit2gtk::HardwareAccelerationPolicy::OnDemand
+        );
+    }
+}
+
 /// Writes helper diagnostics only when the app explicitly passes a log path.
 #[cfg(target_os = "linux")]
 fn media_log(event: impl FnOnce() -> String) {
@@ -159,6 +201,7 @@ fn run_helper(args: &[String]) -> ! {
     let Some(kind) = kind.filter(|_| valid_player_url(url)) else {
         std::process::exit(2);
     };
+    let hardware_acceleration = hardware_acceleration_arg(args);
     if std::env::var_os("GODWIT_MEDIA_LOG").is_some() {
         let safe = url::Url::parse(url)
             .map(|parsed| {
@@ -319,7 +362,7 @@ fn run_helper(args: &[String]) -> ! {
     });
     web.connect_load_changed(|_, event| media_log(|| format!("webkit load state={event:?}")));
     if let Some(settings) = WebViewExt::settings(&web) {
-        settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::Never);
+        settings.set_hardware_acceleration_policy(hardware_acceleration_policy(hardware_acceleration));
         settings.set_media_playback_requires_user_gesture(false);
     }
     web.set_zoom_level(zoom);
@@ -452,6 +495,17 @@ fn run_helper(args: &[String]) -> ! {
     let _ = broadway.wait();
     let _ = std::fs::remove_file(socket);
     std::process::exit(0)
+}
+
+#[cfg(target_os = "linux")]
+fn hardware_acceleration_policy(enabled: bool) -> webkit2gtk::HardwareAccelerationPolicy {
+    // WebKitGTK recommends on-demand acceleration; it loads ~65–70 MB of GPU driver libraries in this helper (docs/measurements.md).
+    // https://webkitgtk.org/reference/webkit2gtk/stable/enum.HardwareAccelerationPolicy.html
+    if enabled {
+        webkit2gtk::HardwareAccelerationPolicy::OnDemand
+    } else {
+        webkit2gtk::HardwareAccelerationPolicy::Never
+    }
 }
 
 #[cfg(windows)]

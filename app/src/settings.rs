@@ -74,6 +74,10 @@ pub struct Settings {
     /// comes through until they're switched back on (`network:user`).
     pub offline: Vec<String>,
     pub voice: VoiceSettings,
+    /// Let inline player helpers load GPU driver libraries when WebKit needs them.
+    pub inline_player_hardware_acceleration: bool,
+    /// Prefer hardware video decoding in calls and streams when a later backend supports it.
+    pub hardware_video_decoding: bool,
     /// Accounts whose rail section is collapsed (`network:user`).
     pub collapsed: Vec<String>,
     /// Discord accounts already asked the first-run privacy question.
@@ -194,6 +198,8 @@ impl Default for Settings {
             alert_modes: BTreeMap::new(),
             offline: Vec::new(),
             voice: VoiceSettings::default(),
+            inline_player_hardware_acceleration: false,
+            hardware_video_decoding: false,
             collapsed: Vec::new(),
             privacy_asked: Vec::new(),
             quiet_told: Vec::new(),
@@ -311,6 +317,24 @@ pub fn detects_official_app(network: Network) -> bool {
 }
 
 impl Settings {
+    pub fn hardware_video_decoding(&self) -> bool {
+        self.hardware_video_decoding
+    }
+
+    pub fn set_hardware_video_decoding(&mut self, enabled: bool) {
+        self.hardware_video_decoding = enabled;
+    }
+
+    /// Whether new inline player helpers should use WebKit hardware acceleration.
+    pub fn inline_player_hardware_acceleration(&self) -> bool {
+        self.inline_player_hardware_acceleration
+    }
+
+    /// Sets the policy used by the next inline player helper started.
+    pub fn set_inline_player_hardware_acceleration(&mut self, enabled: bool) {
+        self.inline_player_hardware_acceleration = enabled;
+    }
+
     /// The accent to build the colour scheme from.
     pub fn accent(&self) -> &str {
         if self.accent.is_empty() {
@@ -625,6 +649,42 @@ mod tests {
         save(&path, &changed).unwrap();
         let loaded = load(&path).unwrap();
         assert!(!loaded.message_sound && !loaded.call_ring_sound && !loaded.call_event_sounds);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn hardware_video_encoding_defaults_off_and_round_trips() {
+        let dir = std::env::temp_dir().join(format!("godwit-hw-video-settings-{}", std::process::id()));
+        let path = dir.join("settings.json");
+        let mut settings = Settings::default();
+        assert!(!settings.voice.hardware_video_encoding);
+        settings.voice.hardware_video_encoding = true;
+        save(&path, &settings).unwrap();
+        assert!(load(&path).unwrap().voice.hardware_video_encoding);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn inline_player_hardware_acceleration_defaults_off_and_round_trips() {
+        let dir = std::env::temp_dir().join(format!("godwit-inline-hw-settings-{}", std::process::id()));
+        let path = dir.join("settings.json");
+        let mut settings = Settings::default();
+        assert!(!settings.inline_player_hardware_acceleration);
+        settings.inline_player_hardware_acceleration = true;
+        save(&path, &settings).unwrap();
+        assert!(load(&path).unwrap().inline_player_hardware_acceleration);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn hardware_video_decoding_defaults_off_and_round_trips() {
+        let dir = std::env::temp_dir().join(format!("godwit-hw-decode-settings-{}", std::process::id()));
+        let path = dir.join("settings.json");
+        let mut settings = Settings::default();
+        assert!(!settings.hardware_video_decoding());
+        settings.set_hardware_video_decoding(true);
+        save(&path, &settings).unwrap();
+        assert!(load(&path).unwrap().hardware_video_decoding());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

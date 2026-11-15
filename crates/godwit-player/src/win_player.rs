@@ -60,6 +60,8 @@ const STILL_AFTER: u32 = 15;
 const INLINE_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion \
      --disable-backgrounding-occluded-windows --disable-renderer-backgrounding \
      --disable-background-timer-throttling --autoplay-policy=no-user-gesture-required";
+// Microsoft documents `--disable-gpu` as a browser flag that disables GPU acceleration; this adapter leaves it unimplemented until verified in WebView2 here.
+// https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/performance
 const WINDOW_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
      --autoplay-policy=no-user-gesture-required";
 

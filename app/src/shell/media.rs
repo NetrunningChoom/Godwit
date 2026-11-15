@@ -19,7 +19,13 @@ impl Shell {
     pub fn play_inline(&mut self, ui: &AppWindow, url: &str, _kind: &str) {
         let Some(spec) = self.player_spec(url) else { return };
         let scale = slint::ComponentHandle::window(ui).scale_factor();
-        match self.inline_players.start(&spec, scale, true, self.inline_wake.clone()) {
+        match self.inline_players.start(
+            &spec,
+            scale,
+            true,
+            self.settings.inline_player_hardware_acceleration,
+            self.inline_wake.clone(),
+        ) {
             Ok(_) => {}
             Err(error) => {
                 godwit_core::verbose!("note: inline playback is unavailable ({error})");
@@ -46,7 +52,13 @@ impl Shell {
             return;
         }
         let scale = slint::ComponentHandle::window(ui).scale_factor();
-        if let Err(error) = self.inline_players.start(&spec, scale, true, self.inline_wake.clone()) {
+        if let Err(error) = self.inline_players.start(
+            &spec,
+            scale,
+            true,
+            self.settings.inline_player_hardware_acceleration,
+            self.inline_wake.clone(),
+        ) {
             godwit_core::verbose!("note: inline playback is unavailable ({error})");
             if crate::inline_player::pop_out(&spec).is_err() {
                 open_external(url);
@@ -114,9 +126,21 @@ impl Shell {
         let missing = missing.into_iter().chain(upcoming.into_iter().map(|(_, spec)| spec));
         let scale = slint::ComponentHandle::window(ui).scale_factor();
         for spec in missing {
-            let mut started = self.inline_players.start(&spec, scale, false, self.inline_wake.clone());
+            let mut started = self.inline_players.start(
+                &spec,
+                scale,
+                false,
+                self.settings.inline_player_hardware_acceleration,
+                self.inline_wake.clone(),
+            );
             if matches!(started, Ok(false)) && keep.contains(&spec.url) && self.inline_players.make_room(&keep) {
-                started = self.inline_players.start(&spec, scale, false, self.inline_wake.clone());
+                started = self.inline_players.start(
+                    &spec,
+                    scale,
+                    false,
+                    self.settings.inline_player_hardware_acceleration,
+                    self.inline_wake.clone(),
+                );
             }
             match started {
                 Ok(true) => {

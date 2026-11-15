@@ -5,9 +5,39 @@
 use super::*;
 use crate::ui::{EmojiCellItem, EmojiPackItem};
 use slint::ComponentHandle;
+use std::sync::OnceLock;
 
 /// Settings › Appearance's page (its `section` in settings.slint).
 const APPEARANCE: i32 = 3;
+const HARDWARE_ACCELERATION: i32 = 12;
+static HARDWARE_ENCODER: OnceLock<bool> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HardwareEncoderStatus {
+    Unknown,
+    Available,
+    Unavailable,
+}
+
+fn hardware_encoder_detail(status: HardwareEncoderStatus) -> &'static str {
+    match status {
+        HardwareEncoderStatus::Unknown => "Checking this system…",
+        HardwareEncoderStatus::Available => "Uses the hardware encoder detected on this system.",
+        HardwareEncoderStatus::Unavailable => "No hardware video encoder was found on this system.",
+    }
+}
+
+fn hardware_decoder_detail() -> &'static str {
+    "Not available in this build."
+}
+
+fn inline_player_detail(enabled: bool) -> &'static str {
+    if enabled {
+        "Uses GPU acceleration in the inline player and loads about 65–70 MB of GPU driver libraries."
+    } else {
+        "No effect on this system yet; GPU acceleration is not available in this build."
+    }
+}
 
 impl Shell {
     /// Moves the core's new errors into the log; the rail's dot and Settings
@@ -130,6 +160,27 @@ impl Shell {
         ui.set_notifications(s.notifications);
         ui.set_sounds(s.sounds);
         ui.set_message_sound(s.message_sound);
+        ui.set_hardware_video_encoding(s.voice.hardware_video_encoding);
+        ui.set_hardware_video_decoding(s.hardware_video_decoding());
+        ui.set_inline_player_hardware_acceleration(s.inline_player_hardware_acceleration());
+        ui.set_hardware_video_encoding_detail(
+            hardware_encoder_detail(
+                HARDWARE_ENCODER
+                    .get()
+                    .map_or(HardwareEncoderStatus::Unknown, |available| {
+                        if *available {
+                            HardwareEncoderStatus::Available
+                        } else {
+                            HardwareEncoderStatus::Unavailable
+                        }
+                    }),
+            )
+            .into(),
+        );
+        ui.set_hardware_video_decoding_detail(hardware_decoder_detail().into());
+        ui.set_inline_player_hardware_acceleration_detail(
+            inline_player_detail(s.inline_player_hardware_acceleration()).into(),
+        );
         ui.set_call_ring_sound(s.call_ring_sound);
         ui.set_call_event_sounds(s.call_event_sounds);
         ui.set_muzzle(s.muzzle);
@@ -221,6 +272,7 @@ impl Shell {
         ui.set_tone_index(i32::try_from(s.message_tone).unwrap_or(0));
         ui.set_noise_index(crate::voice_ui::noise_index(s.voice.noise_suppression));
         ui.set_echo_cancellation(s.voice.echo_cancellation);
+        ui.set_hardware_video_encoding(s.voice.hardware_video_encoding);
         ui.set_auto_gain(s.voice.auto_gain_control);
         ui.set_screen_quality_index(crate::voice_ui::quality_index(s.voice.screen_quality));
         ui.set_screen_quality_ask(s.voice.screen_quality_ask);
@@ -234,6 +286,53 @@ impl Shell {
         if ui.get_settings_section() == APPEARANCE {
             self.show_emoji_packs(ui);
         }
+        if ui.get_settings_section() == HARDWARE_ACCELERATION {
+            self.hardware_acceleration_opened(ui);
+        }
+    }
+
+    pub fn hardware_acceleration_opened(&mut self, ui: &AppWindow) {
+        let Some(available) = HARDWARE_ENCODER.get().copied() else {
+            ui.set_hardware_video_encoding_detail(hardware_encoder_detail(HardwareEncoderStatus::Unknown).into());
+            let weak = ui.as_weak();
+            let _ = std::thread::Builder::new()
+                .name("godwit-video-encoder-check".into())
+                .spawn(move || {
+                    let available = godwit_voice::call::video_encoder_availability().hardware;
+                    let _ = HARDWARE_ENCODER.set(available);
+                    let detail = hardware_encoder_detail(if available {
+                        HardwareEncoderStatus::Available
+                    } else {
+                        HardwareEncoderStatus::Unavailable
+                    })
+                    .to_owned();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = weak.upgrade()
+                            && ui.get_settings_open()
+                            && ui.get_settings_section() == HARDWARE_ACCELERATION
+                        {
+                            ui.set_hardware_video_encoding_detail(detail.into());
+                        }
+                    });
+                });
+            ui.set_hardware_video_decoding_detail(hardware_decoder_detail().into());
+            ui.set_inline_player_hardware_acceleration_detail(
+                inline_player_detail(self.settings.inline_player_hardware_acceleration()).into(),
+            );
+            return;
+        };
+        ui.set_hardware_video_encoding_detail(
+            hardware_encoder_detail(if available {
+                HardwareEncoderStatus::Available
+            } else {
+                HardwareEncoderStatus::Unavailable
+            })
+            .into(),
+        );
+        ui.set_hardware_video_decoding_detail(hardware_decoder_detail().into());
+        ui.set_inline_player_hardware_acceleration_detail(
+            inline_player_detail(self.settings.inline_player_hardware_acceleration()).into(),
+        );
     }
 
     /// The Discord account still to be asked the first-run privacy question
@@ -861,6 +960,9 @@ impl Shell {
             s.rejoin_offer = offer;
         }
         s.voice.echo_cancellation = ui.get_echo_cancellation();
+        s.voice.hardware_video_encoding = ui.get_hardware_video_encoding();
+        s.set_hardware_video_decoding(ui.get_hardware_video_decoding());
+        s.set_inline_player_hardware_acceleration(ui.get_inline_player_hardware_acceleration());
         s.voice.auto_gain_control = ui.get_auto_gain();
         s.voice.screen_quality = crate::voice_ui::quality_at(ui.get_screen_quality_index());
         s.voice.screen_quality_ask = ui.get_screen_quality_ask();
@@ -947,4 +1049,34 @@ fn log_folder_text(dir: Option<&std::path::Path>) -> String {
         )
     })
     .unwrap_or_default()
+}
+#[cfg(test)]
+mod hardware_acceleration_tests {
+    use super::*;
+
+    #[test]
+    fn encoder_sentence_matches_detection() {
+        assert_eq!(
+            hardware_encoder_detail(HardwareEncoderStatus::Available),
+            "Uses the hardware encoder detected on this system."
+        );
+        assert_eq!(
+            hardware_encoder_detail(HardwareEncoderStatus::Unavailable),
+            "No hardware video encoder was found on this system."
+        );
+    }
+
+    #[test]
+    fn decoder_sentence_reports_unavailable_build() {
+        assert_eq!(hardware_decoder_detail(), "Not available in this build.");
+    }
+
+    #[test]
+    fn inline_player_sentence_matches_setting() {
+        assert!(inline_player_detail(true).contains("65–70 MB"));
+        assert_eq!(
+            inline_player_detail(false),
+            "No effect on this system yet; GPU acceleration is not available in this build."
+        );
+    }
 }

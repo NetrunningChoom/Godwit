@@ -173,6 +173,12 @@ export component Settings inherits Rectangle {
     in property <[string]> tones;
     in-out property <int> tone-index;
     in-out property <bool> echo-cancellation;
+    in-out property <bool> hardware-video-encoding;
+    in-out property <bool> hardware-video-decoding;
+    in-out property <bool> inline-player-hardware-acceleration;
+    in property <string> hardware-video-encoding-detail;
+    in property <string> hardware-video-decoding-detail;
+    in property <string> inline-player-hardware-acceleration-detail;
     in-out property <bool> auto-gain;
     in-out property <bool> dark;
     in-out property <bool> convert-emoticons;
@@ -187,6 +193,7 @@ export component Settings inherits Rectangle {
     in-out property <int> emoji-pack-index;
     // Appearance came into view: its emoji pack samples load.
     callback appearance-opened();
+    callback hardware-acceleration-opened();
     changed section => {
         if self.section == 3 {
             root.appearance-opened();
@@ -310,6 +317,7 @@ export component Settings inherits Rectangle {
                         root.problems-opened();
                     }
                 }
+                Section { label: "Hardware acceleration"; selected: root.section == 12; clicked => { root.section = 12; root.hardware-acceleration-opened(); } }
                 Section { label: "About"; selected: root.section == 4; clicked => { root.section = 4; } }
             }
         }
@@ -782,6 +790,25 @@ export component Settings inherits Rectangle {
                         label: "Panel sizes";
                         detail: "Drag the edge of the conversation list or the member list to resize it; double-click the edge for its default size.";
                         Button { y: (parent.height - self.height) / 2; text: "Reset"; kind: "tonal"; clicked => { root.reset-panels(); } }
+                    }
+                }
+                if root.section == 12: VerticalLayout {
+                    spacing: Theme.space-4;
+                    Heading { text: "Hardware acceleration"; }
+                    Row {
+                        label: "Video encoding (calls and screen sharing)";
+                        detail: root.hardware-video-encoding-detail;
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.hardware-video-encoding; toggled(on) => { root.hardware-video-encoding = on; root.changed(); } }
+                    }
+                    Row {
+                        label: "Video decoding (calls and streams)";
+                        detail: root.hardware-video-decoding-detail;
+                        Toggle { y: (parent.height - self.height) / 2; enabled: false; checked: root.hardware-video-decoding; toggled(on) => { root.hardware-video-decoding = on; root.changed(); } }
+                    }
+                    Row {
+                        label: "Inline video player";
+                        detail: root.inline-player-hardware-acceleration-detail;
+                        Toggle { y: (parent.height - self.height) / 2; checked: root.inline-player-hardware-acceleration; toggled(on) => { root.inline-player-hardware-acceleration = on; root.changed(); } }
                     }
                 }
                 if root.section == 5: VerticalLayout {

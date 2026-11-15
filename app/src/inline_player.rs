@@ -162,7 +162,14 @@ impl InlinePlayers {
     /// Loads `spec`'s player unless it's running. With `evict`, the least
     /// recently used player makes room; without, nothing starts when full.
     /// Ok(false): not started (full, or it failed before).
-    pub fn start(&mut self, spec: &Spec, scale: f32, evict: bool, wake: Waker) -> io::Result<bool> {
+    pub fn start(
+        &mut self,
+        spec: &Spec,
+        scale: f32,
+        evict: bool,
+        hardware_acceleration: bool,
+        wake: Waker,
+    ) -> io::Result<bool> {
         if !valid_player_url(&spec.url) {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "unsupported player URL"));
         }
@@ -197,6 +204,11 @@ impl InlinePlayers {
         let (width, height) = (px(spec.width, 1600), px(spec.height, 1000));
         let executable = player_executable()?;
         let mut command = std::process::Command::new(executable);
+        let acceleration_arg = if hardware_acceleration {
+            "--hardware-acceleration"
+        } else {
+            "--no-hardware-acceleration"
+        };
         command
             .args([
                 spec.kind.arg(),
@@ -205,6 +217,7 @@ impl InlinePlayers {
                 &height.to_string(),
                 &format!("{scale:.2}"),
             ])
+            .arg(acceleration_arg)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped());
         if let Some(path) = crate::media_log::path() {
@@ -455,6 +468,11 @@ impl InlinePlayers {
         }
         polled
     }
+}
+
+/// Linux uses WebKitGTK; other adapters currently ignore the parsed option.
+pub const fn inline_player_honours_hardware_acceleration() -> bool {
+    cfg!(target_os = "linux")
 }
 
 /// A system library the player helper couldn't load (its loader said so):
@@ -783,6 +801,24 @@ mod tests {
     }
 
     #[test]
+    fn helper_acceleration_argument_is_always_present_and_reflects_setting() {
+        fn option(enabled: bool) -> &'static str {
+            if enabled {
+                "--hardware-acceleration"
+            } else {
+                "--no-hardware-acceleration"
+            }
+        }
+        assert_eq!(option(false), "--no-hardware-acceleration");
+        assert_eq!(option(true), "--hardware-acceleration");
+    }
+
+    #[test]
+    fn platform_support_is_neutral_and_linux_only() {
+        assert_eq!(inline_player_honours_hardware_acceleration(), cfg!(target_os = "linux"));
+    }
+
+    #[test]
     fn making_room_spares_players_on_screen() {
         let mut players = InlinePlayers::default();
         assert!(!players.make_room(&std::collections::HashSet::new()), "nothing to stop");
@@ -806,7 +842,7 @@ mod tests {
         let wake: Waker = std::sync::Arc::new(|| {});
         assert!(
             players
-                .start(&spec("file:///etc/passwd"), 1.0, true, wake.clone())
+                .start(&spec("file:///etc/passwd"), 1.0, true, false, wake.clone())
                 .is_err()
         );
         assert!(pop_out(&spec("http://media.example/v.mp4")).is_err());

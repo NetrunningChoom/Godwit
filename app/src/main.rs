@@ -269,6 +269,7 @@ fn connect_callbacks(ui: &AppWindow) {
         }
     });
     callback!(ui.on_settings_opened() => |sh, ui| sh.settings_opened(ui));
+    callback!(ui.on_hardware_acceleration_opened() => |sh, ui| sh.hardware_acceleration_opened(ui));
     callback!(ui.on_dismiss_send_error() => |sh, ui| sh.dismiss_send_error(ui));
     callback!(ui.on_settings_changed() => |sh, ui| sh.settings_changed(ui));
     callback!(ui.on_open_settings_account(index) => |sh, ui| sh.open_settings_account(ui, index));

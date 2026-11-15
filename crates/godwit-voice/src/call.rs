@@ -27,16 +27,28 @@ use livekit::webrtc::audio_frame::AudioFrame;
 use livekit::webrtc::audio_source::AudioSourceOptions;
 use livekit::webrtc::audio_source::native::NativeAudioSource;
 use livekit::webrtc::native::apm::AudioProcessingModule;
+use livekit::webrtc::rtp_sender::VideoEncoderBackend;
 use livekit::webrtc::video_source::RtcVideoSource;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use super::dsp::{FRAME, NoiseSuppression, Processor, SAMPLE_RATE};
 
+// LiveKit 0.10 publishes the selected backend through TrackPublishOptions
+// (livekit/src/room/options.rs) and exposes runtime availability through
+// libwebrtc's VideoEncoderBackend::list_available (libwebrtc/src/rtp_sender.rs).
+// webrtc-sys 0.3.52 conditionally compiles Linux VAAPI H.264 with libva headers
+// and NVIDIA encoders only when CUDA headers are present (build.rs).
+
 /// Voice preferences, defaults and ranges matching the official client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VoiceSettings {
+    /// Prefer automatic hardware encoder selection for newly published video tracks.
+    /// Disabled by default because webrtc-sys may compile different encoders based
+    /// on local headers; see its build.rs (Linux VAAPI needs libva headers, NVIDIA
+    /// needs CUDA headers) and libwebrtc's `VideoEncoderBackend::list_available`.
+    pub hardware_video_encoding: bool,
     pub noise_suppression: NoiseSuppression,
     pub echo_cancellation: bool,
     pub auto_gain_control: bool,
@@ -65,6 +77,7 @@ pub struct VoiceSettings {
 impl Default for VoiceSettings {
     fn default() -> Self {
         Self {
+            hardware_video_encoding: false,
             noise_suppression: NoiseSuppression::Enhanced,
             echo_cancellation: true,
             auto_gain_control: true,
@@ -80,6 +93,37 @@ impl Default for VoiceSettings {
             screen_quality_ask: true,
             camera: None,
         }
+    }
+}
+
+/// Encoder backends this LiveKit/libwebrtc build can use on this system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoEncoderAvailability {
+    pub hardware: bool,
+}
+
+/// Reports runtime availability, including the platform build flags and hardware checks.
+pub fn video_encoder_availability() -> VideoEncoderAvailability {
+    let backends = VideoEncoderBackend::list_available();
+    VideoEncoderAvailability {
+        hardware: backends.into_iter().any(|backend| {
+            matches!(
+                backend,
+                VideoEncoderBackend::Hardware
+                    | VideoEncoderBackend::Nvenc
+                    | VideoEncoderBackend::Vaapi
+                    | VideoEncoderBackend::VideoToolbox
+            )
+        }),
+    }
+}
+
+/// Choose the backend for a new video publish. Existing senders are unaffected.
+pub fn video_encoder_backend(hardware_video_encoding: bool) -> VideoEncoderBackend {
+    if hardware_video_encoding {
+        VideoEncoderBackend::Auto
+    } else {
+        VideoEncoderBackend::Software
     }
 }
 
@@ -584,6 +628,7 @@ async fn call(
                     let (_, _, fps, bitrate) = share_options.quality.preset();
                     let options = TrackPublishOptions {
                         source: TrackSource::Screenshare,
+                        video_encoder: video_encoder_backend(settings.hardware_video_encoding),
                         video_encoding: Some(livekit::options::VideoEncoding { max_bitrate: bitrate, max_framerate: fps as f64 }),
                         simulcast: false,
                         ..Default::default()
@@ -631,6 +676,7 @@ async fn call(
                     let (_, _, fps, bitrate) = super::camera::PRESET;
                     let options = TrackPublishOptions {
                         source: TrackSource::Camera,
+                        video_encoder: video_encoder_backend(settings.hardware_video_encoding),
                         video_encoding: Some(livekit::options::VideoEncoding { max_bitrate: bitrate, max_framerate: fps as f64 }),
                         ..Default::default()
                     };
@@ -2104,5 +2150,21 @@ mod tests {
         );
         m.mix(&mut out);
         assert_eq!(out, vec![0.0; 4]);
+    }
+}
+
+#[cfg(test)]
+mod video_encoder_tests {
+    use super::*;
+
+    #[test]
+    fn hardware_video_encoding_defaults_off() {
+        assert!(!VoiceSettings::default().hardware_video_encoding);
+    }
+
+    #[test]
+    fn video_encoder_preference_maps_to_backend() {
+        assert_eq!(video_encoder_backend(false), VideoEncoderBackend::Software);
+        assert_eq!(video_encoder_backend(true), VideoEncoderBackend::Auto);
     }
 }
