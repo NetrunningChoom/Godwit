@@ -273,11 +273,23 @@ impl SlackAccount {
                     return;
                 };
                 let in_thread = thread.is_some();
+                let written_in = self.replied_from.remove(&nonce);
                 match result {
                     Ok(v) => {
                         let mut m = v["message"].clone();
                         if m["ts"].is_null() {
                             m["ts"] = v["ts"].clone();
+                        }
+                        // The reply lives in the thread: its unsent row
+                        // leaves the channel it was written in.
+                        if let (Some(channel_room), Some(root)) = (written_in, &thread) {
+                            out.push(Event::MessageDeleted {
+                                room: channel_room,
+                                id: MessageId(nonce.as_str().into()),
+                            });
+                            let ts = m["ts"].as_str().unwrap_or(root).to_owned();
+                            self.put_thread(team, &channel, root, None, &ts, false);
+                            self.sync_rooms(out);
                         }
                         if let Some(message) = self.message(team, &channel, &m, in_thread) {
                             self.confirmed.insert(message.id.0.to_string());
@@ -289,7 +301,7 @@ impl SlackAccount {
                         }
                     }
                     Err(error) => out.push(Event::MessageFailed {
-                        room,
+                        room: written_in.unwrap_or(room),
                         nonce: nonce.into(),
                         error: error.into(),
                     }),
@@ -499,7 +511,11 @@ impl SlackAccount {
                 };
                 // A reply goes into the replied-to post's thread, as Slack's
                 // own client replies (it has no quote replies).
-                let thread = thread.or_else(|| reply_to.map(|m| m.0.to_string()));
+                let reply = reply_to.filter(|_| thread.is_none()).map(|m| m.0.to_string());
+                if reply.is_some() {
+                    self.replied_from.insert(nonce.to_string(), room.clone());
+                }
+                let thread = thread.or(reply);
                 self.request(
                     &team,
                     Request::Send {

@@ -145,6 +145,9 @@ pub struct SlackAccount {
     asked: HashSet<String>,
     /// Our sends confirmed from their answer: their echo isn't added again.
     confirmed: HashSet<String>,
+    /// Nonce → the channel a reply was written in: the send itself went into
+    /// the replied-to post's thread, the unsent row waits in the channel.
+    replied_from: HashMap<String, RoomId>,
     /// Who is typing per `team:channel`, and when they last said so: Slack
     /// sends no stop, so a name runs out after core's `TYPING_FOR`.
     typing: HashMap<String, Vec<(String, std::time::Instant)>>,
@@ -237,6 +240,7 @@ impl SlackAccount {
             pictures: HashMap::new(),
             asked: HashSet::new(),
             confirmed: HashSet::new(),
+            replied_from: HashMap::new(),
             typing: HashMap::new(),
             directory: HashMap::new(),
             followed: HashMap::new(),
@@ -1319,6 +1323,42 @@ mod tests {
         assert!(
             matches!(cmds.try_recv(), Ok(Cmd::Request { request: Request::Send { channel, thread: Some(t), .. }, .. })
             if channel == "C1" && t == "1700000010.000100")
+        );
+        // A reply written in the channel goes into the post's thread, and
+        // its unsent row leaves the channel once it's sent.
+        let channel_room = RoomId::new(a.account.clone().unwrap(), "T1:C1");
+        a.run(Command::SendMessage {
+            room: channel_room.clone(),
+            text: "agreed".into(),
+            nonce: "r1".into(),
+            reply_to: Some(MessageId("1700000010.000100".into())),
+            files: Vec::new(),
+        });
+        assert!(
+            matches!(cmds.try_recv(), Ok(Cmd::Request { request: Request::Send { thread: Some(t), .. }, .. })
+            if t == "1700000010.000100")
+        );
+        let mut out = Vec::new();
+        a.answer(
+            "T1",
+            Answer::Sent {
+                channel: "C1".into(),
+                thread: Some("1700000010.000100".into()),
+                nonce: "r1".into(),
+                result: Ok(json!({"ok": true, "ts": "1700000025.000100", "message": {"user": "U1", "text": "agreed", "ts": "1700000025.000100", "thread_ts": "1700000010.000100"}})),
+            },
+            &mut out,
+        );
+        assert!(
+            out.iter()
+                .any(|e| matches!(e, Event::MessageDeleted { room, id } if *room == channel_room && &*id.0 == "r1")),
+            "{out:?}"
+        );
+        assert!(
+            out.iter().any(
+                |e| matches!(e, Event::MessageConfirmed { room, nonce, .. } if &*room.raw == "T1:C1:1700000010.000100" && &**nonce == "r1")
+            ),
+            "{out:?}"
         );
         // A broadcast shows in the channel itself.
         let mut out = Vec::new();

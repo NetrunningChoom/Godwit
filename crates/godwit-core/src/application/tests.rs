@@ -769,6 +769,20 @@ fn a_newest_page_replaces_the_timeline_but_keeps_pending_sends() {
 }
 
 #[test]
+fn a_send_that_landed_in_another_room_leaves_no_pending_row_behind() {
+    let (mut app, id) = open_dm(&["m1"]);
+    let nonce = send(&mut app, "hello");
+    app.apply(Event::MessageDeleted {
+        room: id.clone(),
+        id: MessageId(nonce),
+    });
+    assert_eq!(ids(app.state().timeline(&id).unwrap()), ["m1"]);
+    app.apply(page(&id, None, &["m1"], true));
+    let t = app.state().timeline(&id).unwrap();
+    assert_eq!(ids(t), ["m1"], "a reloaded page doesn't bring it back");
+}
+
+#[test]
 fn our_live_copy_takes_the_pending_rows_place() {
     let (mut app, id) = open_dm(&["m1"]);
     let nonce = send(&mut app, "hello");
