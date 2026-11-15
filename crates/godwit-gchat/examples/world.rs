@@ -7,7 +7,7 @@
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let saved = godwit_gchat::session::load(0).ok_or_else(|| anyhow::anyhow!("no sign-in in slot 0"))?;
-    let mut api = godwit_gchat::api::Api::new(&saved)?;
+    let api = godwit_gchat::api::Api::new(&saved)?;
     api.refresh().await?;
     println!("xsrf token: ok");
     let me = api.self_status().await?;

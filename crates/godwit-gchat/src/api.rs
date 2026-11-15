@@ -63,9 +63,13 @@ pub fn signed_out(e: &anyhow::Error) -> bool {
 pub struct Api {
     http: Client,
     cookies: HeaderValue,
-    xsrf: Option<String>,
-    request: u64,
-    next_request: tokio::time::Instant,
+    xsrf: std::sync::Mutex<Option<String>>,
+    request: std::sync::atomic::AtomicU64,
+    /// A rate-limit answer's wait: no request goes before it.
+    hold: std::sync::Mutex<tokio::time::Instant>,
+    /// Reads take turns, each after the last one's gap; what the user does
+    /// (send, edit, react) doesn't queue behind them.
+    reads: tokio::sync::Mutex<tokio::time::Instant>,
 }
 
 impl Api {
@@ -85,15 +89,16 @@ impl Api {
         Ok(Self {
             http,
             cookies,
-            xsrf: None,
-            request: 0,
-            next_request: tokio::time::Instant::now(),
+            xsrf: std::sync::Mutex::new(None),
+            request: std::sync::atomic::AtomicU64::new(0),
+            hold: std::sync::Mutex::new(tokio::time::Instant::now()),
+            reads: tokio::sync::Mutex::new(tokio::time::Instant::now()),
         })
     }
 
     /// Fetches the page's XSRF token (`SMqcke` in its `WIZ_global_data`);
     /// fails as signed out when Google sends its sign-in page instead.
-    pub async fn refresh(&mut self) -> Result<()> {
+    pub async fn refresh(&self) -> Result<()> {
         // The query the web client loads its roster frame with (maugclib);
         // `hs` is the Gmail shell's build, without which the page answers 400.
         let hs = r#"["h_hs",null,null,[1,0],null,null,"gmail.pinto-server_20230730.06_p0",1,null,[15,38,36,35,26,30,41,18,24,11,21,14,6],null,null,"3Mu86PSulM4.en..es5",0,null,null,[0]]"#;
@@ -122,7 +127,7 @@ impl Api {
             .get("SMqcke")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("no XSRF token"))?;
-        self.xsrf = Some(token.to_string());
+        *self.xsrf.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(token.to_string());
         Ok(())
     }
 
@@ -130,13 +135,13 @@ impl Api {
     /// One API call. Refused as unauthorized (the page's XSRF token
     /// expires), the token is fetched again once and the call retried; if
     /// that says signed out, it fails as signed out.
-    pub async fn call<Rq: Message, Rs: Message>(&mut self, endpoint: &str, request: &Rq) -> Result<Rs> {
+    pub async fn call<Rq: Message, Rs: Message>(&self, endpoint: &str, request: &Rq) -> Result<Rs> {
         self.call_as(class(endpoint), endpoint, request).await
     }
 
     /// Like `call`, with the network layer's class chosen by the caller.
     async fn call_as<Rq: Message, Rs: Message>(
-        &mut self,
+        &self,
         class: godwit_core::net::Class,
         endpoint: &str,
         request: &Rq,
@@ -150,24 +155,31 @@ impl Api {
         }
     }
 
+    /// Reads go one at a time with a short gap between them. A write goes
+    /// at once, alongside whatever read is under way: answers take most of
+    /// a second, and a send waiting out a queue of them feels stuck.
+    async fn turn(&self, class: godwit_core::net::Class) -> Option<tokio::sync::MutexGuard<'_, tokio::time::Instant>> {
+        if matches!(class, godwit_core::net::Class::Write) {
+            return None;
+        }
+        let mut turn = self.reads.lock().await;
+        tokio::time::sleep_until(*turn).await;
+        *turn = tokio::time::Instant::now() + Duration::from_millis(100);
+        Some(turn)
+    }
+
     async fn call_once<Rq: Message, Rs: Message>(
-        &mut self,
+        &self,
         class: godwit_core::net::Class,
         endpoint: &str,
         request: &Rq,
     ) -> Result<Rs> {
+        let _turn = self.turn(class).await;
         // A rate-limit answer's wait holds every request, sends included.
-        tokio::time::sleep_until(self.next_request).await;
-        // Reads keep a short gap after them; what the user does (send, edit,
-        // react) goes at once: answers already take most of a second, and
-        // these requests take turns anyway.
-        let gap = match class {
-            godwit_core::net::Class::Write => Duration::ZERO,
-            _ => Duration::from_millis(100),
-        };
-        self.next_request = tokio::time::Instant::now() + gap;
-        self.request += 1;
-        let url = format!("{BASE}/api/{endpoint}?c={}&rt=b&alt=proto&key={API_KEY}", self.request);
+        let hold = *self.hold.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        tokio::time::sleep_until(hold).await;
+        let count = self.request.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let url = format!("{BASE}/api/{endpoint}?c={count}&rt=b&alt=proto&key={API_KEY}");
         let mut req = self
             .http
             .post(url)
@@ -175,7 +187,12 @@ impl Api {
             .header(header::CONTENT_TYPE, "application/x-protobuf")
             .header("x-goog-encode-response-if-executable", "base64")
             .body(request.write_to_bytes()?);
-        if let Some(xsrf) = &self.xsrf {
+        let xsrf = self
+            .xsrf
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(xsrf) = xsrf {
             req = req.header("x-framework-xsrf-token", xsrf);
         }
         // `c` counts requests: it doesn't make a repeated call a new one.
@@ -185,7 +202,8 @@ impl Api {
         let status = answer.status;
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             let wait = godwit_core::backend::retry_after(answer.header(header::RETRY_AFTER), Duration::from_secs(60));
-            self.next_request = godwit_core::backend::checked_deadline(wait);
+            *self.hold.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                godwit_core::backend::checked_deadline(wait);
             bail!("{endpoint}: rate limited; try again later");
         }
         let body = answer.body;
@@ -209,7 +227,7 @@ impl Api {
     }
 
     /// Who's signed in.
-    pub async fn self_status(&mut self) -> Result<proto::GetSelfUserStatusResponse> {
+    pub async fn self_status(&self) -> Result<proto::GetSelfUserStatusResponse> {
         let mut req = proto::GetSelfUserStatusRequest::new();
         req.request_header = Some(Self::header()).into();
         self.call("get_self_user_status", &req).await
@@ -218,7 +236,7 @@ impl Api {
     /// The web-client setters documented by purple-googlechat's
     /// googlechat_conversation.c::googlechat_set_status, using the protobuf
     /// definitions shared with maugclib. Never change other profile fields.
-    pub async fn set_own_presence(&mut self, presence: godwit_core::members::Presence) -> Result<proto::UserStatus> {
+    pub async fn set_own_presence(&self, presence: godwit_core::members::Presence) -> Result<proto::UserStatus> {
         use godwit_core::members::Presence;
         if !matches!(presence, Presence::Online | Presence::Idle | Presence::Focus) {
             bail!("Choose a Google Chat availability");
@@ -248,7 +266,7 @@ impl Api {
             .into_option()
             .context("Google Chat returned no own status")
     }
-    pub async fn set_custom_status(&mut self, text: Option<&str>) -> Result<proto::UserStatus> {
+    pub async fn set_custom_status(&self, text: Option<&str>) -> Result<proto::UserStatus> {
         let mut request = proto::SetCustomStatusRequest::new();
         request.request_header = Some(Self::header()).into();
         if let Some(text) = text.filter(|s| !s.is_empty()) {
@@ -268,7 +286,7 @@ impl Api {
     }
 
     /// DMs and spaces, newest first: up to `limit` of them.
-    pub async fn world(&mut self, limit: i32) -> Result<Vec<proto::WorldItemLite>> {
+    pub async fn world(&self, limit: i32) -> Result<Vec<proto::WorldItemLite>> {
         let mut req = proto::PaginatedWorldRequest::new();
         req.request_header = Some(Self::header()).into();
         req.set_fetch_from_user_spaces(true);
@@ -287,7 +305,7 @@ impl Api {
 impl Api {
     /// A conversation's newest topics (each with its first replies),
     /// oldest first.
-    pub async fn topics(&mut self, group: &str, page: i32, before: Option<i64>) -> Result<proto::ListTopicsResponse> {
+    pub async fn topics(&self, group: &str, page: i32, before: Option<i64>) -> Result<proto::ListTopicsResponse> {
         let req = Self::topics_request(group, page, before)?;
         // An older page is asked for by the user scrolling back, so the repeat
         // guard (for loops) doesn't hold it: the caller paces it (`Live`).
@@ -324,7 +342,7 @@ impl Api {
     /// `paging`: the user asked for an older page, which the repeat guard
     /// doesn't hold (see `topics`).
     pub async fn thread_messages(
-        &mut self,
+        &self,
         group: &str,
         topic: &str,
         page: i32,
@@ -354,7 +372,7 @@ impl Api {
         request.set_page_size(page);
         Ok(request)
     }
-    pub async fn history(&mut self, room: &str, page: i32, before: Option<i64>) -> Result<Vec<proto::Message>> {
+    pub async fn history(&self, room: &str, page: i32, before: Option<i64>) -> Result<Vec<proto::Message>> {
         let (group, topic) = room_parts(room);
         if let Some(topic) = topic {
             self.thread_messages(group, topic, page, before.is_some()).await
@@ -370,7 +388,7 @@ impl Api {
     }
 
     pub async fn topic_history(
-        &mut self,
+        &self,
         room: &str,
         page: i32,
         before: Option<i64>,
@@ -398,7 +416,7 @@ impl Api {
         let messages = response.topics.into_iter().flat_map(|topic| topic.replies).collect();
         Ok((messages, cursor, reached_start))
     }
-    pub async fn mark_read(&mut self, group: &str, timestamp: i64) -> Result<()> {
+    pub async fn mark_read(&self, group: &str, timestamp: i64) -> Result<()> {
         // maugclib/client.py::update_read_timestamp, in microseconds.
         let mut request = proto::MarkGroupReadstateRequest::new();
         request.request_header = Some(Self::header()).into();
@@ -410,7 +428,7 @@ impl Api {
 
     /// Sets the conversation's typing state, following maugclib's
     /// `GoogleChatClient.mark_typing` request shape.
-    pub async fn set_typing(&mut self, group: &str) -> Result<()> {
+    pub async fn set_typing(&self, group: &str) -> Result<()> {
         // https://github.com/mautrix/googlechat/blob/main/maugclib/client.py
         let mut context = proto::TypingContext::new();
         context.set_group_id(group_id(group).context("not a Google Chat conversation")?);
@@ -425,7 +443,7 @@ impl Api {
     /// Sends `text` as a new topic (Chat's unthreaded message), with our
     /// `local_id` so its echo can be matched.
     pub async fn send(
-        &mut self,
+        &self,
         group: &str,
         text: &str,
         local_id: &str,
@@ -518,7 +536,12 @@ impl Api {
             .header("x-goog-upload-content-length", bytes.len().to_string())
             .header("x-goog-upload-content-type", mime)
             .header("x-goog-upload-file-name", file.name.as_ref());
-        if let Some(xsrf) = &self.xsrf {
+        let xsrf = self
+            .xsrf
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(xsrf) = xsrf {
             request = request.header("x-framework-xsrf-token", xsrf);
         }
         let answer = godwit_core::net::stream(NET, godwit_core::net::Class::Write, request)
@@ -563,7 +586,7 @@ impl Api {
     }
 
     /// Changes our message's text (maugclib's edit_message).
-    pub async fn edit(&mut self, target: &Target, text: &str) -> Result<()> {
+    pub async fn edit(&self, target: &Target, text: &str) -> Result<()> {
         let mut req = proto::EditMessageRequest::new();
         req.request_header = Some(Self::header()).into();
         req.message_id = Some(target.id()?).into();
@@ -576,7 +599,7 @@ impl Api {
     }
 
     /// Deletes our message (maugclib's delete_message).
-    pub async fn delete(&mut self, target: &Target) -> Result<()> {
+    pub async fn delete(&self, target: &Target) -> Result<()> {
         let mut req = proto::DeleteMessageRequest::new();
         req.request_header = Some(Self::header()).into();
         req.message_id = Some(target.id()?).into();
@@ -585,7 +608,7 @@ impl Api {
     }
 
     /// Adds or removes our reaction (maugclib's update_reaction).
-    pub async fn react(&mut self, target: &Target, emoji: &str, add: bool) -> Result<()> {
+    pub async fn react(&self, target: &Target, emoji: &str, add: bool) -> Result<()> {
         let mut req = proto::UpdateReactionRequest::new();
         req.request_header = Some(Self::header()).into();
         req.message_id = Some(target.id()?).into();
@@ -603,7 +626,7 @@ impl Api {
 
     /// People's presence now (maugclib's get_user_presence): active, away,
     /// or busy (Do not disturb).
-    pub async fn presence(&mut self, ids: &[String]) -> Result<Vec<proto::UserPresence>> {
+    pub async fn presence(&self, ids: &[String]) -> Result<Vec<proto::UserPresence>> {
         let mut req = proto::GetUserPresenceRequest::new();
         req.request_header = Some(Self::header()).into();
         for id in ids {
@@ -618,7 +641,7 @@ impl Api {
     }
 
     /// People's names and pictures.
-    pub async fn users(&mut self, ids: &[String]) -> Result<Vec<proto::User>> {
+    pub async fn users(&self, ids: &[String]) -> Result<Vec<proto::User>> {
         let mut req = proto::GetMembersRequest::new();
         req.request_header = Some(Self::header()).into();
         for id in ids {
@@ -733,6 +756,26 @@ mod tests {
         let topic = id.parent_id.topic_id();
         assert_eq!(topic.topic_id(), "t1");
         assert_eq!(group_raw(&topic.group_id).as_deref(), Some("space:AAA"));
+    }
+
+    #[tokio::test]
+    async fn a_write_does_not_wait_for_the_read_under_way() {
+        use godwit_core::net::Class;
+        let api = Api::new(&Saved { cookies: Vec::new() }).unwrap();
+        let reading = api.turn(Class::Read).await;
+        assert!(reading.is_some());
+        let soon = Duration::from_millis(50);
+        assert!(
+            tokio::time::timeout(soon, api.turn(Class::Read)).await.is_err(),
+            "reads take turns"
+        );
+        assert!(matches!(
+            tokio::time::timeout(soon, api.turn(Class::Write)).await,
+            Ok(None)
+        ));
+        assert_eq!(class("create_topic"), Class::Write);
+        assert_eq!(class("create_message"), Class::Write);
+        assert_eq!(class("list_topics"), Class::Read);
     }
 
     #[test]

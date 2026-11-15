@@ -8,7 +8,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
 
-use tokio::sync::Mutex;
 use tokio::sync::mpsc as tmpsc;
 
 use crate::api::Api;
@@ -179,7 +178,7 @@ pub(crate) const PAGE: i32 = 30;
 
 struct Started {
     generation: u64,
-    api: Arc<Mutex<Api>>,
+    api: Arc<Api>,
     saved: Saved,
     me: String,
     own_status: proto::UserStatus,
@@ -187,7 +186,7 @@ struct Started {
 }
 
 async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
-    let mut api: Option<Arc<Mutex<Api>>> = None;
+    let mut api: Option<Arc<Api>> = None;
     let mut stream: Option<tokio::task::JoinHandle<()>> = None;
     let (_, mut news_rx) = tmpsc::unbounded_channel();
     let mut requests = tokio::task::JoinSet::new();
@@ -263,7 +262,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                let result = api.lock().await.topic_history(&group, page, before).await.map_err(|e| text(&e));
+                                let result = api.topic_history(&group, page, before).await.map_err(|e| text(&e));
                                 out.send(Ev::History { group, result });
                             });
                         }
@@ -272,7 +271,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                let result = api.lock().await.send(&group, &body, &local_id(), &files, reply_to.as_ref(), annotations).await;
+                                let result = api.send(&group, &body, &local_id(), &files, reply_to.as_ref(), annotations).await;
                                 let result = result
                                     .map(Box::new).map_err(|e| text(&e));
                                 out.send(Ev::Sent { group, nonce, result });
@@ -282,7 +281,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                     Cmd::Typing { group } => {
                         if let Some(api) = api.clone() {
                             requests.spawn(async move {
-                                let _ = api.lock().await.set_typing(&group).await;
+                                let _ = api.set_typing(&group).await;
                             });
                         }
                     }
@@ -290,7 +289,6 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                let mut api = api.lock().await;
                                 let (what, done) = match &change {
                                     Change::Edit(body) => ("editing", api.edit(&target, body).await),
                                     Change::Delete => ("deleting", api.delete(&target).await),
@@ -310,7 +308,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                if let Ok(presence) = api.lock().await.presence(&ids).await {
+                                if let Ok(presence) = api.presence(&ids).await {
                                     out.send(Ev::Presence(presence));
                                 }
                             });
@@ -320,7 +318,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                if let Ok(users) = api.lock().await.users(&ids).await {
+                                if let Ok(users) = api.users(&ids).await {
                                     out.send(Ev::Users(users));
                                 }
                             });
@@ -331,7 +329,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                             let (out, active) = (out.clone(), active.clone());
                             let (app_active, chosen_ok) = (app_active.clone(), chosen_ok.clone());
                             requests.spawn(async move {
-                                let result = api.lock().await.set_own_presence(presence).await;
+                                let result = api.set_own_presence(presence).await;
                                 if result.is_ok() {
                                     chosen_ok.store(presence != godwit_core::members::Presence::Idle, std::sync::atomic::Ordering::Relaxed);
                                     refresh_active(&active, &app_active, &chosen_ok);
@@ -347,14 +345,14 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                     Cmd::SetStatus(status) => {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
-                            requests.spawn(async move { out.send(Ev::OwnState(api.lock().await.set_custom_status(status.as_deref()).await.map(Box::new).map_err(|e| text(&e)))); });
+                            requests.spawn(async move { out.send(Ev::OwnState(api.set_custom_status(status.as_deref()).await.map(Box::new).map_err(|e| text(&e)))); });
                         }
                     }
                     Cmd::MarkRead { group, timestamp } => {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                let result = api.lock().await.mark_read(&group,timestamp).await.map_err(|e| text(&e));
+                                let result = api.mark_read(&group,timestamp).await.map_err(|e| text(&e));
                                 out.send(Ev::Read { group, timestamp, result });
                             });
                         }
@@ -363,7 +361,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
                         if let Some(api) = api.clone() {
                             let out = out.clone();
                             requests.spawn(async move {
-                                match api.lock().await.world(100).await {
+                                match api.world(100).await {
                                     Ok(world) => out.send(Ev::World(world)),
                                     Err(e) => { out.send(Ev::World(Vec::new())); out.send(Ev::Failed(text(&e))); },
                                 }
@@ -425,7 +423,7 @@ async fn run(mut cmds: tmpsc::UnboundedReceiver<Cmd>, out: Out) {
 /// list, once.
 async fn start(saved: Saved, out: Out, ready: tmpsc::UnboundedSender<Started>, generation: u64) -> Start {
     let loaded = async {
-        let mut api = Api::new(&saved)?;
+        let api = Api::new(&saved)?;
         api.refresh().await?;
         let me = api.self_status().await?;
         let world = api.world(100).await?;
@@ -441,7 +439,7 @@ async fn start(saved: Saved, out: Out, ready: tmpsc::UnboundedSender<Started>, g
         Ok((api, me, own_status, world)) => {
             let _ = ready.send(Started {
                 generation,
-                api: Arc::new(Mutex::new(api)),
+                api: Arc::new(api),
                 saved,
                 me,
                 own_status,
