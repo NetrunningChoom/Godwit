@@ -93,6 +93,8 @@ struct Feed {
     keyframe: Arc<AtomicBool>,
     /// For receiver reports: the counts at the last one.
     reported: (u32, u32),
+    /// A black tile needs one explanation for each distinct receive failure.
+    noted: std::collections::HashSet<&'static str>,
 }
 
 /// The feeds of one connection, and its decoder thread.
@@ -119,8 +121,7 @@ pub(crate) struct Feeds {
 /// One-time log notes about why video isn't showing.
 #[derive(Default)]
 struct Noted {
-    unknown_sender: bool,
-    undecryptable: bool,
+    unknown_senders: std::collections::HashSet<u32>,
     hidden: bool,
     /// Video packets heard, by (SSRC, payload type), for the tally the
     /// log gets in the first half minute.
@@ -284,6 +285,7 @@ impl Feeds {
                 asked: Instant::now() - KEYFRAME_REQUESTS,
                 keyframe: Arc::new(AtomicBool::new(true)),
                 reported: (0, 0),
+                noted: std::collections::HashSet::new(),
             },
         );
         true
@@ -357,8 +359,8 @@ impl Feeds {
         } else if self.incoming.contains_key(&packet.ssrc) {
             Held::new(packet)
         } else {
-            if !self.noted.unknown_sender && Codec::from_payload_type(packet.payload_type).is_some() {
-                self.noted.unknown_sender = true;
+            if Codec::from_payload_type(packet.payload_type).is_some() && self.noted.unknown_senders.insert(packet.ssrc)
+            {
                 note(&format!(
                     "{} video arrives on ssrc {} that no op 12 named (known: {:?})",
                     self.kind.name(),
@@ -375,6 +377,12 @@ impl Feeds {
             .or(chosen)
             .or_else(|| feed.assembler.as_ref().map(Assembler::codec))
         else {
+            note_feed(
+                &feed.sid,
+                &mut feed.noted,
+                "unsupported_payload",
+                "video payload type has no negotiated decoder",
+            );
             return true;
         };
         if feed.assembler.as_ref().is_none_or(|a| a.codec() != codec) {
@@ -407,6 +415,14 @@ impl Feeds {
             for held in feed.reorder.ready(now) {
                 let pushed = assembler.push(&held.packet());
                 lost |= pushed.lost;
+                if pushed.lost {
+                    note_feed(
+                        &feed.sid,
+                        &mut feed.noted,
+                        "damaged_frame",
+                        "video frame was incomplete or not a keyframe",
+                    );
+                }
                 let Some(frame) = pushed.frame else { continue };
                 self.noted.assembled = self.noted.assembled.saturating_add(1);
                 if !self.visible {
@@ -420,15 +436,16 @@ impl Feeds {
                     continue;
                 }
                 let Some(data) = connection.dave.decrypt_video(feed.user, frame.data) else {
-                    if !self.noted.undecryptable {
-                        self.noted.undecryptable = true;
-                        note(&format!(
-                            "{} video won't decrypt ({}; DAVE {})",
-                            self.kind.name(),
+                    note_feed(
+                        &feed.sid,
+                        &mut feed.noted,
+                        "dave_decrypt",
+                        &format!(
+                            "video won't decrypt ({}; DAVE {})",
                             connection.dave.unreadable.as_deref().unwrap_or("?"),
                             connection.dave.status()
-                        ));
-                    }
+                        ),
+                    );
                     // What follows predicts from this frame.
                     assembler.wait_for_keyframe();
                     lost = true;
@@ -442,6 +459,12 @@ impl Feeds {
                 };
                 self.noted.decoded = self.noted.decoded.saturating_add(1);
                 if !self.decoder.send(job) {
+                    note_feed(
+                        &feed.sid,
+                        &mut feed.noted,
+                        "decoder_queue",
+                        "video decoder queue was full or unavailable",
+                    );
                     // Decoding is behind; what follows needs this frame.
                     assembler.wait_for_keyframe();
                     lost = true;
@@ -509,6 +532,12 @@ impl Feeds {
     }
 }
 
+fn note_feed(sid: &str, noted: &mut std::collections::HashSet<&'static str>, cause: &'static str, message: &str) {
+    if noted.insert(cause) {
+        note(&format!("{sid}: {message}"));
+    }
+}
+
 impl Drop for Feeds {
     fn drop(&mut self) {
         // Dropping the sender ends the decoder thread, which lets every
@@ -532,6 +561,7 @@ struct Shown {
 /// The decoder thread: decodes every frame, shows at most 30 a second.
 fn decode(jobs: &channel::Receiver<Job>, threads: usize, shown: &(dyn Fn() + Send + Sync)) {
     let mut feeds: HashMap<Arc<str>, Shown> = HashMap::new();
+    let mut unavailable = std::collections::HashSet::<Arc<str>>::new();
     while let Ok(job) = jobs.recv() {
         let (sid, codec, data, keyframe) = match job {
             Job::Forget(sid) => {
@@ -552,7 +582,12 @@ fn decode(jobs: &channel::Receiver<Job>, threads: usize, shown: &(dyn Fn() + Sen
             }
             entry => {
                 let Some(decoder) = LiveDecoder::with_threads(codec.live(), threads) else {
-                    note(&format!("can't decode {} video", codec.name()));
+                    if unavailable.insert(sid.clone()) {
+                        note(&format!(
+                            "{sid}: no {} video decoder is available in this build",
+                            codec.name()
+                        ));
+                    }
                     if godwit_media::debug::enabled() {
                         godwit_media::debug::debug_log(&format!("call decoder unavailable codec={}", codec.name()));
                     }
@@ -600,7 +635,7 @@ fn decode(jobs: &channel::Receiver<Job>, threads: usize, shown: &(dyn Fn() + Sen
             Ok(_) => {}
             Err(e) => {
                 if feed.failed == 0 {
-                    note(&format!("{sid}: a frame didn't decode ({e:?})"));
+                    note(&format!("{sid}: a {} frame didn't decode ({e:?})", codec.name()));
                     if godwit_media::debug::enabled() {
                         godwit_media::debug::debug_log(&format!(
                             "call video decode error codec={} frame_bytes={} keyframe_requested=true",

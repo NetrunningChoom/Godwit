@@ -113,6 +113,7 @@ pub struct Assembler {
     waiting: bool,
     obu: Vec<u8>,
     obu_open: bool,
+    h264_fu_open: bool,
 }
 
 /// What a packet completed.
@@ -136,6 +137,7 @@ impl Assembler {
             waiting: true,
             obu: Vec::new(),
             obu_open: false,
+            h264_fu_open: false,
         }
     }
 
@@ -166,6 +168,7 @@ impl Assembler {
             self.frame.clear();
             self.obu.clear();
             self.obu_open = false;
+            self.h264_fu_open = false;
             self.timestamp = Some(packet.timestamp);
             self.damaged = gap;
             self.keyframe = false;
@@ -187,6 +190,8 @@ impl Assembler {
         if !packet.marker {
             return Pushed { frame: None, lost };
         }
+        self.damaged |= self.h264_fu_open;
+        self.h264_fu_open = false;
         if self.codec == Codec::Av1 {
             self.damaged |= std::mem::take(&mut self.obu_open);
             self.write_obu(false);
@@ -355,14 +360,23 @@ impl Assembler {
             // STAP-A: sizes and units after the indicator.
             24 => {
                 let mut rest = &payload[1..];
+                let mut units = 0;
                 while rest.len() >= 2 {
                     let size = usize::from(u16::from_be_bytes([rest[0], rest[1]]));
-                    let Some(nal) = rest.get(2..2 + size) else {
+                    let Some(nal) = rest.get(2..).and_then(|bytes| bytes.get(..size)) else {
                         self.damaged = true;
                         return;
                     };
+                    if size == 0 {
+                        self.damaged = true;
+                        return;
+                    }
                     unit(&mut self.frame, &mut self.keyframe, nal);
                     rest = &rest[2 + size..];
+                    units += 1;
+                }
+                if !rest.is_empty() || units == 0 {
+                    self.damaged = true;
                 }
             }
             // FU-A: one unit across packets, its header rebuilt from the
@@ -372,16 +386,31 @@ impl Assembler {
                     self.damaged = true;
                     return;
                 };
-                if header & 0x80 != 0 {
+                let start = header & 0x80 != 0;
+                let end = header & 0x40 != 0;
+                // RFC 6184, 5.8: a fragment can't both start and end a unit; the
+                // reserved bit is ignored.
+                if start && end || payload.len() <= 2 {
+                    self.damaged = true;
+                    return;
+                }
+                if start && !self.h264_fu_open {
                     let nal_header = (indicator & 0xe0) | (header & 0x1f);
                     self.keyframe |= header & 0x1f == 5;
                     self.frame.extend_from_slice(&[0, 0, 0, 1, nal_header]);
-                } else if self.frame.is_empty() {
-                    // A continuation without its start.
+                    self.h264_fu_open = true;
+                } else if !start && self.h264_fu_open {
+                    // The fragment belongs to the NAL that supplied its start.
+                } else {
                     self.damaged = true;
+                    return;
                 }
                 self.frame.extend_from_slice(&payload[2..]);
+                if end {
+                    self.h264_fu_open = false;
+                }
             }
+            // RFC 6184, 5.2: types this receiver doesn't take are skipped.
             _ => {}
         }
     }
@@ -429,7 +458,7 @@ impl Held {
         if payload.is_empty() {
             return None;
         }
-        let payload_type = [Codec::Vp8, Codec::H264]
+        let payload_type = [Codec::Vp8, Codec::H264, Codec::Av1]
             .into_iter()
             .map(Codec::payload_types)
             .find(|&(_, rtx)| rtx == packet.payload_type)
@@ -925,6 +954,21 @@ mod tests {
         let mut sender = vec![0x80, 200, 0, 6, 0, 0, 0, 9, 0, 0, 0x12, 0x34, 0x56, 0x78, 0, 0];
         sender.resize(28, 0);
         assert_eq!(sender_reports(&sender), [(9, 0x1234_5678)]);
+    }
+
+    #[test]
+    fn av1_retransmission_restores_its_media_payload_type() {
+        let rtx = Packet {
+            payload_type: AV1_RTX,
+            marker: true,
+            sequence: 900,
+            timestamp: 4,
+            ssrc: 8,
+            payload: &[0x12, 0x34, 0x28, 1, 0x0a],
+        };
+        let held = Held::unwrap_rtx(&rtx, 7).expect("RTX packet has a payload");
+        assert_eq!((held.payload_type, held.sequence, held.ssrc), (AV1, 0x1234, 7));
+        assert_eq!(held.payload, [0x28, 1, 0x0a]);
     }
 
     #[test]
