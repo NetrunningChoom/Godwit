@@ -21,6 +21,8 @@ use std::sync::Arc;
 
 pub mod debug;
 pub mod live;
+/// Runtime VA-API capability discovery for Linux hardware video decoding.
+pub mod vaapi;
 mod vpx;
 mod vpx_size;
 
