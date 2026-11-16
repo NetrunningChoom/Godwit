@@ -1090,14 +1090,7 @@ export component Timeline inherits Rectangle {
             // the bottom), see where it is: `scrolled` doesn't fire for the
             // mouse wheel, so relying on it left the view thinking it was at
             // the bottom and pulled it back there.
-            // The scroll offset rounded down to 300 px steps: rows far from the
-            // view read this instead of `content-y`, so a scroll frame
-            // re-evaluates only the rows near the view, not every loaded one.
-            property <length> snap-y;
             changed content-y => {
-                if self.snap-y != floor(self.content-y / 300px) * 300px {
-                    self.snap-y = floor(self.content-y / 300px) * 300px;
-                }
                 root.from-bottom = self.content-height + self.content-y;
                 root.at-bottom = root.from-bottom <= self.visible-height + 4px;
                 root.near-top = self.content-y > -max(200px, self.visible-height);
@@ -1113,16 +1106,8 @@ export component Timeline inherits Rectangle {
             height: self.preferred-height;
             for message[i] in root.messages: VerticalLayout {
                 // Where it sits in the view, for the visible range.
-                // Within two screens of the view (measured against the 300 px
-                // steps of `snap-y`, so the margin covers the lag). Only such rows
-                // follow the scroll offset every frame; a far row's `view-y`
-                // stays put, and the cost of a scroll frame no longer grows with
-                // the loaded history.
-                property <bool> near: self.y + self.height + list.snap-y > -list.visible-height - 600px
-                    && self.y + list.snap-y < 2 * list.visible-height + 600px;
-                property <length> view-y: self.near ? self.y + list.content-y : -100000px;
+                property <length> view-y: self.y + list.content-y;
                 function report() {
-                    if !self.near { return; }
                     if self.view-y <= 0px && self.view-y + self.height > 0px { root.top-row = i; }
                     if self.view-y < list.visible-height
                         && (self.view-y + self.height >= list.visible-height || i == root.messages.length - 1) {
@@ -1131,7 +1116,6 @@ export component Timeline inherits Rectangle {
                 }
                 init => { self.report(); }
                 changed view-y => { self.report(); }
-                changed near => { self.report(); }
                 changed height => { self.report(); }
                 // The first row starts the history, the last ends with a gap.
                 if i == 0 && root.reached-start: Text {
