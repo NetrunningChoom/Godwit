@@ -796,6 +796,20 @@ export component Settings inherits Rectangle {
                     spacing: Theme.space-4;
                     Heading { text: "Hardware acceleration"; }
                     Row {
+                        label: "All hardware acceleration";
+                        detail: "Switches every option below on or off at once.";
+                        Toggle {
+                            y: (parent.height - self.height) / 2;
+                            checked: root.hardware-video-encoding && root.hardware-video-decoding && root.inline-player-hardware-acceleration;
+                            toggled(on) => {
+                                root.hardware-video-encoding = on;
+                                root.hardware-video-decoding = on;
+                                root.inline-player-hardware-acceleration = on;
+                                root.changed();
+                            }
+                        }
+                    }
+                    Row {
                         label: "Video encoding (calls and screen sharing)";
                         detail: root.hardware-video-encoding-detail;
                         Toggle { y: (parent.height - self.height) / 2; checked: root.hardware-video-encoding; toggled(on) => { root.hardware-video-encoding = on; root.changed(); } }
