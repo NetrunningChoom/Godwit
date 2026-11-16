@@ -397,6 +397,11 @@ export struct MessageItem {
     system: bool,
     // A folded blocked/ignored run's ready-to-show label; empty for a message.
     hidden-label: string,
+    // Far from the view: the row's body isn't built, an empty box of its last
+    // measured height (known-height) stands in, so the list lays out and
+    // tracks only the rows near the view.
+    far: bool,
+    known-height: length,
     pending: bool,
     edited: bool,
     // Pinned in its room: a small pin under it, like "(edited)".

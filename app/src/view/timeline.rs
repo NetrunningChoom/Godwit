@@ -58,6 +58,10 @@ pub struct RowKey {
     /// Re-entering the playback margin must resolve animation slots again:
     /// a prefetched/offscreen animation may have left the bounded cache.
     animation_live: bool,
+    /// Far from the view with a measured height: the row's body isn't built
+    /// and an empty box of this height (`far_height`) stands in.
+    far: bool,
+    far_height: f32,
     /// Its invite cards' states when built (None: not asked for yet), and
     /// whether we're in each one's server.
     invites: Vec<(Option<Invite>, bool)>,
@@ -173,6 +177,8 @@ impl RowKey {
             && self.ignored_run == other.ignored_run
             && self.wanted == other.wanted
             && self.animation_live == other.animation_live
+            && self.far == other.far
+            && self.far_height.to_bits() == other.far_height.to_bits()
             && self.width == other.width
             && self.invites == other.invites
             && match (&self.reply, &other.reply) {
@@ -188,6 +194,11 @@ impl RowKey {
 const MARGIN: usize = 10;
 /// Rows keep their pictures until this far from the view.
 const KEEP_MARGIN: usize = 20;
+/// Rows this far from the view have no body, only their measured height
+/// (so the list lays out and tracks the rows near the view); one coming back
+/// within `FAR_BACK` of it gets its body again.
+const FAR_MARGIN: usize = 40;
+const FAR_BACK: usize = 30;
 /// Rows given pictures before the list reports where it is.
 const OPENING_ROWS: usize = 20;
 
@@ -306,6 +317,9 @@ pub struct Marks<'a> {
     pub servers: &'a [Arc<godwit_core::server::Server>],
     /// The width of message text (the timeline reports it).
     pub text_width: f32,
+    /// Each row body's last measured height: what stands in for a row far
+    /// from the view.
+    pub heights: &'a HashMap<MessageId, f32>,
 }
 
 /// Brings the timeline model up to date with `list`, rebuilding only the
@@ -341,6 +355,12 @@ pub fn sync_timeline(
         }
         None => i + OPENING_ROWS >= list.len() || had.contains(id),
     };
+    let was_far: HashSet<&MessageId> = old.iter().filter(|k| k.far).map(|k| &k.message.id).collect();
+    let far_from = |i: usize, id: &MessageId| {
+        let Some((top, bottom)) = window else { return false };
+        let margin = if was_far.contains(id) { FAR_BACK } else { FAR_MARGIN };
+        i + margin < top || i > bottom + margin
+    };
     let mut keys: Vec<RowKey> = Vec::with_capacity(list.len());
     let mut prev: Option<&Message> = None;
     // The NEW line goes before the first message after the last one read
@@ -366,6 +386,12 @@ pub fn sync_timeline(
             .and_then(|r| originals.iter().find(|x| &x.id == r))
             .cloned();
         let jump = marks.jump.filter(|(id, _)| *id == m.id).map_or(0, |(_, n)| *n);
+        let hidden_run = marks
+            .hidden_runs
+            .get(&m.id)
+            .map_or(0, |run| u32::try_from(run.len()).unwrap_or(u32::MAX));
+        let far_height = marks.heights.get(&m.id).copied().unwrap_or(0.0);
+        let far = hidden_run == 0 && far_height > 0.0 && far_from(i, &m.id);
         keys.push(RowKey {
             message: m.clone(),
             links: link_embeds(m),
@@ -374,16 +400,15 @@ pub fn sync_timeline(
             date,
             new,
             revealed: marks.revealed.contains(&m.id),
-            hidden_run: marks
-                .hidden_runs
-                .get(&m.id)
-                .map_or(0, |run| u32::try_from(run.len()).unwrap_or(u32::MAX)),
+            hidden_run,
             ignored_run: marks.ignored_runs.contains(&m.id),
             reply,
             complete: false,
             jump,
             wanted: wanted(i, &m.id),
             animation_live: animation_near(i, window),
+            far,
+            far_height,
             invites: m
                 .invites
                 .iter()
@@ -771,6 +796,8 @@ fn message_row(key: &RowKey, images: &mut Images, players: Option<&InlinePlayers
         jumbo: ModelRc::new(VecModel::from(jumbo)),
         system: m.system,
         hidden_label: String::new().into(),
+        far: key.far,
+        known_height: key.far_height,
         pending: m.pending,
         edited: m.edited,
         pinned: m.pinned,
@@ -1235,6 +1262,7 @@ mod timeline_tests {
             invites: &invites,
             servers: &[],
             text_width: 600.0,
+            heights: &HashMap::new(),
         };
         let model = VecModel::<MessageItem>::default();
         let keys = sync_timeline(&model, &[], &c.list, &marks, &mut None, false, &mut Images::offline());
@@ -1317,6 +1345,7 @@ mod timeline_tests {
             invites: &invites,
             servers: &[],
             text_width: 600.0,
+            heights: &HashMap::new(),
         };
         let model = VecModel::<MessageItem>::default();
         let keys = sync_timeline(&model, &[], &c.list, &marks, &mut None, false, &mut Images::offline());
@@ -1341,6 +1370,7 @@ mod timeline_tests {
             invites: &invites,
             servers: &[],
             text_width: 600.0,
+            heights: &HashMap::new(),
         };
         let newest = messages(100..130);
         // Looking at the newest rows (20..29 of 30).

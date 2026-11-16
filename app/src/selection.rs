@@ -310,6 +310,7 @@ mod tests {
             invites: &invites,
             servers: &[],
             text_width: 600.0,
+            heights: &std::collections::HashMap::new(),
         };
         let model = VecModel::<MessageItem>::default();
         let mut window = None;

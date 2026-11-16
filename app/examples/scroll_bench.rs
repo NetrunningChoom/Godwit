@@ -8,7 +8,7 @@
 //!
 //! cargo run --release --example scroll_bench -- [rounds]
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -64,6 +64,7 @@ struct Bench {
     presenter: Presenter,
     images: Images,
     rows: Rc<Cell<Option<(usize, usize)>>>,
+    measured: Rc<RefCell<Vec<(i32, f32)>>>,
     buffer: Vec<Rgb8Pixel>,
 }
 
@@ -72,6 +73,16 @@ impl Bench {
     fn frame(&mut self, app: &Application) -> Duration {
         let start = Instant::now();
         self.presenter.window = self.rows.get();
+        for (row, height) in self.measured.take() {
+            if height > 0.0
+                && let Some(id) = usize::try_from(row)
+                    .ok()
+                    .and_then(|r| self.presenter.rows.get(r))
+                    .map(|k| k.id().clone())
+            {
+                self.presenter.row_heights.insert(id, height);
+            }
+        }
         self.presenter.images_changed |= self.images.poll();
         self.presenter.show(&self.ui, app.state(), true, &mut self.images);
         self.ui.set_screen(Screen::Main);
@@ -112,6 +123,13 @@ impl Bench {
 }
 
 fn report(name: &str, mut times: Vec<Duration>) {
+    if std::env::var_os("BENCH_TRACE").is_some() {
+        let line: Vec<String> = times
+            .iter()
+            .map(|d| format!("{:.0}", d.as_secs_f64() * 1000.0))
+            .collect();
+        println!("{name}: {}", line.join(" "));
+    }
     times.sort();
     let ms = |d: Duration| d.as_secs_f64() * 1000.0;
     let mean = times.iter().map(|d| ms(*d)).sum::<f64>() / times.len().max(1) as f64;
@@ -142,6 +160,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             seen.set(Some((t.min(b), t.max(b))));
         }
     });
+    let measured: Rc<RefCell<Vec<(i32, f32)>>> = Rc::default();
+    ui.on_row_measured({
+        let measured = measured.clone();
+        move |row, height| measured.borrow_mut().push((row, height))
+    });
     let (mut app, _general, _dm) = world(Contacts::default());
     window.set_size(PhysicalSize::new(W, H));
     let mut bench = Bench {
@@ -150,6 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         presenter,
         images,
         rows,
+        measured,
         buffer: vec![Rgb8Pixel { r: 0, g: 0, b: 0 }; (W * H) as usize],
     };
 
@@ -165,7 +189,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "> a quote\nand a reply under it",
         "```rust\nfn main() { println!(\"hi\"); }\n```",
     ];
-    let messages: Vec<Message> = (0..300)
+    let messages: Vec<Message> = (0..std::env::var("BENCH_MSGS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300usize))
         .map(|i| {
             msg(
                 &format!("t{i}"),

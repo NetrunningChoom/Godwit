@@ -164,6 +164,9 @@ pub struct Presenter {
     pub frames_changed: bool,
     /// The width message text is laid out in, as the timeline reports it.
     pub text_width: f32,
+    /// Each timeline row body's last measured height, for the rows far from
+    /// the view (they are laid out as empty boxes of this height).
+    pub row_heights: std::collections::HashMap<MessageId, f32>,
 }
 
 /// Puts the call's pictures in place: rows replaced one by one, so a tile
@@ -1320,6 +1323,7 @@ impl Presenter {
             invites: &state.invites,
             servers: &state.servers,
             text_width: if self.text_width > 0.0 { self.text_width } else { 600.0 },
+            heights: &self.row_heights,
         };
         self.rows = view::sync_timeline(
             &self.messages,

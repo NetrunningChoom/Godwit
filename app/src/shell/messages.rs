@@ -476,7 +476,19 @@ impl Shell {
     pub fn text_width(&mut self, ui: &AppWindow, width: f32) {
         if width > 0.0 && (width - self.presenter.text_width).abs() >= 1.0 {
             self.presenter.text_width = width;
+            self.presenter.row_heights.clear();
             self.refresh(ui);
+        }
+    }
+
+    /// A timeline row body was laid out at this height; kept for when the row
+    /// is far from the view and only its height is laid out.
+    pub fn row_measured(&mut self, row: i32, height: f32) {
+        if height <= 0.0 {
+            return;
+        }
+        if let Some(id) = self.message_at(row) {
+            self.presenter.row_heights.insert(id, height);
         }
     }
 

@@ -967,6 +967,7 @@ export component AppWindow inherits Window {
     callback select-room(int);
     callback load-earlier();
     callback visible-rows(int, int);
+    callback row-measured(int, length);
     in property <bool> history-failed;
     in property <string> room-offline;
     callback draft-edited(string);
@@ -1660,6 +1661,7 @@ export component AppWindow inherits Window {
                                         nudge: root.nudge;
                                         load-earlier => { root.load-earlier(); }
                                         visible-rows(t, b) => { root.visible-rows(t, b); }
+                                        row-measured(i, h) => { root.row-measured(i, h); }
                                         failed: root.history-failed;
                                         offline: root.room-offline;
                                         draft-edited(t) => { root.draft-edited(t); }

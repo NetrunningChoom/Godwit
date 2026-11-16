@@ -269,6 +269,8 @@ export component Timeline inherits Rectangle {
         }
     }
     callback visible-rows(int, int);
+    // A row's body was laid out at this height (what stands in for it when it is far).
+    callback row-measured(int, length);
     // Older messages load a screen before the top is reached, so they're in
     // place when it is; while the view stays up there, at most a page every
     // 0.7 s (the core asks for one page at a time), so a fast scroll doesn't
@@ -1185,7 +1187,12 @@ export component Timeline inherits Rectangle {
                     }
                     TouchArea { mouse-cursor: pointer; clicked => { root.link-clicked(i, "godwit://reveal-hidden" /* view::REVEAL_HIDDEN */); } }
                 }
-                if message.hidden-label == "": MessageRow {
+                if message.hidden-label == "" && message.far: Rectangle {
+                    height: message.known-height;
+                }
+                if message.hidden-label == "" && !message.far: MessageRow {
+                    changed height => { root.row-measured(i, self.height); }
+                    init => { root.row-measured(i, self.height); }
                     flash: parent.flash;
                     message: message;
                     row-number: i;

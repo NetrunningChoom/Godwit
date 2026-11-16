@@ -1274,6 +1274,7 @@ fn connect_callbacks(ui: &AppWindow) {
             }
         }
     });
+    callback!(ui.on_row_measured(row, height) => |sh, _| sh.row_measured(row, height));
     callback!(ui.on_show_people() => |sh, ui| sh.act(ui, Action::ShowPeople));
     callback!(ui.on_favourite_person(row) => |sh, ui| sh.toggle_person_favourite(ui, row));
     callback!(ui.on_show_threads() => |sh, ui| sh.act(ui, Action::ShowThreads));
