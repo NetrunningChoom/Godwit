@@ -45,9 +45,10 @@ use super::dsp::{FRAME, NoiseSuppression, Processor, SAMPLE_RATE};
 #[serde(default)]
 pub struct VoiceSettings {
     /// Prefer automatic hardware encoder selection for newly published video tracks.
-    /// Disabled by default because webrtc-sys may compile different encoders based
-    /// on local headers; see its build.rs (Linux VAAPI needs libva headers, NVIDIA
-    /// needs CUDA headers) and libwebrtc's `VideoEncoderBackend::list_available`.
+    /// On by default: libwebrtc falls back to software when no hardware encoder was
+    /// compiled in, which varies with local headers; see webrtc-sys's build.rs (Linux
+    /// VAAPI needs libva headers, NVIDIA needs CUDA headers) and libwebrtc's
+    /// `VideoEncoderBackend::list_available`.
     pub hardware_video_encoding: bool,
     pub noise_suppression: NoiseSuppression,
     pub echo_cancellation: bool,
@@ -77,7 +78,7 @@ pub struct VoiceSettings {
 impl Default for VoiceSettings {
     fn default() -> Self {
         Self {
-            hardware_video_encoding: false,
+            hardware_video_encoding: true,
             noise_suppression: NoiseSuppression::Enhanced,
             echo_cancellation: true,
             auto_gain_control: true,
@@ -2158,8 +2159,8 @@ mod video_encoder_tests {
     use super::*;
 
     #[test]
-    fn hardware_video_encoding_defaults_off() {
-        assert!(!VoiceSettings::default().hardware_video_encoding);
+    fn hardware_video_encoding_defaults_on() {
+        assert!(VoiceSettings::default().hardware_video_encoding);
     }
 
     #[test]

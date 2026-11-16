@@ -653,13 +653,27 @@ mod tests {
     }
 
     #[test]
-    fn hardware_video_encoding_defaults_off_and_round_trips() {
+    fn hardware_video_encoding_defaults_on_and_round_trips() {
         let dir = std::env::temp_dir().join(format!("godwit-hw-video-settings-{}", std::process::id()));
         let path = dir.join("settings.json");
         let mut settings = Settings::default();
-        assert!(!settings.voice.hardware_video_encoding);
-        settings.voice.hardware_video_encoding = true;
+        assert!(settings.voice.hardware_video_encoding);
+        settings.voice.hardware_video_encoding = false;
         save(&path, &settings).unwrap();
+        assert!(!load(&path).unwrap().voice.hardware_video_encoding);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn settings_file_without_hardware_video_encoding_loads_on() {
+        let dir = std::env::temp_dir().join(format!("godwit-hw-video-missing-{}", std::process::id()));
+        let path = dir.join("settings.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, r#"{"voice":{"echo_cancellation":false}}"#).unwrap();
+        let loaded = load(&path).unwrap();
+        assert!(loaded.voice.hardware_video_encoding);
+        assert!(!loaded.voice.echo_cancellation);
+        std::fs::write(&path, "{}").unwrap();
         assert!(load(&path).unwrap().voice.hardware_video_encoding);
         std::fs::remove_dir_all(&dir).unwrap();
     }

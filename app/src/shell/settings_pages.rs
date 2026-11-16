@@ -28,7 +28,7 @@ fn hardware_encoder_detail(status: HardwareEncoderStatus) -> &'static str {
 }
 
 fn hardware_decoder_detail() -> &'static str {
-    "Not available in this build."
+    "Not available in this build; calls decode video in software."
 }
 
 fn inline_player_detail(enabled: bool) -> &'static str {
@@ -1068,7 +1068,10 @@ mod hardware_acceleration_tests {
 
     #[test]
     fn decoder_sentence_reports_unavailable_build() {
-        assert_eq!(hardware_decoder_detail(), "Not available in this build.");
+        assert_eq!(
+            hardware_decoder_detail(),
+            "Not available in this build; calls decode video in software."
+        );
     }
 
     #[test]
