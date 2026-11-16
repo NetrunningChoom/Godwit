@@ -34,8 +34,43 @@ use super::depacketize::{self, Assembler, Codec, Held, Reorder};
 use super::note;
 use super::rtp::Packet;
 
-/// How often a viewer may ask for a keyframe while frames are lost.
+/// The first gap between keyframe requests while frames are lost.
 const KEYFRAME_REQUESTS: Duration = Duration::from_millis(500);
+/// The longest gap the backoff grows to.
+const KEYFRAME_REQUESTS_MAX: Duration = Duration::from_secs(5);
+
+/// When a viewer may next ask a sender for a keyframe. Requests are automatic,
+/// so they back off (500 ms, 1 s, 2 s, 4 s, then 5 s) instead of asking a
+/// stuck stream twice a second forever; a keyframe arriving starts over.
+#[derive(Default)]
+struct KeyframeAsk {
+    last: Option<Instant>,
+    /// Requests sent since the last keyframe arrived.
+    sent: u32,
+}
+
+impl KeyframeAsk {
+    fn gap(&self) -> Duration {
+        KEYFRAME_REQUESTS
+            .checked_mul(1u32.checked_shl(self.sent).unwrap_or(u32::MAX))
+            .map_or(KEYFRAME_REQUESTS_MAX, |gap| gap.min(KEYFRAME_REQUESTS_MAX))
+    }
+
+    fn due(&self, now: Instant) -> bool {
+        self.last
+            .is_none_or(|last| now.saturating_duration_since(last) >= self.gap())
+    }
+
+    fn asked(&mut self, now: Instant) {
+        self.last = Some(now);
+        self.sent = self.sent.saturating_add(1);
+    }
+
+    /// A keyframe came through: the next loss is asked about at once.
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
 /// Frames waiting to be decoded; more means decoding can't keep up, and the
 /// feed waits for a keyframe instead of falling ever further behind. A
 /// dropped frame costs everything until the next keyframe (a slideshow), so
@@ -87,8 +122,8 @@ struct Feed {
     rtx: Option<u32>,
     reorder: Reorder,
     assembler: Option<Assembler>,
-    /// When a keyframe was last asked for.
-    asked: Instant,
+    /// When a keyframe may be asked for again.
+    asked: KeyframeAsk,
     /// Set by the decoder when a frame wouldn't decode.
     keyframe: Arc<AtomicBool>,
     /// For receiver reports: the counts at the last one.
@@ -282,7 +317,7 @@ impl Feeds {
                 rtx: Some(rtx),
                 reorder: Reorder::default(),
                 assembler: None,
-                asked: Instant::now() - KEYFRAME_REQUESTS,
+                asked: KeyframeAsk::default(),
                 keyframe: Arc::new(AtomicBool::new(true)),
                 reported: (0, 0),
                 noted: std::collections::HashSet::new(),
@@ -402,8 +437,8 @@ impl Feeds {
                 // server forwards a stream to a new viewer only from a
                 // keyframe, so waiting for video first waits forever
                 // (Yapfast asks as soon as op 12 names the SSRC).
-                if self.visible && feed.keyframe.load(Ordering::Relaxed) && feed.asked.elapsed() >= KEYFRAME_REQUESTS {
-                    feed.asked = Instant::now();
+                if self.visible && feed.keyframe.load(Ordering::Relaxed) && feed.asked.due(Instant::now()) {
+                    feed.asked.asked(Instant::now());
                     let mut request = depacketize::picture_loss(connection.ssrc, ssrc);
                     connection.transport.seal(&mut request, depacketize::RTCP_CLEAR)?;
                     connection.udp.send(&request).await?;
@@ -412,6 +447,7 @@ impl Feeds {
             };
             let codec = assembler.codec();
             let mut lost = feed.keyframe.load(Ordering::Relaxed);
+            let mut assembled = false;
             for held in feed.reorder.ready(now) {
                 let pushed = assembler.push(&held.packet());
                 lost |= pushed.lost;
@@ -424,6 +460,7 @@ impl Feeds {
                     );
                 }
                 let Some(frame) = pushed.frame else { continue };
+                assembled |= !pushed.lost;
                 self.noted.assembled = self.noted.assembled.saturating_add(1);
                 if !self.visible {
                     if !self.noted.hidden {
@@ -470,14 +507,17 @@ impl Feeds {
                     lost = true;
                 }
             }
+            if assembled && !lost {
+                feed.asked.reset();
+            }
             let missing = feed.reorder.to_ask(now);
             if !missing.is_empty() {
                 let mut request = depacketize::nack(connection.ssrc, ssrc, &missing);
                 connection.transport.seal(&mut request, depacketize::RTCP_CLEAR)?;
                 connection.udp.send(&request).await?;
             }
-            if lost && self.visible && feed.asked.elapsed() >= KEYFRAME_REQUESTS {
-                feed.asked = Instant::now();
+            if lost && self.visible && feed.asked.due(Instant::now()) {
+                feed.asked.asked(Instant::now());
                 feed.keyframe.store(false, Ordering::Relaxed);
                 let mut request = depacketize::picture_loss(connection.ssrc, ssrc);
                 connection.transport.seal(&mut request, depacketize::RTCP_CLEAR)?;
@@ -653,6 +693,29 @@ fn decode(jobs: &channel::Receiver<Job>, threads: usize, shown: &(dyn Fn() + Sen
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn keyframe_requests_back_off_cap_and_reset() {
+        let start = Instant::now();
+        let mut ask = KeyframeAsk::default();
+        assert!(ask.due(start), "the first request goes at once");
+        let mut gaps = Vec::new();
+        for _ in 0..7 {
+            gaps.push(ask.gap().as_millis());
+            ask.asked(start);
+        }
+        assert_eq!(gaps, [500, 1000, 2000, 4000, 5000, 5000, 5000]);
+        assert!(!ask.due(start + Duration::from_millis(4999)));
+        assert!(ask.due(start + Duration::from_millis(5000)));
+        ask.sent = u32::MAX;
+        assert_eq!(ask.gap(), KEYFRAME_REQUESTS_MAX, "no overflow");
+        ask.reset();
+        assert_eq!(ask.gap(), KEYFRAME_REQUESTS);
+        assert!(ask.due(start), "a new loss is asked about at once");
+        ask.asked(start);
+        assert!(!ask.due(start + Duration::from_millis(999)));
+        assert!(ask.due(start + Duration::from_millis(1000)));
+    }
+
     use super::*;
 
     fn feeds() -> Feeds {
