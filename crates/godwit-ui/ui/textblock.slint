@@ -70,8 +70,12 @@ export component TextBlock inherits Rectangle {
     // Under the pressed pointer, wherever the drag started: report it.
     property <bool> under: Select.dragging
         && Select.py >= self.absolute-position.y && Select.py < self.absolute-position.y + self.height;
-    property <length> lx: Select.px - self.absolute-position.x;
-    property <length> ly: Select.py - self.absolute-position.y;
+    // Only while dragging: reading the block's absolute position solves the
+    // layout of every row above it, and with these always bound, each block
+    // of each row coming into the list (and each scroll frame) did that, so
+    // the cost grew with the history loaded.
+    property <length> lx: Select.dragging ? Select.px - self.absolute-position.x : 0px;
+    property <length> ly: Select.dragging ? Select.py - self.absolute-position.y : 0px;
     changed lx => { if self.under { Select.drag(root.row-number, root.index, self.lx, self.ly); } }
     changed ly => { if self.under { Select.drag(root.row-number, root.index, self.lx, self.ly); } }
     touch := TouchArea {
