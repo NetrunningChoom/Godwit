@@ -444,29 +444,41 @@ pub fn sync_timeline(
         keys[k].slots.clone_from(&old[o].slots);
         end += 1;
     }
-    // Changed rows are updated in place where they line up (a picture
-    // arriving, a row coming near the view), so the list keeps its rows and
-    // layout; only a different count removes or inserts.
-    let (gone, came) = (n_old - end - start, keys.len() - end - start);
-    for i in 0..gone.min(came) {
-        let (item, complete, slots) = message_row(&keys[start + i], images, marks.players);
-        keys[start + i].complete = complete;
-        keys[start + i].slots = slots;
-        model.set_row_data(start + i, item);
-    }
-    for i in (start + came..start + gone).rev() {
-        model.remove(i);
-    }
-    for (i, key) in keys
-        .iter_mut()
-        .enumerate()
-        .take(start + came)
-        .skip(start + gone.min(came))
-    {
-        let (item, complete, slots) = message_row(key, images, marks.players);
-        key.complete = complete;
-        key.slots = slots;
-        model.insert(i, item);
+    // The rows between are matched by message: a page loaded above is
+    // inserted before the rows already there, and only rows whose key changed
+    // get new data. Replacing a row's data makes Slint lay the whole row out
+    // again, so writing every row in this range (two rows changing far apart,
+    // or an older page shifting every row onto a different message) cost
+    // hundreds of milliseconds per update on a slow machine.
+    let (old_end, new_end) = (n_old - end, keys.len() - end);
+    let new_ids: HashSet<MessageId> = keys[start..new_end].iter().map(|k| k.id().clone()).collect();
+    let old_ids: HashSet<&MessageId> = old[start..old_end].iter().map(RowKey::id).collect();
+    // The model is always keys[..row] followed by old[o..].
+    let (mut row, mut o) = (start, start);
+    while row < new_end || o < old_end {
+        if o < old_end && (row >= new_end || !new_ids.contains(old[o].id())) {
+            model.remove(row);
+            o += 1;
+            continue;
+        }
+        let fresh = o >= old_end || !old_ids.contains(keys[row].id());
+        if !fresh && keys[row].id() == old[o].id() && keys[row].same(&old[o], images_changed) {
+            keys[row].complete = old[o].complete;
+            keys[row].slots.clone_from(&old[o].slots);
+        } else {
+            let (item, complete, slots) = message_row(&keys[row], images, marks.players);
+            keys[row].complete = complete;
+            keys[row].slots = slots;
+            if fresh {
+                model.insert(row, item);
+            } else {
+                model.set_row_data(row, item);
+            }
+        }
+        if !fresh {
+            o += 1;
+        }
+        row += 1;
     }
     keys
 }
@@ -1388,5 +1400,53 @@ mod timeline_tests {
         for (i, k) in keys.iter().enumerate().skip(50) {
             assert_eq!(k.wanted, had[i - 50], "row {i} kept what it had, by message");
         }
+    }
+
+    #[test]
+    fn rows_between_changes_are_matched_by_message() {
+        let mut images = Images::offline();
+        let model = VecModel::<MessageItem>::default();
+        let revealed = HashSet::new();
+        let invites = std::collections::HashMap::new();
+        let marks = Marks {
+            unread_from: None,
+            jump: None,
+            revealed: &revealed,
+            hidden_runs: &Default::default(),
+            ignored_runs: &Default::default(),
+            all: None,
+            players: None,
+            invites: &invites,
+            servers: &[],
+            text_width: 600.0,
+            heights: &HashMap::new(),
+        };
+        let mut window = Some((20, 29));
+        let first = messages(100..130);
+        let keys = sync_timeline(&model, &[], &first, &marks, &mut window, false, &mut images);
+        // An older page above, one message gone and one edited in between,
+        // and one new at the end.
+        let mut list = messages(90..100);
+        for (n, m) in first.iter().enumerate() {
+            match n {
+                5 => {}
+                12 => {
+                    let mut edited = (**m).clone();
+                    edited.edited = true;
+                    list.push(Arc::new(edited));
+                }
+                _ => list.push(m.clone()),
+            }
+        }
+        list.extend(messages(130..131));
+        let keys = sync_timeline(&model, &keys, &list, &marks, &mut window, false, &mut images);
+        let want: Vec<&MessageId> = list.iter().map(|m| &m.id).collect();
+        let got: Vec<&MessageId> = keys.iter().map(RowKey::id).collect();
+        assert_eq!(got, want);
+        assert_eq!(model.row_count(), want.len());
+        let edited: Vec<usize> = (0..model.row_count())
+            .filter(|&i| model.row_data(i).is_some_and(|m| m.edited))
+            .collect();
+        assert_eq!(edited, [10 + 11], "the edit is shown in its row, and only there");
     }
 }
