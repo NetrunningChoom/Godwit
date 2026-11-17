@@ -287,12 +287,20 @@ export component Timeline inherits Rectangle {
     }
     property <bool> at-bottom: true;
     property <length> from-bottom: 0;
+    // Where `settle` last put the view (1px: nowhere, the view is never
+    // below 0). Settling doesn't move the anchor: while rows are laid out
+    // again (a page inserted above) heights dip for a pass, the view is
+    // clamped at the top, and taking that clamped spot as the new distance
+    // to the bottom threw the view down the list once the real heights
+    // came back.
+    property <length> settled-y: 1px;
     function settle() {
         if root.at-bottom {
             list.content-y = min(0px, list.visible-height - list.content-height);
         } else {
             list.content-y = min(0px, root.from-bottom - list.content-height);
         }
+        root.settled-y = list.content-y;
     }
     // The message waiting for "Delete message" (-1: none); the window shows
     // the dialog, so its scrim covers everything.
@@ -1093,8 +1101,13 @@ export component Timeline inherits Rectangle {
             // mouse wheel, so relying on it left the view thinking it was at
             // the bottom and pulled it back there.
             changed content-y => {
-                root.from-bottom = self.content-height + self.content-y;
-                root.at-bottom = root.from-bottom <= self.visible-height + 4px;
+                if self.content-y != root.settled-y {
+                    root.from-bottom = self.content-height + self.content-y;
+                    root.at-bottom = root.from-bottom <= self.visible-height + 4px;
+                } else {
+                    // Seen once: a wheel coming back to this spot is the user's.
+                    root.settled-y = 1px;
+                }
                 root.near-top = self.content-y > -max(200px, self.visible-height);
             }
             // Sized to its content explicitly: left to itself, the scroll
