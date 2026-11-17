@@ -49,7 +49,18 @@ fn navigate(sh: &mut Shell, ui: &AppWindow, forward: bool) {
     }
 }
 
+#[track_caller]
 fn with_shell(ui: &slint::Weak<AppWindow>, f: impl FnOnce(&mut Shell, &AppWindow) + 'static) {
+    let f: ShellCall = if godwit::frame_log::enabled() {
+        let at = std::panic::Location::caller();
+        Box::new(move |sh: &mut Shell, w: &AppWindow| {
+            let start = std::time::Instant::now();
+            f(sh, w);
+            godwit::frame_log::work(at, start.elapsed());
+        })
+    } else {
+        Box::new(f)
+    };
     let Some(window) = ui.upgrade() else { return };
     let Some(shell) = SHELL.with(|s| s.borrow().clone()) else {
         return;
@@ -62,7 +73,7 @@ fn with_shell(ui: &slint::Weak<AppWindow>, f: impl FnOnce(&mut Shell, &AppWindow
     }
     let first = DEFERRED.with(|d| {
         let mut d = d.borrow_mut();
-        d.push_back(Box::new(f));
+        d.push_back(f);
         d.len() == 1
     });
     if first {
@@ -1461,6 +1472,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.show()?;
         ui.window().set_minimized(true);
     }
+    let _frame_watch = godwit::frame_log::watch();
     ui.run()?;
     // Closed normally: whether the call we were in is offered next start
     // follows Settings › Voice (`closing`).

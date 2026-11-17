@@ -1325,6 +1325,7 @@ impl Presenter {
             text_width: if self.text_width > 0.0 { self.text_width } else { 600.0 },
             heights: &self.row_heights,
         };
+        let before = self.rows.len();
         self.rows = view::sync_timeline(
             &self.messages,
             &self.rows,
@@ -1334,6 +1335,7 @@ impl Presenter {
             self.images_changed || self.frames_changed,
             images,
         );
+        crate::frame_log::rows(before, self.rows.len());
         self.hidden_runs = folded.runs;
         self.ignored_runs = folded.ignored;
         self.images_changed = false;

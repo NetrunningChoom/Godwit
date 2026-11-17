@@ -17,6 +17,7 @@ pub mod cropper;
 pub mod demo;
 pub mod emoji;
 pub mod errors;
+pub mod frame_log;
 pub mod games;
 pub mod gifs;
 pub mod images;
